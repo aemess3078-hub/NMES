@@ -14,6 +14,15 @@ export const MES_NAV: NavItem[] = [
     displayOrder: 10,
     children: [
       {
+        id: 'nav-items',
+        parentId: 'nav-master',
+        label: '품목관리',
+        icon: 'Package',
+        href: '/app/mes/items',
+        displayOrder: 1,
+        children: [],
+      },
+      {
         id: 'nav-bom',
         parentId: 'nav-master',
         label: 'BOM 관리',
