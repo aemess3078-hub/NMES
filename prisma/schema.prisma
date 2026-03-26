@@ -249,6 +249,8 @@ model Tenant {
   approvalRequests      ApprovalRequest[]
   equipments            Equipment[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
+  boms                  BOM[]
+  routings              Routing[]
 }
 
 model Profile {
@@ -532,9 +534,9 @@ model Warehouse {
   code     String
   name     String
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  site      Site       @relation(fields: [siteId], references: [id])
-  locations Location[]
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  site                  Site                   @relation(fields: [siteId], references: [id])
+  locations             Location[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
 
   @@unique([siteId, code])
@@ -577,7 +579,7 @@ model LotRule {
 }
 
 model InspectionSpec {
-  id                 String    @id @default(cuid())
+  id                 String               @id @default(cuid())
   tenantId           String
   itemId             String
   routingOperationId String
