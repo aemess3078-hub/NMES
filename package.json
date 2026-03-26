@@ -52,6 +52,9 @@
     "immer": "^10.0.4",
     "zustand": "^4.5.2"
   },
+  "prisma": {
+    "seed": "ts-node --project tsconfig.json prisma/seed.ts"
+  },
   "devDependencies": {
     "@types/node": "^20.11.28",
     "@types/react": "^18.2.67",

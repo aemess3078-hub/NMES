@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(\"C:\\\\Users\\\\82102\\\\Documents\\\\New MES\\\\.env.local\":*)",
+      "Bash(npx prisma:*)",
+      "Bash(\"C:\\\\Users\\\\82102\\\\Documents\\\\New MES\\\\.env\":*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres:Aksentka3%21%21@db.dxznxkppmbtneruuyvqo.supabase.co:5432/postgres\" npx prisma db push)",
+      "Bash(npm run:*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /f /im node.exe)",
+      "Bash(echo \"SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE ''''%_uidx'''' ORDER BY indexname;\")"
+    ]
+  }
+}

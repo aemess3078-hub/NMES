@@ -14,15 +14,88 @@ import {
   LogOut,
   Hash,
   FileText,
+  // MES nav icons
+  Workflow,
+  Factory,
+  CalendarDays,
+  ClipboardList,
+  BarChart2,
+  Activity,
+  RefreshCw,
+  Truck,
+  Tablet,
+  MonitorSmartphone,
+  ShieldCheck,
+  ClipboardCheck,
+  AlertTriangle,
+  TrendingUp,
+  Ruler,
+  Package,
+  PackagePlus,
+  Tag,
+  Search,
+  Network,
+  ArrowLeftRight,
+  Monitor,
+  LayoutDashboard,
+  FileBarChart,
+  History,
+  Settings,
+  Users,
+  Link2,
+  Building2,
+  FileCheck,
+  Boxes,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { resolveMenuPath } from '@/types/menu';
 import { useAppStore } from '@/stores/app.store';
 import { createClient } from '@/lib/supabase/client';
-import type { MenuTree } from '@/types';
+import type { MenuTree, NavItem } from '@/types';
 
 const ICON_MAP: Record<string, React.ElementType> = {
-  Database, Folder, FolderOpen, Table, Layout, GitBranch, Wrench, Hash, FileText,
+  // Legacy builder icons
+  Database,
+  Folder,
+  FolderOpen,
+  Table,
+  Layout,
+  GitBranch,
+  Wrench,
+  Hash,
+  FileText,
+  // MES nav icons
+  Workflow,
+  Factory,
+  CalendarDays,
+  ClipboardList,
+  BarChart2,
+  Activity,
+  RefreshCw,
+  Truck,
+  Tablet,
+  MonitorSmartphone,
+  ShieldCheck,
+  ClipboardCheck,
+  AlertTriangle,
+  TrendingUp,
+  Ruler,
+  Package,
+  PackagePlus,
+  Tag,
+  Search,
+  Network,
+  ArrowLeftRight,
+  Monitor,
+  LayoutDashboard,
+  FileBarChart,
+  History,
+  Settings,
+  Users,
+  Link2,
+  Building2,
+  FileCheck,
+  Boxes,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
@@ -30,6 +103,9 @@ function DynamicIcon({ name, className }: { name?: string | null; className?: st
   return <Icon className={cn('h-3.5 w-3.5', className)} />;
 }
 
+// ----------------------------------------------------------------
+// MenuItemNode — renders DB-driven MenuTree items (legacy)
+// ----------------------------------------------------------------
 function MenuItemNode({ item, depth }: { item: MenuTree; depth: number }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -93,13 +169,73 @@ function MenuItemNode({ item, depth }: { item: MenuTree; depth: number }) {
   );
 }
 
+// ----------------------------------------------------------------
+// NavItemNode — renders static NavItem entries (MES nav)
+// ----------------------------------------------------------------
+function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { expandedMenuIds, toggleMenuExpand } = useAppStore();
+
+  const hasChildren = item.children.length > 0;
+  const isFolder = hasChildren && !item.href;
+  const isExpanded = expandedMenuIds.includes(item.id);
+  const isActive = item.href ? pathname === item.href : false;
+
+  const handleClick = () => {
+    if (isFolder) {
+      toggleMenuExpand(item.id);
+    } else if (item.href) {
+      router.push(item.href);
+    }
+  };
+
+  return (
+    <div>
+      <div
+        className={cn(
+          'flex items-center gap-1.5 rounded px-2 py-1.5 cursor-pointer transition-colors',
+          isActive
+            ? 'bg-accent text-accent-foreground font-semibold'
+            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground font-medium',
+        )}
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+        onClick={handleClick}
+      >
+        {(isFolder || hasChildren) ? (
+          <span className="flex-shrink-0 text-muted-foreground/60">
+            {isExpanded
+              ? <ChevronDown className="h-3 w-3" />
+              : <ChevronRight className="h-3 w-3" />}
+          </span>
+        ) : (
+          <span className="w-3 flex-shrink-0" />
+        )}
+        <DynamicIcon name={item.icon} className="flex-shrink-0 opacity-60" />
+        <span className="truncate flex-1 text-[14px]">{item.label}</span>
+      </div>
+      {hasChildren && isExpanded && (
+        <div>
+          {item.children.map((child) => (
+            <NavItemNode key={child.id} item={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------
+// Sidebar
+// ----------------------------------------------------------------
 interface SidebarProps {
   menuTree: MenuTree[];
+  navItems?: NavItem[];
   userName?: string;
   userEmail?: string;
 }
 
-export function Sidebar({ menuTree, userName, userEmail }: SidebarProps) {
+export function Sidebar({ menuTree, navItems, userName, userEmail }: SidebarProps) {
   const { isSidebarOpen, _hasHydrated } = useAppStore();
   const open = _hasHydrated ? isSidebarOpen : true;
   const router = useRouter();
@@ -109,6 +245,9 @@ export function Sidebar({ menuTree, userName, userEmail }: SidebarProps) {
     await supabase.auth.signOut();
     router.push('/login');
   };
+
+  const hasNavItems = navItems && navItems.length > 0;
+  const hasMenuTree = menuTree.length > 0;
 
   return (
     <aside
@@ -132,15 +271,20 @@ export function Sidebar({ menuTree, userName, userEmail }: SidebarProps) {
 
       {/* 메뉴 */}
       <div className="flex-1 overflow-y-auto px-1 py-1 space-y-0.5">
-        {menuTree.length === 0 ? (
+        {/* Static MES nav rendered first when provided */}
+        {hasNavItems && navItems.map((item) => (
+          <NavItemNode key={item.id} item={item} depth={0} />
+        ))}
+
+        {/* DB-driven menu tree (legacy / menu builder output) */}
+        {!hasNavItems && !hasMenuTree && (
           <div className="px-3 py-6 text-center">
             <p className="text-xs text-muted-foreground">메뉴가 없습니다</p>
           </div>
-        ) : (
-          menuTree.map((item) => (
-            <MenuItemNode key={item.id} item={item} depth={0} />
-          ))
         )}
+        {hasMenuTree && menuTree.map((item) => (
+          <MenuItemNode key={item.id} item={item} depth={0} />
+        ))}
 
         <div className="my-1 mx-2 h-px bg-border" />
 
