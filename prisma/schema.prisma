@@ -1,0 +1,250 @@
+// Prisma Schema for Cloud MES
+// 메타데이터 기반 동적 MES 플랫폼
+// 배포: Supabase (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 사용자 / 조직
+// ============================================================
+
+model Profile {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  avatarUrl String?  @map("avatar_url")
+  role      UserRole @default(OPERATOR)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  schemas     Schema[]
+  screens     Screen[]
+  flows       Flow[]
+  menus       Menu[]
+  schemaRecords SchemaRecord[]
+
+  @@map("profiles")
+}
+
+enum UserRole {
+  ADMIN
+  ENGINEER
+  OPERATOR
+  VIEWER
+}
+
+// ============================================================
+// 스키마 빌더 - 사용자 정의 기준정보 구조
+// ============================================================
+
+// 사용자가 정의한 데이터 스키마(테이블 정의)
+model Schema {
+  id          String       @id @default(uuid())
+  name        String       // e.g. "거래처", "품목", "BOM"
+  description String?
+  icon        String?      // lucide icon name
+  color       String?      // hex color for UI
+  fields      Json         @default("[]")   // FieldDefinition[]
+  relations   Json         @default("[]")   // RelationDefinition[]
+  isTemplate  Boolean      @default(false)  @map("is_template")  // 기본 제공 템플릿 여부
+  isSystem    Boolean      @default(false)  @map("is_system")    // 시스템 내부용(삭제 불가)
+  displayOrder Int         @default(0)      @map("display_order")
+  createdBy   String       @map("created_by")
+  createdAt   DateTime     @default(now())  @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  // Relations
+  creator     Profile      @relation(fields: [createdBy], references: [id])
+  records     SchemaRecord[]
+  screens     Screen[]
+  menuItems   Menu[]
+
+  @@map("schemas")
+}
+
+// Schema.fields의 각 항목 타입 (TypeScript 타입 정의용 - DB 저장은 JSONB)
+// {
+//   id: string
+//   name: string          -- 필드명 (표시용, e.g. "품목코드")
+//   key: string           -- 실제 키 (e.g. "item_code")
+//   type: FieldType       -- text | number | date | boolean | select | relation | file
+//   required: boolean
+//   unique: boolean
+//   defaultValue?: any
+//   options?: string[]    -- select 타입일 때 선택지
+//   relatedSchemaId?: string  -- relation 타입일 때 참조 스키마
+//   validation?: { min?: number, max?: number, pattern?: string }
+//   displayOrder: number
+// }
+
+// Schema.relations의 각 항목 타입
+// {
+//   id: string
+//   name: string          -- 관계명 (e.g. "품목의 BOM")
+//   targetSchemaId: string
+//   type: 'one-to-many' | 'many-to-one' | 'many-to-many'
+//   foreignKey: string    -- 이 스키마의 관계 필드 key
+// }
+
+// 스키마의 실제 데이터 레코드
+model SchemaRecord {
+  id        String   @id @default(uuid())
+  schemaId  String   @map("schema_id")
+  data      Json     @default("{}")  // { [fieldKey]: value }
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+  deletedAt DateTime?                @map("deleted_at")  // soft delete
+
+  // Relations
+  schema    Schema   @relation(fields: [schemaId], references: [id], onDelete: Cascade)
+  creator   Profile  @relation(fields: [createdBy], references: [id])
+
+  @@index([schemaId])
+  @@index([schemaId, deletedAt])
+  @@map("schema_records")
+}
+
+// ============================================================
+// 화면 빌더 - 사용자 정의 UI 화면
+// ============================================================
+
+model Screen {
+  id          String     @id @default(uuid())
+  name        String
+  description String?
+  schemaId    String?    @map("schema_id")   // 연결된 스키마 (nullable - 스키마 없는 화면도 가능)
+  screenType  ScreenType @default(FORM)      @map("screen_type")
+  layout      Json       @default("{}")      // LayoutConfig
+  widgets     Json       @default("[]")      // WidgetConfig[]
+  isPublished Boolean    @default(false)     @map("is_published")
+  createdBy   String     @map("created_by")
+  createdAt   DateTime   @default(now())     @map("created_at")
+  updatedAt   DateTime   @updatedAt          @map("updated_at")
+
+  // Relations
+  schema      Schema?    @relation(fields: [schemaId], references: [id])
+  creator     Profile    @relation(fields: [createdBy], references: [id])
+  menuItems   Menu[]
+
+  @@map("screens")
+}
+
+enum ScreenType {
+  FORM       // 단일 레코드 입력/수정 폼
+  LIST       // 테이블 목록
+  DASHBOARD  // 대시보드 (여러 위젯 조합)
+  KANBAN     // 칸반 보드
+  CALENDAR   // 캘린더 뷰
+}
+
+// ============================================================
+// 메뉴 구조 - 사이드바 트리 메뉴
+// ============================================================
+
+model Menu {
+  id           String    @id @default(uuid())
+  parentId     String?   @map("parent_id")
+  name         String
+  icon         String?   // lucide icon name
+  menuType     MenuType  @default(SCREEN) @map("menu_type")
+  schemaId     String?   @map("schema_id")   // type=SCHEMA일 때
+  screenId     String?   @map("screen_id")   // type=SCREEN일 때
+  flowId       String?   @map("flow_id")     // type=FLOW일 때
+  displayOrder Int       @default(0)         @map("display_order")
+  isVisible    Boolean   @default(true)      @map("is_visible")
+  createdBy    String    @map("created_by")
+  createdAt    DateTime  @default(now())     @map("created_at")
+  updatedAt    DateTime  @updatedAt          @map("updated_at")
+
+  // Self-referential relation (트리 구조)
+  parent       Menu?     @relation("MenuTree", fields: [parentId], references: [id])
+  children     Menu[]    @relation("MenuTree")
+
+  // Referenced entities
+  schema       Schema?   @relation(fields: [schemaId], references: [id])
+  screen       Screen?   @relation(fields: [screenId], references: [id])
+  flow         Flow?     @relation(fields: [flowId], references: [id])
+  creator      Profile   @relation(fields: [createdBy], references: [id])
+
+  @@index([parentId])
+  @@map("menus")
+}
+
+enum MenuType {
+  FOLDER   // 폴더 (하위 메뉴 포함)
+  SCHEMA   // 스키마 데이터 관리 화면으로 이동
+  SCREEN   // 커스텀 화면으로 이동
+  FLOW     // 플로우 뷰어로 이동
+  DIVIDER  // 구분선
+}
+
+// ============================================================
+// 플로우 빌더 - 공정/업무 흐름 설계
+// ============================================================
+
+model Flow {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  nodes       Json         @default("[]")   // React Flow NodeConfig[]
+  edges       Json         @default("[]")   // React Flow EdgeConfig[]
+  viewport    Json         @default("{}")   // React Flow Viewport
+  status      FlowStatus   @default(DRAFT)
+  version     Int          @default(1)
+  createdBy   String       @map("created_by")
+  createdAt   DateTime     @default(now())  @map("created_at")
+  updatedAt   DateTime     @updatedAt       @map("updated_at")
+
+  // Relations
+  creator     Profile      @relation(fields: [createdBy], references: [id])
+  simulations Simulation[]
+  menuItems   Menu[]
+
+  @@map("flows")
+}
+
+enum FlowStatus {
+  DRAFT       // 작업 중
+  SIMULATED   // 시뮬레이션 완료
+  ACTIVE      // 운영 중
+  ARCHIVED    // 보관
+}
+
+// ============================================================
+// 시뮬레이션 엔진
+// ============================================================
+
+model Simulation {
+  id        String           @id @default(uuid())
+  flowId    String           @map("flow_id")
+  status    SimulationStatus @default(PENDING)
+  snapshot  Json             @default("{}")  // 실행 시점의 flow 스냅샷 (nodes + edges)
+  result    Json?            // SimulationResult
+  errors    Json?            // SimulationError[]
+  ranAt     DateTime?        @map("ran_at")
+  duration  Int?             // 실행 시간 (ms)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  // Relations
+  flow      Flow             @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([flowId])
+  @@map("simulations")
+}
+
+enum SimulationStatus {
+  PENDING   // 대기 중
+  RUNNING   // 실행 중
+  SUCCESS   // 성공
+  FAILED    // 실패
+  TIMEOUT   // 시간 초과
+}
