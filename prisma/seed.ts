@@ -16,6 +16,9 @@ import {
   RoutingStatus,
   WorkOrderStatus,
   OperationStatus,
+  PlanType,
+  PlanStatus,
+  PermissionAction,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -892,6 +895,247 @@ async function seedWorkOrders() {
   });
 }
 
+async function seedCodeGroups() {
+  const groups = [
+    {
+      id: 'cg-stop-reason',
+      groupCode: 'STOP_REASON',
+      groupName: '작업중단사유',
+      isSystem: true,
+      codes: [
+        { id: 'cc-sr-01', code: 'MATERIAL_SHORT', name: '자재 부족',  displayOrder: 1 },
+        { id: 'cc-sr-02', code: 'EQUIPMENT_FAIL', name: '설비 고장',  displayOrder: 2 },
+        { id: 'cc-sr-03', code: 'QUALITY_HOLD',   name: '품질 보류', displayOrder: 3 },
+        { id: 'cc-sr-04', code: 'BREAK',          name: '휴식',      displayOrder: 4 },
+        { id: 'cc-sr-99', code: 'OTHER',          name: '기타',      displayOrder: 99 },
+      ],
+    },
+    {
+      id: 'cg-location-type',
+      groupCode: 'LOCATION_TYPE',
+      groupName: '로케이션유형',
+      isSystem: true,
+      codes: [
+        { id: 'cc-lt-01', code: 'RAW',  name: '원자재 구역', displayOrder: 1 },
+        { id: 'cc-lt-02', code: 'WIP',  name: '재공 구역',   displayOrder: 2 },
+        { id: 'cc-lt-03', code: 'FG',   name: '완제품 구역', displayOrder: 3 },
+        { id: 'cc-lt-04', code: 'QC',   name: '검사 구역',   displayOrder: 4 },
+        { id: 'cc-lt-05', code: 'SHIP', name: '출하 구역',   displayOrder: 5 },
+      ],
+    },
+    {
+      id: 'cg-pack-unit',
+      groupCode: 'PACK_UNIT',
+      groupName: '포장단위',
+      isSystem: false,
+      codes: [
+        { id: 'cc-pu-01', code: 'BOX',    name: '박스',   displayOrder: 1 },
+        { id: 'cc-pu-02', code: 'PALLET', name: '팔레트', displayOrder: 2 },
+        { id: 'cc-pu-03', code: 'DRUM',   name: '드럼',   displayOrder: 3 },
+        { id: 'cc-pu-04', code: 'BAG',    name: '백',     displayOrder: 4 },
+      ],
+    },
+    {
+      id: 'cg-reject-reason',
+      groupCode: 'REJECT_REASON',
+      groupName: '반려사유',
+      isSystem: true,
+      codes: [
+        { id: 'cc-rr-01', code: 'INCOMPLETE',    name: '서류 미비',   displayOrder: 1 },
+        { id: 'cc-rr-02', code: 'OVER_BUDGET',   name: '예산 초과',   displayOrder: 2 },
+        { id: 'cc-rr-03', code: 'SPEC_MISMATCH', name: '규격 불일치', displayOrder: 3 },
+      ],
+    },
+  ];
+
+  for (const group of groups) {
+    await prisma.codeGroup.upsert({
+      where: { id: group.id },
+      create: {
+        id: group.id,
+        tenantId: IDS.tenant,
+        groupCode: group.groupCode,
+        groupName: group.groupName,
+        isSystem: group.isSystem,
+        isActive: true,
+      },
+      update: {},
+    });
+
+    for (const code of group.codes) {
+      await prisma.commonCode.upsert({
+        where: { id: code.id },
+        create: {
+          id: code.id,
+          groupId: group.id,
+          code: code.code,
+          name: code.name,
+          displayOrder: code.displayOrder,
+          isActive: true,
+        },
+        update: {},
+      });
+    }
+  }
+}
+
+async function seedProductionPlans() {
+  const planId = 'pp-2026-w14';
+  const ppiAId = 'ppi-w14-fg-assy';
+  const ppiFrameId = 'ppi-w14-semi-frame';
+
+  await prisma.productionPlan.upsert({
+    where: { id: planId },
+    create: {
+      id: planId,
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      planNo: 'PP-2026-W14',
+      planType: PlanType.WEEKLY,
+      startDate: new Date('2026-03-30'),
+      endDate: new Date('2026-04-05'),
+      status: PlanStatus.CONFIRMED,
+      note: 'Phase 2a 데모 주간계획',
+    },
+    update: {},
+  });
+
+  await prisma.productionPlanItem.upsert({
+    where: { id: ppiAId },
+    create: {
+      id: ppiAId,
+      planId: planId,
+      itemId: 'item-fg-assy-001',
+      bomId: 'bom-fg-assy-001',
+      routingId: 'rtg-fg-assy-001',
+      plannedQty: 100,
+      note: '4월 1주차 A 생산',
+    },
+    update: {},
+  });
+
+  await prisma.productionPlanItem.upsert({
+    where: { id: ppiFrameId },
+    create: {
+      id: ppiFrameId,
+      planId: planId,
+      itemId: 'item-semi-frame-001',
+      bomId: 'bom-semi-frame-001',
+      routingId: 'rtg-semi-frame-001',
+      plannedQty: 200,
+      note: '4월 1주차 반제품 프레임 생산',
+    },
+    update: {},
+  });
+
+  // Link existing WorkOrders to plan items
+  await prisma.workOrder.updateMany({
+    where: { orderNo: 'WO-2026-001' },
+    data: { productionPlanItemId: ppiAId },
+  });
+
+  await prisma.workOrder.updateMany({
+    where: { orderNo: 'WO-2026-002' },
+    data: { productionPlanItemId: ppiFrameId },
+  });
+}
+
+async function seedRolePermissions() {
+  const ALL_ACTIONS: PermissionAction[] = [
+    PermissionAction.READ,
+    PermissionAction.CREATE,
+    PermissionAction.UPDATE,
+    PermissionAction.DELETE,
+    PermissionAction.APPROVE,
+    PermissionAction.EXPORT,
+  ];
+
+  const ALL_RESOURCES = [
+    'PRODUCTION_PLAN', 'WORK_ORDER', 'ITEM', 'BOM', 'ROUTING',
+    'INVENTORY', 'QUALITY_INSPECTION', 'EQUIPMENT', 'COMMON_CODE',
+    'USER_MANAGEMENT', 'AUDIT_LOG', 'APPROVAL', 'REPORT',
+  ];
+
+  const MANAGER_PERMS: Record<string, PermissionAction[]> = {
+    PRODUCTION_PLAN:     [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    WORK_ORDER:          [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    ITEM:                [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    BOM:                 [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    ROUTING:             [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    INVENTORY:           [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    QUALITY_INSPECTION:  [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    EQUIPMENT:           [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    COMMON_CODE:         [PermissionAction.READ],
+    USER_MANAGEMENT:     [PermissionAction.READ],
+    AUDIT_LOG:           [PermissionAction.READ],
+    APPROVAL:            [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.APPROVE],
+    REPORT:              [PermissionAction.READ, PermissionAction.EXPORT],
+  };
+
+  const OPERATOR_PERMS: Record<string, PermissionAction[]> = {
+    PRODUCTION_PLAN:     [PermissionAction.READ],
+    WORK_ORDER:          [PermissionAction.READ, PermissionAction.UPDATE],
+    ITEM:                [PermissionAction.READ],
+    BOM:                 [PermissionAction.READ],
+    ROUTING:             [PermissionAction.READ],
+    INVENTORY:           [PermissionAction.READ, PermissionAction.CREATE, PermissionAction.UPDATE],
+    QUALITY_INSPECTION:  [PermissionAction.READ, PermissionAction.CREATE],
+    EQUIPMENT:           [PermissionAction.READ],
+    COMMON_CODE:         [PermissionAction.READ],
+    APPROVAL:            [PermissionAction.READ, PermissionAction.CREATE],
+    REPORT:              [PermissionAction.READ],
+  };
+
+  const VIEWER_RESOURCES = [
+    'PRODUCTION_PLAN', 'WORK_ORDER', 'ITEM', 'BOM', 'ROUTING',
+    'INVENTORY', 'QUALITY_INSPECTION', 'EQUIPMENT', 'COMMON_CODE',
+    'APPROVAL', 'REPORT',
+  ];
+
+  type PermRow = {
+    tenantId: string;
+    role: UserRole;
+    resource: string;
+    action: PermissionAction;
+    isAllowed: boolean;
+  };
+
+  const rows: PermRow[] = [];
+
+  // OWNER & ADMIN: all resources, all actions
+  for (const role of [UserRole.OWNER, UserRole.ADMIN]) {
+    for (const resource of ALL_RESOURCES) {
+      for (const action of ALL_ACTIONS) {
+        rows.push({ tenantId: IDS.tenant, role, resource, action, isAllowed: true });
+      }
+    }
+  }
+
+  // MANAGER
+  for (const [resource, actions] of Object.entries(MANAGER_PERMS)) {
+    for (const action of actions) {
+      rows.push({ tenantId: IDS.tenant, role: UserRole.MANAGER, resource, action, isAllowed: true });
+    }
+  }
+
+  // OPERATOR
+  for (const [resource, actions] of Object.entries(OPERATOR_PERMS)) {
+    for (const action of actions) {
+      rows.push({ tenantId: IDS.tenant, role: UserRole.OPERATOR, resource, action, isAllowed: true });
+    }
+  }
+
+  // VIEWER: READ only on selected resources
+  for (const resource of VIEWER_RESOURCES) {
+    rows.push({ tenantId: IDS.tenant, role: UserRole.VIEWER, resource, action: PermissionAction.READ, isAllowed: true });
+  }
+
+  await prisma.rolePermission.createMany({
+    data: rows,
+    skipDuplicates: true,
+  });
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -938,8 +1182,17 @@ async function main() {
   console.log('  [13/14] Routings + RoutingOperations');
   await seedRoutings();
 
-  console.log('  [14/14] WorkOrders + WorkOrderOperations');
+  console.log('  [14/17] WorkOrders + WorkOrderOperations');
   await seedWorkOrders();
+
+  console.log('  [15/17] CodeGroups + CommonCodes');
+  await seedCodeGroups();
+
+  console.log('  [16/17] ProductionPlans + PlanItems');
+  await seedProductionPlans();
+
+  console.log('  [17/17] RolePermissions');
+  await seedRolePermissions();
 
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
@@ -956,6 +1209,9 @@ async function main() {
   console.log('  - BOM: 2 / BOMItem: 5');
   console.log('  - Routing: 2 / RoutingOperation: 7');
   console.log('  - WorkOrder: 2 / WorkOrderOperation: 4');
+  console.log('  - CodeGroup: 4 / CommonCode: 17');
+  console.log('  - ProductionPlan: 1 / PlanItem: 2');
+  console.log('  - RolePermission: ~212 (5 roles × 13 resources)');
 }
 
 main()
