@@ -1,6 +1,8 @@
 import { getItems, getItemCategories } from "@/lib/actions/item.actions"
 import { ItemDataTable } from "./item-data-table"
 
+export const dynamic = 'force-dynamic'
+
 export default async function ItemsPage() {
   const [items, categories] = await Promise.all([
     getItems(),
