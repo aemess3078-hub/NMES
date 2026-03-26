@@ -10,7 +10,8 @@
       "Bash(npm run:*)",
       "Bash(netstat -ano)",
       "Bash(taskkill /f /im node.exe)",
-      "Bash(echo \"SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE ''''%_uidx'''' ORDER BY indexname;\")"
+      "Bash(echo \"SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE ''''%_uidx'''' ORDER BY indexname;\")",
+      "Bash(cd:*)"
     ]
   }
 }

@@ -12,6 +12,10 @@ import {
   EquipmentType,
   EquipmentStatus,
   DefectCategory,
+  BOMStatus,
+  RoutingStatus,
+  WorkOrderStatus,
+  OperationStatus,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -572,6 +576,322 @@ async function seedLotRules() {
   }
 }
 
+async function seedBoms() {
+  // BOM: 구동 모듈 완제품 A형
+  await prisma.bOM.upsert({
+    where: { tenantId_itemId_version: { tenantId: IDS.tenant, itemId: 'item-fg-assy-001', version: '1.0' } },
+    create: {
+      id: 'bom-fg-assy-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-fg-assy-001',
+      version: '1.0',
+      isDefault: true,
+      status: BOMStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  await prisma.bOMItem.upsert({
+    where: { bomId_seq: { bomId: 'bom-fg-assy-001', seq: 1 } },
+    create: {
+      bomId: 'bom-fg-assy-001',
+      componentItemId: 'item-semi-frame-001',
+      seq: 1,
+      qtyPer: 1.0,
+      scrapRate: 0.02,
+    },
+    update: {},
+  });
+
+  await prisma.bOMItem.upsert({
+    where: { bomId_seq: { bomId: 'bom-fg-assy-001', seq: 2 } },
+    create: {
+      bomId: 'bom-fg-assy-001',
+      componentItemId: 'item-semi-shaft-001',
+      seq: 2,
+      qtyPer: 1.0,
+      scrapRate: 0.01,
+    },
+    update: {},
+  });
+
+  await prisma.bOMItem.upsert({
+    where: { bomId_seq: { bomId: 'bom-fg-assy-001', seq: 3 } },
+    create: {
+      bomId: 'bom-fg-assy-001',
+      componentItemId: 'item-raw-bolt-001',
+      seq: 3,
+      qtyPer: 4.0,
+      scrapRate: 0.00,
+    },
+    update: {},
+  });
+
+  // BOM: 하우징 프레임 (기계가공)
+  await prisma.bOM.upsert({
+    where: { tenantId_itemId_version: { tenantId: IDS.tenant, itemId: 'item-semi-frame-001', version: '1.0' } },
+    create: {
+      id: 'bom-semi-frame-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-semi-frame-001',
+      version: '1.0',
+      isDefault: true,
+      status: BOMStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  await prisma.bOMItem.upsert({
+    where: { bomId_seq: { bomId: 'bom-semi-frame-001', seq: 1 } },
+    create: {
+      bomId: 'bom-semi-frame-001',
+      componentItemId: 'item-raw-steel-001',
+      seq: 1,
+      qtyPer: 2.5,
+      scrapRate: 0.03,
+    },
+    update: {},
+  });
+
+  await prisma.bOMItem.upsert({
+    where: { bomId_seq: { bomId: 'bom-semi-frame-001', seq: 2 } },
+    create: {
+      bomId: 'bom-semi-frame-001',
+      componentItemId: 'item-raw-alum-001',
+      seq: 2,
+      qtyPer: 0.5,
+      scrapRate: 0.02,
+    },
+    update: {},
+  });
+}
+
+async function seedRoutings() {
+  // Routing: 구동 모듈 완제품 A형
+  await prisma.routing.upsert({
+    where: { tenantId_itemId_version: { tenantId: IDS.tenant, itemId: 'item-fg-assy-001', version: '1.0' } },
+    create: {
+      id: 'rtg-fg-assy-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-fg-assy-001',
+      version: '1.0',
+      isDefault: true,
+      status: RoutingStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-fg-assy-001', seq: 10 } },
+    create: {
+      id: 'rop-assy-10',
+      routingId: 'rtg-fg-assy-001',
+      seq: 10,
+      operationCode: 'OP-MCH',
+      name: '기계가공',
+      workCenterId: IDS.workCenters.machining,
+      standardTime: 30.0,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-fg-assy-001', seq: 20 } },
+    create: {
+      id: 'rop-assy-20',
+      routingId: 'rtg-fg-assy-001',
+      seq: 20,
+      operationCode: 'OP-ASM',
+      name: '조립',
+      workCenterId: IDS.workCenters.assembly,
+      standardTime: 45.0,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-fg-assy-001', seq: 30 } },
+    create: {
+      id: 'rop-assy-30',
+      routingId: 'rtg-fg-assy-001',
+      seq: 30,
+      operationCode: 'OP-INS',
+      name: '검사',
+      workCenterId: IDS.workCenters.inspection,
+      standardTime: 15.0,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-fg-assy-001', seq: 40 } },
+    create: {
+      id: 'rop-assy-40',
+      routingId: 'rtg-fg-assy-001',
+      seq: 40,
+      operationCode: 'OP-PKG',
+      name: '포장',
+      workCenterId: IDS.workCenters.packaging,
+      standardTime: 10.0,
+    },
+    update: {},
+  });
+
+  // Routing: 하우징 프레임 (기계가공)
+  await prisma.routing.upsert({
+    where: { tenantId_itemId_version: { tenantId: IDS.tenant, itemId: 'item-semi-frame-001', version: '1.0' } },
+    create: {
+      id: 'rtg-semi-frame-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-semi-frame-001',
+      version: '1.0',
+      isDefault: true,
+      status: RoutingStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-semi-frame-001', seq: 10 } },
+    create: {
+      id: 'rop-frame-10',
+      routingId: 'rtg-semi-frame-001',
+      seq: 10,
+      operationCode: 'OP-MCH',
+      name: '기계가공',
+      workCenterId: IDS.workCenters.machining,
+      standardTime: 60.0,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-semi-frame-001', seq: 20 } },
+    create: {
+      id: 'rop-frame-20',
+      routingId: 'rtg-semi-frame-001',
+      seq: 20,
+      operationCode: 'OP-INS',
+      name: '검사',
+      workCenterId: IDS.workCenters.inspection,
+      standardTime: 20.0,
+    },
+    update: {},
+  });
+
+  await prisma.routingOperation.upsert({
+    where: { routingId_seq: { routingId: 'rtg-semi-frame-001', seq: 30 } },
+    create: {
+      id: 'rop-frame-30',
+      routingId: 'rtg-semi-frame-001',
+      seq: 30,
+      operationCode: 'OP-ASM',
+      name: '조립',
+      workCenterId: IDS.workCenters.assembly,
+      standardTime: 30.0,
+    },
+    update: {},
+  });
+}
+
+async function seedWorkOrders() {
+  // WorkOrder 1: RELEASED
+  await prisma.workOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'WO-2026-001' } },
+    create: {
+      id: 'wo-2026-001',
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      itemId: 'item-fg-assy-001',
+      bomId: 'bom-fg-assy-001',
+      routingId: 'rtg-fg-assy-001',
+      orderNo: 'WO-2026-001',
+      plannedQty: 100,
+      status: WorkOrderStatus.RELEASED,
+      dueDate: new Date('2026-04-15'),
+    },
+    update: {},
+  });
+
+  await prisma.workOrderOperation.upsert({
+    where: { workOrderId_seq: { workOrderId: 'wo-2026-001', seq: 10 } },
+    create: {
+      id: 'woo-2026-001-10',
+      workOrderId: 'wo-2026-001',
+      routingOperationId: 'rop-assy-10',
+      seq: 10,
+      status: OperationStatus.IN_PROGRESS,
+      plannedQty: 100,
+      completedQty: 0,
+      equipmentId: 'eq-cnc-001',
+    },
+    update: {},
+  });
+
+  await prisma.workOrderOperation.upsert({
+    where: { workOrderId_seq: { workOrderId: 'wo-2026-001', seq: 20 } },
+    create: {
+      id: 'woo-2026-001-20',
+      workOrderId: 'wo-2026-001',
+      routingOperationId: 'rop-assy-20',
+      seq: 20,
+      status: OperationStatus.PENDING,
+      plannedQty: 100,
+      completedQty: 0,
+      equipmentId: 'eq-assy-001',
+    },
+    update: {},
+  });
+
+  await prisma.workOrderOperation.upsert({
+    where: { workOrderId_seq: { workOrderId: 'wo-2026-001', seq: 30 } },
+    create: {
+      id: 'woo-2026-001-30',
+      workOrderId: 'wo-2026-001',
+      routingOperationId: 'rop-assy-30',
+      seq: 30,
+      status: OperationStatus.PENDING,
+      plannedQty: 100,
+      completedQty: 0,
+      equipmentId: 'eq-insp-001',
+    },
+    update: {},
+  });
+
+  await prisma.workOrderOperation.upsert({
+    where: { workOrderId_seq: { workOrderId: 'wo-2026-001', seq: 40 } },
+    create: {
+      id: 'woo-2026-001-40',
+      workOrderId: 'wo-2026-001',
+      routingOperationId: 'rop-assy-40',
+      seq: 40,
+      status: OperationStatus.PENDING,
+      plannedQty: 100,
+      completedQty: 0,
+      equipmentId: null,
+    },
+    update: {},
+  });
+
+  // WorkOrder 2: DRAFT (no operations)
+  await prisma.workOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'WO-2026-002' } },
+    create: {
+      id: 'wo-2026-002',
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      itemId: 'item-semi-frame-001',
+      bomId: 'bom-semi-frame-001',
+      routingId: 'rtg-semi-frame-001',
+      orderNo: 'WO-2026-002',
+      plannedQty: 50,
+      status: WorkOrderStatus.DRAFT,
+      dueDate: new Date('2026-04-20'),
+    },
+    update: {},
+  });
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -612,6 +932,15 @@ async function main() {
   await seedItems();
   await seedLotRules();
 
+  console.log('  [12/14] BOMs + BOMItems');
+  await seedBoms();
+
+  console.log('  [13/14] Routings + RoutingOperations');
+  await seedRoutings();
+
+  console.log('  [14/14] WorkOrders + WorkOrderOperations');
+  await seedWorkOrders();
+
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
@@ -624,6 +953,9 @@ async function main() {
   console.log('  - BusinessPartner: 5');
   console.log('  - DefectCode: 7');
   console.log('  - Item: 8 / LotRule: 5');
+  console.log('  - BOM: 2 / BOMItem: 5');
+  console.log('  - Routing: 2 / RoutingOperation: 7');
+  console.log('  - WorkOrder: 2 / WorkOrderOperation: 4');
 }
 
 main()

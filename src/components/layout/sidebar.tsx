@@ -48,10 +48,9 @@ import {
   Boxes,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { resolveMenuPath } from '@/types/menu';
 import { useAppStore } from '@/stores/app.store';
 import { createClient } from '@/lib/supabase/client';
-import type { MenuTree, NavItem } from '@/types';
+import type { NavItem } from '@/types';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   // Legacy builder icons
@@ -101,72 +100,6 @@ const ICON_MAP: Record<string, React.ElementType> = {
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
   const Icon = (name && ICON_MAP[name]) ? ICON_MAP[name] : Hash;
   return <Icon className={cn('h-3.5 w-3.5', className)} />;
-}
-
-// ----------------------------------------------------------------
-// MenuItemNode — renders DB-driven MenuTree items (legacy)
-// ----------------------------------------------------------------
-function MenuItemNode({ item, depth }: { item: MenuTree; depth: number }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const { expandedMenuIds, toggleMenuExpand, setActiveMenu } = useAppStore();
-
-  const isFolder = item.menuType === 'FOLDER';
-  const isDivider = item.menuType === 'DIVIDER';
-  const hasChildren = item.children.length > 0;
-  const isExpanded = expandedMenuIds.includes(item.id);
-  const href = resolveMenuPath(item);
-  const isActive = pathname === href && href !== '#';
-
-  if (isDivider) {
-    return <div className="my-1 mx-3 h-px bg-border" />;
-  }
-
-  const handleClick = () => {
-    if (isFolder) {
-      toggleMenuExpand(item.id);
-    } else {
-      setActiveMenu(item.id);
-      if (href !== '#') router.push(href);
-    }
-  };
-
-  return (
-    <div>
-      <div
-        className={cn(
-          'flex items-center gap-1.5 rounded px-2 py-1.5 cursor-pointer transition-colors',
-          isActive
-            ? 'bg-accent text-accent-foreground font-semibold'
-            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground font-medium',
-        )}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={handleClick}
-      >
-        {(isFolder || hasChildren) ? (
-          <span className="flex-shrink-0 text-muted-foreground/60">
-            {isExpanded
-              ? <ChevronDown className="h-3 w-3" />
-              : <ChevronRight className="h-3 w-3" />}
-          </span>
-        ) : (
-          <span className="w-3 flex-shrink-0" />
-        )}
-        <DynamicIcon
-          name={isFolder ? (isExpanded ? 'FolderOpen' : 'Folder') : item.icon}
-          className="flex-shrink-0 opacity-60"
-        />
-        <span className="truncate flex-1 text-[14px]">{item.name}</span>
-      </div>
-      {hasChildren && isExpanded && (
-        <div>
-          {item.children.map((child) => (
-            <MenuItemNode key={child.id} item={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ----------------------------------------------------------------
@@ -229,13 +162,12 @@ function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
 // Sidebar
 // ----------------------------------------------------------------
 interface SidebarProps {
-  menuTree: MenuTree[];
   navItems?: NavItem[];
   userName?: string;
   userEmail?: string;
 }
 
-export function Sidebar({ menuTree, navItems, userName, userEmail }: SidebarProps) {
+export function Sidebar({ navItems, userName, userEmail }: SidebarProps) {
   const { isSidebarOpen, _hasHydrated } = useAppStore();
   const open = _hasHydrated ? isSidebarOpen : true;
   const router = useRouter();
@@ -247,7 +179,6 @@ export function Sidebar({ menuTree, navItems, userName, userEmail }: SidebarProp
   };
 
   const hasNavItems = navItems && navItems.length > 0;
-  const hasMenuTree = menuTree.length > 0;
 
   return (
     <aside
@@ -271,44 +202,15 @@ export function Sidebar({ menuTree, navItems, userName, userEmail }: SidebarProp
 
       {/* 메뉴 */}
       <div className="flex-1 overflow-y-auto px-1 py-1 space-y-0.5">
-        {/* Static MES nav rendered first when provided */}
         {hasNavItems && navItems.map((item) => (
           <NavItemNode key={item.id} item={item} depth={0} />
         ))}
 
-        {/* DB-driven menu tree (legacy / menu builder output) */}
-        {!hasNavItems && !hasMenuTree && (
+        {!hasNavItems && (
           <div className="px-3 py-6 text-center">
             <p className="text-xs text-muted-foreground">메뉴가 없습니다</p>
           </div>
         )}
-        {hasMenuTree && menuTree.map((item) => (
-          <MenuItemNode key={item.id} item={item} depth={0} />
-        ))}
-
-        <div className="my-1 mx-2 h-px bg-border" />
-
-        <div
-          className="flex items-center gap-1.5 rounded px-2 py-1.5 text-[14px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
-          onClick={() => router.push('/app/builder/schemas')}
-        >
-          <Wrench className="h-4 w-4 opacity-60 flex-shrink-0" />
-          <span>스키마 빌더</span>
-        </div>
-        <div
-          className="flex items-center gap-1.5 rounded px-2 py-1.5 text-[14px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
-          onClick={() => router.push('/app/builder/flows')}
-        >
-          <GitBranch className="h-4 w-4 opacity-60 flex-shrink-0" />
-          <span>플로우 빌더</span>
-        </div>
-        <div
-          className="flex items-center gap-1.5 rounded px-2 py-1.5 text-[14px] font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
-          onClick={() => router.push('/app/builder/menu')}
-        >
-          <Layout className="h-4 w-4 opacity-60 flex-shrink-0" />
-          <span>메뉴 빌더</span>
-        </div>
       </div>
 
       {/* 사용자 */}
