@@ -208,6 +208,19 @@ enum LotGenealogyRelation {
   REWORK
 }
 
+enum InspectionSpecStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  BATCH
+  API
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model Tenant {
@@ -218,23 +231,24 @@ model Tenant {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  sites                Site[]
-  tenantUsers          TenantUser[]
-  businessPartners     BusinessPartner[]
-  itemCategories       ItemCategory[]
-  items                Item[]
-  warehouses           Warehouse[]
-  lotRules             LotRule[]
-  lots                 Lot[]
-  inventoryBalances    InventoryBalance[]
-  inventoryTxns        InventoryTransaction[]
-  workOrders           WorkOrder[]
-  defectCodes          DefectCode[]
-  documents            Document[]
-  inspectionSpecs      InspectionSpec[]
-  auditLogs            AuditLog[]
-  approvalRequests     ApprovalRequest[]
-  equipments           Equipment[]
+  sites                 Site[]
+  tenantUsers           TenantUser[]
+  businessPartners      BusinessPartner[]
+  itemCategories        ItemCategory[]
+  items                 Item[]
+  warehouses            Warehouse[]
+  lotRules              LotRule[]
+  lots                  Lot[]
+  inventoryBalances     InventoryBalance[]
+  inventoryTxns         InventoryTransaction[]
+  workOrders            WorkOrder[]
+  defectCodes           DefectCode[]
+  documents             Document[]
+  inspectionSpecs       InspectionSpec[]
+  auditLogs             AuditLog[]
+  approvalRequests      ApprovalRequest[]
+  equipments            Equipment[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
 }
 
 model Profile {
@@ -261,13 +275,14 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id])
-  tenantUsers       TenantUser[]
-  workCenters       WorkCenter[]
-  warehouses        Warehouse[]
-  workOrders        WorkOrder[]
-  inventoryBalances InventoryBalance[]
-  equipments        Equipment[]
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  tenantUsers           TenantUser[]
+  workCenters           WorkCenter[]
+  warehouses            Warehouse[]
+  workOrders            WorkOrder[]
+  inventoryBalances     InventoryBalance[]
+  equipments            Equipment[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -287,9 +302,11 @@ model TenantUser {
   profile Profile @relation(fields: [profileId], references: [id])
   site    Site?   @relation(fields: [siteId], references: [id])
 
-  @@unique([tenantId, profileId, siteId])
   @@index([tenantId])
   @@index([profileId])
+  @@index([siteId])
+  @@index([tenantId, profileId])
+  @@index([tenantId, siteId, role])
 }
 
 model WorkCenter {
@@ -565,9 +582,9 @@ model InspectionSpec {
   itemId             String
   routingOperationId String
   version            String
-  status             BOMStatus @default(DRAFT)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  status             InspectionSpecStatus @default(DRAFT)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   tenant           Tenant           @relation(fields: [tenantId], references: [id])
   item             Item             @relation(fields: [itemId], references: [id])
@@ -667,6 +684,9 @@ model WorkOrder {
   @@index([tenantId])
   @@index([siteId])
   @@index([status])
+  @@index([tenantId, siteId, status])
+  @@index([tenantId, dueDate])
+  @@index([tenantId, itemId])
 }
 
 model WorkOrderOperation {
@@ -756,11 +776,13 @@ model InventoryBalance {
   lot      Lot?     @relation(fields: [lotId], references: [id])
   location Location @relation(fields: [locationId], references: [id])
 
-  @@unique([tenantId, itemId, lotId, locationId])
   @@index([tenantId])
   @@index([siteId])
   @@index([itemId])
   @@index([locationId])
+  @@index([tenantId, siteId, itemId])
+  @@index([tenantId, locationId])
+  @@index([tenantId, itemId, lotId, locationId])
 }
 
 model InventoryTransaction {
@@ -789,6 +811,11 @@ model InventoryTransaction {
   @@index([lotId])
   @@index([txType])
   @@index([txAt])
+  @@index([tenantId, txAt])
+  @@index([tenantId, itemId, txAt])
+  @@index([tenantId, refType, refId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
 }
 
 model MaterialConsumption {
@@ -827,6 +854,9 @@ model WipUnit {
   @@index([workOrderOperationId])
   @@index([itemId])
   @@index([lotId])
+  @@index([currentLocationId])
+  @@index([status])
+  @@index([currentLocationId, status])
 }
 
 model ProductionResult {
@@ -845,6 +875,8 @@ model ProductionResult {
 
 model FinishedGoodsReceipt {
   id          String   @id @default(cuid())
+  tenantId    String
+  siteId      String
   workOrderId String
   itemId      String
   lotId       String?
@@ -853,15 +885,21 @@ model FinishedGoodsReceipt {
   receiptQty  Decimal  @db.Decimal(18, 6)
   receiptAt   DateTime @default(now())
 
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  site      Site      @relation(fields: [siteId], references: [id])
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id])
   item      Item      @relation(fields: [itemId], references: [id])
   lot       Lot?      @relation(fields: [lotId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
   location  Location  @relation(fields: [locationId], references: [id])
 
+  @@index([tenantId])
+  @@index([siteId])
   @@index([workOrderId])
   @@index([itemId])
   @@index([lotId])
+  @@index([tenantId, siteId, receiptAt])
+  @@index([warehouseId, locationId])
 }
 
 model QualityInspection {
@@ -882,6 +920,8 @@ model QualityInspection {
   @@index([workOrderOperationId])
   @@index([inspectionSpecId])
   @@index([inspectorId])
+  @@index([workOrderOperationId, inspectedAt])
+  @@index([inspectorId, inspectedAt])
 }
 
 model DefectRecord {
@@ -915,30 +955,33 @@ model LotGenealogy {
 }
 
 model AuditLog {
-  id         String      @id @default(cuid())
+  id         String         @id @default(cuid())
   tenantId   String
-  actorId    String
+  actorId    String?
+  actorType  AuditActorType @default(USER)
+  actorLabel String?
   entityType String
   entityId   String
   action     AuditAction
   beforeData Json?
   afterData  Json?
-  actedAt    DateTime    @default(now())
+  actedAt    DateTime       @default(now())
 
-  tenant Tenant  @relation(fields: [tenantId], references: [id])
-  actor  Profile @relation(fields: [actorId], references: [id])
+  tenant Tenant   @relation(fields: [tenantId], references: [id])
+  actor  Profile? @relation(fields: [actorId], references: [id])
 
   @@index([tenantId])
   @@index([actorId])
   @@index([entityType, entityId])
   @@index([actedAt])
+  @@index([tenantId, entityType, entityId, actedAt])
 }
 
 model ApprovalRequest {
   id          String         @id @default(cuid())
   tenantId    String
   requesterId String
-  approverId  String
+  approverId  String?
   requestType String
   targetType  String
   targetId    String
@@ -946,12 +989,14 @@ model ApprovalRequest {
   requestedAt DateTime       @default(now())
   approvedAt  DateTime?
 
-  tenant    Tenant  @relation(fields: [tenantId], references: [id])
-  requester Profile @relation("Requester", fields: [requesterId], references: [id])
-  approver  Profile @relation("Approver", fields: [approverId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  requester Profile  @relation("Requester", fields: [requesterId], references: [id])
+  approver  Profile? @relation("Approver", fields: [approverId], references: [id])
 
   @@index([tenantId])
   @@index([requesterId])
   @@index([approverId])
   @@index([status])
+  @@index([status, requestedAt])
+  @@index([tenantId, targetType, targetId])
 }
