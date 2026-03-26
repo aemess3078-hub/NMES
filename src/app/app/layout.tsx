@@ -4,6 +4,8 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MES_NAV } from '@/lib/nav-config';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AppLayout({
   children,
 }: {
