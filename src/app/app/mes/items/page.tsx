@@ -1,11 +1,13 @@
-import { Plus } from "lucide-react"
-
-import { Button } from "@/components/ui/button"
-import { getItems } from "@/lib/actions/item.actions"
+import { getItems, getItemCategories } from "@/lib/actions/item.actions"
 import { ItemDataTable } from "./item-data-table"
 
 export default async function ItemsPage() {
-  const items = await getItems()
+  const [items, categories] = await Promise.all([
+    getItems(),
+    getItemCategories(),
+  ])
+
+  const tenantId = items[0]?.tenantId ?? ""
 
   return (
     <div className="space-y-6">
@@ -18,12 +20,8 @@ export default async function ItemsPage() {
             원자재, 반제품, 완제품 품목을 관리합니다.
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          품목 등록
-        </Button>
       </div>
-      <ItemDataTable items={items} />
+      <ItemDataTable items={items} categories={categories} tenantId={tenantId} />
     </div>
   )
 }
