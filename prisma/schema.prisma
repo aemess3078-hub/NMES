@@ -1,7 +1,3 @@
-// Prisma Schema for Cloud MES
-// 메타데이터 기반 동적 MES 플랫폼
-// 배포: Supabase (PostgreSQL)
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,240 +7,951 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================
-// 사용자 / 조직
-// ============================================================
+// ─── Enums ───────────────────────────────────────────────────────────────────
 
-model Profile {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  avatarUrl String?  @map("avatar_url")
-  role      UserRole @default(OPERATOR)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  schemas     Schema[]
-  screens     Screen[]
-  flows       Flow[]
-  menus       Menu[]
-  schemaRecords SchemaRecord[]
-
-  @@map("profiles")
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
 }
 
 enum UserRole {
+  OWNER
   ADMIN
-  ENGINEER
+  MANAGER
   OPERATOR
   VIEWER
 }
 
-// ============================================================
-// 스키마 빌더 - 사용자 정의 기준정보 구조
-// ============================================================
-
-// 사용자가 정의한 데이터 스키마(테이블 정의)
-model Schema {
-  id          String       @id @default(uuid())
-  name        String       // e.g. "거래처", "품목", "BOM"
-  description String?
-  icon        String?      // lucide icon name
-  color       String?      // hex color for UI
-  fields      Json         @default("[]")   // FieldDefinition[]
-  relations   Json         @default("[]")   // RelationDefinition[]
-  isTemplate  Boolean      @default(false)  @map("is_template")  // 기본 제공 템플릿 여부
-  isSystem    Boolean      @default(false)  @map("is_system")    // 시스템 내부용(삭제 불가)
-  displayOrder Int         @default(0)      @map("display_order")
-  createdBy   String       @map("created_by")
-  createdAt   DateTime     @default(now())  @map("created_at")
-  updatedAt   DateTime     @updatedAt       @map("updated_at")
-
-  // Relations
-  creator     Profile      @relation(fields: [createdBy], references: [id])
-  records     SchemaRecord[]
-  screens     Screen[]
-  menuItems   Menu[]
-
-  @@map("schemas")
+enum SiteType {
+  FACTORY
+  WAREHOUSE
+  OFFICE
 }
 
-// Schema.fields의 각 항목 타입 (TypeScript 타입 정의용 - DB 저장은 JSONB)
-// {
-//   id: string
-//   name: string          -- 필드명 (표시용, e.g. "품목코드")
-//   key: string           -- 실제 키 (e.g. "item_code")
-//   type: FieldType       -- text | number | date | boolean | select | relation | file
-//   required: boolean
-//   unique: boolean
-//   defaultValue?: any
-//   options?: string[]    -- select 타입일 때 선택지
-//   relatedSchemaId?: string  -- relation 타입일 때 참조 스키마
-//   validation?: { min?: number, max?: number, pattern?: string }
-//   displayOrder: number
-// }
-
-// Schema.relations의 각 항목 타입
-// {
-//   id: string
-//   name: string          -- 관계명 (e.g. "품목의 BOM")
-//   targetSchemaId: string
-//   type: 'one-to-many' | 'many-to-one' | 'many-to-many'
-//   foreignKey: string    -- 이 스키마의 관계 필드 key
-// }
-
-// 스키마의 실제 데이터 레코드
-model SchemaRecord {
-  id        String   @id @default(uuid())
-  schemaId  String   @map("schema_id")
-  data      Json     @default("{}")  // { [fieldKey]: value }
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt      @map("updated_at")
-  deletedAt DateTime?                @map("deleted_at")  // soft delete
-
-  // Relations
-  schema    Schema   @relation(fields: [schemaId], references: [id], onDelete: Cascade)
-  creator   Profile  @relation(fields: [createdBy], references: [id])
-
-  @@index([schemaId])
-  @@index([schemaId, deletedAt])
-  @@map("schema_records")
+enum PartnerType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
 }
 
-// ============================================================
-// 화면 빌더 - 사용자 정의 UI 화면
-// ============================================================
+enum PartnerStatus {
+  ACTIVE
+  INACTIVE
+}
 
-model Screen {
-  id          String     @id @default(uuid())
+enum ItemType {
+  RAW_MATERIAL
+  SEMI_FINISHED
+  FINISHED
+  CONSUMABLE
+}
+
+enum ItemStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
+enum UOM {
+  EA
+  KG
+  G
+  L
+  ML
+  M
+  CM
+  MM
+  BOX
+  SET
+}
+
+enum BOMStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum RoutingStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkCenterKind {
+  ASSEMBLY
+  MACHINING
+  INSPECTION
+  PACKAGING
+  STORAGE
+}
+
+enum EquipmentType {
+  MACHINE
+  TOOL
+  JIG
+  FIXTURE
+  VEHICLE
+}
+
+enum EquipmentStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum WorkOrderStatus {
+  DRAFT
+  RELEASED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OperationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum ReservationStatus {
+  PENDING
+  PARTIAL
+  FULFILLED
+  CANCELLED
+}
+
+enum LotStatus {
+  ACTIVE
+  QUARANTINE
+  ON_HOLD
+  CONSUMED
+  EXPIRED
+}
+
+enum TransactionType {
+  RECEIPT
+  ISSUE
+  TRANSFER
+  ADJUST
+  RETURN
+  SCRAP
+}
+
+enum WipUnitStatus {
+  IN_PROCESS
+  ON_HOLD
+  COMPLETED
+  SCRAPPED
+}
+
+enum InspectionResult {
+  PASS
+  FAIL
+  CONDITIONAL
+}
+
+enum DefectSeverity {
+  CRITICAL
+  MAJOR
+  MINOR
+}
+
+enum DefectDisposition {
+  SCRAP
+  REWORK
+  ACCEPT
+  USE_AS_IS
+}
+
+enum DefectCategory {
+  DIMENSIONAL
+  VISUAL
+  FUNCTIONAL
+  MATERIAL
+}
+
+enum DocType {
+  SOP
+  DRAWING
+  SPEC
+  CERTIFICATE
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+}
+
+enum InspectionInputType {
+  NUMERIC
+  TEXT
+  BOOLEAN
+  SELECT
+}
+
+enum LotGenealogyRelation {
+  INPUT
+  OUTPUT
+  REWORK
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  name      String
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  sites                Site[]
+  tenantUsers          TenantUser[]
+  businessPartners     BusinessPartner[]
+  itemCategories       ItemCategory[]
+  items                Item[]
+  warehouses           Warehouse[]
+  lotRules             LotRule[]
+  lots                 Lot[]
+  inventoryBalances    InventoryBalance[]
+  inventoryTxns        InventoryTransaction[]
+  workOrders           WorkOrder[]
+  defectCodes          DefectCode[]
+  documents            Document[]
+  inspectionSpecs      InspectionSpec[]
+  auditLogs            AuditLog[]
+  approvalRequests     ApprovalRequest[]
+  equipments           Equipment[]
+}
+
+model Profile {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenantUsers        TenantUser[]
+  qualityInspections QualityInspection[]
+  auditLogs          AuditLog[]
+  approvalRequests   ApprovalRequest[]   @relation("Requester")
+  approvals          ApprovalRequest[]   @relation("Approver")
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  type      SiteType @default(FACTORY)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  tenantUsers       TenantUser[]
+  workCenters       WorkCenter[]
+  warehouses        Warehouse[]
+  workOrders        WorkOrder[]
+  inventoryBalances InventoryBalance[]
+  equipments        Equipment[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model TenantUser {
+  id        String   @id @default(cuid())
+  tenantId  String
+  profileId String
+  siteId    String?
+  role      UserRole @default(OPERATOR)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  profile Profile @relation(fields: [profileId], references: [id])
+  site    Site?   @relation(fields: [siteId], references: [id])
+
+  @@unique([tenantId, profileId, siteId])
+  @@index([tenantId])
+  @@index([profileId])
+}
+
+model WorkCenter {
+  id        String         @id @default(cuid())
+  siteId    String
+  code      String
+  name      String
+  kind      WorkCenterKind @default(ASSEMBLY)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  site              Site               @relation(fields: [siteId], references: [id])
+  equipments        Equipment[]
+  routingOperations RoutingOperation[]
+
+  @@unique([siteId, code])
+  @@index([siteId])
+}
+
+model BusinessPartner {
+  id          String        @id @default(cuid())
+  tenantId    String
+  code        String
   name        String
-  description String?
-  schemaId    String?    @map("schema_id")   // 연결된 스키마 (nullable - 스키마 없는 화면도 가능)
-  screenType  ScreenType @default(FORM)      @map("screen_type")
-  layout      Json       @default("{}")      // LayoutConfig
-  widgets     Json       @default("[]")      // WidgetConfig[]
-  isPublished Boolean    @default(false)     @map("is_published")
-  createdBy   String     @map("created_by")
-  createdAt   DateTime   @default(now())     @map("created_at")
-  updatedAt   DateTime   @updatedAt          @map("updated_at")
+  partnerType PartnerType
+  status      PartnerStatus @default(ACTIVE)
 
-  // Relations
-  schema      Schema?    @relation(fields: [schemaId], references: [id])
-  creator     Profile    @relation(fields: [createdBy], references: [id])
-  menuItems   Menu[]
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
-  @@map("screens")
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
-enum ScreenType {
-  FORM       // 단일 레코드 입력/수정 폼
-  LIST       // 테이블 목록
-  DASHBOARD  // 대시보드 (여러 위젯 조합)
-  KANBAN     // 칸반 보드
-  CALENDAR   // 캘린더 뷰
-}
-
-// ============================================================
-// 메뉴 구조 - 사이드바 트리 메뉴
-// ============================================================
-
-model Menu {
-  id           String    @id @default(uuid())
-  parentId     String?   @map("parent_id")
+model ItemCategory {
+  id           String  @id @default(cuid())
+  tenantId     String
+  parentId     String?
+  code         String
   name         String
-  icon         String?   // lucide icon name
-  menuType     MenuType  @default(SCREEN) @map("menu_type")
-  schemaId     String?   @map("schema_id")   // type=SCHEMA일 때
-  screenId     String?   @map("screen_id")   // type=SCREEN일 때
-  flowId       String?   @map("flow_id")     // type=FLOW일 때
-  displayOrder Int       @default(0)         @map("display_order")
-  isVisible    Boolean   @default(true)      @map("is_visible")
-  createdBy    String    @map("created_by")
-  createdAt    DateTime  @default(now())     @map("created_at")
-  updatedAt    DateTime  @updatedAt          @map("updated_at")
+  displayOrder Int     @default(0)
 
-  // Self-referential relation (트리 구조)
-  parent       Menu?     @relation("MenuTree", fields: [parentId], references: [id])
-  children     Menu[]    @relation("MenuTree")
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  parent   ItemCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children ItemCategory[] @relation("CategoryTree")
+  items    Item[]
 
-  // Referenced entities
-  schema       Schema?   @relation(fields: [schemaId], references: [id])
-  screen       Screen?   @relation(fields: [screenId], references: [id])
-  flow         Flow?     @relation(fields: [flowId], references: [id])
-  creator      Profile   @relation(fields: [createdBy], references: [id])
-
+  @@unique([tenantId, code])
+  @@index([tenantId])
   @@index([parentId])
-  @@map("menus")
 }
 
-enum MenuType {
-  FOLDER   // 폴더 (하위 메뉴 포함)
-  SCHEMA   // 스키마 데이터 관리 화면으로 이동
-  SCREEN   // 커스텀 화면으로 이동
-  FLOW     // 플로우 뷰어로 이동
-  DIVIDER  // 구분선
+model Item {
+  id              String     @id @default(cuid())
+  tenantId        String
+  categoryId      String?
+  code            String
+  name            String
+  itemType        ItemType
+  uom             UOM        @default(EA)
+  spec            String?
+  isLotTracked    Boolean    @default(false)
+  isSerialTracked Boolean    @default(false)
+  status          ItemStatus @default(ACTIVE)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id])
+  category ItemCategory? @relation(fields: [categoryId], references: [id])
+
+  substitutes           ItemSubstitute[]       @relation("PrimaryItem")
+  substituteOf          ItemSubstitute[]       @relation("SubstituteItem")
+  boms                  BOM[]
+  bomItems              BOMItem[]
+  routings              Routing[]
+  lots                  Lot[]
+  lotRules              LotRule[]
+  inspectionSpecs       InspectionSpec[]
+  inventoryBalances     InventoryBalance[]
+  inventoryTxns         InventoryTransaction[]
+  workOrders            WorkOrder[]
+  materialReservations  MaterialReservation[]
+  materialConsumptions  MaterialConsumption[]
+  wipUnits              WipUnit[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([categoryId])
 }
 
-// ============================================================
-// 플로우 빌더 - 공정/업무 흐름 설계
-// ============================================================
+model ItemSubstitute {
+  id               String @id @default(cuid())
+  itemId           String
+  substituteItemId String
+  priority         Int    @default(1)
 
-model Flow {
-  id          String       @id @default(uuid())
-  name        String
-  description String?
-  nodes       Json         @default("[]")   // React Flow NodeConfig[]
-  edges       Json         @default("[]")   // React Flow EdgeConfig[]
-  viewport    Json         @default("{}")   // React Flow Viewport
-  status      FlowStatus   @default(DRAFT)
-  version     Int          @default(1)
-  createdBy   String       @map("created_by")
-  createdAt   DateTime     @default(now())  @map("created_at")
-  updatedAt   DateTime     @updatedAt       @map("updated_at")
+  item           Item @relation("PrimaryItem", fields: [itemId], references: [id])
+  substituteItem Item @relation("SubstituteItem", fields: [substituteItemId], references: [id])
 
-  // Relations
-  creator     Profile      @relation(fields: [createdBy], references: [id])
-  simulations Simulation[]
-  menuItems   Menu[]
-
-  @@map("flows")
+  @@unique([itemId, substituteItemId])
+  @@index([itemId])
 }
 
-enum FlowStatus {
-  DRAFT       // 작업 중
-  SIMULATED   // 시뮬레이션 완료
-  ACTIVE      // 운영 중
-  ARCHIVED    // 보관
+model BOM {
+  id        String    @id @default(cuid())
+  tenantId  String
+  itemId    String
+  version   String
+  isDefault Boolean   @default(false)
+  status    BOMStatus @default(DRAFT)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  item       Item        @relation(fields: [itemId], references: [id])
+  bomItems   BOMItem[]
+  workOrders WorkOrder[]
+
+  @@unique([tenantId, itemId, version])
+  @@index([tenantId])
+  @@index([itemId])
 }
 
-// ============================================================
-// 시뮬레이션 엔진
-// ============================================================
+model BOMItem {
+  id              String  @id @default(cuid())
+  bomId           String
+  componentItemId String
+  seq             Int
+  qtyPer          Decimal @db.Decimal(18, 6)
+  scrapRate       Decimal @default(0) @db.Decimal(5, 4)
 
-model Simulation {
-  id        String           @id @default(uuid())
-  flowId    String           @map("flow_id")
-  status    SimulationStatus @default(PENDING)
-  snapshot  Json             @default("{}")  // 실행 시점의 flow 스냅샷 (nodes + edges)
-  result    Json?            // SimulationResult
-  errors    Json?            // SimulationError[]
-  ranAt     DateTime?        @map("ran_at")
-  duration  Int?             // 실행 시간 (ms)
-  createdAt DateTime         @default(now()) @map("created_at")
+  bom           BOM  @relation(fields: [bomId], references: [id])
+  componentItem Item @relation(fields: [componentItemId], references: [id])
 
-  // Relations
-  flow      Flow             @relation(fields: [flowId], references: [id], onDelete: Cascade)
-
-  @@index([flowId])
-  @@map("simulations")
+  @@unique([bomId, seq])
+  @@index([bomId])
+  @@index([componentItemId])
 }
 
-enum SimulationStatus {
-  PENDING   // 대기 중
-  RUNNING   // 실행 중
-  SUCCESS   // 성공
-  FAILED    // 실패
-  TIMEOUT   // 시간 초과
+model Routing {
+  id        String        @id @default(cuid())
+  tenantId  String
+  itemId    String
+  version   String
+  isDefault Boolean       @default(false)
+  status    RoutingStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
+  item       Item               @relation(fields: [itemId], references: [id])
+  operations RoutingOperation[]
+  workOrders WorkOrder[]
+
+  @@unique([tenantId, itemId, version])
+  @@index([tenantId])
+  @@index([itemId])
+}
+
+model RoutingOperation {
+  id            String  @id @default(cuid())
+  routingId     String
+  workCenterId  String
+  seq           Int
+  operationCode String
+  name          String
+  standardTime  Decimal @default(0) @db.Decimal(10, 2)
+
+  routing    Routing    @relation(fields: [routingId], references: [id])
+  workCenter WorkCenter @relation(fields: [workCenterId], references: [id])
+
+  equipmentMaps       EquipmentOperationMap[]
+  workOrderOperations WorkOrderOperation[]
+  inspectionSpecs     InspectionSpec[]
+
+  @@unique([routingId, seq])
+  @@index([routingId])
+  @@index([workCenterId])
+}
+
+model Equipment {
+  id            String          @id @default(cuid())
+  tenantId      String
+  siteId        String
+  workCenterId  String
+  code          String
+  name          String
+  equipmentType EquipmentType
+  status        EquipmentStatus @default(ACTIVE)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  site       Site       @relation(fields: [siteId], references: [id])
+  workCenter WorkCenter @relation(fields: [workCenterId], references: [id])
+
+  operationMaps       EquipmentOperationMap[]
+  workOrderOperations WorkOrderOperation[]
+
+  @@unique([siteId, code])
+  @@index([tenantId])
+  @@index([siteId])
+  @@index([workCenterId])
+}
+
+model EquipmentOperationMap {
+  id                 String @id @default(cuid())
+  equipmentId        String
+  routingOperationId String
+
+  equipment        Equipment        @relation(fields: [equipmentId], references: [id])
+  routingOperation RoutingOperation @relation(fields: [routingOperationId], references: [id])
+
+  @@unique([equipmentId, routingOperationId])
+  @@index([equipmentId])
+  @@index([routingOperationId])
+}
+
+model Warehouse {
+  id       String @id @default(cuid())
+  tenantId String
+  siteId   String
+  code     String
+  name     String
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  site      Site       @relation(fields: [siteId], references: [id])
+  locations Location[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
+
+  @@unique([siteId, code])
+  @@index([tenantId])
+  @@index([siteId])
+}
+
+model Location {
+  id           String  @id @default(cuid())
+  warehouseId  String
+  code         String
+  name         String
+  locationType String?
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  inventoryBalances     InventoryBalance[]
+  inventoryTxnsFrom     InventoryTransaction[] @relation("FromLocation")
+  inventoryTxnsTo       InventoryTransaction[] @relation("ToLocation")
+  wipUnits              WipUnit[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+}
+
+model LotRule {
+  id         String  @id @default(cuid())
+  tenantId   String
+  itemId     String
+  prefix     String?
+  dateFormat String?
+  seqLength  Int     @default(4)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  item   Item   @relation(fields: [itemId], references: [id])
+
+  @@unique([tenantId, itemId])
+  @@index([tenantId])
+}
+
+model InspectionSpec {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  itemId             String
+  routingOperationId String
+  version            String
+  status             BOMStatus @default(DRAFT)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  item             Item             @relation(fields: [itemId], references: [id])
+  routingOperation RoutingOperation @relation(fields: [routingOperationId], references: [id])
+
+  inspectionItems    InspectionItem[]
+  qualityInspections QualityInspection[]
+
+  @@unique([tenantId, itemId, routingOperationId, version])
+  @@index([tenantId])
+  @@index([itemId])
+  @@index([routingOperationId])
+}
+
+model InspectionItem {
+  id               String              @id @default(cuid())
+  inspectionSpecId String
+  seq              Int
+  name             String
+  inputType        InspectionInputType @default(NUMERIC)
+  lowerLimit       Decimal?            @db.Decimal(18, 6)
+  upperLimit       Decimal?            @db.Decimal(18, 6)
+
+  inspectionSpec InspectionSpec @relation(fields: [inspectionSpecId], references: [id])
+
+  @@unique([inspectionSpecId, seq])
+  @@index([inspectionSpecId])
+}
+
+model DefectCode {
+  id             String         @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  defectCategory DefectCategory
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  defectRecords DefectRecord[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model Document {
+  id       String  @id @default(cuid())
+  tenantId String
+  code     String
+  name     String
+  docType  DocType
+  fileUrl  String?
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  documentLinks DocumentLink[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model DocumentLink {
+  id         String @id @default(cuid())
+  documentId String
+  targetType String
+  targetId   String
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@unique([documentId, targetType, targetId])
+  @@index([documentId])
+  @@index([targetType, targetId])
+}
+
+model WorkOrder {
+  id         String          @id @default(cuid())
+  tenantId   String
+  siteId     String
+  itemId     String
+  bomId      String
+  routingId  String
+  orderNo    String
+  plannedQty Decimal         @db.Decimal(18, 6)
+  status     WorkOrderStatus @default(DRAFT)
+  dueDate    DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  site    Site    @relation(fields: [siteId], references: [id])
+  item    Item    @relation(fields: [itemId], references: [id])
+  bom     BOM     @relation(fields: [bomId], references: [id])
+  routing Routing @relation(fields: [routingId], references: [id])
+
+  operations            WorkOrderOperation[]
+  materialReservations  MaterialReservation[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
+
+  @@unique([tenantId, orderNo])
+  @@index([tenantId])
+  @@index([siteId])
+  @@index([status])
+}
+
+model WorkOrderOperation {
+  id                 String          @id @default(cuid())
+  workOrderId        String
+  routingOperationId String
+  equipmentId        String?
+  seq                Int
+  status             OperationStatus @default(PENDING)
+  plannedQty         Decimal         @db.Decimal(18, 6)
+  completedQty       Decimal         @default(0) @db.Decimal(18, 6)
+
+  workOrder        WorkOrder        @relation(fields: [workOrderId], references: [id])
+  routingOperation RoutingOperation @relation(fields: [routingOperationId], references: [id])
+  equipment        Equipment?       @relation(fields: [equipmentId], references: [id])
+
+  materialConsumptions MaterialConsumption[]
+  wipUnits             WipUnit[]
+  productionResults    ProductionResult[]
+  qualityInspections   QualityInspection[]
+
+  @@unique([workOrderId, seq])
+  @@index([workOrderId])
+  @@index([routingOperationId])
+  @@index([equipmentId])
+}
+
+model MaterialReservation {
+  id          String            @id @default(cuid())
+  workOrderId String
+  itemId      String
+  requiredQty Decimal           @db.Decimal(18, 6)
+  reservedQty Decimal           @default(0) @db.Decimal(18, 6)
+  issuedQty   Decimal           @default(0) @db.Decimal(18, 6)
+  status      ReservationStatus @default(PENDING)
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id])
+  item      Item      @relation(fields: [itemId], references: [id])
+
+  @@unique([workOrderId, itemId])
+  @@index([workOrderId])
+  @@index([itemId])
+}
+
+model Lot {
+  id              String    @id @default(cuid())
+  tenantId        String
+  itemId          String
+  lotNo           String
+  status          LotStatus @default(ACTIVE)
+  manufactureDate DateTime?
+  expiryDate      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  item   Item   @relation(fields: [itemId], references: [id])
+
+  inventoryBalances     InventoryBalance[]
+  inventoryTxns         InventoryTransaction[]
+  materialConsumptions  MaterialConsumption[]
+  wipUnits              WipUnit[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
+  parentGenealogyLinks  LotGenealogy[]         @relation("ParentLot")
+  childGenealogyLinks   LotGenealogy[]         @relation("ChildLot")
+
+  @@unique([tenantId, lotNo])
+  @@index([tenantId])
+  @@index([itemId])
+}
+
+model InventoryBalance {
+  id           String   @id @default(cuid())
+  tenantId     String
+  siteId       String
+  itemId       String
+  lotId        String?
+  locationId   String
+  qtyOnHand    Decimal  @default(0) @db.Decimal(18, 6)
+  qtyAvailable Decimal  @default(0) @db.Decimal(18, 6)
+  qtyHold      Decimal  @default(0) @db.Decimal(18, 6)
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  site     Site     @relation(fields: [siteId], references: [id])
+  item     Item     @relation(fields: [itemId], references: [id])
+  lot      Lot?     @relation(fields: [lotId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([tenantId, itemId, lotId, locationId])
+  @@index([tenantId])
+  @@index([siteId])
+  @@index([itemId])
+  @@index([locationId])
+}
+
+model InventoryTransaction {
+  id             String          @id @default(cuid())
+  tenantId       String
+  itemId         String
+  lotId          String?
+  fromLocationId String?
+  toLocationId   String?
+  txNo           String
+  txType         TransactionType
+  qty            Decimal         @db.Decimal(18, 6)
+  refType        String?
+  refId          String?
+  txAt           DateTime        @default(now())
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  item         Item      @relation(fields: [itemId], references: [id])
+  lot          Lot?      @relation(fields: [lotId], references: [id])
+  fromLocation Location? @relation("FromLocation", fields: [fromLocationId], references: [id])
+  toLocation   Location? @relation("ToLocation", fields: [toLocationId], references: [id])
+
+  @@unique([tenantId, txNo])
+  @@index([tenantId])
+  @@index([itemId])
+  @@index([lotId])
+  @@index([txType])
+  @@index([txAt])
+}
+
+model MaterialConsumption {
+  id                   String  @id @default(cuid())
+  workOrderOperationId String
+  itemId               String
+  lotId                String?
+  consumedQty          Decimal @db.Decimal(18, 6)
+  scrapQty             Decimal @default(0) @db.Decimal(18, 6)
+
+  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
+  item               Item               @relation(fields: [itemId], references: [id])
+  lot                Lot?               @relation(fields: [lotId], references: [id])
+
+  @@index([workOrderOperationId])
+  @@index([itemId])
+  @@index([lotId])
+}
+
+model WipUnit {
+  id                   String        @id @default(cuid())
+  workOrderOperationId String
+  itemId               String
+  lotId                String?
+  currentLocationId    String?
+  qty                  Decimal       @db.Decimal(18, 6)
+  status               WipUnitStatus @default(IN_PROCESS)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
+  item               Item               @relation(fields: [itemId], references: [id])
+  lot                Lot?               @relation(fields: [lotId], references: [id])
+  currentLocation    Location?          @relation(fields: [currentLocationId], references: [id])
+
+  @@index([workOrderOperationId])
+  @@index([itemId])
+  @@index([lotId])
+}
+
+model ProductionResult {
+  id                   String    @id @default(cuid())
+  workOrderOperationId String
+  goodQty              Decimal   @default(0) @db.Decimal(18, 6)
+  defectQty            Decimal   @default(0) @db.Decimal(18, 6)
+  reworkQty            Decimal   @default(0) @db.Decimal(18, 6)
+  startedAt            DateTime?
+  endedAt              DateTime?
+
+  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
+
+  @@index([workOrderOperationId])
+}
+
+model FinishedGoodsReceipt {
+  id          String   @id @default(cuid())
+  workOrderId String
+  itemId      String
+  lotId       String?
+  warehouseId String
+  locationId  String
+  receiptQty  Decimal  @db.Decimal(18, 6)
+  receiptAt   DateTime @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id])
+  item      Item      @relation(fields: [itemId], references: [id])
+  lot       Lot?      @relation(fields: [lotId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  location  Location  @relation(fields: [locationId], references: [id])
+
+  @@index([workOrderId])
+  @@index([itemId])
+  @@index([lotId])
+}
+
+model QualityInspection {
+  id                   String            @id @default(cuid())
+  workOrderOperationId String
+  inspectionSpecId     String
+  inspectorId          String
+  result               InspectionResult?
+  inspectedQty         Decimal           @db.Decimal(18, 6)
+  inspectedAt          DateTime          @default(now())
+
+  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
+  inspectionSpec     InspectionSpec     @relation(fields: [inspectionSpecId], references: [id])
+  inspector          Profile            @relation(fields: [inspectorId], references: [id])
+
+  defectRecords DefectRecord[]
+
+  @@index([workOrderOperationId])
+  @@index([inspectionSpecId])
+  @@index([inspectorId])
+}
+
+model DefectRecord {
+  id                  String             @id @default(cuid())
+  qualityInspectionId String
+  defectCodeId        String
+  qty                 Decimal            @db.Decimal(18, 6)
+  severity            DefectSeverity     @default(MAJOR)
+  disposition         DefectDisposition?
+
+  qualityInspection QualityInspection @relation(fields: [qualityInspectionId], references: [id])
+  defectCode        DefectCode        @relation(fields: [defectCodeId], references: [id])
+
+  @@index([qualityInspectionId])
+  @@index([defectCodeId])
+}
+
+model LotGenealogy {
+  id           String               @id @default(cuid())
+  parentLotId  String
+  childLotId   String
+  relationType LotGenealogyRelation @default(OUTPUT)
+  qty          Decimal              @db.Decimal(18, 6)
+
+  parentLot Lot @relation("ParentLot", fields: [parentLotId], references: [id])
+  childLot  Lot @relation("ChildLot", fields: [childLotId], references: [id])
+
+  @@unique([parentLotId, childLotId, relationType])
+  @@index([parentLotId])
+  @@index([childLotId])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  tenantId   String
+  actorId    String
+  entityType String
+  entityId   String
+  action     AuditAction
+  beforeData Json?
+  afterData  Json?
+  actedAt    DateTime    @default(now())
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  actor  Profile @relation(fields: [actorId], references: [id])
+
+  @@index([tenantId])
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([actedAt])
+}
+
+model ApprovalRequest {
+  id          String         @id @default(cuid())
+  tenantId    String
+  requesterId String
+  approverId  String
+  requestType String
+  targetType  String
+  targetId    String
+  status      ApprovalStatus @default(PENDING)
+  requestedAt DateTime       @default(now())
+  approvedAt  DateTime?
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  requester Profile @relation("Requester", fields: [requesterId], references: [id])
+  approver  Profile @relation("Approver", fields: [approverId], references: [id])
+
+  @@index([tenantId])
+  @@index([requesterId])
+  @@index([approverId])
+  @@index([status])
 }
