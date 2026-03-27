@@ -22,6 +22,9 @@ import {
   ConnectionProtocol,
   TagDataType,
   TagCategory,
+  SalesOrderStatus,
+  ShipmentStatus,
+  PurchaseOrderStatus,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -1309,6 +1312,12 @@ async function seedFeatures() {
     { code: 'COMMON_CODE', name: '공통코드', description: '시스템 공통 코드 관리', category: 'SYSTEM', icon: 'BookOpen', menuCodes: ['common-codes'], isCore: true, displayOrder: 140 },
     { code: 'PERMISSION', name: '권한관리', description: '역할별 권한 관리', category: 'SYSTEM', icon: 'Shield', menuCodes: ['users'], isCore: true, displayOrder: 150 },
     { code: 'FEATURE_MANAGEMENT', name: '기능관리', description: '테넌트 기능 ON/OFF 관리', category: 'SYSTEM', icon: 'Puzzle', menuCodes: ['features'], isCore: true, displayOrder: 160 },
+    // SALES
+    { code: 'SALES_ORDER', name: '수주관리', description: '수주/출하 관리', category: 'SALES', icon: 'ClipboardList', menuCodes: ['nav-sales-orders', 'nav-shipments'], isCore: false, displayOrder: 151 },
+    { code: 'SHIPMENT', name: '출하관리', description: '출하 관리', category: 'SALES', icon: 'Truck', menuCodes: ['nav-shipments'], isCore: false, displayOrder: 152 },
+    // PURCHASE
+    { code: 'PURCHASE_ORDER', name: '발주관리', description: '발주/입고 관리', category: 'PURCHASE', icon: 'FileInput', menuCodes: ['nav-purchase-orders'], isCore: false, displayOrder: 161 },
+    { code: 'ITEM_PRICE', name: '단가관리', description: '품목 단가 관리', category: 'PURCHASE', icon: 'CircleDollarSign', menuCodes: ['nav-item-prices'], isCore: false, displayOrder: 162 },
   ];
 
   for (const f of features) {
@@ -1365,6 +1374,7 @@ async function seedFeatures() {
       'ITEM', 'BOM', 'ROUTING', 'WORK_ORDER', 'PRODUCTION_PLAN',
       'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'DEFECT_MANAGEMENT',
       'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
+      'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE',
     ];
     for (const code of enableCodes) {
       const feat = await prisma.featureDefinition.findUnique({ where: { code } });
@@ -1375,6 +1385,177 @@ async function seedFeatures() {
         create: { tenantId: tenant.id, featureId: feat.id, isEnabled: true },
       });
     }
+  }
+}
+
+async function seedSalesOrders() {
+  const customer = await prisma.businessPartner.findFirst({
+    where: { tenantId: IDS.tenant, partnerType: { in: ['CUSTOMER', 'BOTH'] } },
+  });
+  const customer2 = await prisma.businessPartner.findFirst({
+    where: { tenantId: IDS.tenant, partnerType: { in: ['CUSTOMER', 'BOTH'] }, id: { not: customer?.id } },
+  });
+  if (!customer) return;
+
+  const items = await prisma.item.findMany({
+    where: { tenantId: IDS.tenant, itemType: { in: ['FINISHED', 'SEMI_FINISHED'] } },
+    take: 3,
+  });
+  if (items.length === 0) return;
+
+  const so1 = await prisma.salesOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'SO-2026-001' } },
+    update: {},
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      customerId: customer.id,
+      orderNo: 'SO-2026-001',
+      orderDate: new Date('2026-03-01'),
+      deliveryDate: new Date('2026-04-01'),
+      status: SalesOrderStatus.PARTIAL_SHIPPED,
+      currency: 'KRW',
+      note: '1분기 정기 주문',
+    },
+  });
+
+  if (items[0]) {
+    await prisma.salesOrderItem.upsert({
+      where: { salesOrderId_itemId: { salesOrderId: so1.id, itemId: items[0].id } },
+      update: {},
+      create: { salesOrderId: so1.id, itemId: items[0].id, qty: 100, unitPrice: 50000, shippedQty: 50 },
+    });
+  }
+  if (items[1]) {
+    await prisma.salesOrderItem.upsert({
+      where: { salesOrderId_itemId: { salesOrderId: so1.id, itemId: items[1].id } },
+      update: {},
+      create: { salesOrderId: so1.id, itemId: items[1].id, qty: 200, unitPrice: 30000 },
+    });
+  }
+
+  const so2Customer = customer2 ?? customer;
+  const so2 = await prisma.salesOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'SO-2026-002' } },
+    update: {},
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      customerId: so2Customer.id,
+      orderNo: 'SO-2026-002',
+      orderDate: new Date('2026-03-15'),
+      deliveryDate: new Date('2026-04-30'),
+      status: SalesOrderStatus.IN_PRODUCTION,
+      currency: 'KRW',
+    },
+  });
+  if (items[0]) {
+    await prisma.salesOrderItem.upsert({
+      where: { salesOrderId_itemId: { salesOrderId: so2.id, itemId: items[0].id } },
+      update: {},
+      create: { salesOrderId: so2.id, itemId: items[0].id, qty: 50, unitPrice: 50000 },
+    });
+  }
+
+  // ShipmentOrder
+  const sh1Item = await prisma.salesOrderItem.findFirst({ where: { salesOrderId: so1.id } });
+  if (sh1Item) {
+    await prisma.shipmentOrder.upsert({
+      where: { tenantId_shipmentNo: { tenantId: IDS.tenant, shipmentNo: 'SH-2026-001' } },
+      update: {},
+      create: {
+        tenantId: IDS.tenant,
+        siteId: IDS.sites.factory,
+        salesOrderId: so1.id,
+        shipmentNo: 'SH-2026-001',
+        status: ShipmentStatus.SHIPPED,
+        plannedDate: new Date('2026-03-20'),
+        shippedDate: new Date('2026-03-22'),
+        items: {
+          create: [{ salesOrderItemId: sh1Item.id, itemId: sh1Item.itemId, qty: 50 }],
+        },
+      },
+    });
+  }
+}
+
+async function seedPurchaseData() {
+  const supplier = await prisma.businessPartner.findFirst({
+    where: { tenantId: IDS.tenant, partnerType: { in: ['SUPPLIER', 'BOTH'] } },
+  });
+  if (!supplier) return;
+
+  const rawItems = await prisma.item.findMany({
+    where: { tenantId: IDS.tenant, itemType: { in: ['RAW_MATERIAL', 'SEMI_FINISHED', 'CONSUMABLE'] } },
+    take: 2,
+  });
+  if (rawItems.length === 0) return;
+
+  // ItemPrice
+  for (const item of rawItems) {
+    const priceId = `price-${item.id.slice(-8)}-${supplier.id.slice(-8)}`;
+    await prisma.itemPrice.upsert({
+      where: { id: priceId },
+      update: {},
+      create: {
+        id: priceId,
+        tenantId: IDS.tenant,
+        itemId: item.id,
+        partnerId: supplier.id,
+        priceType: 'PURCHASE',
+        unitPrice: 10000,
+        currency: 'KRW',
+        effectiveFrom: new Date('2026-01-01'),
+        note: '기본 단가',
+      },
+    });
+  }
+
+  // PurchaseOrder 1
+  const po1 = await prisma.purchaseOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'PO-2026-001' } },
+    update: {},
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      supplierId: supplier.id,
+      orderNo: 'PO-2026-001',
+      orderDate: new Date('2026-03-01'),
+      expectedDate: new Date('2026-03-15'),
+      status: PurchaseOrderStatus.ORDERED,
+      currency: 'KRW',
+      note: '1분기 원자재 발주',
+    },
+  });
+  if (rawItems[0]) {
+    await prisma.purchaseOrderItem.upsert({
+      where: { purchaseOrderId_itemId: { purchaseOrderId: po1.id, itemId: rawItems[0].id } },
+      update: {},
+      create: { purchaseOrderId: po1.id, itemId: rawItems[0].id, qty: 100, unitPrice: 10000 },
+    });
+  }
+
+  // PurchaseOrder 2
+  const po2 = await prisma.purchaseOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'PO-2026-002' } },
+    update: {},
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      supplierId: supplier.id,
+      orderNo: 'PO-2026-002',
+      orderDate: new Date('2026-03-20'),
+      expectedDate: new Date('2026-04-05'),
+      status: PurchaseOrderStatus.DRAFT,
+      currency: 'KRW',
+    },
+  });
+  for (const item of rawItems) {
+    await prisma.purchaseOrderItem.upsert({
+      where: { purchaseOrderId_itemId: { purchaseOrderId: po2.id, itemId: item.id } },
+      update: {},
+      create: { purchaseOrderId: po2.id, itemId: item.id, qty: 50, unitPrice: 10000 },
+    });
   }
 }
 
@@ -1440,6 +1621,12 @@ async function main() {
   console.log('  [19/19] Equipment Integration (Gateway + Connections + Tags)');
   await seedEquipmentIntegration();
 
+  console.log('  [20/21] SalesOrders + ShipmentOrders');
+  await seedSalesOrders();
+
+  console.log('  [21/21] PurchaseOrders + ItemPrices');
+  await seedPurchaseData();
+
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
@@ -1458,8 +1645,10 @@ async function main() {
   console.log('  - CodeGroup: 4 / CommonCode: 17');
   console.log('  - ProductionPlan: 1 / PlanItem: 2');
   console.log('  - RolePermission: ~212 (5 roles × 13 resources)');
-  console.log('  - FeatureDefinition: 16 / FeatureDependency: 14 / TenantFeature: 9');
+  console.log('  - FeatureDefinition: 20 / FeatureDependency: 14 / TenantFeature: 12');
   console.log('  - EdgeGateway: 1 / EquipmentConnection: 2 / DataTag: 6');
+  console.log('  - SalesOrder: 2 / ShipmentOrder: 1');
+  console.log('  - PurchaseOrder: 2 / ItemPrice: N건');
 }
 
 main()

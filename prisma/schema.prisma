@@ -318,6 +318,10 @@ model Tenant {
   rolePermissions       RolePermission[]
   tenantFeatures        TenantFeature[]
   gateways              EdgeGateway[]
+  salesOrders           SalesOrder[]    @relation("TenantSalesOrders")
+  shipmentOrders        ShipmentOrder[] @relation("TenantShipmentOrders")
+  purchaseOrders        PurchaseOrder[] @relation("TenantPurchaseOrders")
+  itemPrices            ItemPrice[]     @relation("TenantItemPrices")
 }
 
 model Profile {
@@ -328,11 +332,12 @@ model Profile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenantUsers        TenantUser[]
-  qualityInspections QualityInspection[]
-  auditLogs          AuditLog[]
-  approvalRequests   ApprovalRequest[]   @relation("Requester")
-  approvals          ApprovalRequest[]   @relation("Approver")
+  tenantUsers          TenantUser[]
+  qualityInspections   QualityInspection[]
+  auditLogs            AuditLog[]
+  approvalRequests     ApprovalRequest[]   @relation("Requester")
+  approvals            ApprovalRequest[]   @relation("Approver")
+  receivingInspections ReceivingInspection[] @relation("ReceivingInspector")
 }
 
 model Site {
@@ -354,6 +359,9 @@ model Site {
   finishedGoodsReceipts FinishedGoodsReceipt[]
   productionPlans       ProductionPlan[]
   gateways              EdgeGateway[]
+  salesOrders           SalesOrder[]    @relation("SiteSalesOrders")
+  shipmentOrders        ShipmentOrder[] @relation("SiteShipmentOrders")
+  purchaseOrders        PurchaseOrder[] @relation("SitePurchaseOrders")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -405,7 +413,10 @@ model BusinessPartner {
   partnerType PartnerType
   status      PartnerStatus @default(ACTIVE)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  salesOrders    SalesOrder[]    @relation("CustomerSalesOrders")
+  purchaseOrders PurchaseOrder[] @relation("SupplierPurchaseOrders")
+  itemPrices     ItemPrice[]     @relation("PartnerPrices")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -447,22 +458,26 @@ model Item {
   tenant   Tenant        @relation(fields: [tenantId], references: [id])
   category ItemCategory? @relation(fields: [categoryId], references: [id])
 
-  substitutes           ItemSubstitute[]       @relation("PrimaryItem")
-  substituteOf          ItemSubstitute[]       @relation("SubstituteItem")
-  boms                  BOM[]
-  bomItems              BOMItem[]
-  routings              Routing[]
-  lots                  Lot[]
-  lotRules              LotRule[]
-  inspectionSpecs       InspectionSpec[]
-  inventoryBalances     InventoryBalance[]
-  inventoryTxns         InventoryTransaction[]
-  workOrders            WorkOrder[]
-  materialReservations  MaterialReservation[]
-  materialConsumptions  MaterialConsumption[]
-  wipUnits              WipUnit[]
-  finishedGoodsReceipts FinishedGoodsReceipt[]
-  productionPlanItems   ProductionPlanItem[]
+  substitutes            ItemSubstitute[]       @relation("PrimaryItem")
+  substituteOf           ItemSubstitute[]       @relation("SubstituteItem")
+  boms                   BOM[]
+  bomItems               BOMItem[]
+  routings               Routing[]
+  lots                   Lot[]
+  lotRules               LotRule[]
+  inspectionSpecs        InspectionSpec[]
+  inventoryBalances      InventoryBalance[]
+  inventoryTxns          InventoryTransaction[]
+  workOrders             WorkOrder[]
+  materialReservations   MaterialReservation[]
+  materialConsumptions   MaterialConsumption[]
+  wipUnits               WipUnit[]
+  finishedGoodsReceipts  FinishedGoodsReceipt[]
+  productionPlanItems    ProductionPlanItem[]
+  salesOrderItems        SalesOrderItem[]    @relation("ItemSalesOrderItems")
+  shipmentItems          ShipmentItem[]      @relation("ItemShipmentItems")
+  purchaseOrderItems     PurchaseOrderItem[] @relation("ItemPurchaseOrderItems")
+  itemPrices             ItemPrice[]         @relation("ItemPrices")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -612,6 +627,7 @@ model Warehouse {
   site                  Site                   @relation(fields: [siteId], references: [id])
   locations             Location[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
+  shipments             ShipmentOrder[]        @relation("WarehouseShipments")
 
   @@unique([siteId, code])
   @@index([tenantId])
@@ -832,6 +848,7 @@ model Lot {
   finishedGoodsReceipts FinishedGoodsReceipt[]
   parentGenealogyLinks  LotGenealogy[]         @relation("ParentLot")
   childGenealogyLinks   LotGenealogy[]         @relation("ChildLot")
+  shipmentItems         ShipmentItem[]         @relation("LotShipmentItems")
 
   @@unique([tenantId, lotNo])
   @@index([tenantId])
@@ -1113,11 +1130,14 @@ model ProductionPlanItem {
   plannedQty  Decimal @db.Decimal(18, 6)
   note        String?
 
-  plan      ProductionPlan @relation(fields: [planId], references: [id])
-  item      Item           @relation(fields: [itemId], references: [id])
-  bom       BOM?           @relation(fields: [bomId], references: [id])
-  routing   Routing?       @relation(fields: [routingId], references: [id])
-  workOrders WorkOrder[]
+  salesOrderItemId String?
+
+  plan           ProductionPlan  @relation(fields: [planId], references: [id])
+  item           Item            @relation(fields: [itemId], references: [id])
+  bom            BOM?            @relation(fields: [bomId], references: [id])
+  routing        Routing?        @relation(fields: [routingId], references: [id])
+  workOrders     WorkOrder[]
+  salesOrderItem SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id])
 
   @@unique([planId, itemId])
   @@index([planId])
@@ -1324,4 +1344,216 @@ model EquipmentEvent {
   equipment Equipment @relation(fields: [equipmentId], references: [id])
 
   @@index([equipmentId, startedAt])
+}
+
+// ─── Phase 2d-5: 영업관리 ─────────────────────────────────────────────────────
+
+enum SalesOrderStatus {
+  DRAFT
+  CONFIRMED
+  IN_PRODUCTION
+  PARTIAL_SHIPPED
+  SHIPPED
+  CLOSED
+  CANCELLED
+}
+
+enum ShipmentStatus {
+  PLANNED
+  PICKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model SalesOrder {
+  id           String           @id @default(cuid())
+  tenantId     String
+  siteId       String
+  customerId   String
+  orderNo      String
+  orderDate    DateTime
+  deliveryDate DateTime
+  status       SalesOrderStatus @default(DRAFT)
+  totalAmount  Decimal?         @db.Decimal(18, 2)
+  currency     String           @default("KRW")
+  note         String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  tenant    Tenant          @relation("TenantSalesOrders", fields: [tenantId], references: [id])
+  site      Site            @relation("SiteSalesOrders", fields: [siteId], references: [id])
+  customer  BusinessPartner @relation("CustomerSalesOrders", fields: [customerId], references: [id])
+  items     SalesOrderItem[]
+  shipments ShipmentOrder[]
+
+  @@unique([tenantId, orderNo])
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([status])
+  @@index([tenantId, deliveryDate])
+}
+
+model SalesOrderItem {
+  id           String    @id @default(cuid())
+  salesOrderId String
+  itemId       String
+  qty          Decimal   @db.Decimal(18, 6)
+  unitPrice    Decimal?  @db.Decimal(18, 2)
+  deliveryDate DateTime?
+  producedQty  Decimal   @default(0) @db.Decimal(18, 6)
+  shippedQty   Decimal   @default(0) @db.Decimal(18, 6)
+  note         String?
+
+  salesOrder          SalesOrder          @relation(fields: [salesOrderId], references: [id])
+  item                Item                @relation("ItemSalesOrderItems", fields: [itemId], references: [id])
+  productionPlanItems ProductionPlanItem[]
+  shipmentItems       ShipmentItem[]
+
+  @@unique([salesOrderId, itemId])
+  @@index([salesOrderId])
+  @@index([itemId])
+}
+
+model ShipmentOrder {
+  id            String         @id @default(cuid())
+  tenantId      String
+  siteId        String
+  salesOrderId  String
+  shipmentNo    String
+  status        ShipmentStatus @default(PLANNED)
+  plannedDate   DateTime
+  shippedDate   DateTime?
+  deliveredDate DateTime?
+  warehouseId   String?
+  note          String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tenant     Tenant      @relation("TenantShipmentOrders", fields: [tenantId], references: [id])
+  site       Site        @relation("SiteShipmentOrders", fields: [siteId], references: [id])
+  salesOrder SalesOrder  @relation(fields: [salesOrderId], references: [id])
+  warehouse  Warehouse?  @relation("WarehouseShipments", fields: [warehouseId], references: [id])
+  items      ShipmentItem[]
+
+  @@unique([tenantId, shipmentNo])
+  @@index([tenantId])
+  @@index([salesOrderId])
+}
+
+model ShipmentItem {
+  id               String  @id @default(cuid())
+  shipmentOrderId  String
+  salesOrderItemId String
+  itemId           String
+  qty              Decimal @db.Decimal(18, 6)
+  lotId            String?
+
+  shipmentOrder  ShipmentOrder  @relation(fields: [shipmentOrderId], references: [id])
+  salesOrderItem SalesOrderItem @relation(fields: [salesOrderItemId], references: [id])
+  item           Item           @relation("ItemShipmentItems", fields: [itemId], references: [id])
+  lot            Lot?           @relation("LotShipmentItems", fields: [lotId], references: [id])
+
+  @@index([shipmentOrderId])
+  @@index([salesOrderItemId])
+}
+
+// ─── Phase 2d-6: 구매관리 ─────────────────────────────────────────────────────
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIAL_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+enum ReceivingInspectionResult {
+  PASS
+  FAIL
+  CONDITIONAL
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  tenantId     String
+  siteId       String
+  supplierId   String
+  orderNo      String
+  orderDate    DateTime
+  expectedDate DateTime
+  status       PurchaseOrderStatus @default(DRAFT)
+  totalAmount  Decimal?            @db.Decimal(18, 2)
+  currency     String              @default("KRW")
+  note         String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  tenant   Tenant          @relation("TenantPurchaseOrders", fields: [tenantId], references: [id])
+  site     Site            @relation("SitePurchaseOrders", fields: [siteId], references: [id])
+  supplier BusinessPartner @relation("SupplierPurchaseOrders", fields: [supplierId], references: [id])
+  items    PurchaseOrderItem[]
+
+  @@unique([tenantId, orderNo])
+  @@index([tenantId])
+  @@index([supplierId])
+  @@index([status])
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  itemId          String
+  qty             Decimal @db.Decimal(18, 6)
+  unitPrice       Decimal @db.Decimal(18, 2)
+  receivedQty     Decimal @default(0) @db.Decimal(18, 6)
+  stockAtOrder    Decimal @default(0) @db.Decimal(18, 6)
+  note            String?
+
+  purchaseOrder        PurchaseOrder        @relation(fields: [purchaseOrderId], references: [id])
+  item                 Item                 @relation("ItemPurchaseOrderItems", fields: [itemId], references: [id])
+  receivingInspections ReceivingInspection[]
+
+  @@unique([purchaseOrderId, itemId])
+  @@index([purchaseOrderId])
+  @@index([itemId])
+}
+
+model ReceivingInspection {
+  id                  String                    @id @default(cuid())
+  purchaseOrderItemId String
+  inspectorId         String?
+  receivedQty         Decimal                   @db.Decimal(18, 6)
+  acceptedQty         Decimal                   @db.Decimal(18, 6)
+  rejectedQty         Decimal                   @default(0) @db.Decimal(18, 6)
+  result              ReceivingInspectionResult
+  inspectedAt         DateTime                  @default(now())
+  note                String?
+
+  purchaseOrderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  inspector         Profile?          @relation("ReceivingInspector", fields: [inspectorId], references: [id])
+
+  @@index([purchaseOrderItemId])
+}
+
+model ItemPrice {
+  id            String    @id @default(cuid())
+  tenantId      String
+  itemId        String
+  partnerId     String
+  priceType     String
+  unitPrice     Decimal   @db.Decimal(18, 2)
+  currency      String    @default("KRW")
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  note          String?
+  createdAt     DateTime  @default(now())
+
+  tenant  Tenant          @relation("TenantItemPrices", fields: [tenantId], references: [id])
+  item    Item            @relation("ItemPrices", fields: [itemId], references: [id])
+  partner BusinessPartner @relation("PartnerPrices", fields: [partnerId], references: [id])
+
+  @@index([tenantId, itemId, partnerId])
+  @@index([tenantId, priceType])
 }
