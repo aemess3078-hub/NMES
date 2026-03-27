@@ -1,0 +1,342 @@
+"use server"
+
+import { prisma } from "@/lib/db/prisma"
+import { TransactionType } from "@prisma/client"
+import { revalidatePath } from "next/cache"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type InventoryBalanceWithDetails = {
+  id: string
+  tenantId: string
+  siteId: string
+  locationId: string
+  itemId: string
+  lotId: string | null
+  qtyOnHand: any      // Decimal
+  qtyAvailable: any   // Decimal
+  qtyHold: any        // Decimal
+  updatedAt: Date
+  location: {
+    id: string
+    code: string
+    name: string
+    locationType: string | null
+    warehouseId: string
+    warehouse: { id: string; code: string; name: string }
+  }
+  item: { id: string; code: string; name: string; itemType: string; uom: string }
+  lot: { id: string; lotNo: string } | null
+}
+
+export type InventoryTransactionWithDetails = {
+  id: string
+  tenantId: string
+  itemId: string
+  lotId: string | null
+  fromLocationId: string | null
+  toLocationId: string | null
+  txNo: string
+  txType: TransactionType
+  qty: any  // Decimal
+  refType: string | null
+  refId: string | null
+  txAt: Date
+  item: { id: string; code: string; name: string; itemType: string; uom: string }
+  lot: { id: string; lotNo: string } | null
+  fromLocation: {
+    id: string
+    code: string
+    name: string
+    warehouseId: string
+    warehouse: { id: string; code: string; name: string }
+  } | null
+  toLocation: {
+    id: string
+    code: string
+    name: string
+    warehouseId: string
+    warehouse: { id: string; code: string; name: string }
+  } | null
+}
+
+// ─── 재고현황 조회 ─────────────────────────────────────────────────────────────
+
+export async function getInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
+  return prisma.inventoryBalance.findMany({
+    include: {
+      location: {
+        include: { warehouse: true },
+      },
+      item: true,
+      lot: { select: { id: true, lotNo: true } },
+    },
+    orderBy: [
+      { location: { warehouse: { name: "asc" } } },
+      { item: { code: "asc" } },
+    ],
+  }) as any
+}
+
+// ─── 트랜잭션 이력 조회 (최신 200건) ──────────────────────────────────────────
+
+export async function getInventoryTransactions(): Promise<InventoryTransactionWithDetails[]> {
+  return prisma.inventoryTransaction.findMany({
+    include: {
+      item: true,
+      lot: { select: { id: true, lotNo: true } },
+      fromLocation: {
+        include: { warehouse: true },
+      },
+      toLocation: {
+        include: { warehouse: true },
+      },
+    },
+    orderBy: { txAt: "desc" },
+    take: 200,
+  }) as any
+}
+
+// ─── 창고 목록 ────────────────────────────────────────────────────────────────
+
+export async function getWarehouses() {
+  return prisma.warehouse.findMany({
+    select: { id: true, code: true, name: true, siteId: true },
+    orderBy: { name: "asc" },
+  })
+}
+
+// ─── 특정 창고의 로케이션 목록 ────────────────────────────────────────────────
+
+export async function getLocations(warehouseId: string) {
+  return prisma.location.findMany({
+    where: { warehouseId },
+    select: { id: true, code: true, name: true, locationType: true },
+    orderBy: { code: "asc" },
+  })
+}
+
+// ─── 품목 목록 (재고 전체) ────────────────────────────────────────────────────
+
+export async function getItemsForInventory() {
+  return prisma.item.findMany({
+    select: { id: true, code: true, name: true, itemType: true, uom: true },
+    orderBy: { code: "asc" },
+  })
+}
+
+// ─── 사이트 목록 ──────────────────────────────────────────────────────────────
+
+export async function getSitesForInventory() {
+  return prisma.site.findMany({
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  })
+}
+
+// ─── CreateTransaction 타입 ───────────────────────────────────────────────────
+
+export type CreateTransactionInput = {
+  siteId: string
+  fromLocationId?: string | null
+  toLocationId?: string | null
+  itemId: string
+  lotId?: string | null
+  txType: TransactionType
+  qty: number
+  refType?: string | null
+  note?: string | null
+}
+
+// ─── Balance 갱신 헬퍼 ────────────────────────────────────────────────────────
+
+async function adjustBalance(
+  tx: any,
+  params: {
+    tenantId: string
+    siteId: string
+    locationId: string
+    itemId: string
+    lotId: string | null
+    qtyDelta?: number      // RECEIPT/ISSUE/TRANSFER 증감
+    qtyAbsolute?: number   // ADJUST 직접 세팅
+  }
+) {
+  const where = {
+    tenantId: params.tenantId,
+    siteId: params.siteId,
+    locationId: params.locationId,
+    itemId: params.itemId,
+    lotId: params.lotId ?? null,
+  }
+
+  const existing = await tx.inventoryBalance.findFirst({ where })
+
+  if (params.qtyAbsolute !== undefined) {
+    // ADJUST: qtyOnHand를 직접 세팅, qtyAvailable도 동일하게
+    const absQty = Math.max(0, params.qtyAbsolute)
+    if (existing) {
+      return tx.inventoryBalance.update({
+        where: { id: existing.id },
+        data: { qtyOnHand: absQty, qtyAvailable: absQty },
+      })
+    } else {
+      return tx.inventoryBalance.create({
+        data: { ...where, qtyOnHand: absQty, qtyAvailable: absQty, qtyHold: 0 },
+      })
+    }
+  }
+
+  const delta = params.qtyDelta ?? 0
+
+  if (existing) {
+    const newQty = Number(existing.qtyOnHand) + delta
+    if (newQty < 0) {
+      throw new Error(
+        `재고 부족: 현재 재고 ${Number(existing.qtyOnHand).toLocaleString()}, 요청 ${Math.abs(delta).toLocaleString()}`
+      )
+    }
+    return tx.inventoryBalance.update({
+      where: { id: existing.id },
+      data: { qtyOnHand: newQty, qtyAvailable: Math.max(0, newQty - Number(existing.qtyHold)) },
+    })
+  } else {
+    if (delta < 0) throw new Error("재고 부족: 해당 로케이션에 재고가 없습니다.")
+    return tx.inventoryBalance.create({
+      data: { ...where, qtyOnHand: delta, qtyAvailable: delta, qtyHold: 0 },
+    })
+  }
+}
+
+// ─── txNo 생성 ────────────────────────────────────────────────────────────────
+
+async function generateTxNo(tenantId: string, txType: TransactionType): Promise<string> {
+  const prefix = {
+    RECEIPT: "RCP",
+    ISSUE: "ISS",
+    TRANSFER: "TRF",
+    ADJUST: "ADJ",
+    RETURN: "RTN",
+    SCRAP: "SCR",
+  }[txType] ?? "TXN"
+
+  const today = new Date()
+  const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, "")
+
+  const count = await prisma.inventoryTransaction.count({
+    where: {
+      tenantId,
+      txNo: { startsWith: `${prefix}-${yyyymmdd}` },
+    },
+  })
+
+  return `${prefix}-${yyyymmdd}-${String(count + 1).padStart(4, "0")}`
+}
+
+// ─── 트랜잭션 등록 + Balance 자동 갱신 ───────────────────────────────────────
+
+export async function createTransaction(
+  data: CreateTransactionInput,
+  tenantId: string
+) {
+  const txNo = await generateTxNo(tenantId, data.txType)
+
+  await prisma.$transaction(async (tx) => {
+    // 1. InventoryTransaction 생성
+    await tx.inventoryTransaction.create({
+      data: {
+        tenantId,
+        itemId: data.itemId,
+        lotId: data.lotId ?? null,
+        fromLocationId: data.fromLocationId ?? null,
+        toLocationId: data.toLocationId ?? null,
+        txNo,
+        txType: data.txType,
+        qty: data.qty,
+        refType: data.refType ?? null,
+        refId: null,
+        txAt: new Date(),
+      },
+    })
+
+    // 2. Balance 갱신 (txType별 분기)
+    switch (data.txType) {
+      case TransactionType.RECEIPT:
+      case TransactionType.RETURN: {
+        // 입고 / 반품 → toLocation + qtyOnHand 증가
+        if (!data.toLocationId) throw new Error("입고/반품 시 입고 로케이션이 필요합니다.")
+        const loc = await tx.location.findUnique({ where: { id: data.toLocationId } })
+        if (!loc) throw new Error("유효하지 않은 로케이션입니다.")
+        await adjustBalance(tx, {
+          tenantId,
+          siteId: data.siteId,
+          locationId: data.toLocationId,
+          itemId: data.itemId,
+          lotId: data.lotId ?? null,
+          qtyDelta: +data.qty,
+        })
+        break
+      }
+
+      case TransactionType.ISSUE:
+      case TransactionType.SCRAP: {
+        // 출고 / 폐기 → fromLocation + qtyOnHand 감소
+        if (!data.fromLocationId) throw new Error("출고/폐기 시 출고 로케이션이 필요합니다.")
+        await adjustBalance(tx, {
+          tenantId,
+          siteId: data.siteId,
+          locationId: data.fromLocationId,
+          itemId: data.itemId,
+          lotId: data.lotId ?? null,
+          qtyDelta: -data.qty,
+        })
+        break
+      }
+
+      case TransactionType.ADJUST: {
+        // 재고조정 → fromLocation (또는 toLocation) + qtyOnHand 절대값 세팅
+        const locationId = data.fromLocationId ?? data.toLocationId
+        if (!locationId) throw new Error("재고조정 시 로케이션이 필요합니다.")
+        await adjustBalance(tx, {
+          tenantId,
+          siteId: data.siteId,
+          locationId,
+          itemId: data.itemId,
+          lotId: data.lotId ?? null,
+          qtyAbsolute: data.qty,
+        })
+        break
+      }
+
+      case TransactionType.TRANSFER: {
+        // 이동 → fromLocation 감소 + toLocation 증가
+        if (!data.fromLocationId || !data.toLocationId) {
+          throw new Error("이동 시 출발 로케이션과 도착 로케이션이 모두 필요합니다.")
+        }
+        await adjustBalance(tx, {
+          tenantId,
+          siteId: data.siteId,
+          locationId: data.fromLocationId,
+          itemId: data.itemId,
+          lotId: data.lotId ?? null,
+          qtyDelta: -data.qty,
+        })
+        await adjustBalance(tx, {
+          tenantId,
+          siteId: data.siteId,
+          locationId: data.toLocationId,
+          itemId: data.itemId,
+          lotId: data.lotId ?? null,
+          qtyDelta: +data.qty,
+        })
+        break
+      }
+
+      default:
+        throw new Error(`지원하지 않는 트랜잭션 유형입니다: ${data.txType}`)
+    }
+  })
+
+  revalidatePath("/app/mes/inventory")
+  revalidatePath("/app/mes/inventory-transactions")
+}
