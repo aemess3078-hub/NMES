@@ -1290,7 +1290,7 @@ async function seedFeatures() {
     // MASTER
     { code: 'ITEM', name: '품목관리', description: '품목 마스터 데이터 관리', category: 'MASTER', icon: 'Package', menuCodes: ['items'], isCore: true, displayOrder: 10 },
     { code: 'BOM', name: 'BOM 관리', description: '자재명세서(BOM) 관리', category: 'MASTER', icon: 'GitBranch', menuCodes: ['bom'], isCore: false, displayOrder: 20 },
-    { code: 'ROUTING', name: '공정/라우팅', description: '생산 공정 및 라우팅 관리', category: 'MASTER', icon: 'Network', menuCodes: ['routing'], isCore: false, displayOrder: 30 },
+    { code: 'ROUTING', name: '공정/라우팅', description: '생산 공정 및 라우팅 관리', category: 'MASTER', icon: 'Network', menuCodes: ['routing', 'work-centers'], isCore: false, displayOrder: 30 },
     { code: 'EQUIPMENT', name: '설비관리', description: '생산 설비 마스터 관리', category: 'MASTER', icon: 'Cpu', menuCodes: ['equipment'], isCore: false, displayOrder: 40 },
     // PRODUCTION
     { code: 'WORK_ORDER', name: '작업지시', description: '작업지시 생성 및 관리', category: 'PRODUCTION', icon: 'ClipboardList', menuCodes: ['work-orders'], isCore: false, displayOrder: 50 },
@@ -1300,7 +1300,7 @@ async function seedFeatures() {
     { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory'], isCore: false, displayOrder: 80 },
     { code: 'LOT_TRACKING', name: 'LOT 추적', description: 'LOT 단위 이력 추적', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot-tracking'], isCore: false, displayOrder: 90 },
     // QUALITY
-    { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['quality'], isCore: false, displayOrder: 100 },
+    { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection'], isCore: false, displayOrder: 100 },
     { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects'], isCore: false, displayOrder: 110 },
     // EQUIPMENT
     { code: 'EQUIPMENT_CONNECTION', name: '설비연동', description: 'PLC/설비 데이터 연동', category: 'EQUIPMENT', icon: 'Wifi', menuCodes: ['equipment-connection'], isCore: false, displayOrder: 120 },
@@ -1363,8 +1363,8 @@ async function seedFeatures() {
   if (tenant) {
     const enableCodes = [
       'ITEM', 'BOM', 'ROUTING', 'WORK_ORDER', 'PRODUCTION_PLAN',
-      'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'COMMON_CODE',
-      'PERMISSION', 'FEATURE_MANAGEMENT',
+      'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'DEFECT_MANAGEMENT',
+      'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
     ];
     for (const code of enableCodes) {
       const feat = await prisma.featureDefinition.findUnique({ where: { code } });
