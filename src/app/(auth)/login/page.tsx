@@ -105,8 +105,7 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
         })
         if (authError) throw authError
         document.cookie = "nmes-mode=system; path=/"
-        router.push("/app/mes/")
-        router.refresh()
+        window.location.href = "/app/mes/"
       } else {
         const { error: authError } = await supabase.auth.signUp({
           email,
@@ -249,7 +248,7 @@ function WorkerLoginForm({ onBack }: { onBack: () => void }) {
 
       document.cookie = "nmes-mode=worker; path=/"
       document.cookie = `nmes-worker-name=${encodeURIComponent(result.name)}; path=/`
-      router.push("/pop/work-select")
+      window.location.href = "/pop/work-select"
     } catch {
       setError("로그인 중 오류가 발생했습니다.")
       setPin("")
