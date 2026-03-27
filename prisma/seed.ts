@@ -19,6 +19,9 @@ import {
   PlanType,
   PlanStatus,
   PermissionAction,
+  ConnectionProtocol,
+  TagDataType,
+  TagCategory,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -1136,6 +1139,150 @@ async function seedRolePermissions() {
   });
 }
 
+// ─── Equipment Integration Seed ───────────────────────────────────────────────
+
+async function seedEquipmentIntegration() {
+  // EdgeGateway
+  await prisma.edgeGateway.upsert({
+    where: { id: 'gw-factory-001' },
+    create: {
+      id: 'gw-factory-001',
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      name: '본공장 게이트웨이 #1',
+      description: 'CNC 라인 데이터 수집용 게이트웨이',
+      apiKey: 'gw-api-key-demo-001',
+      status: 'ONLINE',
+      lastHeartbeat: new Date(),
+    },
+    update: {},
+  });
+
+  // EquipmentConnection × 2
+  await prisma.equipmentConnection.upsert({
+    where: { equipmentId_gatewayId: { equipmentId: 'eq-cnc-001', gatewayId: 'gw-factory-001' } },
+    create: {
+      id: 'conn-cnc-001',
+      equipmentId: 'eq-cnc-001',
+      gatewayId: 'gw-factory-001',
+      protocol: ConnectionProtocol.MODBUS_TCP,
+      host: '192.168.1.10',
+      port: 502,
+      config: { slaveId: 1, registerStart: 0, registerCount: 20 },
+      isActive: true,
+    },
+    update: {},
+  });
+
+  await prisma.equipmentConnection.upsert({
+    where: { equipmentId_gatewayId: { equipmentId: 'eq-cnc-002', gatewayId: 'gw-factory-001' } },
+    create: {
+      id: 'conn-cnc-002',
+      equipmentId: 'eq-cnc-002',
+      gatewayId: 'gw-factory-001',
+      protocol: ConnectionProtocol.MODBUS_TCP,
+      host: '192.168.1.11',
+      port: 502,
+      config: { slaveId: 2, registerStart: 0, registerCount: 20 },
+      isActive: true,
+    },
+    update: {},
+  });
+
+  // DataTag × 6
+  const tags = [
+    {
+      id: 'tag-cnc001-temp',
+      connectionId: 'conn-cnc-001',
+      tagCode: 'TEMP_001',
+      displayName: '스핀들 온도',
+      dataType: TagDataType.FLOAT,
+      unit: '°C',
+      category: TagCategory.PROCESS,
+      plcAddress: 'D100',
+      scaleFactor: 0.1,
+      samplingMs: 1000,
+    },
+    {
+      id: 'tag-cnc001-pressure',
+      connectionId: 'conn-cnc-001',
+      tagCode: 'PRESS_001',
+      displayName: '유압 압력',
+      dataType: TagDataType.FLOAT,
+      unit: 'bar',
+      category: TagCategory.PROCESS,
+      plcAddress: 'D102',
+      scaleFactor: 0.01,
+      samplingMs: 500,
+    },
+    {
+      id: 'tag-cnc001-spindle',
+      connectionId: 'conn-cnc-001',
+      tagCode: 'RPM_001',
+      displayName: '스핀들 회전수',
+      dataType: TagDataType.INT,
+      unit: 'rpm',
+      category: TagCategory.PROCESS,
+      plcAddress: 'D104',
+      samplingMs: 200,
+    },
+    {
+      id: 'tag-cnc001-status',
+      connectionId: 'conn-cnc-001',
+      tagCode: 'STATUS_001',
+      displayName: '설비 가동 상태',
+      dataType: TagDataType.BOOL,
+      unit: null,
+      category: TagCategory.STATUS,
+      plcAddress: 'M0',
+      samplingMs: 1000,
+    },
+    {
+      id: 'tag-cnc002-cycle',
+      connectionId: 'conn-cnc-002',
+      tagCode: 'CYCLE_001',
+      displayName: '사이클 타임',
+      dataType: TagDataType.FLOAT,
+      unit: 's',
+      category: TagCategory.COUNTER,
+      plcAddress: 'D200',
+      scaleFactor: 0.1,
+      samplingMs: 1000,
+    },
+    {
+      id: 'tag-cnc002-alarm',
+      connectionId: 'conn-cnc-002',
+      tagCode: 'ALARM_001',
+      displayName: '알람 상태코드',
+      dataType: TagDataType.INT,
+      unit: null,
+      category: TagCategory.ALARM,
+      plcAddress: 'D202',
+      samplingMs: 500,
+    },
+  ] as const;
+
+  for (const tag of tags) {
+    await prisma.dataTag.upsert({
+      where: { connectionId_tagCode: { connectionId: tag.connectionId, tagCode: tag.tagCode } },
+      create: {
+        id: tag.id,
+        connectionId: tag.connectionId,
+        tagCode: tag.tagCode,
+        displayName: tag.displayName,
+        dataType: tag.dataType,
+        unit: tag.unit ?? null,
+        category: tag.category,
+        plcAddress: tag.plcAddress,
+        scaleFactor: (tag as any).scaleFactor ?? null,
+        samplingMs: tag.samplingMs,
+        isActive: true,
+      },
+      update: {},
+    });
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function seedFeatures() {
@@ -1290,6 +1437,9 @@ async function main() {
   console.log('  [18/18] FeatureDefinitions + Dependencies + TenantFeatures');
   await seedFeatures();
 
+  console.log('  [19/19] Equipment Integration (Gateway + Connections + Tags)');
+  await seedEquipmentIntegration();
+
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
@@ -1309,6 +1459,7 @@ async function main() {
   console.log('  - ProductionPlan: 1 / PlanItem: 2');
   console.log('  - RolePermission: ~212 (5 roles × 13 resources)');
   console.log('  - FeatureDefinition: 16 / FeatureDependency: 14 / TenantFeature: 9');
+  console.log('  - EdgeGateway: 1 / EquipmentConnection: 2 / DataTag: 6');
 }
 
 main()
