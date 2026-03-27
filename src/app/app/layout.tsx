@@ -14,17 +14,24 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
+  const cookieStore = await cookies();
+  const isDevBypass = cookieStore.get('nmes-dev-bypass')?.value === 'true';
 
-  if (!session) {
-    redirect('/login');
+  let userName = '개발자';
+  let userEmail = 'dev@localhost';
+
+  if (!isDevBypass) {
+    const supabase = createServerClient();
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      redirect('/login');
+    }
+
+    userName = session.user.user_metadata?.name || session.user.email?.split('@')[0] || '사용자';
+    userEmail = session.user.email ?? '';
   }
 
-  const userName = session.user.user_metadata?.name || session.user.email?.split('@')[0];
-  const userEmail = session.user.email;
-
-  const cookieStore = await cookies();
   const tenantId = cookieStore.get('tenantId')?.value ?? 'tenant-demo-001';
 
   // 활성 기능 코드 목록 + 활성 menuCode 목록 병렬 조회

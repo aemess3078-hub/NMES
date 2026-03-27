@@ -99,6 +99,14 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
 
     try {
       if (!signupMode) {
+        // 로컬 개발 우회: test@test.com / 123456
+        if (email === "test@test.com" && password === "123456") {
+          document.cookie = "nmes-dev-bypass=true; path=/"
+          document.cookie = "nmes-mode=system; path=/"
+          window.location.href = "/app/mes/"
+          return
+        }
+
         const { error: authError } = await supabase.auth.signInWithPassword({
           email,
           password,
