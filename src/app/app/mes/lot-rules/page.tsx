@@ -1,11 +1,11 @@
 import { cookies } from "next/headers"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
-import { getLots, getItemsForLot } from "@/lib/actions/lot.actions"
-import { LotDataTable } from "./lot-data-table"
+import { getLotRules, getItemsForLot } from "@/lib/actions/lot.actions"
+import { LotRuleDataTable } from "./lot-rule-data-table"
 
 export const dynamic = "force-dynamic"
 
-export default async function LotPage() {
+export default async function LotRulesPage() {
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
@@ -20,26 +20,24 @@ export default async function LotPage() {
     )
   }
 
-  const [lots, items] = await Promise.all([
-    getLots(),
+  const [rules, items] = await Promise.all([
+    getLotRules(),
     getItemsForLot(),
   ])
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            LOT/Serial 관리
-          </h1>
-          <p className="text-[15px] text-muted-foreground mt-1">
-            품목별 LOT를 등록하고 상태를 관리합니다.
-          </p>
-        </div>
+      <div>
+        <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+          LOT 규칙 관리
+        </h1>
+        <p className="text-[15px] text-muted-foreground mt-1">
+          품목별 LOT 번호 자동 생성 규칙을 설정합니다.
+        </p>
       </div>
 
-      <LotDataTable
-        data={lots}
+      <LotRuleDataTable
+        data={rules as any}
         items={items}
         tenantId={tenantId}
       />

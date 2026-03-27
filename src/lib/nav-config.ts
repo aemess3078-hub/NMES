@@ -310,6 +310,15 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 5,
         children: [],
       },
+      {
+        id: 'nav-lot-rules',
+        parentId: 'nav-sysadmin',
+        label: 'LOT 규칙',
+        icon: 'Fingerprint',
+        href: '/app/mes/lot-rules',
+        displayOrder: 30,
+        children: [],
+      },
     ],
   },
   {
