@@ -274,6 +274,15 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 10,
         children: [],
       },
+      {
+        id: 'nav-common-codes',
+        parentId: 'nav-sysadmin',
+        label: '공통코드 관리',
+        icon: 'BookOpen',
+        href: '/app/mes/common-codes',
+        displayOrder: 20,
+        children: [],
+      },
     ],
   },
   {
