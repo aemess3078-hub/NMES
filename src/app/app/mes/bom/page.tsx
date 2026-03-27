@@ -1,9 +1,23 @@
 import { getBoms, getItemsForBom, getComponentItems } from "@/lib/actions/bom.actions"
 import { BomDataTable } from "./bom-data-table"
+import { isFeatureEnabled } from "@/lib/services/feature.service"
+import { cookies } from "next/headers"
 
 export const dynamic = "force-dynamic"
 
 export default async function BomPage() {
+  const cookieStore = await cookies()
+  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const enabled = await isFeatureEnabled(tenantId, "BOM")
+
+  if (!enabled) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">이 기능은 활성화되어 있지 않습니다.</p>
+      </div>
+    )
+  }
+
   const [boms, parentItems, componentItems] = await Promise.all([
     getBoms(),
     getItemsForBom(),

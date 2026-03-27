@@ -1138,6 +1138,99 @@ async function seedRolePermissions() {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+async function seedFeatures() {
+  const features = [
+    // MASTER
+    { code: 'ITEM', name: '품목관리', description: '품목 마스터 데이터 관리', category: 'MASTER', icon: 'Package', menuCodes: ['items'], isCore: true, displayOrder: 10 },
+    { code: 'BOM', name: 'BOM 관리', description: '자재명세서(BOM) 관리', category: 'MASTER', icon: 'GitBranch', menuCodes: ['bom'], isCore: false, displayOrder: 20 },
+    { code: 'ROUTING', name: '공정/라우팅', description: '생산 공정 및 라우팅 관리', category: 'MASTER', icon: 'Network', menuCodes: ['routing'], isCore: false, displayOrder: 30 },
+    { code: 'EQUIPMENT', name: '설비관리', description: '생산 설비 마스터 관리', category: 'MASTER', icon: 'Cpu', menuCodes: ['equipment'], isCore: false, displayOrder: 40 },
+    // PRODUCTION
+    { code: 'WORK_ORDER', name: '작업지시', description: '작업지시 생성 및 관리', category: 'PRODUCTION', icon: 'ClipboardList', menuCodes: ['work-orders'], isCore: false, displayOrder: 50 },
+    { code: 'PRODUCTION_PLAN', name: '생산계획', description: '일간/주간/월간 생산계획', category: 'PRODUCTION', icon: 'CalendarDays', menuCodes: ['production-plan'], isCore: false, displayOrder: 60 },
+    { code: 'PRODUCTION_RESULT', name: '작업실적', description: '공정별 생산실적 입력', category: 'PRODUCTION', icon: 'BarChart2', menuCodes: ['production-results'], isCore: false, displayOrder: 70 },
+    // MATERIAL
+    { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory'], isCore: false, displayOrder: 80 },
+    { code: 'LOT_TRACKING', name: 'LOT 추적', description: 'LOT 단위 이력 추적', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot-tracking'], isCore: false, displayOrder: 90 },
+    // QUALITY
+    { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['quality'], isCore: false, displayOrder: 100 },
+    { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects'], isCore: false, displayOrder: 110 },
+    // EQUIPMENT
+    { code: 'EQUIPMENT_CONNECTION', name: '설비연동', description: 'PLC/설비 데이터 연동', category: 'EQUIPMENT', icon: 'Wifi', menuCodes: ['equipment-connection'], isCore: false, displayOrder: 120 },
+    { code: 'TAG_MANAGEMENT', name: '태그관리', description: '설비 데이터 태그 관리', category: 'EQUIPMENT', icon: 'Tag', menuCodes: ['tags'], isCore: false, displayOrder: 130 },
+    // SYSTEM
+    { code: 'COMMON_CODE', name: '공통코드', description: '시스템 공통 코드 관리', category: 'SYSTEM', icon: 'BookOpen', menuCodes: ['common-codes'], isCore: true, displayOrder: 140 },
+    { code: 'PERMISSION', name: '권한관리', description: '역할별 권한 관리', category: 'SYSTEM', icon: 'Shield', menuCodes: ['users'], isCore: true, displayOrder: 150 },
+    { code: 'FEATURE_MANAGEMENT', name: '기능관리', description: '테넌트 기능 ON/OFF 관리', category: 'SYSTEM', icon: 'Puzzle', menuCodes: ['features'], isCore: true, displayOrder: 160 },
+  ];
+
+  for (const f of features) {
+    await prisma.featureDefinition.upsert({
+      where: { code: f.code },
+      update: { ...f },
+      create: { ...f },
+    });
+  }
+
+  // 의존성 시드
+  const allFeatures = await prisma.featureDefinition.findMany();
+  const featureMap = Object.fromEntries(allFeatures.map((f) => [f.code, f.id]));
+
+  const deps = [
+    { from: 'BOM', to: 'ITEM', required: true },
+    { from: 'ROUTING', to: 'ITEM', required: true },
+    { from: 'WORK_ORDER', to: 'ITEM', required: true },
+    { from: 'WORK_ORDER', to: 'BOM', required: true },
+    { from: 'WORK_ORDER', to: 'ROUTING', required: true },
+    { from: 'PRODUCTION_PLAN', to: 'ITEM', required: true },
+    { from: 'PRODUCTION_PLAN', to: 'WORK_ORDER', required: false },
+    { from: 'PRODUCTION_RESULT', to: 'WORK_ORDER', required: true },
+    { from: 'INVENTORY', to: 'ITEM', required: true },
+    { from: 'LOT_TRACKING', to: 'INVENTORY', required: true },
+    { from: 'QUALITY_INSPECTION', to: 'WORK_ORDER', required: true },
+    { from: 'DEFECT_MANAGEMENT', to: 'QUALITY_INSPECTION', required: true },
+    { from: 'TAG_MANAGEMENT', to: 'EQUIPMENT', required: true },
+    { from: 'TAG_MANAGEMENT', to: 'EQUIPMENT_CONNECTION', required: true },
+  ];
+
+  for (const dep of deps) {
+    if (!featureMap[dep.from] || !featureMap[dep.to]) continue;
+    await prisma.featureDependency.upsert({
+      where: {
+        featureId_dependsOnId: {
+          featureId: featureMap[dep.from],
+          dependsOnId: featureMap[dep.to],
+        },
+      },
+      update: { isRequired: dep.required },
+      create: {
+        featureId: featureMap[dep.from],
+        dependsOnId: featureMap[dep.to],
+        isRequired: dep.required,
+      },
+    });
+  }
+
+  // 데모 테넌트 기능 활성화
+  const tenant = await prisma.tenant.findFirst();
+  if (tenant) {
+    const enableCodes = [
+      'ITEM', 'BOM', 'ROUTING', 'WORK_ORDER', 'PRODUCTION_PLAN',
+      'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'COMMON_CODE',
+      'PERMISSION', 'FEATURE_MANAGEMENT',
+    ];
+    for (const code of enableCodes) {
+      const feat = await prisma.featureDefinition.findUnique({ where: { code } });
+      if (!feat) continue;
+      await prisma.tenantFeature.upsert({
+        where: { tenantId_featureId: { tenantId: tenant.id, featureId: feat.id } },
+        update: { isEnabled: true },
+        create: { tenantId: tenant.id, featureId: feat.id, isEnabled: true },
+      });
+    }
+  }
+}
+
 async function main() {
   console.log('▶ MES 기준정보 시드 시작...\n');
 
@@ -1194,6 +1287,9 @@ async function main() {
   console.log('  [17/17] RolePermissions');
   await seedRolePermissions();
 
+  console.log('  [18/18] FeatureDefinitions + Dependencies + TenantFeatures');
+  await seedFeatures();
+
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
@@ -1212,6 +1308,7 @@ async function main() {
   console.log('  - CodeGroup: 4 / CommonCode: 17');
   console.log('  - ProductionPlan: 1 / PlanItem: 2');
   console.log('  - RolePermission: ~212 (5 roles × 13 resources)');
+  console.log('  - FeatureDefinition: 16 / FeatureDependency: 14 / TenantFeature: 9');
 }
 
 main()

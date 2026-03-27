@@ -277,6 +277,7 @@ model Tenant {
   productionPlans       ProductionPlan[]
   codeGroups            CodeGroup[]
   rolePermissions       RolePermission[]
+  tenantFeatures        TenantFeature[]
 }
 
 model Profile {
@@ -1132,4 +1133,62 @@ model RolePermission {
   @@index([tenantId])
   @@index([role])
   @@index([resource])
+}
+
+model FeatureDefinition {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  description  String?
+  category     String
+  icon         String?
+  menuCodes    String[]
+  isCore       Boolean  @default(false)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  dependencies   FeatureDependency[] @relation("Feature")
+  dependedBy     FeatureDependency[] @relation("DependsOn")
+  requirements   FeatureRequirement[]
+  tenantFeatures TenantFeature[]
+}
+
+model FeatureDependency {
+  id          String  @id @default(cuid())
+  featureId   String
+  dependsOnId String
+  isRequired  Boolean @default(true)
+
+  feature   FeatureDefinition @relation("Feature", fields: [featureId], references: [id])
+  dependsOn FeatureDefinition @relation("DependsOn", fields: [dependsOnId], references: [id])
+
+  @@unique([featureId, dependsOnId])
+}
+
+model FeatureRequirement {
+  id          String @id @default(cuid())
+  featureId   String
+  type        String
+  target      String
+  description String?
+
+  feature FeatureDefinition @relation(fields: [featureId], references: [id])
+
+  @@index([featureId])
+}
+
+model TenantFeature {
+  id        String   @id @default(cuid())
+  tenantId  String
+  featureId String
+  isEnabled Boolean  @default(true)
+  enabledAt DateTime @default(now())
+  config    Json?
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id])
+  feature FeatureDefinition @relation(fields: [featureId], references: [id])
+
+  @@unique([tenantId, featureId])
+  @@index([tenantId])
 }

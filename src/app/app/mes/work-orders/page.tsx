@@ -3,17 +3,27 @@ export const dynamic = "force-dynamic"
 import { cookies } from "next/headers"
 import { getWorkOrders, getSites, getItemsForWorkOrder, getEquipments } from "@/lib/actions/work-order.actions"
 import { WorkOrderDataTable } from "./work-order-data-table"
+import { isFeatureEnabled } from "@/lib/services/feature.service"
 
 export default async function WorkOrdersPage() {
+  const cookieStore = await cookies()
+  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const enabled = await isFeatureEnabled(tenantId, "WORK_ORDER")
+
+  if (!enabled) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">이 기능은 활성화되어 있지 않습니다.</p>
+      </div>
+    )
+  }
+
   const [workOrders, sites, items, equipments] = await Promise.all([
     getWorkOrders(),
     getSites(),
     getItemsForWorkOrder(),
     getEquipments(),
   ])
-
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-a"
 
   return (
     <div className="space-y-6">

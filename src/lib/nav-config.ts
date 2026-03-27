@@ -283,6 +283,15 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 20,
         children: [],
       },
+      {
+        id: 'nav-features',
+        parentId: 'nav-sysadmin',
+        label: '기능 관리',
+        icon: 'Puzzle',
+        href: '/app/mes/features',
+        displayOrder: 5,
+        children: [],
+      },
     ],
   },
   {

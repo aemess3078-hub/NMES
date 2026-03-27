@@ -46,6 +46,7 @@ import {
   Building2,
   FileCheck,
   Boxes,
+  Puzzle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -95,6 +96,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Building2,
   FileCheck,
   Boxes,
+  Puzzle,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {

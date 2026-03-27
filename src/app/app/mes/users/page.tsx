@@ -3,10 +3,21 @@ export const dynamic = "force-dynamic"
 import { getPermissionMatrix } from "@/lib/actions/permission.actions"
 import { PermissionMatrixTable } from "./permission-matrix"
 import { cookies } from "next/headers"
+import { isFeatureEnabled } from "@/lib/services/feature.service"
 
 export default async function UsersPage() {
   const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-a"
+  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const enabled = await isFeatureEnabled(tenantId, "PERMISSION")
+
+  if (!enabled) {
+    return (
+      <div className="p-6">
+        <p className="text-muted-foreground">이 기능은 활성화되어 있지 않습니다.</p>
+      </div>
+    )
+  }
+
   const matrix = await getPermissionMatrix(tenantId)
 
   return (
