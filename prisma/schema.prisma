@@ -902,6 +902,7 @@ model InventoryBalance {
   @@index([locationId])
   @@index([tenantId, siteId, itemId])
   @@index([tenantId, locationId])
+  @@unique([tenantId, itemId, locationId])
   @@index([tenantId, itemId, lotId, locationId])
 }
 

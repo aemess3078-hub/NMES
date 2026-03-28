@@ -64,35 +64,28 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
 
     // 3. InventoryBalance 갱신 (합격 수량만)
     if (data.acceptedQty > 0 && defaultLocation) {
-      const existing = await tx.inventoryBalance.findFirst({
+      await tx.inventoryBalance.upsert({
         where: {
-          itemId: purchaseOrderItem.itemId,
-          locationId: defaultLocation.id,
-          tenantId: data.tenantId,
-        },
-      })
-
-      if (existing) {
-        await tx.inventoryBalance.update({
-          where: { id: existing.id },
-          data: {
-            qtyOnHand: { increment: data.acceptedQty },
-            qtyAvailable: { increment: data.acceptedQty },
-          },
-        })
-      } else {
-        await tx.inventoryBalance.create({
-          data: {
+          tenantId_itemId_locationId: {
             tenantId: data.tenantId,
-            siteId: data.siteId,
             itemId: purchaseOrderItem.itemId,
             locationId: defaultLocation.id,
-            qtyOnHand: data.acceptedQty,
-            qtyAvailable: data.acceptedQty,
-            qtyHold: 0,
           },
-        })
-      }
+        },
+        update: {
+          qtyOnHand: { increment: data.acceptedQty },
+          qtyAvailable: { increment: data.acceptedQty },
+        },
+        create: {
+          tenantId: data.tenantId,
+          siteId: data.siteId,
+          itemId: purchaseOrderItem.itemId,
+          locationId: defaultLocation.id,
+          qtyOnHand: data.acceptedQty,
+          qtyAvailable: data.acceptedQty,
+          qtyHold: 0,
+        },
+      })
 
       // 4. InventoryTransaction 생성
       const txNo = await generateTxNo(data.tenantId)
