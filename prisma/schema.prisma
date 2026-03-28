@@ -324,6 +324,7 @@ model Tenant {
   itemPrices            ItemPrice[]     @relation("TenantItemPrices")
   aiUsageLogs           AIUsageLog[]    @relation("TenantAIUsageLogs")
   quotations            Quotation[]     @relation("TenantQuotations")
+  itemCosts             ItemCost[]      @relation("TenantItemCosts")
 }
 
 model Profile {
@@ -483,6 +484,7 @@ model Item {
   purchaseOrderItems     PurchaseOrderItem[] @relation("ItemPurchaseOrderItems")
   itemPrices             ItemPrice[]         @relation("ItemPrices")
   quotationItems         QuotationItem[]     @relation("ItemQuotationItems")
+  itemCosts              ItemCost[]          @relation("ItemCosts")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -517,6 +519,7 @@ model BOM {
   bomItems   BOMItem[]
   workOrders WorkOrder[]
   productionPlanItems ProductionPlanItem[]
+  itemCosts  ItemCost[]  @relation("BOMItemCosts")
 
   @@unique([tenantId, itemId, version])
   @@index([tenantId])
@@ -779,6 +782,7 @@ model WorkOrder {
   operations            WorkOrderOperation[]
   materialReservations  MaterialReservation[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
+  itemCosts             ItemCost[]             @relation("WorkOrderItemCosts")
 
   @@unique([tenantId, orderNo])
   @@index([tenantId])
@@ -1636,4 +1640,31 @@ model QuotationItem {
   @@unique([quotationId, itemId])
   @@index([quotationId])
   @@index([itemId])
+}
+
+// ─── Phase 2d-9: 원가관리 ─────────────────────────────────────────────────────
+
+model ItemCost {
+  id           String   @id @default(cuid())
+  tenantId     String
+  itemId       String
+  costType     String
+  materialCost Decimal  @db.Decimal(18, 2)
+  laborCost    Decimal  @db.Decimal(18, 2)
+  overheadCost Decimal  @db.Decimal(18, 2)
+  totalCost    Decimal  @db.Decimal(18, 2)
+  bomId        String?
+  workOrderId  String?
+  calculatedAt DateTime @default(now())
+  note         String?
+
+  tenant    Tenant     @relation("TenantItemCosts", fields: [tenantId], references: [id])
+  item      Item       @relation("ItemCosts", fields: [itemId], references: [id])
+  bom       BOM?       @relation("BOMItemCosts", fields: [bomId], references: [id])
+  workOrder WorkOrder? @relation("WorkOrderItemCosts", fields: [workOrderId], references: [id])
+
+  @@index([tenantId, itemId, costType])
+  @@index([tenantId, calculatedAt])
+  @@index([bomId])
+  @@index([workOrderId])
 }

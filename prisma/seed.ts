@@ -957,6 +957,16 @@ async function seedCodeGroups() {
         { id: 'cc-rr-03', code: 'SPEC_MISMATCH', name: '규격 불일치', displayOrder: 3 },
       ],
     },
+    {
+      id: 'cg-cost-config',
+      groupCode: 'COST_CONFIG',
+      groupName: '원가 설정',
+      isSystem: true,
+      codes: [
+        { id: 'cc-cost-01', code: 'LABOR_RATE_PER_HOUR', name: '시간당 노무비 (원)', displayOrder: 1, extra: { value: 25000 } },
+        { id: 'cc-cost-02', code: 'OVERHEAD_RATE',        name: '경비율 (%)',        displayOrder: 2, extra: { value: 10 } },
+      ],
+    },
   ];
 
   for (const group of groups) {
@@ -974,15 +984,17 @@ async function seedCodeGroups() {
     });
 
     for (const code of group.codes) {
+      const { extra, ...rest } = code as typeof code & { extra?: object };
       await prisma.commonCode.upsert({
-        where: { id: code.id },
+        where: { id: rest.id },
         create: {
-          id: code.id,
+          id: rest.id,
           groupId: group.id,
-          code: code.code,
-          name: code.name,
-          displayOrder: code.displayOrder,
+          code: rest.code,
+          name: rest.name,
+          displayOrder: rest.displayOrder,
           isActive: true,
+          ...(extra ? { extra } : {}),
         },
         update: {},
       });
@@ -1291,6 +1303,68 @@ async function seedEquipmentIntegration() {
   }
 }
 
+async function seedItemCosts() {
+  console.log("  Seeding item costs...")
+
+  const tenantId = IDS.tenant
+
+  const finishedItem = await prisma.item.findFirst({
+    where: { tenantId, itemType: { in: ['FINISHED', 'SEMI_FINISHED'] } },
+    orderBy: { code: 'asc' },
+  })
+
+  if (!finishedItem) {
+    console.log("  Skipping item costs (no finished items)")
+    return
+  }
+
+  const bom = await prisma.bOM.findFirst({
+    where: { itemId: finishedItem.id, isDefault: true },
+  })
+
+  const workOrder = await prisma.workOrder.findFirst({
+    where: { itemId: finishedItem.id, status: 'COMPLETED' },
+  })
+
+  await prisma.itemCost.upsert({
+    where: { id: 'ic-standard-001' },
+    update: {},
+    create: {
+      id: 'ic-standard-001',
+      tenantId,
+      itemId: finishedItem.id,
+      costType: 'STANDARD',
+      materialCost: 45000,
+      laborCost: 18000,
+      overheadCost: 4500,
+      totalCost: 67500,
+      bomId: bom?.id ?? null,
+      calculatedAt: new Date('2026-03-01'),
+      note: '표준원가 시드',
+    },
+  })
+
+  await prisma.itemCost.upsert({
+    where: { id: 'ic-actual-001' },
+    update: {},
+    create: {
+      id: 'ic-actual-001',
+      tenantId,
+      itemId: finishedItem.id,
+      costType: 'ACTUAL',
+      materialCost: 47000,
+      laborCost: 16500,
+      overheadCost: 4700,
+      totalCost: 68200,
+      workOrderId: workOrder?.id ?? null,
+      calculatedAt: new Date('2026-03-15'),
+      note: '실제원가 시드',
+    },
+  })
+
+  console.log("  Item costs seeded")
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function seedFeatures() {
@@ -1327,6 +1401,8 @@ async function seedFeatures() {
     { code: 'MRP', name: 'MRP 소요량', description: '자재 소요량 계획 및 AI 발주 제안', category: 'PRODUCTION', icon: 'Calculator', menuCodes: ['nav-mrp'], isCore: false, displayOrder: 141 },
     // QUOTATION
     { code: 'QUOTATION', name: '견적관리', description: '고객 견적서 관리 및 수주 전환', category: 'SALES', icon: 'FileText', menuCodes: ['quotations'], isCore: false, displayOrder: 50 },
+    // ANALYTICS
+    { code: 'COSTING', name: '원가분석', description: 'BOM 기반 표준원가와 실적 기반 실제원가 비교', category: 'ANALYTICS', icon: 'Calculator', menuCodes: ['costing'], isCore: false, displayOrder: 90 },
   ];
 
   for (const f of features) {
@@ -1384,6 +1460,7 @@ async function seedFeatures() {
       'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'DEFECT_MANAGEMENT',
       'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
       'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE', 'MRP',
+      'COSTING',
     ];
     for (const code of enableCodes) {
       const feat = await prisma.featureDefinition.findUnique({ where: { code } });
@@ -1724,6 +1801,9 @@ async function main() {
 
   console.log('  [22/22] Quotations');
   await seedQuotations();
+
+  console.log('  [23/23] ItemCosts');
+  await seedItemCosts();
 
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');

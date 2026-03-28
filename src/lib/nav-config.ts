@@ -355,6 +355,15 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 10,
         children: [],
       },
+      {
+        id: 'nav-costing',
+        parentId: 'nav-analytics',
+        label: '원가분석',
+        icon: 'Calculator',
+        href: '/app/mes/costing',
+        displayOrder: 20,
+        children: [],
+      },
     ],
   },
   {
