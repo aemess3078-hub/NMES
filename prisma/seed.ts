@@ -1318,6 +1318,8 @@ async function seedFeatures() {
     // PURCHASE
     { code: 'PURCHASE_ORDER', name: '발주관리', description: '발주/입고 관리', category: 'PURCHASE', icon: 'FileInput', menuCodes: ['nav-purchase-orders'], isCore: false, displayOrder: 161 },
     { code: 'ITEM_PRICE', name: '단가관리', description: '품목 단가 관리', category: 'PURCHASE', icon: 'CircleDollarSign', menuCodes: ['nav-item-prices'], isCore: false, displayOrder: 162 },
+    // MRP
+    { code: 'MRP', name: 'MRP 소요량', description: '자재 소요량 계획 및 AI 발주 제안', category: 'PRODUCTION', icon: 'Calculator', menuCodes: ['nav-mrp'], isCore: false, displayOrder: 141 },
   ];
 
   for (const f of features) {
@@ -1374,7 +1376,7 @@ async function seedFeatures() {
       'ITEM', 'BOM', 'ROUTING', 'WORK_ORDER', 'PRODUCTION_PLAN',
       'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'DEFECT_MANAGEMENT',
       'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
-      'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE',
+      'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE', 'MRP',
     ];
     for (const code of enableCodes) {
       const feat = await prisma.featureDefinition.findUnique({ where: { code } });

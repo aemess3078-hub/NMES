@@ -95,6 +95,15 @@ export const MES_NAV: NavItem[] = [
         children: [],
       },
       {
+        id: 'nav-mrp',
+        parentId: 'nav-production',
+        label: 'MRP 소요량',
+        icon: 'Calculator',
+        href: '/app/mes/mrp',
+        displayOrder: 15,
+        children: [],
+      },
+      {
         id: 'nav-work-orders',
         parentId: 'nav-production',
         label: '작업지시 관리',
