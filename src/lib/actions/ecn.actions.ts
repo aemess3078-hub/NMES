@@ -93,15 +93,24 @@ export async function getCurrentBOM(itemId: string) {
 }
 
 export async function getCurrentRouting(itemId: string) {
-  return prisma.routing.findFirst({
-    where: { itemId, status: "ACTIVE" },
+  const itemRouting = await prisma.itemRouting.findFirst({
+    where: {
+      itemId,
+      isDefault: true,
+      routing: { status: "ACTIVE" },
+    },
     include: {
-      operations: {
-        include: { workCenter: { select: { id: true, code: true, name: true } } },
-        orderBy: { seq: "asc" },
+      routing: {
+        include: {
+          operations: {
+            include: { workCenter: { select: { id: true, code: true, name: true } } },
+            orderBy: { seq: "asc" },
+          },
+        },
       },
     },
   })
+  return itemRouting?.routing ?? null
 }
 
 export type ECNDetailInput = {
@@ -278,16 +287,20 @@ export async function implementECN(id: string) {
     }
 
     if (ecn.changeType === "ROUTING" || ecn.changeType === "BOTH") {
-      const currentRouting = await tx.routing.findFirst({
-        where: { itemId: ecn.targetItemId, status: "ACTIVE" },
-        include: { operations: true },
+      const currentItemRouting = await tx.itemRouting.findFirst({
+        where: {
+          itemId: ecn.targetItemId,
+          isDefault: true,
+          routing: { status: "ACTIVE" },
+        },
+        include: { routing: { include: { operations: true } } },
       })
-      if (currentRouting) {
+      if (currentItemRouting) {
+        const currentRouting = currentItemRouting.routing
         await tx.routing.update({ where: { id: currentRouting.id }, data: { status: "INACTIVE" } })
         const versionNum = parseFloat(currentRouting.version) || 1
         const newVersion = (versionNum + 1).toFixed(1)
 
-        // RoutingOperation 필드명: seq, operationCode, name, workCenterId, standardTime
         const newOps = currentRouting.operations.map((op) => ({
           seq: op.seq,
           operationCode: op.operationCode,
@@ -296,14 +309,28 @@ export async function implementECN(id: string) {
           standardTime: op.standardTime,
         }))
 
-        await tx.routing.create({
+        const newRouting = await tx.routing.create({
+          data: {
+            tenantId: ecn.tenantId,
+            code: currentRouting.code + '-V' + newVersion.replace('.', ''),
+            name: currentRouting.name,
+            version: newVersion,
+            status: "ACTIVE",
+            operations: { create: newOps },
+          },
+        })
+
+        // 기존 ItemRouting 비활성화 후 신규 ItemRouting 생성
+        await tx.itemRouting.update({
+          where: { id: currentItemRouting.id },
+          data: { isDefault: false },
+        })
+        await tx.itemRouting.create({
           data: {
             tenantId: ecn.tenantId,
             itemId: ecn.targetItemId,
-            version: newVersion,
+            routingId: newRouting.id,
             isDefault: true,
-            status: "ACTIVE",
-            operations: { create: newOps },
           },
         })
       }

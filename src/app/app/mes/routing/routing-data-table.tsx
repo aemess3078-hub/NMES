@@ -48,7 +48,7 @@ export function RoutingDataTable({
   }
 
   const handleDelete = async (routing: RoutingWithDetails) => {
-    if (!confirm(`'${routing.item.name} (v${routing.version})' 라우팅을 삭제하시겠습니까?`)) return
+    if (!confirm(`'${routing.name} (v${routing.version})' 라우팅을 삭제하시겠습니까?`)) return
     try {
       await deleteRouting(routing.id)
       router.refresh()

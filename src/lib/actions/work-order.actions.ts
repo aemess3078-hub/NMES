@@ -22,7 +22,7 @@ export type WorkOrderWithDetails = {
   updatedAt: Date
   item: { id: string; code: string; name: string; itemType: string }
   bom: { id: string; version: string; item: { name: string } }
-  routing: { id: string; version: string; item: { name: string } }
+  routing: { id: string; code: string; name: string; version: string }
   site: { id: string; code: string; name: string }
   productionPlanItem: any | null
   operations: {
@@ -77,8 +77,9 @@ export async function getWorkOrders(): Promise<WorkOrderWithDetails[]> {
       routing: {
         select: {
           id: true,
+          code: true,
+          name: true,
           version: true,
-          item: { select: { name: true } },
         },
       },
       site: {
@@ -118,8 +119,9 @@ export async function getWorkOrderById(id: string): Promise<WorkOrderWithDetails
       routing: {
         select: {
           id: true,
+          code: true,
+          name: true,
           version: true,
-          item: { select: { name: true } },
         },
       },
       site: {
@@ -165,23 +167,34 @@ export async function getBomsForItem(itemId: string) {
 }
 
 export async function getRoutingsForItem(itemId: string) {
-  return prisma.routing.findMany({
-    where: { itemId, status: "ACTIVE" },
-    select: {
-      id: true,
-      version: true,
-      isDefault: true,
-      operations: {
-        orderBy: { seq: "asc" },
+  const itemRoutings = await prisma.itemRouting.findMany({
+    where: {
+      itemId,
+      routing: { status: "ACTIVE" },
+    },
+    include: {
+      routing: {
         include: {
-          workCenter: {
-            select: { id: true, code: true, name: true },
+          operations: {
+            orderBy: { seq: "asc" },
+            include: {
+              workCenter: {
+                select: { id: true, code: true, name: true },
+              },
+            },
           },
         },
       },
     },
-    orderBy: { version: "asc" },
+    orderBy: { routing: { version: "asc" } },
   })
+
+  return itemRoutings.map((ir) => ({
+    id: ir.routing.id,
+    version: ir.routing.version,
+    isDefault: ir.isDefault,
+    operations: ir.routing.operations,
+  }))
 }
 
 export async function getEquipments() {

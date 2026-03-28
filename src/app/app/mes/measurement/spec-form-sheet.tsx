@@ -35,7 +35,7 @@ interface SpecFormSheetProps {
     name: string
     seq: number
     routingId: string
-    routing: { id: string; version: string; item: { code: string; name: string } }
+    routing: { id: string; code: string; name: string; version: string }
   }[]
 }
 
@@ -139,7 +139,7 @@ export function SpecFormSheet({
             placeholder="공정 선택"
             disabled={isEdit}
             options={routingOperations.map((op) => ({
-              label: `[${op.routing.item.code}] ${op.routing.item.name} / ${op.name} (seq.${op.seq})`,
+              label: `[${op.routing.code}] ${op.routing.name} / ${op.name} (seq.${op.seq})`,
               value: op.id,
             }))}
           />

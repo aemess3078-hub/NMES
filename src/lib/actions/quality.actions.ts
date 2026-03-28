@@ -372,9 +372,9 @@ export async function getRoutingOperationsForQuality(tenantId: string) {
       name: true,
       seq: true,
       routingId: true,
-      routing: { select: { id: true, version: true, item: { select: { code: true, name: true } } } },
+      routing: { select: { id: true, code: true, name: true, version: true } },
     },
-    orderBy: [{ routing: { item: { code: "asc" } } }, { seq: "asc" }],
+    orderBy: [{ routing: { code: "asc" } }, { seq: "asc" }],
   })
 }
 

@@ -17,7 +17,7 @@ interface MeasurementManagerProps {
     name: string
     seq: number
     routingId: string
-    routing: { id: string; version: string; item: { code: string; name: string } }
+    routing: { id: string; code: string; name: string; version: string }
   }[]
 }
 

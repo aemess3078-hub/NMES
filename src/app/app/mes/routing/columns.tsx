@@ -50,18 +50,36 @@ export function getColumns(callbacks: {
       enableHiding: false,
     },
     {
+      accessorKey: "code",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="라우팅 코드" />
+      ),
+      cell: ({ row }) => (
+        <span className="font-mono text-[14px] font-medium">{row.getValue("code")}</span>
+      ),
+    },
+    {
+      accessorKey: "name",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="라우팅 명" />
+      ),
+      cell: ({ row }) => (
+        <span className="text-[14px]">{row.getValue("name")}</span>
+      ),
+    },
+    {
       id: "itemCode",
-      accessorFn: (row) => row.item.code,
+      accessorFn: (row) => row.items?.[0]?.item?.code ?? "-",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="품목코드" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-[14px] font-medium">{row.getValue("itemCode")}</span>
+        <span className="font-mono text-[14px]">{row.getValue("itemCode")}</span>
       ),
     },
     {
       id: "itemName",
-      accessorFn: (row) => row.item.name,
+      accessorFn: (row) => row.items?.[0]?.item?.name ?? "-",
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="품목명" />
       ),
@@ -90,10 +108,11 @@ export function getColumns(callbacks: {
     },
     {
       id: "itemType",
-      accessorFn: (row) => row.item.itemType,
+      accessorFn: (row) => row.items?.[0]?.item?.itemType ?? "",
       header: "품목유형",
       cell: ({ row }) => {
         const type = row.getValue("itemType") as string
+        if (!type) return <span className="text-[13px] text-muted-foreground">-</span>
         return (
           <Badge variant="secondary" className="text-[13px]">
             {itemTypeLabels[type] ?? type}

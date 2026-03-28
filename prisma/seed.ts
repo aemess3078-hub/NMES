@@ -683,14 +683,27 @@ async function seedBoms() {
 async function seedRoutings() {
   // Routing: 구동 모듈 완제품 A형
   await prisma.routing.upsert({
-    where: { tenantId_itemId_version: { tenantId: IDS.tenant, itemId: 'item-fg-assy-001', version: '1.0' } },
+    where: { tenantId_code: { tenantId: IDS.tenant, code: 'RTG-FG-ASSY-001' } },
     create: {
       id: 'rtg-fg-assy-001',
       tenantId: IDS.tenant,
-      itemId: 'item-fg-assy-001',
+      code: 'RTG-FG-ASSY-001',
+      name: '구동 모듈 완제품 A형 라우팅',
       version: '1.0',
-      isDefault: true,
       status: RoutingStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  // ItemRouting: 완제품 A형 - 라우팅 연결
+  await prisma.itemRouting.upsert({
+    where: { itemId_routingId: { itemId: 'item-fg-assy-001', routingId: 'rtg-fg-assy-001' } },
+    create: {
+      id: 'ir-fg-assy-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-fg-assy-001',
+      routingId: 'rtg-fg-assy-001',
+      isDefault: true,
     },
     update: {},
   });
@@ -753,14 +766,27 @@ async function seedRoutings() {
 
   // Routing: 하우징 프레임 (기계가공)
   await prisma.routing.upsert({
-    where: { tenantId_itemId_version: { tenantId: IDS.tenant, itemId: 'item-semi-frame-001', version: '1.0' } },
+    where: { tenantId_code: { tenantId: IDS.tenant, code: 'RTG-SEMI-FRAME-001' } },
     create: {
       id: 'rtg-semi-frame-001',
       tenantId: IDS.tenant,
-      itemId: 'item-semi-frame-001',
+      code: 'RTG-SEMI-FRAME-001',
+      name: '하우징 프레임 기계가공 라우팅',
       version: '1.0',
-      isDefault: true,
       status: RoutingStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  // ItemRouting: 하우징 프레임 - 라우팅 연결
+  await prisma.itemRouting.upsert({
+    where: { itemId_routingId: { itemId: 'item-semi-frame-001', routingId: 'rtg-semi-frame-001' } },
+    create: {
+      id: 'ir-semi-frame-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-semi-frame-001',
+      routingId: 'rtg-semi-frame-001',
+      isDefault: true,
     },
     update: {},
   });
@@ -1385,7 +1411,7 @@ async function seedFeatures() {
     { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection'], isCore: false, displayOrder: 100 },
     { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects'], isCore: false, displayOrder: 110 },
     // EQUIPMENT
-    { code: 'EQUIPMENT_CONNECTION', name: '설비연동', description: 'PLC/설비 데이터 연동', category: 'EQUIPMENT', icon: 'Wifi', menuCodes: ['equipment-connection'], isCore: false, displayOrder: 120 },
+    { code: 'EQUIPMENT_CONNECTION', name: '설비연동', description: 'PLC/설비 데이터 연동', category: 'EQUIPMENT', icon: 'Wifi', menuCodes: ['gateways', 'equipment-connections'], isCore: false, displayOrder: 120 },
     { code: 'TAG_MANAGEMENT', name: '태그관리', description: '설비 데이터 태그 관리', category: 'EQUIPMENT', icon: 'Tag', menuCodes: ['tags'], isCore: false, displayOrder: 130 },
     // SYSTEM
     { code: 'COMMON_CODE', name: '공통코드', description: '시스템 공통 코드 관리', category: 'SYSTEM', icon: 'BookOpen', menuCodes: ['common-codes'], isCore: true, displayOrder: 140 },

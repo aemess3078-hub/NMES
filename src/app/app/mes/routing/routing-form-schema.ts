@@ -10,10 +10,13 @@ export const routingOperationFormSchema = z.object({
 })
 
 export const routingFormSchema = z.object({
-  itemId: z.string().min(1, "품목을 선택하세요"),
+  code: z.string().min(1, "라우팅 코드를 입력하세요"),
+  name: z.string().min(1, "라우팅 명을 입력하세요"),
   version: z.string().min(1, "버전을 입력하세요"),
-  isDefault: z.boolean().default(false),
   status: z.nativeEnum(RoutingStatus).default(RoutingStatus.DRAFT),
+  // ItemRouting 생성용
+  itemId: z.string().min(1, "품목을 선택하세요"),
+  isDefault: z.boolean().default(false),
   operations: z.array(routingOperationFormSchema).min(1, "공정을 최소 1개 이상 추가하세요"),
 })
 

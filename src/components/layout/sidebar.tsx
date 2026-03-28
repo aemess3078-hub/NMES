@@ -187,9 +187,12 @@ export function Sidebar({ navItems, userName, userEmail }: SidebarProps) {
   const router = useRouter();
 
   const handleLogout = async () => {
+    // 개발 우회 쿠키 제거
+    document.cookie = 'nmes-dev-bypass=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = 'nmes-mode=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push('/login');
+    window.location.href = '/login';
   };
 
   const hasNavItems = navItems && navItems.length > 0;

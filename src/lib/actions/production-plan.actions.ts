@@ -133,11 +133,24 @@ export async function getBomsForPlanItem(itemId: string) {
 }
 
 export async function getRoutingsForPlanItem(itemId: string) {
-  return prisma.routing.findMany({
-    where: { itemId, status: "ACTIVE" },
-    select: { id: true, version: true, isDefault: true },
-    orderBy: { version: "asc" },
+  const itemRoutings = await prisma.itemRouting.findMany({
+    where: {
+      itemId,
+      routing: { status: "ACTIVE" },
+    },
+    include: {
+      routing: {
+        select: { id: true, version: true },
+      },
+    },
+    orderBy: { routing: { version: "asc" } },
   })
+
+  return itemRoutings.map((ir) => ({
+    id: ir.routing.id,
+    version: ir.routing.version,
+    isDefault: ir.isDefault,
+  }))
 }
 
 // ─── Business Logic ───────────────────────────────────────────────────────────

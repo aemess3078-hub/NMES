@@ -323,6 +323,7 @@ model Tenant {
   finishedGoodsReceipts FinishedGoodsReceipt[]
   boms                  BOM[]
   routings              Routing[]
+  itemRoutings          ItemRouting[]
   productionPlans       ProductionPlan[]
   codeGroups            CodeGroup[]
   rolePermissions       RolePermission[]
@@ -480,7 +481,7 @@ model Item {
   substituteOf           ItemSubstitute[]       @relation("SubstituteItem")
   boms                   BOM[]
   bomItems               BOMItem[]
-  routings               Routing[]
+  itemRoutings           ItemRouting[]
   lots                   Lot[]
   lotRules               LotRule[]
   inspectionSpecs        InspectionSpec[]
@@ -559,22 +560,37 @@ model BOMItem {
 model Routing {
   id        String        @id @default(cuid())
   tenantId  String
-  itemId    String
+  code      String
+  name      String
   version   String
-  isDefault Boolean       @default(false)
   status    RoutingStatus @default(DRAFT)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
   tenant     Tenant             @relation(fields: [tenantId], references: [id])
-  item       Item               @relation(fields: [itemId], references: [id])
+  items      ItemRouting[]
   operations RoutingOperation[]
   workOrders WorkOrder[]
   productionPlanItems ProductionPlanItem[]
 
-  @@unique([tenantId, itemId, version])
+  @@unique([tenantId, code])
   @@index([tenantId])
+}
+
+model ItemRouting {
+  id        String  @id @default(cuid())
+  tenantId  String
+  itemId    String
+  routingId String
+  isDefault Boolean @default(false)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  item    Item    @relation(fields: [itemId], references: [id])
+  routing Routing @relation(fields: [routingId], references: [id])
+
+  @@unique([itemId, routingId])
   @@index([itemId])
+  @@index([routingId])
 }
 
 model RoutingOperation {

@@ -11,9 +11,10 @@ type Props = {
 }
 
 export function PopHeader({ workerName = "작업자", onLogout }: Props) {
-  const [now, setNow] = useState(new Date())
+  const [now, setNow] = useState<Date | null>(null)
 
   useEffect(() => {
+    setNow(new Date())
     const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
@@ -23,10 +24,10 @@ export function PopHeader({ workerName = "작업자", onLogout }: Props) {
       <div className="font-bold text-lg">Cloud MES</div>
       <div className="text-center">
         <div className="text-xl font-mono tabular-nums">
-          {format(now, "HH:mm:ss")}
+          {now ? format(now, "HH:mm:ss") : "--:--:--"}
         </div>
         <div className="text-sm text-slate-300">
-          {format(now, "yyyy년 MM월 dd일 (EEE)", { locale: ko })}
+          {now ? format(now, "yyyy년 MM월 dd일 (EEE)", { locale: ko }) : ""}
         </div>
       </div>
       <div className="flex items-center gap-4">

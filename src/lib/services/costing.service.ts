@@ -65,19 +65,24 @@ export async function calculateStandardCost(
   bomId: string,
   tenantId: string
 ): Promise<CostResult> {
-  const [bom, routing, config] = await Promise.all([
+  const [bom, itemRoutingRecord, config] = await Promise.all([
     prisma.bOM.findUnique({
       where: { id: bomId },
       include: {
         bomItems: { include: { componentItem: true } },
       },
     }),
-    prisma.routing.findFirst({
-      where: { itemId, isDefault: true },
-      include: { operations: true },
+    prisma.itemRouting.findFirst({
+      where: {
+        itemId,
+        isDefault: true,
+        routing: { status: "ACTIVE" },
+      },
+      include: { routing: { include: { operations: true } } },
     }),
     getCostConfig(tenantId),
   ])
+  const routing = itemRoutingRecord?.routing ?? null
 
   // 자재비 계산
   let materialCost = 0

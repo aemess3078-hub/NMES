@@ -50,10 +50,12 @@ interface RoutingFormSheetProps {
 }
 
 const DEFAULT_FORM_VALUES: RoutingFormValues = {
-  itemId: "",
+  code: "",
+  name: "",
   version: "1.0",
-  isDefault: false,
   status: RoutingStatus.DRAFT,
+  itemId: "",
+  isDefault: false,
   operations: [],
 }
 
@@ -88,11 +90,14 @@ export function RoutingFormSheet({
 
   useEffect(() => {
     if (mode === "edit" && routing && open) {
+      const firstItemRouting = routing.items?.[0]
       form.reset({
-        itemId: routing.itemId,
+        code: routing.code,
+        name: routing.name,
         version: routing.version,
-        isDefault: routing.isDefault,
         status: routing.status,
+        itemId: firstItemRouting?.itemId ?? "",
+        isDefault: firstItemRouting?.isDefault ?? false,
         operations: routing.operations.map((op) => ({
           seq: op.seq,
           operationCode: op.operationCode,
@@ -111,10 +116,12 @@ export function RoutingFormSheet({
     setIsLoading(true)
     try {
       const payload = {
-        itemId: values.itemId,
+        code: values.code,
+        name: values.name,
         version: values.version,
-        isDefault: values.isDefault,
         status: values.status,
+        itemId: values.itemId,
+        isDefault: values.isDefault,
         operations: values.operations.map((op) => ({
           seq: op.seq,
           operationCode: op.operationCode,
@@ -165,9 +172,47 @@ export function RoutingFormSheet({
     >
       <Form {...form}>
         <div className="space-y-6">
-          {/* 라우팅 헤더 정보 */}
+          {/* 라우팅 기본 정보 */}
           <div className="space-y-4">
             <p className="text-[15px] font-medium text-foreground">라우팅 정보</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormTextField
+                control={form.control}
+                name="code"
+                label="라우팅 코드"
+                placeholder="예: RTG-ASSY-001"
+              />
+              <FormTextField
+                control={form.control}
+                name="version"
+                label="버전"
+                placeholder="예: 1.0"
+              />
+            </div>
+
+            <FormTextField
+              control={form.control}
+              name="name"
+              label="라우팅 명"
+              placeholder="예: 조립 공정 A"
+            />
+
+            <FormSelectField
+              control={form.control}
+              name="status"
+              label="상태"
+              options={[
+                { label: "초안", value: RoutingStatus.DRAFT },
+                { label: "활성", value: RoutingStatus.ACTIVE },
+                { label: "비활성", value: RoutingStatus.INACTIVE },
+              ]}
+            />
+          </div>
+
+          {/* 품목 연결 정보 */}
+          <div className="space-y-4 pt-4 border-t">
+            <p className="text-[15px] font-medium text-foreground">품목 연결</p>
 
             <FormSelectField
               control={form.control}
@@ -179,25 +224,6 @@ export function RoutingFormSheet({
                 value: item.id,
               }))}
             />
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormTextField
-                control={form.control}
-                name="version"
-                label="버전"
-                placeholder="예: 1.0"
-              />
-              <FormSelectField
-                control={form.control}
-                name="status"
-                label="상태"
-                options={[
-                  { label: "초안", value: RoutingStatus.DRAFT },
-                  { label: "활성", value: RoutingStatus.ACTIVE },
-                  { label: "비활성", value: RoutingStatus.INACTIVE },
-                ]}
-              />
-            </div>
 
             <FormSwitchField
               control={form.control}
@@ -224,121 +250,105 @@ export function RoutingFormSheet({
 
             {fields.length > 0 && (
               <div className="rounded-md border overflow-hidden">
-                <div className="grid grid-cols-[36px_80px_1fr_1fr_72px_36px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
+                <div className="grid grid-cols-[36px_1fr_140px_72px_36px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
                   <span>순서</span>
-                  <span>공정코드</span>
-                  <span>공정명</span>
+                  <span>공정 선택</span>
                   <span>작업장</span>
                   <span className="text-right">표준시간(분)</span>
                   <span></span>
                 </div>
 
-                {fields.map((field, index) => (
-                  <div
-                    key={field.id}
-                    className="grid grid-cols-[36px_80px_1fr_1fr_72px_36px] gap-0 items-center px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
-                  >
-                    {/* 순서 */}
-                    <span className="text-[13px] text-muted-foreground">
-                      {index + 1}
-                    </span>
-
-                    {/* 공정코드 */}
-                    <FormField
-                      control={form.control}
-                      name={`operations.${index}.operationCode`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Input
-                            className="h-8 text-[13px]"
-                            placeholder="코드"
-                            {...f}
-                          />
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 공정명 */}
-                    <FormField
-                      control={form.control}
-                      name={`operations.${index}.name`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Input
-                            className="h-8 text-[13px]"
-                            placeholder="공정명"
-                            {...f}
-                          />
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 작업장 */}
-                    <FormField
-                      control={form.control}
-                      name={`operations.${index}.workCenterId`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Select
-                            onValueChange={f.onChange}
-                            value={f.value ?? undefined}
-                          >
-                            <SelectTrigger className="h-8 text-[13px]">
-                              <SelectValue placeholder="작업장 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {workCenters.map((wc) => (
-                                <SelectItem
-                                  key={wc.id}
-                                  value={wc.id}
-                                  className="text-[13px]"
-                                >
-                                  [{wc.code}] {wc.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 표준시간 */}
-                    <FormField
-                      control={form.control}
-                      name={`operations.${index}.standardTime`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            step={0.1}
-                            className="h-8 text-[13px] text-right"
-                            value={f.value ?? ""}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              f.onChange(val === "" ? 0 : parseFloat(val))
-                            }}
-                          />
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 삭제 버튼 */}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => remove(index)}
+                {fields.map((field, index) => {
+                  const selectedWc = workCenters.find(
+                    (wc) => wc.id === form.watch(`operations.${index}.workCenterId`)
+                  )
+                  return (
+                    <div
+                      key={field.id}
+                      className="grid grid-cols-[36px_1fr_140px_72px_36px] gap-0 items-center px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
+                      {/* 순서 */}
+                      <span className="text-[13px] text-muted-foreground">
+                        {index + 1}
+                      </span>
+
+                      {/* 공정 선택 — workCenterId 선택 시 operationCode/name 자동 채움 */}
+                      <FormField
+                        control={form.control}
+                        name={`operations.${index}.workCenterId`}
+                        render={({ field: f }) => (
+                          <FormItem className="pr-2">
+                            <Select
+                              onValueChange={(val) => {
+                                const wc = workCenters.find((w) => w.id === val)
+                                if (wc) {
+                                  f.onChange(val)
+                                  form.setValue(`operations.${index}.operationCode`, wc.code)
+                                  form.setValue(`operations.${index}.name`, wc.name)
+                                }
+                              }}
+                              value={f.value ?? undefined}
+                            >
+                              <SelectTrigger className="h-8 text-[13px]">
+                                <SelectValue placeholder="공정 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {workCenters.map((wc) => (
+                                  <SelectItem
+                                    key={wc.id}
+                                    value={wc.id}
+                                    className="text-[13px]"
+                                  >
+                                    [{wc.code}] {wc.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage className="text-[12px]" />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* 작업장명 (자동 표시) */}
+                      <div className="pr-2 text-[13px] text-muted-foreground truncate">
+                        {selectedWc ? selectedWc.name : <span className="text-muted-foreground/40">—</span>}
+                      </div>
+
+                      {/* 표준시간 */}
+                      <FormField
+                        control={form.control}
+                        name={`operations.${index}.standardTime`}
+                        render={({ field: f }) => (
+                          <FormItem className="pr-2">
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.1}
+                              className="h-8 text-[13px] text-right"
+                              value={f.value ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                f.onChange(val === "" ? 0 : parseFloat(val))
+                              }}
+                            />
+                            <FormMessage className="text-[12px]" />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* 삭제 버튼 */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => remove(index)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
             )}
 

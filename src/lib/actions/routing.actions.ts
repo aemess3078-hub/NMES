@@ -7,19 +7,24 @@ import { revalidatePath } from "next/cache"
 export type RoutingWithDetails = {
   id: string
   tenantId: string
-  itemId: string
+  code: string
+  name: string
   version: string
-  isDefault: boolean
   status: RoutingStatus
   createdAt: Date
   updatedAt: Date
-  item: {
+  items: {
     id: string
-    code: string
-    name: string
-    itemType: string
-    category: { id: string; name: string } | null
-  }
+    itemId: string
+    isDefault: boolean
+    item: {
+      id: string
+      code: string
+      name: string
+      itemType: string
+      category: { id: string; name: string } | null
+    }
+  }[]
   operations: {
     id: string
     routingId: string
@@ -35,13 +40,17 @@ export type RoutingWithDetails = {
 export async function getRoutings(): Promise<RoutingWithDetails[]> {
   return prisma.routing.findMany({
     include: {
-      item: { include: { category: true } },
+      items: {
+        include: {
+          item: { include: { category: true } },
+        },
+      },
       operations: {
         include: { workCenter: true },
         orderBy: { seq: "asc" },
       },
     },
-    orderBy: [{ item: { name: "asc" } }, { version: "asc" }],
+    orderBy: [{ code: "asc" }, { version: "asc" }],
   }) as any
 }
 
@@ -49,7 +58,11 @@ export async function getRoutingById(id: string): Promise<RoutingWithDetails | n
   return prisma.routing.findUnique({
     where: { id },
     include: {
-      item: { include: { category: true } },
+      items: {
+        include: {
+          item: { include: { category: true } },
+        },
+      },
       operations: {
         include: { workCenter: true },
         orderBy: { seq: "asc" },
@@ -82,44 +95,63 @@ export type RoutingOperationInput = {
 }
 
 export type CreateRoutingInput = {
-  itemId: string
+  code: string
+  name: string
   version: string
-  isDefault: boolean
   status: RoutingStatus
+  // ItemRouting 생성용
+  itemId: string
+  isDefault: boolean
   operations: RoutingOperationInput[]
 }
 
 export async function createRouting(data: CreateRoutingInput, tenantId: string) {
-  const { operations, ...routingFields } = data
-  await prisma.routing.create({
-    data: {
-      ...routingFields,
-      tenantId,
-      operations: {
-        create: operations.map((op) => ({
-          seq: op.seq,
-          operationCode: op.operationCode,
-          name: op.name,
-          workCenterId: op.workCenterId,
-          standardTime: op.standardTime,
-        })),
+  const { operations, itemId, isDefault, ...routingFields } = data
+
+  await prisma.$transaction(async (tx) => {
+    const routing = await tx.routing.create({
+      data: {
+        ...routingFields,
+        tenantId,
+        operations: {
+          create: operations.map((op) => ({
+            seq: op.seq,
+            operationCode: op.operationCode,
+            name: op.name,
+            workCenterId: op.workCenterId,
+            standardTime: op.standardTime,
+          })),
+        },
       },
-    },
+    })
+
+    await tx.itemRouting.create({
+      data: {
+        tenantId,
+        itemId,
+        routingId: routing.id,
+        isDefault,
+      },
+    })
   })
+
   revalidatePath("/app/mes/routing")
 }
 
 export async function updateRouting(id: string, data: CreateRoutingInput) {
-  const { operations, ...routingFields } = data
-  const { itemId, version, isDefault, status } = routingFields
-  await prisma.$transaction([
-    prisma.routingOperation.deleteMany({ where: { routingId: id } }),
-    prisma.routing.update({
+  const { operations, itemId, isDefault, ...routingFields } = data
+  const { code, name, version, status } = routingFields
+
+  await prisma.$transaction(async (tx) => {
+    // 기존 공정 삭제 후 재생성
+    await tx.routingOperation.deleteMany({ where: { routingId: id } })
+
+    await tx.routing.update({
       where: { id },
       data: {
-        itemId,
+        code,
+        name,
         version,
-        isDefault,
         status,
         operations: {
           create: operations.map((op) => ({
@@ -131,13 +163,34 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
           })),
         },
       },
-    }),
-  ])
+    })
+
+    // ItemRouting upsert: itemId+routingId 기준으로 isDefault 갱신 또는 신규 생성
+    const routing = await tx.routing.findUnique({
+      where: { id },
+      select: { tenantId: true },
+    })
+
+    if (routing) {
+      await tx.itemRouting.upsert({
+        where: { itemId_routingId: { itemId, routingId: id } },
+        create: {
+          tenantId: routing.tenantId,
+          itemId,
+          routingId: id,
+          isDefault,
+        },
+        update: { isDefault },
+      })
+    }
+  })
+
   revalidatePath("/app/mes/routing")
 }
 
 export async function deleteRouting(id: string) {
   await prisma.$transaction([
+    prisma.itemRouting.deleteMany({ where: { routingId: id } }),
     prisma.routingOperation.deleteMany({ where: { routingId: id } }),
     prisma.routing.delete({ where: { id } }),
   ])
