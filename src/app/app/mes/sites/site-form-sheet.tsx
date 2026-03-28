@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useRouter } from "next/navigation"
-import { SiteType } from "@prisma/client"
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter,
 } from "@/components/ui/sheet"
@@ -19,6 +18,9 @@ import {
 } from "@/components/ui/select"
 import { SiteRow, createSite, updateSite } from "@/lib/actions/site.actions"
 
+const SITE_TYPE_VALUES = ["FACTORY", "WAREHOUSE", "OFFICE"] as const
+type SiteType = typeof SITE_TYPE_VALUES[number]
+
 const SITE_TYPE_LABELS: Record<SiteType, string> = {
   FACTORY: "공장",
   WAREHOUSE: "창고",
@@ -28,7 +30,7 @@ const SITE_TYPE_LABELS: Record<SiteType, string> = {
 const schema = z.object({
   code: z.string().min(1, "코드를 입력하세요"),
   name: z.string().min(1, "이름을 입력하세요"),
-  type: z.nativeEnum(SiteType),
+  type: z.enum(SITE_TYPE_VALUES),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -43,7 +45,7 @@ export function SiteFormSheet({ mode, site, open, onOpenChange }: Props) {
   const router = useRouter()
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { code: "", name: "", type: SiteType.FACTORY },
+    defaultValues: { code: "", name: "", type: "FACTORY" as SiteType },
   })
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export function SiteFormSheet({ mode, site, open, onOpenChange }: Props) {
         type: site.type,
       })
     } else {
-      form.reset({ code: "", name: "", type: SiteType.FACTORY })
+      form.reset({ code: "", name: "", type: "FACTORY" as SiteType })
     }
   }, [mode, site, open])
 

@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { SiteType } from "@prisma/client"
 import { SiteRow, SiteWithLocations, deleteSite, getSiteWithLocations } from "@/lib/actions/site.actions"
+
+type SiteType = "FACTORY" | "WAREHOUSE" | "OFFICE"
 import { SiteFormSheet } from "./site-form-sheet"
 import { DataTable } from "@/components/common/data-table"
 import { ColumnDef } from "@tanstack/react-table"
