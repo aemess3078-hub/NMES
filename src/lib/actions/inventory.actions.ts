@@ -10,21 +10,14 @@ export type InventoryBalanceWithDetails = {
   id: string
   tenantId: string
   siteId: string
-  locationId: string
+  warehouseId: string
   itemId: string
   lotId: string | null
   qtyOnHand: any      // Decimal
   qtyAvailable: any   // Decimal
   qtyHold: any        // Decimal
   updatedAt: Date
-  location: {
-    id: string
-    code: string
-    name: string
-    locationType: string | null
-    warehouseId: string
-    warehouse: { id: string; code: string; name: string }
-  }
+  warehouse: { id: string; code: string; name: string; siteId: string }
   item: { id: string; code: string; name: string; itemType: string; uom: string }
   lot: { id: string; lotNo: string } | null
 }
@@ -54,14 +47,12 @@ export type InventoryTransactionWithDetails = {
 export async function getInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
   return prisma.inventoryBalance.findMany({
     include: {
-      location: {
-        include: { warehouse: true },
-      },
+      warehouse: true,
       item: true,
       lot: { select: { id: true, lotNo: true } },
     },
     orderBy: [
-      { location: { warehouse: { name: "asc" } } },
+      { warehouse: { name: "asc" } },
       { item: { code: "asc" } },
     ],
   }) as any
@@ -82,12 +73,12 @@ export async function getInventoryTransactions(): Promise<InventoryTransactionWi
   }) as any
 }
 
-// ─── 전체 로케이션 목록 ───────────────────────────────────────────────────────
+// ─── 창고 목록 (트랜잭션 로케이션 선택용) ────────────────────────────────────
 
-export async function getAllLocations() {
-  return prisma.location.findMany({
-    select: { id: true, code: true, name: true, locationType: true },
-    orderBy: { code: "asc" },
+export async function getWarehousesForTransaction() {
+  return prisma.warehouse.findMany({
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
   })
 }
 
@@ -130,7 +121,7 @@ async function adjustBalance(
   params: {
     tenantId: string
     siteId: string
-    locationId: string
+    warehouseId: string
     itemId: string
     lotId: string | null
     qtyDelta?: number      // RECEIPT/ISSUE/TRANSFER 증감
@@ -140,7 +131,7 @@ async function adjustBalance(
   const where = {
     tenantId: params.tenantId,
     siteId: params.siteId,
-    locationId: params.locationId,
+    warehouseId: params.warehouseId,
     itemId: params.itemId,
     lotId: params.lotId ?? null,
   }
@@ -176,7 +167,7 @@ async function adjustBalance(
       data: { qtyOnHand: newQty, qtyAvailable: Math.max(0, newQty - Number(existing.qtyHold)) },
     })
   } else {
-    if (delta < 0) throw new Error("재고 부족: 해당 로케이션에 재고가 없습니다.")
+    if (delta < 0) throw new Error("재고 부족: 해당 창고에 재고가 없습니다.")
     return tx.inventoryBalance.create({
       data: { ...where, qtyOnHand: delta, qtyAvailable: delta, qtyHold: 0 },
     })
@@ -239,14 +230,14 @@ export async function createTransaction(
     switch (data.txType) {
       case TransactionType.RECEIPT:
       case TransactionType.RETURN: {
-        // 입고 / 반품 → toLocation + qtyOnHand 증가
+        // 입고 / 반품 → toLocation (Warehouse) + qtyOnHand 증가
         if (!data.toLocationId) throw new Error("입고/반품 시 입고 로케이션이 필요합니다.")
-        const loc = await tx.location.findUnique({ where: { id: data.toLocationId } })
-        if (!loc) throw new Error("유효하지 않은 로케이션입니다.")
+        const wh = await tx.warehouse.findUnique({ where: { id: data.toLocationId } })
+        if (!wh) throw new Error("유효하지 않은 로케이션입니다.")
         await adjustBalance(tx, {
           tenantId,
           siteId: data.siteId,
-          locationId: data.toLocationId,
+          warehouseId: data.toLocationId,
           itemId: data.itemId,
           lotId: data.lotId ?? null,
           qtyDelta: +data.qty,
@@ -256,12 +247,12 @@ export async function createTransaction(
 
       case TransactionType.ISSUE:
       case TransactionType.SCRAP: {
-        // 출고 / 폐기 → fromLocation + qtyOnHand 감소
+        // 출고 / 폐기 → fromLocation (Warehouse) + qtyOnHand 감소
         if (!data.fromLocationId) throw new Error("출고/폐기 시 출고 로케이션이 필요합니다.")
         await adjustBalance(tx, {
           tenantId,
           siteId: data.siteId,
-          locationId: data.fromLocationId,
+          warehouseId: data.fromLocationId,
           itemId: data.itemId,
           lotId: data.lotId ?? null,
           qtyDelta: -data.qty,
@@ -270,13 +261,13 @@ export async function createTransaction(
       }
 
       case TransactionType.ADJUST: {
-        // 재고조정 → fromLocation (또는 toLocation) + qtyOnHand 절대값 세팅
-        const locationId = data.fromLocationId ?? data.toLocationId
-        if (!locationId) throw new Error("재고조정 시 로케이션이 필요합니다.")
+        // 재고조정 → fromLocation (또는 toLocation, Warehouse) + qtyOnHand 절대값 세팅
+        const warehouseId = data.fromLocationId ?? data.toLocationId
+        if (!warehouseId) throw new Error("재고조정 시 로케이션이 필요합니다.")
         await adjustBalance(tx, {
           tenantId,
           siteId: data.siteId,
-          locationId,
+          warehouseId,
           itemId: data.itemId,
           lotId: data.lotId ?? null,
           qtyAbsolute: data.qty,
@@ -285,14 +276,14 @@ export async function createTransaction(
       }
 
       case TransactionType.TRANSFER: {
-        // 이동 → fromLocation 감소 + toLocation 증가
+        // 이동 → fromLocation 감소 + toLocation 증가 (모두 Warehouse)
         if (!data.fromLocationId || !data.toLocationId) {
           throw new Error("이동 시 출발 로케이션과 도착 로케이션이 모두 필요합니다.")
         }
         await adjustBalance(tx, {
           tenantId,
           siteId: data.siteId,
-          locationId: data.fromLocationId,
+          warehouseId: data.fromLocationId,
           itemId: data.itemId,
           lotId: data.lotId ?? null,
           qtyDelta: -data.qty,
@@ -300,7 +291,7 @@ export async function createTransaction(
         await adjustBalance(tx, {
           tenantId,
           siteId: data.siteId,
-          locationId: data.toLocationId,
+          warehouseId: data.toLocationId,
           itemId: data.itemId,
           lotId: data.lotId ?? null,
           qtyDelta: +data.qty,

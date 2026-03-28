@@ -667,6 +667,9 @@ model Warehouse {
   locations             Location[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
   shipments             ShipmentOrder[]        @relation("WarehouseShipments")
+  inventoryBalances     InventoryBalance[]
+  inventoryTxnsFrom     InventoryTransaction[] @relation("TxFromWarehouse")
+  inventoryTxnsTo       InventoryTransaction[] @relation("TxToWarehouse")
 
   @@unique([siteId, code])
   @@index([tenantId])
@@ -682,9 +685,6 @@ model Location {
 
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
-  inventoryBalances     InventoryBalance[]
-  inventoryTxnsFrom     InventoryTransaction[] @relation("FromLocation")
-  inventoryTxnsTo       InventoryTransaction[] @relation("ToLocation")
   wipUnits              WipUnit[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
 
@@ -901,26 +901,26 @@ model InventoryBalance {
   siteId       String
   itemId       String
   lotId        String?
-  locationId   String
+  warehouseId  String
   qtyOnHand    Decimal  @default(0) @db.Decimal(18, 6)
   qtyAvailable Decimal  @default(0) @db.Decimal(18, 6)
   qtyHold      Decimal  @default(0) @db.Decimal(18, 6)
   updatedAt    DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
-  site     Site     @relation(fields: [siteId], references: [id])
-  item     Item     @relation(fields: [itemId], references: [id])
-  lot      Lot?     @relation(fields: [lotId], references: [id])
-  location Location @relation(fields: [locationId], references: [id])
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  site      Site      @relation(fields: [siteId], references: [id])
+  item      Item      @relation(fields: [itemId], references: [id])
+  lot       Lot?      @relation(fields: [lotId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
   @@index([tenantId])
   @@index([siteId])
   @@index([itemId])
-  @@index([locationId])
+  @@index([warehouseId])
   @@index([tenantId, siteId, itemId])
-  @@index([tenantId, locationId])
-  @@unique([tenantId, itemId, locationId])
-  @@index([tenantId, itemId, lotId, locationId])
+  @@index([tenantId, warehouseId])
+  @@unique([tenantId, itemId, warehouseId])
+  @@index([tenantId, itemId, lotId, warehouseId])
 }
 
 model InventoryTransaction {
@@ -938,11 +938,11 @@ model InventoryTransaction {
   note           String?
   txAt           DateTime        @default(now())
 
-  tenant       Tenant    @relation(fields: [tenantId], references: [id])
-  item         Item      @relation(fields: [itemId], references: [id])
-  lot          Lot?      @relation(fields: [lotId], references: [id])
-  fromLocation Location? @relation("FromLocation", fields: [fromLocationId], references: [id])
-  toLocation   Location? @relation("ToLocation", fields: [toLocationId], references: [id])
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  item         Item       @relation(fields: [itemId], references: [id])
+  lot          Lot?       @relation(fields: [lotId], references: [id])
+  fromLocation Warehouse? @relation("TxFromWarehouse", fields: [fromLocationId], references: [id])
+  toLocation   Warehouse? @relation("TxToWarehouse", fields: [toLocationId], references: [id])
 
   @@unique([tenantId, txNo])
   @@index([tenantId])

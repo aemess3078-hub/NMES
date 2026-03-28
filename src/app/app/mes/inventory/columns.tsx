@@ -16,27 +16,15 @@ export function getColumns(): ColumnDef<InventoryBalanceWithDetails>[] {
   return [
     {
       id: "warehouseName",
-      accessorFn: (row) => row.location.warehouse.name,
+      accessorFn: (row) => row.warehouse.name,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="창고" />
+        <DataTableColumnHeader column={column} title="로케이션" />
       ),
       cell: ({ row }) => (
         <span className="text-[14px] font-medium">{row.getValue("warehouseName")}</span>
       ),
       filterFn: (row, _id, filterValues: string[]) =>
-        filterValues.includes(row.original.location.warehouseId),
-    },
-    {
-      id: "locationName",
-      accessorFn: (row) => row.location.name,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="로케이션" />
-      ),
-      cell: ({ row }) => (
-        <span className="text-[14px] text-muted-foreground">
-          {row.getValue("locationName")}
-        </span>
-      ),
+        filterValues.includes(row.original.warehouseId),
     },
     {
       id: "itemCode",

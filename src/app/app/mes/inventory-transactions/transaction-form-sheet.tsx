@@ -24,7 +24,7 @@ import { createTransaction } from "@/lib/actions/inventory.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type LocationOption = { id: string; code: string; name: string; locationType: string | null }
+type LocationOption = { id: string; code: string; name: string }
 
 interface TransactionFormSheetProps {
   sites: { id: string; code: string; name: string }[]

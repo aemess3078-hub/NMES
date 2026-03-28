@@ -15,7 +15,7 @@ export function InventoryDataTable({ data }: InventoryDataTableProps) {
   const warehouseOptions = useMemo(() => {
     const seen = new Map<string, string>()
     for (const b of data) {
-      seen.set(b.location.warehouseId, b.location.warehouse.name)
+      seen.set(b.warehouseId, b.warehouse.name)
     }
     return Array.from(seen.entries()).map(([id, name]) => ({ label: name, value: id }))
   }, [data])
@@ -23,7 +23,7 @@ export function InventoryDataTable({ data }: InventoryDataTableProps) {
   const filterableColumns = [
     {
       id: "warehouseName" as keyof InventoryBalanceWithDetails,
-      title: "창고",
+      title: "로케이션",
       options: warehouseOptions,
     },
     {
