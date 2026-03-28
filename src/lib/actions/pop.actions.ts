@@ -65,10 +65,9 @@ export async function popLogin(
 
 // ─── 2. 오늘의 작업지시 목록 ──────────────────────────────────────────────────
 
-export async function getTodayWorkOrders(siteId: string) {
+export async function getTodayWorkOrders() {
   return prisma.workOrder.findMany({
     where: {
-      siteId,
       status: { in: ["RELEASED", "IN_PROGRESS"] },
     },
     include: {

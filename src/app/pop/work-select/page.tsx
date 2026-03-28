@@ -5,12 +5,10 @@ import { WorkSelectClient } from "./work-select-client"
 import { PopHeader } from "../components/pop-header"
 
 export default async function WorkSelectPage() {
-  // 데모: siteId 고정. 실제 환경에서는 쿠키/세션에서 siteId를 읽어야 함
   let workOrders: Awaited<ReturnType<typeof getTodayWorkOrders>> = []
   try {
-    workOrders = await getTodayWorkOrders("site-a")
+    workOrders = await getTodayWorkOrders()
   } catch {
-    // DB 연결 실패 시 빈 목록으로 처리
     workOrders = []
   }
 
