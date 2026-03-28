@@ -53,7 +53,7 @@ export async function getInventorySummary(tenantId: string) {
   const balances = await prisma.inventoryBalance.findMany({
     where: { tenantId },
     include: {
-      item: { select: { code: true, name: true, itemType: true, unit: true } },
+      item: { select: { code: true, name: true, itemType: true, uom: true } },
       location: { select: { name: true, code: true } },
     },
   })
@@ -72,7 +72,7 @@ export async function getInventorySummary(tenantId: string) {
         itemCode: b.item.code,
         itemName: b.item.name,
         itemType: b.item.itemType,
-        unit: b.item.unit,
+        단위: b.item.uom,
         qtyOnHand: 0,
         qtyAvailable: 0,
         qtyHold: 0,
@@ -98,7 +98,7 @@ export async function getInventorySummary(tenantId: string) {
       품목코드: i.itemCode,
       품목명: i.itemName,
       유형: i.itemType,
-      단위: i.unit,
+      단위: i.uom,
       현재고: i.qtyOnHand,
       가용재고: i.qtyAvailable,
       보류재고: i.qtyHold,
@@ -136,7 +136,7 @@ export async function getSalesOrderSummary(tenantId: string) {
         orderNo: true,
         status: true,
         deliveryDate: true,
-        businessPartner: { select: { name: true } },
+        customer: { select: { name: true } },
         items: {
           select: {
             item: { select: { code: true, name: true } },
@@ -152,7 +152,7 @@ export async function getSalesOrderSummary(tenantId: string) {
     집계: { 총수주: total, 확정: confirmed, 생산중: inProd, 출하완료: shipped, 납기임박7일내: urgent },
     최근수주: recentOrders.map((o) => ({
       수주번호: o.orderNo,
-      고객사: o.businessPartner?.name ?? "-",
+      고객사: o.customer?.name ?? "-",
       상태: o.status,
       납기일: o.deliveryDate,
       품목: o.items.map((i) => `${i.item.name}(${Number(i.qty)}개, 출하:${Number(i.shippedQty)}개)`).join(", "),
