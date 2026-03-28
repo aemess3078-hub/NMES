@@ -23,9 +23,7 @@ export async function getProductionSummary(tenantId: string) {
         orderNo: true,
         status: true,
         plannedQty: true,
-        completedQty: true,
-        plannedStartDate: true,
-        plannedEndDate: true,
+        dueDate: true,
         item: { select: { code: true, name: true } },
       },
     }),
@@ -46,9 +44,7 @@ export async function getProductionSummary(tenantId: string) {
       품목명: w.item.name,
       상태: w.status,
       계획수량: Number(w.plannedQty),
-      완료수량: Number(w.completedQty),
-      계획시작: w.plannedStartDate,
-      계획종료: w.plannedEndDate,
+      납기일: w.dueDate,
     })),
   }
 }
