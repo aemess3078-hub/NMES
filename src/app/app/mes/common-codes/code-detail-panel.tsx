@@ -68,13 +68,20 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
 
   function openEdit(code: CommonCodeRow) {
     setEditingCode(code)
+    const extraObj = code.extra as Record<string, unknown> | null
+    const extraStr =
+      extraObj != null && "value" in extraObj
+        ? String(extraObj.value)
+        : code.extra != null
+        ? JSON.stringify(code.extra)
+        : ""
     setForm({
       code: code.code,
       name: code.name,
       description: code.description ?? "",
       displayOrder: String(code.displayOrder),
       isActive: code.isActive,
-      extra: code.extra != null ? JSON.stringify(code.extra, null, 2) : "",
+      extra: extraStr,
     })
     setShowDialog(true)
   }
@@ -84,11 +91,17 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
 
     let extraValue: unknown = undefined
     if (form.extra.trim()) {
-      try {
-        extraValue = JSON.parse(form.extra)
-      } catch {
-        alert("추가 데이터(Extra) 형식이 올바르지 않습니다. 유효한 JSON을 입력하세요.")
-        return
+      const trimmed = form.extra.trim()
+      const num = Number(trimmed)
+      if (!isNaN(num) && trimmed !== "") {
+        extraValue = { value: num }
+      } else {
+        try {
+          extraValue = JSON.parse(trimmed)
+        } catch {
+          alert("값 형식이 올바르지 않습니다. 숫자 또는 유효한 JSON을 입력하세요.")
+          return
+        }
       }
     }
 
@@ -169,7 +182,7 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
                   <TableHead className="w-32 text-[13px]">코드</TableHead>
                   <TableHead className="text-[13px]">코드명</TableHead>
                   <TableHead className="text-[13px]">설명</TableHead>
-                  <TableHead className="text-[13px]">추가 데이터</TableHead>
+                  <TableHead className="text-[13px]">값</TableHead>
                   <TableHead className="w-16 text-center text-[13px]">활성</TableHead>
                   <TableHead className="w-20 text-[13px]"></TableHead>
                 </TableRow>
@@ -186,7 +199,11 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
                       {code.description}
                     </TableCell>
                     <TableCell className="text-[13px] font-mono text-muted-foreground max-w-[180px] truncate">
-                      {code.extra != null ? JSON.stringify(code.extra) : "—"}
+                      {code.extra != null
+                        ? (code.extra as Record<string, unknown>)?.value != null
+                          ? String((code.extra as Record<string, unknown>).value)
+                          : JSON.stringify(code.extra)
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-center">
                       <Switch
@@ -265,16 +282,15 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[14px]">추가 데이터 (JSON)</Label>
-              <Textarea
-                className="text-[13px] font-mono resize-none"
-                placeholder={'예: { "value": 25000 }'}
-                rows={3}
+              <Label className="text-[14px]">값</Label>
+              <Input
+                className="text-[14px]"
+                placeholder="예: 25000"
                 value={form.extra}
                 onChange={(e) => setForm((f) => ({ ...f, extra: e.target.value }))}
               />
               <p className="text-[12px] text-muted-foreground">
-                유효한 JSON 형식으로 입력하세요. 비워두면 저장하지 않습니다.
+                숫자를 입력하면 자동으로 저장됩니다. 비워두면 저장하지 않습니다.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
