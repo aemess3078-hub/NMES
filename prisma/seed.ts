@@ -1370,7 +1370,7 @@ async function seedItemCosts() {
 async function seedFeatures() {
   const features = [
     // MASTER
-    { code: 'ITEM', name: '품목관리', description: '품목 마스터 데이터 관리', category: 'MASTER', icon: 'Package', menuCodes: ['items'], isCore: true, displayOrder: 10 },
+    { code: 'ITEM', name: '품목관리', description: '품목 마스터 데이터 관리', category: 'MASTER', icon: 'Package', menuCodes: ['items', 'sites', 'locations'], isCore: true, displayOrder: 10 },
     { code: 'BOM', name: 'BOM 관리', description: '자재명세서(BOM) 관리', category: 'MASTER', icon: 'GitBranch', menuCodes: ['bom'], isCore: false, displayOrder: 20 },
     { code: 'ROUTING', name: '공정/라우팅', description: '생산 공정 및 라우팅 관리', category: 'MASTER', icon: 'Network', menuCodes: ['routing', 'work-centers'], isCore: false, displayOrder: 30 },
     { code: 'EQUIPMENT', name: '설비관리', description: '생산 설비 마스터 관리', category: 'MASTER', icon: 'Cpu', menuCodes: ['equipment'], isCore: false, displayOrder: 40 },
@@ -1379,7 +1379,7 @@ async function seedFeatures() {
     { code: 'PRODUCTION_PLAN', name: '생산계획', description: '일간/주간/월간 생산계획', category: 'PRODUCTION', icon: 'CalendarDays', menuCodes: ['production-plan'], isCore: false, displayOrder: 60 },
     { code: 'PRODUCTION_RESULT', name: '작업실적', description: '공정별 생산실적 입력', category: 'PRODUCTION', icon: 'BarChart2', menuCodes: ['production-results'], isCore: false, displayOrder: 70 },
     // MATERIAL
-    { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory', 'inventory-transactions', 'locations', 'sites'], isCore: false, displayOrder: 80 },
+    { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory', 'inventory-transactions'], isCore: false, displayOrder: 80 },
     { code: 'LOT_TRACKING', name: 'LOT 추적', description: 'LOT 단위 이력 추적', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot-tracking'], isCore: false, displayOrder: 90 },
     // QUALITY
     { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection'], isCore: false, displayOrder: 100 },
