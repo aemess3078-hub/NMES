@@ -95,6 +95,11 @@ const IDS = {
     func02: 'dc-func-002',
     mat01: 'dc-mat-001',
   },
+
+  quotations: {
+    qt1: 'qt-2026-001',
+    qt2: 'qt-2026-002',
+  },
 } as const;
 
 // ─── Seed Functions ───────────────────────────────────────────────────────────
@@ -1320,6 +1325,8 @@ async function seedFeatures() {
     { code: 'ITEM_PRICE', name: '단가관리', description: '품목 단가 관리', category: 'PURCHASE', icon: 'CircleDollarSign', menuCodes: ['nav-item-prices'], isCore: false, displayOrder: 162 },
     // MRP
     { code: 'MRP', name: 'MRP 소요량', description: '자재 소요량 계획 및 AI 발주 제안', category: 'PRODUCTION', icon: 'Calculator', menuCodes: ['nav-mrp'], isCore: false, displayOrder: 141 },
+    // QUOTATION
+    { code: 'QUOTATION', name: '견적관리', description: '고객 견적서 관리 및 수주 전환', category: 'SALES', icon: 'FileText', menuCodes: ['quotations'], isCore: false, displayOrder: 50 },
   ];
 
   for (const f of features) {
@@ -1561,6 +1568,92 @@ async function seedPurchaseData() {
   }
 }
 
+async function seedQuotations() {
+  console.log("  Seeding quotations...")
+
+  const firstSO = await prisma.salesOrder.findFirst({
+    where: { tenantId: IDS.tenant },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const site = await prisma.site.findFirst({ where: { tenantId: IDS.tenant } })
+  const customer1 = await prisma.businessPartner.findFirst({
+    where: { tenantId: IDS.tenant, partnerType: { in: ['CUSTOMER', 'BOTH'] } },
+    orderBy: { code: 'asc' },
+  })
+  const customer2 = await prisma.businessPartner.findFirst({
+    where: { tenantId: IDS.tenant, partnerType: { in: ['CUSTOMER', 'BOTH'] } },
+    orderBy: { code: 'desc' },
+  })
+
+  const finishedItems = await prisma.item.findMany({
+    where: { tenantId: IDS.tenant, itemType: { in: ['FINISHED', 'SEMI_FINISHED'] } },
+    take: 3,
+  })
+
+  if (!site || !customer1 || finishedItems.length === 0) {
+    console.log("  Skipping quotations (missing prerequisite data)")
+    return
+  }
+
+  // QT-2026-001: WON, 수주 연결됨
+  await prisma.quotation.upsert({
+    where: { tenantId_quotationNo: { tenantId: IDS.tenant, quotationNo: 'QT-2026-001' } },
+    update: {},
+    create: {
+      id: IDS.quotations.qt1,
+      tenantId: IDS.tenant,
+      siteId: site.id,
+      customerId: customer1.id,
+      quotationNo: 'QT-2026-001',
+      quotationDate: new Date('2026-02-15'),
+      validUntil: new Date('2026-03-15'),
+      status: 'WON',
+      currency: 'KRW',
+      totalAmount: finishedItems[0] ? 5000000 : 0,
+      convertedSalesOrderId: firstSO?.id ?? null,
+      note: '견적 시드 데이터 (확정)',
+      items: {
+        create: finishedItems.slice(0, 2).map((item, i) => ({
+          itemId: item.id,
+          qty: (i + 1) * 10,
+          unitPrice: 250000 + i * 50000,
+        })),
+      },
+    },
+  })
+
+  // QT-2026-002: SUBMITTED
+  if (customer2 && customer2.id !== customer1.id) {
+    await prisma.quotation.upsert({
+      where: { tenantId_quotationNo: { tenantId: IDS.tenant, quotationNo: 'QT-2026-002' } },
+      update: {},
+      create: {
+        id: IDS.quotations.qt2,
+        tenantId: IDS.tenant,
+        siteId: site.id,
+        customerId: customer2.id,
+        quotationNo: 'QT-2026-002',
+        quotationDate: new Date('2026-03-20'),
+        validUntil: new Date('2026-04-30'),
+        status: 'SUBMITTED',
+        currency: 'KRW',
+        totalAmount: finishedItems[0] ? 3000000 : 0,
+        note: '견적 시드 데이터 (제출)',
+        items: {
+          create: [{
+            itemId: finishedItems[0].id,
+            qty: 12,
+            unitPrice: 250000,
+          }],
+        },
+      },
+    })
+  }
+
+  console.log("  Quotations seeded")
+}
+
 async function main() {
   console.log('▶ MES 기준정보 시드 시작...\n');
 
@@ -1626,8 +1719,11 @@ async function main() {
   console.log('  [20/21] SalesOrders + ShipmentOrders');
   await seedSalesOrders();
 
-  console.log('  [21/21] PurchaseOrders + ItemPrices');
+  console.log('  [21/22] PurchaseOrders + ItemPrices');
   await seedPurchaseData();
+
+  console.log('  [22/22] Quotations');
+  await seedQuotations();
 
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
@@ -1651,6 +1747,7 @@ async function main() {
   console.log('  - EdgeGateway: 1 / EquipmentConnection: 2 / DataTag: 6');
   console.log('  - SalesOrder: 2 / ShipmentOrder: 1');
   console.log('  - PurchaseOrder: 2 / ItemPrice: N건');
+  console.log('  - Quotation: 2 / QuotationItem: 3');
 }
 
 main()

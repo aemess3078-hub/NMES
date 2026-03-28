@@ -158,6 +158,15 @@ export const MES_NAV: NavItem[] = [
     displayOrder: 25,
     children: [
       {
+        id: 'nav-quotations',
+        parentId: 'nav-sales',
+        label: '견적관리',
+        icon: 'FileText',
+        href: '/app/mes/quotations',
+        displayOrder: 5,
+        children: [],
+      },
+      {
         id: 'nav-sales-orders',
         parentId: 'nav-sales',
         label: '수주관리',

@@ -323,6 +323,7 @@ model Tenant {
   purchaseOrders        PurchaseOrder[] @relation("TenantPurchaseOrders")
   itemPrices            ItemPrice[]     @relation("TenantItemPrices")
   aiUsageLogs           AIUsageLog[]    @relation("TenantAIUsageLogs")
+  quotations            Quotation[]     @relation("TenantQuotations")
 }
 
 model Profile {
@@ -363,6 +364,7 @@ model Site {
   salesOrders           SalesOrder[]    @relation("SiteSalesOrders")
   shipmentOrders        ShipmentOrder[] @relation("SiteShipmentOrders")
   purchaseOrders        PurchaseOrder[] @relation("SitePurchaseOrders")
+  quotations            Quotation[]     @relation("SiteQuotations")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -418,6 +420,7 @@ model BusinessPartner {
   salesOrders    SalesOrder[]    @relation("CustomerSalesOrders")
   purchaseOrders PurchaseOrder[] @relation("SupplierPurchaseOrders")
   itemPrices     ItemPrice[]     @relation("PartnerPrices")
+  quotations     Quotation[]     @relation("CustomerQuotations")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -479,6 +482,7 @@ model Item {
   shipmentItems          ShipmentItem[]      @relation("ItemShipmentItems")
   purchaseOrderItems     PurchaseOrderItem[] @relation("ItemPurchaseOrderItems")
   itemPrices             ItemPrice[]         @relation("ItemPrices")
+  quotationItems         QuotationItem[]     @relation("ItemQuotationItems")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1578,4 +1582,58 @@ model AIUsageLog {
   @@index([tenantId, feature])
   @@index([tenantId, createdAt])
   @@index([createdAt])
+}
+
+// ─── Phase 2d-8: 견적관리 ─────────────────────────────────────────────────────
+
+enum QuotationStatus {
+  DRAFT
+  SUBMITTED
+  NEGOTIATING
+  WON
+  LOST
+  EXPIRED
+  CANCELLED
+}
+
+model Quotation {
+  id                    String          @id @default(cuid())
+  tenantId              String
+  siteId                String
+  customerId            String
+  quotationNo           String
+  quotationDate         DateTime
+  validUntil            DateTime
+  status                QuotationStatus @default(DRAFT)
+  totalAmount           Decimal?        @db.Decimal(18, 2)
+  currency              String          @default("KRW")
+  note                  String?
+  convertedSalesOrderId String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  tenant   Tenant          @relation("TenantQuotations", fields: [tenantId], references: [id])
+  site     Site            @relation("SiteQuotations", fields: [siteId], references: [id])
+  customer BusinessPartner @relation("CustomerQuotations", fields: [customerId], references: [id])
+  items    QuotationItem[]
+
+  @@unique([tenantId, quotationNo])
+  @@index([tenantId, status])
+  @@index([customerId])
+}
+
+model QuotationItem {
+  id          String  @id @default(cuid())
+  quotationId String
+  itemId      String
+  qty         Decimal @db.Decimal(18, 6)
+  unitPrice   Decimal @db.Decimal(18, 2)
+  note        String?
+
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+  item      Item      @relation("ItemQuotationItems", fields: [itemId], references: [id])
+
+  @@unique([quotationId, itemId])
+  @@index([quotationId])
+  @@index([itemId])
 }
