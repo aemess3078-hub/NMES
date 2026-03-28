@@ -2,7 +2,7 @@ import { cookies } from "next/headers"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import {
   getInventoryTransactions,
-  getWarehouses,
+  getAllLocations,
   getItemsForInventory,
   getSitesForInventory,
 } from "@/lib/actions/inventory.actions"
@@ -23,9 +23,9 @@ export default async function InventoryTransactionsPage() {
     )
   }
 
-  const [transactions, warehouses, items, sites] = await Promise.all([
+  const [transactions, locations, items, sites] = await Promise.all([
     getInventoryTransactions(),
-    getWarehouses(),
+    getAllLocations(),
     getItemsForInventory(),
     getSitesForInventory(),
   ])
@@ -45,7 +45,7 @@ export default async function InventoryTransactionsPage() {
       <InventoryTransactionDataTable
         data={transactions}
         sites={sites}
-        warehouses={warehouses}
+        locations={locations}
         items={items}
         tenantId={tenantId}
       />

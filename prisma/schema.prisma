@@ -935,6 +935,7 @@ model InventoryTransaction {
   qty            Decimal         @db.Decimal(18, 6)
   refType        String?
   refId          String?
+  note           String?
   txAt           DateTime        @default(now())
 
   tenant       Tenant    @relation(fields: [tenantId], references: [id])

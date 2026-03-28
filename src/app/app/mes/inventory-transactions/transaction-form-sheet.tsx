@@ -15,13 +15,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   FormSheet,
   FormTextField,
 } from "@/components/common/form-sheet"
 import { transactionFormSchema, TransactionFormValues } from "./transaction-form-schema"
-import { createTransaction, getLocations } from "@/lib/actions/inventory.actions"
+import { createTransaction } from "@/lib/actions/inventory.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +28,7 @@ type LocationOption = { id: string; code: string; name: string; locationType: st
 
 interface TransactionFormSheetProps {
   sites: { id: string; code: string; name: string }[]
-  warehouses: { id: string; code: string; name: string; siteId: string }[]
+  locations: LocationOption[]
   items: { id: string; code: string; name: string; itemType: string; uom: string }[]
   tenantId: string
   open: boolean
@@ -66,25 +65,11 @@ const DEFAULT_VALUES: TransactionFormValues = {
   note: null,
 }
 
-// ─── 유형별 로케이션 요건 ─────────────────────────────────────────────────────
-
-function needsFromLocation(txType: string) {
-  return ["ISSUE", "SCRAP", "TRANSFER"].includes(txType)
-}
-
-function needsToLocation(txType: string) {
-  return ["RECEIPT", "RETURN", "TRANSFER"].includes(txType)
-}
-
-function needsAdjustLocation(txType: string) {
-  return txType === "ADJUST"
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function TransactionFormSheet({
   sites,
-  warehouses,
+  locations,
   items,
   tenantId,
   open,
@@ -93,89 +78,22 @@ export function TransactionFormSheet({
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
 
-  // 창고별 로케이션 목록 (출발/도착 각각)
-  const [fromWarehouseId, setFromWarehouseId] = useState<string>("")
-  const [toWarehouseId, setToWarehouseId] = useState<string>("")
-  const [adjustWarehouseId, setAdjustWarehouseId] = useState<string>("")
-
-  const [fromLocations, setFromLocations] = useState<LocationOption[]>([])
-  const [toLocations, setToLocations] = useState<LocationOption[]>([])
-  const [adjustLocations, setAdjustLocations] = useState<LocationOption[]>([])
-
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionFormSchema),
     defaultValues: DEFAULT_VALUES,
   })
 
   const txType = form.watch("txType")
-  const selectedSiteId = form.watch("siteId")
 
-  // open 시 폼 초기화
   useEffect(() => {
-    if (open) {
-      form.reset(DEFAULT_VALUES)
-      setFromWarehouseId("")
-      setToWarehouseId("")
-      setAdjustWarehouseId("")
-      setFromLocations([])
-      setToLocations([])
-      setAdjustLocations([])
-    }
+    if (open) form.reset(DEFAULT_VALUES)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 출발 창고 변경 → 로케이션 로딩
-  const handleFromWarehouseChange = async (warehouseId: string) => {
-    setFromWarehouseId(warehouseId)
-    form.setValue("fromLocationId", null)
-    if (warehouseId) {
-      const locs = await getLocations(warehouseId)
-      setFromLocations(locs)
-    } else {
-      setFromLocations([])
-    }
-  }
-
-  // 도착 창고 변경 → 로케이션 로딩
-  const handleToWarehouseChange = async (warehouseId: string) => {
-    setToWarehouseId(warehouseId)
-    form.setValue("toLocationId", null)
-    if (warehouseId) {
-      const locs = await getLocations(warehouseId)
-      setToLocations(locs)
-    } else {
-      setToLocations([])
-    }
-  }
-
-  // 조정 창고 변경 → 로케이션 로딩 (ADJUST용)
-  const handleAdjustWarehouseChange = async (warehouseId: string) => {
-    setAdjustWarehouseId(warehouseId)
-    form.setValue("fromLocationId", null)
-    if (warehouseId) {
-      const locs = await getLocations(warehouseId)
-      setAdjustLocations(locs)
-    } else {
-      setAdjustLocations([])
-    }
-  }
-
-  // 유형 변경 시 로케이션 필드 초기화
   const handleTxTypeChange = (value: string) => {
     form.setValue("txType", value)
     form.setValue("fromLocationId", null)
     form.setValue("toLocationId", null)
-    setFromWarehouseId("")
-    setToWarehouseId("")
-    setAdjustWarehouseId("")
-    setFromLocations([])
-    setToLocations([])
-    setAdjustLocations([])
   }
-
-  // 사이트에 속한 창고 필터링
-  const filteredWarehouses = selectedSiteId
-    ? warehouses.filter((w) => w.siteId === selectedSiteId)
-    : warehouses
 
   const onSubmit = async (values: TransactionFormValues) => {
     setIsLoading(true)
@@ -347,148 +265,122 @@ export function TransactionFormSheet({
             <div className="pt-4 border-t space-y-4">
               <p className="text-[15px] font-medium text-foreground">로케이션 정보</p>
 
-              {/* RECEIPT / RETURN: 도착 창고 + 로케이션 */}
+              {/* RECEIPT / RETURN: 입고 로케이션 */}
               {(txType === "RECEIPT" || txType === "RETURN") && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="toLocationId"
+                  render={({ field }) => (
                     <FormItem>
-                      <FormLabel>입고 창고</FormLabel>
-                      <Select
-                        onValueChange={handleToWarehouseChange}
-                        value={toWarehouseId || undefined}
-                      >
+                      <FormLabel>입고 로케이션</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined}>
                         <SelectTrigger>
-                          <SelectValue placeholder="창고 선택" />
+                          <SelectValue placeholder="로케이션 선택" />
                         </SelectTrigger>
                         <SelectContent>
-                          {filteredWarehouses.map((w) => (
-                            <SelectItem key={w.id} value={w.id}>
-                              [{w.code}] {w.name}
+                          {locations.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>
+                              [{loc.code}] {loc.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormMessage />
                     </FormItem>
-
-                    <FormField
-                      control={form.control}
-                      name="toLocationId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>입고 로케이션</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            value={field.value || undefined}
-                            disabled={!toWarehouseId}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder={toWarehouseId ? "로케이션 선택" : "창고를 먼저 선택"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {toLocations.map((loc) => (
-                                <SelectItem key={loc.id} value={loc.id}>
-                                  [{loc.code}] {loc.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
+                  )}
+                />
               )}
 
-              {/* ISSUE / SCRAP: 출발 창고 + 로케이션 */}
+              {/* ISSUE / SCRAP: 출고 로케이션 */}
               {(txType === "ISSUE" || txType === "SCRAP") && (
-                <div className="grid grid-cols-2 gap-4">
-                  <FormItem>
-                    <FormLabel>출고 창고</FormLabel>
-                    <Select
-                      onValueChange={handleFromWarehouseChange}
-                      value={fromWarehouseId || undefined}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="창고 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredWarehouses.map((w) => (
-                          <SelectItem key={w.id} value={w.id}>
-                            [{w.code}] {w.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-
-                  <FormField
-                    control={form.control}
-                    name="fromLocationId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>출고 로케이션</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value || undefined}
-                          disabled={!fromWarehouseId}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={fromWarehouseId ? "로케이션 선택" : "창고를 먼저 선택"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {fromLocations.map((loc) => (
-                              <SelectItem key={loc.id} value={loc.id}>
-                                [{loc.code}] {loc.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <FormField
+                  control={form.control}
+                  name="fromLocationId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>출고 로케이션</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="로케이션 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {locations.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>
+                              [{loc.code}] {loc.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               )}
 
-              {/* ADJUST: 조정 창고 + 로케이션 */}
+              {/* ADJUST: 조정 로케이션 */}
               {txType === "ADJUST" && (
-                <div className="grid grid-cols-2 gap-4">
-                  <FormItem>
-                    <FormLabel>조정 창고</FormLabel>
-                    <Select
-                      onValueChange={handleAdjustWarehouseChange}
-                      value={adjustWarehouseId || undefined}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="창고 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredWarehouses.map((w) => (
-                          <SelectItem key={w.id} value={w.id}>
-                            [{w.code}] {w.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
+                <FormField
+                  control={form.control}
+                  name="fromLocationId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>조정 로케이션</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || undefined}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="로케이션 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {locations.map((loc) => (
+                            <SelectItem key={loc.id} value={loc.id}>
+                              [{loc.code}] {loc.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
+              {/* TRANSFER: 출발 로케이션 + 도착 로케이션 */}
+              {txType === "TRANSFER" && (
+                <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="fromLocationId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>조정 로케이션</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value || undefined}
-                          disabled={!adjustWarehouseId}
-                        >
+                        <FormLabel>출발 로케이션</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || undefined}>
                           <SelectTrigger>
-                            <SelectValue placeholder={adjustWarehouseId ? "로케이션 선택" : "창고를 먼저 선택"} />
+                            <SelectValue placeholder="로케이션 선택" />
                           </SelectTrigger>
                           <SelectContent>
-                            {adjustLocations.map((loc) => (
+                            {locations.map((loc) => (
+                              <SelectItem key={loc.id} value={loc.id}>
+                                [{loc.code}] {loc.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="toLocationId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>도착 로케이션</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || undefined}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="로케이션 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {locations.map((loc) => (
                               <SelectItem key={loc.id} value={loc.id}>
                                 [{loc.code}] {loc.name}
                               </SelectItem>
@@ -502,136 +394,15 @@ export function TransactionFormSheet({
                 </div>
               )}
 
-              {/* TRANSFER: 출발 창고/로케이션 + 도착 창고/로케이션 */}
-              {txType === "TRANSFER" && (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[13px] text-muted-foreground mb-3">출발지</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormItem>
-                        <FormLabel>출발 창고</FormLabel>
-                        <Select
-                          onValueChange={handleFromWarehouseChange}
-                          value={fromWarehouseId || undefined}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="창고 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {filteredWarehouses.map((w) => (
-                              <SelectItem key={w.id} value={w.id}>
-                                [{w.code}] {w.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormItem>
-
-                      <FormField
-                        control={form.control}
-                        name="fromLocationId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>출발 로케이션</FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value || undefined}
-                              disabled={!fromWarehouseId}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder={fromWarehouseId ? "로케이션 선택" : "창고를 먼저 선택"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {fromLocations.map((loc) => (
-                                  <SelectItem key={loc.id} value={loc.id}>
-                                    [{loc.code}] {loc.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[13px] text-muted-foreground mb-3">도착지</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormItem>
-                        <FormLabel>도착 창고</FormLabel>
-                        <Select
-                          onValueChange={handleToWarehouseChange}
-                          value={toWarehouseId || undefined}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="창고 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {filteredWarehouses.map((w) => (
-                              <SelectItem key={w.id} value={w.id}>
-                                [{w.code}] {w.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormItem>
-
-                      <FormField
-                        control={form.control}
-                        name="toLocationId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>도착 로케이션</FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value || undefined}
-                              disabled={!toWarehouseId}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder={toWarehouseId ? "로케이션 선택" : "창고를 먼저 선택"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {toLocations.map((loc) => (
-                                  <SelectItem key={loc.id} value={loc.id}>
-                                    [{loc.code}] {loc.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* 상세 구역 (선택) */}
+              <FormTextField
+                control={form.control}
+                name="note"
+                label="상세 구역 (선택)"
+                placeholder="예: 3번 랙 A열, 냉동창고 B구역"
+              />
             </div>
           )}
-
-          {/* 비고 */}
-          <div className="pt-4 border-t space-y-3">
-            <p className="text-[15px] font-medium text-foreground">비고</p>
-            <FormField
-              control={form.control}
-              name="note"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>비고 (선택)</FormLabel>
-                  <Textarea
-                    placeholder="추가 메모 입력"
-                    className="resize-none"
-                    rows={3}
-                    value={field.value ?? ""}
-                    onChange={field.onChange}
-                  />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
         </div>
       </Form>
     </FormSheet>

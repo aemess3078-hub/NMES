@@ -13,7 +13,7 @@ import { InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions
 interface InventoryTransactionDataTableProps {
   data: InventoryTransactionWithDetails[]
   sites: { id: string; code: string; name: string }[]
-  warehouses: { id: string; code: string; name: string; siteId: string }[]
+  locations: { id: string; code: string; name: string; locationType: string | null }[]
   items: { id: string; code: string; name: string; itemType: string; uom: string }[]
   tenantId: string
 }
@@ -21,7 +21,7 @@ interface InventoryTransactionDataTableProps {
 export function InventoryTransactionDataTable({
   data,
   sites,
-  warehouses,
+  locations,
   items,
   tenantId,
 }: InventoryTransactionDataTableProps) {
@@ -42,11 +42,6 @@ export function InventoryTransactionDataTable({
         { label: "반품", value: "RETURN" },
         { label: "폐기", value: "SCRAP" },
       ],
-    },
-    {
-      id: "fromWarehouse" as keyof InventoryTransactionWithDetails,
-      title: "출발 창고",
-      options: warehouses.map((w) => ({ label: w.name, value: w.id })),
     },
   ]
 
@@ -73,7 +68,7 @@ export function InventoryTransactionDataTable({
         open={formOpen}
         onOpenChange={setFormOpen}
         sites={sites}
-        warehouses={warehouses}
+        locations={locations}
         items={items}
         tenantId={tenantId}
       />

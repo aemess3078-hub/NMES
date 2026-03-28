@@ -41,23 +41,12 @@ export type InventoryTransactionWithDetails = {
   qty: any  // Decimal
   refType: string | null
   refId: string | null
+  note: string | null
   txAt: Date
   item: { id: string; code: string; name: string; itemType: string; uom: string }
   lot: { id: string; lotNo: string } | null
-  fromLocation: {
-    id: string
-    code: string
-    name: string
-    warehouseId: string
-    warehouse: { id: string; code: string; name: string }
-  } | null
-  toLocation: {
-    id: string
-    code: string
-    name: string
-    warehouseId: string
-    warehouse: { id: string; code: string; name: string }
-  } | null
+  fromLocation: { id: string; code: string; name: string } | null
+  toLocation: { id: string; code: string; name: string } | null
 }
 
 // ─── 재고현황 조회 ─────────────────────────────────────────────────────────────
@@ -85,32 +74,18 @@ export async function getInventoryTransactions(): Promise<InventoryTransactionWi
     include: {
       item: true,
       lot: { select: { id: true, lotNo: true } },
-      fromLocation: {
-        include: { warehouse: true },
-      },
-      toLocation: {
-        include: { warehouse: true },
-      },
+      fromLocation: { select: { id: true, code: true, name: true } },
+      toLocation: { select: { id: true, code: true, name: true } },
     },
     orderBy: { txAt: "desc" },
     take: 200,
   }) as any
 }
 
-// ─── 창고 목록 ────────────────────────────────────────────────────────────────
+// ─── 전체 로케이션 목록 ───────────────────────────────────────────────────────
 
-export async function getWarehouses() {
-  return prisma.warehouse.findMany({
-    select: { id: true, code: true, name: true, siteId: true },
-    orderBy: { name: "asc" },
-  })
-}
-
-// ─── 특정 창고의 로케이션 목록 ────────────────────────────────────────────────
-
-export async function getLocations(warehouseId: string) {
+export async function getAllLocations() {
   return prisma.location.findMany({
-    where: { warehouseId },
     select: { id: true, code: true, name: true, locationType: true },
     orderBy: { code: "asc" },
   })
@@ -255,6 +230,7 @@ export async function createTransaction(
         qty: data.qty,
         refType: data.refType ?? null,
         refId: null,
+        note: data.note ?? null,
         txAt: new Date(),
       },
     })
