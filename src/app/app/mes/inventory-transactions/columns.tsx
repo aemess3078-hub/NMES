@@ -82,38 +82,12 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
         filterValues.includes(row.getValue(id)),
     },
     {
-      id: "fromWarehouse",
-      accessorFn: (row) => row.fromLocation?.warehouse.name ?? null,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="출발 창고" />
-      ),
-      cell: ({ row }) => (
-        <span className="text-[14px]">
-          {row.original.fromLocation?.warehouse.name ?? "—"}
-        </span>
-      ),
-      filterFn: (row, _id, filterValues: string[]) => {
-        const warehouseId = row.original.fromLocation?.warehouseId
-        return warehouseId ? filterValues.includes(warehouseId) : false
-      },
-    },
-    {
       id: "fromLocation",
       accessorFn: (row) => row.fromLocation?.name ?? null,
       header: "출발 로케이션",
       cell: ({ row }) => (
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-[14px] text-muted-foreground">
           {row.original.fromLocation?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "toWarehouse",
-      accessorFn: (row) => row.toLocation?.warehouse.name ?? null,
-      header: "도착 창고",
-      cell: ({ row }) => (
-        <span className="text-[14px]">
-          {row.original.toLocation?.warehouse.name ?? "—"}
         </span>
       ),
     },
@@ -122,7 +96,7 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
       accessorFn: (row) => row.toLocation?.name ?? null,
       header: "도착 로케이션",
       cell: ({ row }) => (
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-[14px] text-muted-foreground">
           {row.original.toLocation?.name ?? "—"}
         </span>
       ),
