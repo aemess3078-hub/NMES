@@ -60,7 +60,7 @@ export async function getInventorySummary(tenantId: string) {
 
   // 품목별 합산 (같은 품목이 여러 로케이션에 있을 수 있음)
   const byItem = new Map<string, {
-    itemCode: string; itemName: string; itemType: string; unit: string
+    itemCode: string; itemName: string; itemType: string; uom: string
     qtyOnHand: number; qtyAvailable: number; qtyHold: number
     locations: string[]
   }>()
@@ -72,7 +72,7 @@ export async function getInventorySummary(tenantId: string) {
         itemCode: b.item.code,
         itemName: b.item.name,
         itemType: b.item.itemType,
-        단위: b.item.uom,
+        uom: b.item.uom,
         qtyOnHand: 0,
         qtyAvailable: 0,
         qtyHold: 0,
