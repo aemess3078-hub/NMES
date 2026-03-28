@@ -1,6 +1,6 @@
 import { cookies } from "next/headers"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
-import { getInventoryBalances, getWarehouses } from "@/lib/actions/inventory.actions"
+import { getInventoryBalances } from "@/lib/actions/inventory.actions"
 import { InventoryDataTable } from "./inventory-data-table"
 
 export const dynamic = "force-dynamic"
@@ -18,10 +18,7 @@ export default async function InventoryPage() {
     )
   }
 
-  const [balances, warehouses] = await Promise.all([
-    getInventoryBalances(),
-    getWarehouses(),
-  ])
+  const balances = await getInventoryBalances()
 
   return (
     <div className="space-y-6">
@@ -35,7 +32,7 @@ export default async function InventoryPage() {
           </p>
         </div>
       </div>
-      <InventoryDataTable data={balances} warehouses={warehouses} />
+      <InventoryDataTable data={balances} />
     </div>
   )
 }

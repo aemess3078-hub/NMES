@@ -1,22 +1,30 @@
 "use client"
 
+import { useMemo } from "react"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { InventoryBalanceWithDetails } from "@/lib/actions/inventory.actions"
 
 interface InventoryDataTableProps {
   data: InventoryBalanceWithDetails[]
-  warehouses: { id: string; code: string; name: string; siteId: string }[]
 }
 
-export function InventoryDataTable({ data, warehouses }: InventoryDataTableProps) {
+export function InventoryDataTable({ data }: InventoryDataTableProps) {
   const columns = getColumns()
+
+  const warehouseOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const b of data) {
+      seen.set(b.location.warehouseId, b.location.warehouse.name)
+    }
+    return Array.from(seen.entries()).map(([id, name]) => ({ label: name, value: id }))
+  }, [data])
 
   const filterableColumns = [
     {
       id: "warehouseName" as keyof InventoryBalanceWithDetails,
       title: "창고",
-      options: warehouses.map((w) => ({ label: w.name, value: w.id })),
+      options: warehouseOptions,
     },
     {
       id: "itemType" as keyof InventoryBalanceWithDetails,
