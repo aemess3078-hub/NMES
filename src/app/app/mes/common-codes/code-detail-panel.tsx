@@ -60,6 +60,8 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
   const [form, setForm] = useState<CodeFormState>(EMPTY_CODE_FORM)
   const [saving, setSaving] = useState(false)
 
+  const hasValueField = group.codes.some((c) => c.extra != null)
+
   function openCreate() {
     setEditingCode(null)
     setForm({ ...EMPTY_CODE_FORM, displayOrder: String(group.codes.length * 10 + 10) })
@@ -182,7 +184,7 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
                   <TableHead className="w-32 text-[13px]">코드</TableHead>
                   <TableHead className="text-[13px]">코드명</TableHead>
                   <TableHead className="text-[13px]">설명</TableHead>
-                  <TableHead className="text-[13px]">값</TableHead>
+                  {hasValueField && <TableHead className="text-[13px]">값</TableHead>}
                   <TableHead className="w-16 text-center text-[13px]">활성</TableHead>
                   <TableHead className="w-20 text-[13px]"></TableHead>
                 </TableRow>
@@ -198,13 +200,15 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
                     <TableCell className="text-[13px] text-muted-foreground max-w-[200px] truncate">
                       {code.description}
                     </TableCell>
-                    <TableCell className="text-[13px] font-mono text-muted-foreground max-w-[180px] truncate">
-                      {code.extra != null
-                        ? (code.extra as Record<string, unknown>)?.value != null
-                          ? String((code.extra as Record<string, unknown>).value)
-                          : JSON.stringify(code.extra)
-                        : "—"}
-                    </TableCell>
+                    {hasValueField && (
+                      <TableCell className="text-[13px] font-mono text-muted-foreground max-w-[180px] truncate">
+                        {code.extra != null
+                          ? (code.extra as Record<string, unknown>)?.value != null
+                            ? String((code.extra as Record<string, unknown>).value)
+                            : JSON.stringify(code.extra)
+                          : "—"}
+                      </TableCell>
+                    )}
                     <TableCell className="text-center">
                       <Switch
                         checked={code.isActive}
@@ -281,18 +285,20 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-[14px]">값</Label>
-              <Input
-                className="text-[14px]"
-                placeholder="예: 25000"
-                value={form.extra}
-                onChange={(e) => setForm((f) => ({ ...f, extra: e.target.value }))}
-              />
-              <p className="text-[12px] text-muted-foreground">
-                숫자를 입력하면 자동으로 저장됩니다. 비워두면 저장하지 않습니다.
-              </p>
-            </div>
+            {(hasValueField || editingCode?.extra != null) && (
+              <div className="space-y-1.5">
+                <Label className="text-[14px]">값</Label>
+                <Input
+                  className="text-[14px]"
+                  placeholder="예: 25000"
+                  value={form.extra}
+                  onChange={(e) => setForm((f) => ({ ...f, extra: e.target.value }))}
+                />
+                <p className="text-[12px] text-muted-foreground">
+                  숫자를 입력하면 자동으로 저장됩니다. 비워두면 저장하지 않습니다.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-[14px]">표시 순서</Label>
