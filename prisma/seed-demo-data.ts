@@ -93,6 +93,7 @@ async function main() {
   await seedPurchaseOrders()
   await seedQuotations()
   await seedEngineeringChanges()
+  await seedProductionPlans()
 
   console.log('=== 데모 데이터 시드 완료 ===')
 }
@@ -884,6 +885,139 @@ async function seedEngineeringChanges() {
         },
       })
     }
+  }
+}
+
+// ─── 10. ProductionPlan (2주치 주간/일간 계획) ────────────────────────────────
+
+async function seedProductionPlans() {
+  console.log('[10/10] ProductionPlan 생성...')
+
+  const plans = [
+    // W13: 3/14~3/20 완료
+    {
+      id: 'pp-2026-w13',
+      planNo: 'PP-2026-W13',
+      planType: 'WEEKLY' as const,
+      startDate: dateAt('2026-03-14'),
+      endDate: dateAt('2026-03-20'),
+      status: 'COMPLETED' as const,
+      note: '3월 3주차 주간계획',
+      items: [
+        { id: 'ppi-w13-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 130, note: 'WO-003, WO-004 연계' },
+        { id: 'ppi-w13-frame', itemId: ITEM_SEMI_FRAME, bomId: BOM_SEMI_FRAME, routingId: ROUTING_SEMI_FRAME, plannedQty: 100, note: 'WO-005 연계' },
+      ],
+    },
+    // W14: 3/21~3/27 완료
+    {
+      id: 'pp-2026-w14-demo',
+      planNo: 'PP-2026-W14-DEMO',
+      planType: 'WEEKLY' as const,
+      startDate: dateAt('2026-03-21'),
+      endDate: dateAt('2026-03-27'),
+      status: 'COMPLETED' as const,
+      note: '3월 4주차 주간계획',
+      items: [
+        { id: 'ppi-w14-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 100, note: 'WO-006, WO-007 연계' },
+        { id: 'ppi-w14-frame', itemId: ITEM_SEMI_FRAME, bomId: BOM_SEMI_FRAME, routingId: ROUTING_SEMI_FRAME, plannedQty: 80, note: '반제품 재고 보충' },
+      ],
+    },
+    // W15: 3/28~4/3 진행중
+    {
+      id: 'pp-2026-w15',
+      planNo: 'PP-2026-W15',
+      planType: 'WEEKLY' as const,
+      startDate: dateAt('2026-03-28'),
+      endDate: dateAt('2026-04-03'),
+      status: 'IN_PROGRESS' as const,
+      note: '4월 1주차 주간계획 (진행중)',
+      items: [
+        { id: 'ppi-w15-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 120, note: 'SO-2026-003, SO-2026-004 납기 대응' },
+        { id: 'ppi-w15-frame', itemId: ITEM_SEMI_FRAME, bomId: BOM_SEMI_FRAME, routingId: ROUTING_SEMI_FRAME, plannedQty: 60, note: '반제품 선행 생산' },
+      ],
+    },
+    // W16: 4/4~4/10 예정
+    {
+      id: 'pp-2026-w16',
+      planNo: 'PP-2026-W16',
+      planType: 'WEEKLY' as const,
+      startDate: dateAt('2026-04-04'),
+      endDate: dateAt('2026-04-10'),
+      status: 'CONFIRMED' as const,
+      note: '4월 2주차 주간계획 (확정)',
+      items: [
+        { id: 'ppi-w16-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 100, note: 'SO-2026-005 납기 대응' },
+      ],
+    },
+    // 일간계획 3건 (최근 3일)
+    {
+      id: 'pp-2026-d0326',
+      planNo: 'PP-2026-D0326',
+      planType: 'DAILY' as const,
+      startDate: dateAt('2026-03-26'),
+      endDate: dateAt('2026-03-26'),
+      status: 'COMPLETED' as const,
+      note: '3/26 일간계획',
+      items: [
+        { id: 'ppi-d0326-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 20, note: '일일 목표' },
+      ],
+    },
+    {
+      id: 'pp-2026-d0327',
+      planNo: 'PP-2026-D0327',
+      planType: 'DAILY' as const,
+      startDate: dateAt('2026-03-27'),
+      endDate: dateAt('2026-03-27'),
+      status: 'COMPLETED' as const,
+      note: '3/27 일간계획',
+      items: [
+        { id: 'ppi-d0327-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 20, note: '일일 목표' },
+      ],
+    },
+    {
+      id: 'pp-2026-d0328',
+      planNo: 'PP-2026-D0328',
+      planType: 'DAILY' as const,
+      startDate: dateAt('2026-03-28'),
+      endDate: dateAt('2026-03-28'),
+      status: 'IN_PROGRESS' as const,
+      note: '3/28 일간계획 (오늘)',
+      items: [
+        { id: 'ppi-d0328-fg', itemId: ITEM_FG_ASSY, bomId: BOM_FG_ASSY, routingId: ROUTING_FG_ASSY, plannedQty: 15, note: '오늘 목표' },
+        { id: 'ppi-d0328-frame', itemId: ITEM_SEMI_FRAME, bomId: BOM_SEMI_FRAME, routingId: ROUTING_SEMI_FRAME, plannedQty: 10, note: '반제품 보충' },
+      ],
+    },
+  ]
+
+  for (const plan of plans) {
+    const existing = await prisma.productionPlan.findUnique({
+      where: { tenantId_planNo: { tenantId: TENANT_ID, planNo: plan.planNo } },
+    })
+    if (existing) continue
+
+    await prisma.productionPlan.create({
+      data: {
+        id: plan.id,
+        tenantId: TENANT_ID,
+        siteId: SITE_FACTORY,
+        planNo: plan.planNo,
+        planType: plan.planType,
+        startDate: plan.startDate,
+        endDate: plan.endDate,
+        status: plan.status,
+        note: plan.note,
+        items: {
+          create: plan.items.map((item) => ({
+            id: item.id,
+            itemId: item.itemId,
+            bomId: item.bomId,
+            routingId: item.routingId,
+            plannedQty: item.plannedQty,
+            note: item.note,
+          })),
+        },
+      },
+    })
   }
 }
 
