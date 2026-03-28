@@ -1966,6 +1966,9 @@ async function main() {
   console.log('  [24/24] EngineeringChanges (ECN)');
   await seedECNs();
 
+  console.log('  [25/25] InventoryBalances');
+  await seedInventoryBalances();
+
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
@@ -1990,6 +1993,44 @@ async function main() {
   console.log('  - SalesOrder: 2 / ShipmentOrder: 1');
   console.log('  - PurchaseOrder: 2 / ItemPrice: N건');
   console.log('  - Quotation: 2 / QuotationItem: 3');
+  console.log('  - InventoryBalance: 원자재 3건 / 반제품 2건 / 완제품 1건');
+}
+
+async function seedInventoryBalances() {
+  const balances = [
+    // 원자재 창고
+    { itemId: 'item-raw-steel-001', warehouseId: 'wh-raw-001', qtyOnHand: 500,  qtyAvailable: 500  },
+    { itemId: 'item-raw-alum-001',  warehouseId: 'wh-raw-001', qtyOnHand: 300,  qtyAvailable: 300  },
+    { itemId: 'item-raw-bolt-001',  warehouseId: 'wh-raw-001', qtyOnHand: 2000, qtyAvailable: 2000 },
+    { itemId: 'item-cons-oil-001',  warehouseId: 'wh-raw-001', qtyOnHand: 100,  qtyAvailable: 100  },
+    // 반제품 창고
+    { itemId: 'item-semi-frame-001', warehouseId: 'wh-semi-001', qtyOnHand: 80, qtyAvailable: 80 },
+    { itemId: 'item-semi-shaft-001', warehouseId: 'wh-semi-001', qtyOnHand: 60, qtyAvailable: 60 },
+    // 완제품 창고
+    { itemId: 'item-fg-assy-001', warehouseId: 'wh-fg-001', qtyOnHand: 25, qtyAvailable: 25 },
+  ]
+
+  for (const b of balances) {
+    await prisma.inventoryBalance.upsert({
+      where: {
+        tenantId_itemId_warehouseId: {
+          tenantId: IDS.tenant,
+          itemId: b.itemId,
+          warehouseId: b.warehouseId,
+        },
+      },
+      update: {},
+      create: {
+        tenantId: IDS.tenant,
+        siteId: IDS.sites.factory,
+        itemId: b.itemId,
+        warehouseId: b.warehouseId,
+        qtyOnHand: b.qtyOnHand,
+        qtyAvailable: b.qtyAvailable,
+        qtyHold: 0,
+      },
+    })
+  }
 }
 
 async function seedECNs() {
