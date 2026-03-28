@@ -27,7 +27,7 @@ export async function getCustomers(tenantId: string) {
 
 export async function getItemsForSales(tenantId: string) {
   return prisma.item.findMany({
-    where: { tenantId, status: "ACTIVE" },
+    where: { tenantId, status: "ACTIVE", itemType: "FINISHED" },
     orderBy: { name: "asc" },
   })
 }

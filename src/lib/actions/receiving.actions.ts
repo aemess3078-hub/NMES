@@ -136,4 +136,5 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
   })
 
   revalidatePath("/app/mes/purchase-orders")
+  revalidatePath("/app/mes/material-receipt")
 }

@@ -277,7 +277,6 @@ export const MES_NAV: NavItem[] = [
         icon: 'PackagePlus',
         href: '/app/mes/material-receipt',
         displayOrder: 10,
-        comingSoon: true,
         children: [],
       },
       {
