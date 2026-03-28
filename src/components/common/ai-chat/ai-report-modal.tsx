@@ -31,7 +31,7 @@ const TOPIC_OPTIONS = [
 ]
 
 // ── 마크다운 렌더러 ──────────────────────────────────────────────
-function ReportPreview({ content, reportRef }: { content: string; reportRef: React.RefObject<HTMLDivElement | null> }) {
+function ReportPreview({ content, reportRef }: { content: string; reportRef: React.RefObject<HTMLDivElement> }) {
   const now = new Date().toLocaleString("ko-KR")
   const lines = content.split("\n")
 
@@ -126,7 +126,7 @@ export function AiReportModal({ open, onClose, messages, selectedIds }: Props) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [reportContent, setReportContent] = useState("")
   const [error, setError] = useState("")
-  const reportRef = useRef<HTMLDivElement>(null)
+  const reportRef = useRef<HTMLDivElement>(null!) as React.RefObject<HTMLDivElement>
 
   const conversationMessages = messages
     .filter((m) => m.id !== "welcome" && !m.streaming && m.content.trim())
