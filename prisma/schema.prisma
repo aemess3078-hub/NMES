@@ -322,6 +322,7 @@ model Tenant {
   shipmentOrders        ShipmentOrder[] @relation("TenantShipmentOrders")
   purchaseOrders        PurchaseOrder[] @relation("TenantPurchaseOrders")
   itemPrices            ItemPrice[]     @relation("TenantItemPrices")
+  aiUsageLogs           AIUsageLog[]    @relation("TenantAIUsageLogs")
 }
 
 model Profile {
@@ -1556,4 +1557,25 @@ model ItemPrice {
 
   @@index([tenantId, itemId, partnerId])
   @@index([tenantId, priceType])
+}
+
+// ─── Phase 2d-AI: AI 사용량 로그 ────────────────────────────────────────────
+
+model AIUsageLog {
+  id               String   @id @default(cuid())
+  tenantId         String
+  feature          String
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  costEstimate     Decimal? @db.Decimal(10, 6)
+  requestSummary   String?
+  createdAt        DateTime @default(now())
+
+  tenant Tenant @relation("TenantAIUsageLogs", fields: [tenantId], references: [id])
+
+  @@index([tenantId, feature])
+  @@index([tenantId, createdAt])
+  @@index([createdAt])
 }
