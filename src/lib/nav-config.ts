@@ -137,6 +137,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'Activity',
         href: '/app/mes/process-progress',
         displayOrder: 40,
+        comingSoon: true,
         children: [],
       },
       {
@@ -146,6 +147,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'RefreshCw',
         href: '/app/mes/rework',
         displayOrder: 50,
+        comingSoon: true,
         children: [],
       },
       {
@@ -155,6 +157,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'Truck',
         href: '/app/mes/outsourcing',
         displayOrder: 60,
+        comingSoon: true,
         children: [],
       },
     ],
@@ -209,6 +212,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'MonitorSmartphone',
         href: '/app/mes/pop',
         displayOrder: 10,
+        comingSoon: true,
         children: [],
       },
     ],
@@ -245,6 +249,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'TrendingUp',
         href: '/app/mes/spc',
         displayOrder: 30,
+        comingSoon: true,
         children: [],
       },
       {
@@ -272,6 +277,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'PackagePlus',
         href: '/app/mes/material-receipt',
         displayOrder: 10,
+        comingSoon: true,
         children: [],
       },
       {
@@ -326,6 +332,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'ArrowLeftRight',
         href: '/app/mes/trace-reverse',
         displayOrder: 20,
+        comingSoon: true,
         children: [],
       },
     ],
@@ -344,6 +351,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'LayoutDashboard',
         href: '/app/mes/dashboard',
         displayOrder: 10,
+        comingSoon: true,
         children: [],
       },
     ],
@@ -362,6 +370,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'History',
         href: '/app/mes/lot-history',
         displayOrder: 10,
+        comingSoon: true,
         children: [],
       },
       {
@@ -470,6 +479,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'Building2',
         href: '/app/mes/erp',
         displayOrder: 10,
+        comingSoon: true,
         children: [],
       },
       {
@@ -479,6 +489,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'FileCheck',
         href: '/app/mes/approval',
         displayOrder: 20,
+        comingSoon: true,
         children: [],
       },
       {
@@ -488,6 +499,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'Boxes',
         href: '/app/mes/wms',
         displayOrder: 30,
+        comingSoon: true,
         children: [],
       },
     ],

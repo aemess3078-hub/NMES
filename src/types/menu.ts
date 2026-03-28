@@ -11,4 +11,5 @@ export interface NavItem {
   href?: string;       // direct route for static pages
   children: NavItem[];
   displayOrder: number;
+  comingSoon?: boolean; // true → 준비중 배지 표시, 클릭 비활성화
 }

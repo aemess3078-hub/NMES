@@ -116,8 +116,10 @@ function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
   const isFolder = hasChildren && !item.href;
   const isExpanded = expandedMenuIds.includes(item.id);
   const isActive = item.href ? pathname === item.href : false;
+  const isComingSoon = item.comingSoon === true;
 
   const handleClick = () => {
+    if (isComingSoon) return;
     if (isFolder) {
       toggleMenuExpand(item.id);
     } else if (item.href) {
@@ -129,10 +131,15 @@ function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
     <div>
       <div
         className={cn(
-          'flex items-center gap-1.5 rounded px-2 py-1.5 cursor-pointer transition-colors',
+          'flex items-center gap-1.5 rounded px-2 py-1.5 transition-colors',
+          isComingSoon
+            ? 'cursor-not-allowed opacity-40'
+            : 'cursor-pointer',
           isActive
             ? 'bg-accent text-accent-foreground font-semibold'
-            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground font-medium',
+            : isComingSoon
+              ? 'text-muted-foreground font-medium'
+              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground font-medium',
         )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={handleClick}
@@ -148,6 +155,11 @@ function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
         )}
         <DynamicIcon name={item.icon} className="flex-shrink-0 opacity-60" />
         <span className="truncate flex-1 text-[14px]">{item.label}</span>
+        {isComingSoon && (
+          <span className="flex-shrink-0 text-[10px] font-medium px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">
+            준비중
+          </span>
+        )}
       </div>
       {hasChildren && isExpanded && (
         <div>
