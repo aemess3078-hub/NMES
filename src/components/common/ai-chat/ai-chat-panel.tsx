@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { usePathname } from "next/navigation"
 import {
-  X, Send, Bot, FileDown, FileSpreadsheet,
-  FileText, Printer, ChevronDown, CheckSquare, Square,
+  X, Send, Bot, FileDown, RotateCcw, ChevronDown,
+  CheckSquare, Square,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,14 +15,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { AIMessage, type Message } from "./ai-message"
-import { sendAIChatMessage } from "@/lib/actions/ai-chat.actions"
-import {
-  exportToPDF,
-  exportToExcel,
-  exportToWord,
-  exportToHWP,
-  printMessages,
-} from "./ai-export"
+import { AiReportModal } from "./ai-report-modal"
+
+const SUGGESTED_QUESTIONS = [
+  "오늘 진행 중인 작업지시 알려줘",
+  "현재 재고 부족 품목 있어?",
+  "이번 주 불량 현황은?",
+  "납기 임박한 수주 있어?",
+  "대화 내용 리포트 작성해줘",
+]
+
+const REPORT_KEYWORDS = ["리포트", "보고서", "정리해", "요약해줘", "리포트 작성", "보고서 작성", "출력해줘"]
+
+function isReportRequest(text: string) {
+  return REPORT_KEYWORDS.some((k) => text.includes(k))
+}
 
 type Props = {
   open: boolean
@@ -36,44 +43,121 @@ export function AIChatPanel({ open, onClose }: Props) {
       id: "welcome",
       role: "assistant",
       content:
-        "안녕하세요! NMES AI 어시스턴트입니다.\n생산, 품질, 설비 관련 궁금한 점을 질문해 주세요.\n\n💡 AI 답변에 마우스를 올리면 체크박스가 나타납니다. 선택 후 원하는 형식으로 내보낼 수 있습니다.",
+        "안녕하세요! NMES AI 어시스턴트입니다.\n생산, 품질, 설비, 수주 관련 궁금한 점을 질문해 주세요.\n\n💡 AI 답변에 마우스를 올리면 선택 체크박스가 나타납니다.",
       timestamp: new Date(),
     },
   ])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [isExporting, setIsExporting] = useState(false)
+  const [reportModalOpen, setReportModalOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, isLoading])
+  }, [messages])
 
-  const handleSend = async () => {
-    const trimmed = input.trim()
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 300)
+    }
+  }, [open])
+
+  const handleSend = async (text?: string) => {
+    const trimmed = (text ?? input).trim()
     if (!trimmed || isLoading) return
 
-    const userMsg: Message = {
-      id: `u-${Date.now()}`,
-      role: "user",
-      content: trimmed,
-      timestamp: new Date(),
+    // 리포트 요청 감지
+    if (isReportRequest(trimmed)) {
+      setInput("")
+      const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: trimmed, timestamp: new Date() }
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          content: "📋 리포트 생성 창을 열었습니다! 원하는 형식을 선택해 주세요.",
+          timestamp: new Date(),
+        },
+      ])
+      setReportModalOpen(true)
+      return
     }
+
     setInput("")
-    setMessages((prev) => [...prev, userMsg])
+    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: trimmed, timestamp: new Date() }
+    const aiMsgId = `a-${Date.now()}`
+
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { id: aiMsgId, role: "assistant", content: "", timestamp: new Date(), streaming: true },
+    ])
     setIsLoading(true)
 
-    const result = await sendAIChatMessage(trimmed, pathname)
-    setIsLoading(false)
+    try {
+      const history = messages
+        .filter((m) => m.id !== "welcome" && !m.streaming)
+        .map((m) => ({ role: m.role, content: m.content }))
 
-    const aiMsg: Message = {
-      id: `a-${Date.now()}`,
-      role: "assistant",
-      content: result.reply ?? `오류: ${result.error}`,
-      timestamp: new Date(),
+      const res = await fetch("/api/ai-chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: trimmed, context: pathname, history }),
+      })
+
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => "응답 오류")
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId ? { ...m, content: `오류: ${errText}`, streaming: false } : m
+          )
+        )
+        return
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let fullContent = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value)
+        const lines = chunk.split("\n").filter((l) => l.startsWith("data: "))
+        for (const line of lines) {
+          const data = line.slice(6)
+          if (data === "[DONE]") break
+          try {
+            const json = JSON.parse(data)
+            const delta = json.delta ?? ""
+            fullContent += delta
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === aiMsgId ? { ...m, content: fullContent } : m
+              )
+            )
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId ? { ...m, content: fullContent, streaming: false } : m
+        )
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "알 수 없는 오류"
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsgId ? { ...m, content: `오류: ${msg}`, streaming: false } : m
+        )
+      )
+    } finally {
+      setIsLoading(false)
     }
-    setMessages((prev) => [...prev, aiMsg])
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -81,6 +165,18 @@ export function AIChatPanel({ open, onClose }: Props) {
       e.preventDefault()
       handleSend()
     }
+  }
+
+  const handleClear = () => {
+    setMessages([
+      {
+        id: "welcome",
+        role: "assistant",
+        content: "대화가 초기화되었습니다. NMES 관련 질문을 해주세요.",
+        timestamp: new Date(),
+      },
+    ])
+    setSelectedIds(new Set())
   }
 
   const toggleSelect = useCallback((id: string) => {
@@ -93,9 +189,6 @@ export function AIChatPanel({ open, onClose }: Props) {
   }, [])
 
   const assistantMessages = messages.filter((m) => m.role === "assistant" && m.id !== "welcome")
-  const selectedMessages = messages.filter((m) => selectedIds.has(m.id))
-  const exportTarget = selectedMessages.length > 0 ? selectedMessages : messages.filter((m) => m.id !== "welcome")
-
   const handleSelectAll = () => {
     if (selectedIds.size === assistantMessages.length && assistantMessages.length > 0) {
       setSelectedIds(new Set())
@@ -104,10 +197,7 @@ export function AIChatPanel({ open, onClose }: Props) {
     }
   }
 
-  const runExport = async (fn: () => void | Promise<void>) => {
-    setIsExporting(true)
-    try { await fn() } finally { setIsExporting(false) }
-  }
+  const showSuggestions = messages.length <= 1
 
   return (
     <>
@@ -134,21 +224,16 @@ export function AIChatPanel({ open, onClose }: Props) {
             <div>
               <p className="text-[15px] font-semibold leading-tight">NMES AI 어시스턴트</p>
               <p className="text-[11px] text-muted-foreground">
-                gpt-4o-mini · 대화 {Math.max(0, messages.length - 1)}건
+                실시간 DB 연동 · 대화 {Math.max(0, messages.length - 1)}건
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* 내보내기 드롭다운 */}
+            {/* 리포트 드롭다운 */}
             {messages.length > 1 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 gap-1.5 text-[13px] px-2.5"
-                    disabled={isExporting}
-                  >
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[13px] px-2.5">
                     <FileDown className="w-4 h-4" />
                     내보내기
                     {selectedIds.size > 0 && (
@@ -159,45 +244,27 @@ export function AIChatPanel({ open, onClose }: Props) {
                     <ChevronDown className="w-3 h-3 text-muted-foreground" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52">
-                  <div className="px-2 py-1.5 text-[12px] text-muted-foreground">
-                    {selectedIds.size > 0
-                      ? `선택된 ${selectedIds.size}개 메시지 내보내기`
-                      : "전체 대화 내보내기"}
-                  </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => runExport(() => exportToPDF(exportTarget))}
-                  >
-                    <FileText className="mr-2 h-4 w-4 text-red-500" />
-                    PDF로 저장
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => runExport(() => exportToExcel(exportTarget))}
-                  >
-                    <FileSpreadsheet className="mr-2 h-4 w-4 text-green-600" />
-                    Excel로 저장
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => runExport(() => exportToWord(exportTarget))}
-                  >
-                    <FileText className="mr-2 h-4 w-4 text-blue-600" />
-                    Word (.docx) 저장
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => runExport(() => exportToHWP(exportTarget))}
-                  >
-                    <FileText className="mr-2 h-4 w-4 text-teal-600" />
-                    HWP 저장
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => printMessages(exportTarget)}>
-                    <Printer className="mr-2 h-4 w-4" />
-                    인쇄
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={() => setReportModalOpen(true)}>
+                    <FileDown className="mr-2 h-4 w-4" />
+                    리포트 생성
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+
+            {/* 초기화 */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground"
+              onClick={handleClear}
+              title="대화 초기화"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </Button>
+
+            {/* 닫기 */}
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
               <X className="w-4 h-4" />
             </Button>
@@ -239,8 +306,8 @@ export function AIChatPanel({ open, onClose }: Props) {
             />
           ))}
 
-          {/* 로딩 인디케이터 */}
-          {isLoading && (
+          {/* 로딩 인디케이터 (스트리밍 시작 전 짧은 순간) */}
+          {isLoading && messages[messages.length - 1]?.content === "" && (
             <div className="flex gap-2 items-start">
               <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center mt-0.5 flex-shrink-0">
                 <Bot className="w-4 h-4 text-primary" />
@@ -254,13 +321,33 @@ export function AIChatPanel({ open, onClose }: Props) {
               </div>
             </div>
           )}
+
           <div ref={bottomRef} />
         </div>
+
+        {/* ── 추천 질문 ── */}
+        {showSuggestions && (
+          <div className="px-5 py-3 border-t bg-muted/10 flex-shrink-0">
+            <p className="text-[11px] text-muted-foreground mb-2">💡 추천 질문</p>
+            <div className="flex flex-wrap gap-1.5">
+              {SUGGESTED_QUESTIONS.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => handleSend(q)}
+                  className="text-[12px] px-3 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── 입력창 ── */}
         <div className="px-4 py-4 border-t bg-muted/10 flex-shrink-0">
           <div className="flex gap-2 items-center">
             <input
+              ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -272,17 +359,25 @@ export function AIChatPanel({ open, onClose }: Props) {
             <Button
               size="icon"
               className="h-10 w-10 rounded-xl flex-shrink-0"
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!input.trim() || isLoading}
             >
               <Send className="w-4 h-4" />
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground/40 mt-2 text-center">
-            AI 답변에 마우스를 올려 선택 후 내보내기 가능
+            실시간 DB 연동 · AI 답변 선택 후 내보내기 가능
           </p>
         </div>
       </div>
+
+      {/* 리포트 모달 */}
+      <AiReportModal
+        open={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        messages={messages}
+        selectedIds={selectedIds}
+      />
     </>
   )
 }
