@@ -25,8 +25,8 @@ export type BOMWithDetails = {
     bomId: string
     componentItemId: string
     seq: number
-    qtyPer: any
-    scrapRate: any
+    qtyPer: number
+    scrapRate: number
     componentItem: {
       id: string
       code: string
@@ -37,8 +37,19 @@ export type BOMWithDetails = {
   }[]
 }
 
+function serializeBom(bom: any): BOMWithDetails {
+  return {
+    ...bom,
+    bomItems: bom.bomItems.map((bi: any) => ({
+      ...bi,
+      qtyPer: Number(bi.qtyPer),
+      scrapRate: Number(bi.scrapRate),
+    })),
+  }
+}
+
 export async function getBoms(): Promise<BOMWithDetails[]> {
-  return prisma.bOM.findMany({
+  const boms = await prisma.bOM.findMany({
     include: {
       item: { include: { category: true } },
       bomItems: {
@@ -47,11 +58,12 @@ export async function getBoms(): Promise<BOMWithDetails[]> {
       },
     },
     orderBy: [{ item: { name: "asc" } }, { version: "asc" }],
-  }) as any
+  })
+  return boms.map(serializeBom)
 }
 
 export async function getBomById(id: string): Promise<BOMWithDetails | null> {
-  return prisma.bOM.findUnique({
+  const bom = await prisma.bOM.findUnique({
     where: { id },
     include: {
       item: { include: { category: true } },
@@ -60,7 +72,8 @@ export async function getBomById(id: string): Promise<BOMWithDetails | null> {
         orderBy: { seq: "asc" },
       },
     },
-  }) as any
+  })
+  return bom ? serializeBom(bom) : null
 }
 
 export async function getItemsForBom() {

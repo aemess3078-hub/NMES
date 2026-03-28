@@ -9,12 +9,22 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+function buildDatabaseUrl() {
+  const url = process.env.DATABASE_URL ?? '';
+  if (!url || url.includes('connection_limit')) return url;
+  // Supabase 세션 모드 풀(pool_size 기본 15) 고갈 방지:
+  // dev 1개 인스턴스당 최대 2 커넥션만 사용
+  const separator = url.includes('?') ? '&' : '?';
+  return url + separator + 'connection_limit=2&pool_timeout=10&connect_timeout=10';
+}
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
+    datasources: { db: { url: buildDatabaseUrl() } },
     log:
       process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
+        ? ['error', 'warn']
         : ['error'],
   });
 
