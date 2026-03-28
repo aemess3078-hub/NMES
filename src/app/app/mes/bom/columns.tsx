@@ -25,6 +25,8 @@ const itemTypeLabels: Record<string, string> = {
 export function getColumns(callbacks: {
   onEdit: (bom: BOMWithDetails) => void
   onDelete: (bom: BOMWithDetails) => void
+  onSelect: (bom: BOMWithDetails) => void
+  selectedId?: string
 }): ColumnDef<BOMWithDetails>[] {
   return [
     {
@@ -55,9 +57,21 @@ export function getColumns(callbacks: {
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="품목코드" />
       ),
-      cell: ({ row }) => (
-        <span className="font-medium text-[14px]">{row.getValue("itemCode")}</span>
-      ),
+      cell: ({ row }) => {
+        const isSelected = callbacks.selectedId === row.original.id
+        return (
+          <button
+            onClick={() => callbacks.onSelect(row.original)}
+            className={`font-mono text-[13px] font-semibold px-2 py-0.5 rounded transition-colors ${
+              isSelected
+                ? "bg-primary text-primary-foreground"
+                : "text-primary hover:bg-primary/10 hover:underline"
+            }`}
+          >
+            {row.getValue("itemCode")}
+          </button>
+        )
+      },
     },
     {
       id: "itemName",

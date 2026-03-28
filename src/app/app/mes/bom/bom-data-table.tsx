@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { BomFormSheet } from "./bom-form-sheet"
+import { BomDetailPanel } from "./bom-detail-panel"
 import { deleteBom, BOMWithDetails } from "@/lib/actions/bom.actions"
 import { BOMFormValues } from "./bom-form-schema"
 import { BOMStatus } from "@prisma/client"
@@ -44,6 +45,11 @@ export function BomDataTable({
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingBom, setEditingBom] = useState<BOMWithDetails | null>(null)
+  const [selectedBom, setSelectedBom] = useState<BOMWithDetails | null>(null)
+
+  const handleSelect = (bom: BOMWithDetails) => {
+    setSelectedBom((prev) => (prev?.id === bom.id ? null : bom))
+  }
 
   const handleEdit = (bom: BOMWithDetails) => {
     setEditingBom(bom)
@@ -64,6 +70,8 @@ export function BomDataTable({
   const columns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
+    onSelect: handleSelect,
+    selectedId: selectedBom?.id,
   })
 
   const defaultValues: Partial<BOMFormValues> | undefined = editingBom
@@ -120,6 +128,14 @@ export function BomDataTable({
           },
         ]}
       />
+
+      {/* BOM 구조 상세 패널 */}
+      {selectedBom && (
+        <BomDetailPanel
+          bom={selectedBom}
+          onClose={() => setSelectedBom(null)}
+        />
+      )}
 
       <BomFormSheet
         open={formOpen}
