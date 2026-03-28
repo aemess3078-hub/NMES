@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini"
+  const model = process.env.OPENAI_MODEL_ADVANCED ?? process.env.OPENAI_MODEL ?? "gpt-4o"
   const systemPrompt =
     MES_SYSTEM_PROMPT +
     `\n\n현재 페이지 컨텍스트: ${context ?? "일반"}\n조회 시각: ${new Date().toLocaleString("ko-KR")}\n${dataContext}`
