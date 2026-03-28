@@ -932,6 +932,53 @@ async function seedWorkOrders() {
   });
 }
 
+async function seedProductionResults() {
+  // WO-2026-001 첫 번째 공정(seq=10, id=woo-2026-001-10)에 실적 3건
+  const results = [
+    {
+      id: 'pr-2026-001-1',
+      workOrderOperationId: 'woo-2026-001-10',
+      goodQty: 30,
+      defectQty: 2,
+      reworkQty: 1,
+      startedAt: new Date('2026-03-25T08:00:00'),
+      endedAt:   new Date('2026-03-25T10:30:00'),
+    },
+    {
+      id: 'pr-2026-001-2',
+      workOrderOperationId: 'woo-2026-001-10',
+      goodQty: 25,
+      defectQty: 0,
+      reworkQty: 2,
+      startedAt: new Date('2026-03-25T11:00:00'),
+      endedAt:   new Date('2026-03-25T13:00:00'),
+    },
+    {
+      id: 'pr-2026-001-3',
+      workOrderOperationId: 'woo-2026-001-10',
+      goodQty: 20,
+      defectQty: 3,
+      reworkQty: 0,
+      startedAt: new Date('2026-03-26T08:30:00'),
+      endedAt:   new Date('2026-03-26T10:00:00'),
+    },
+  ]
+
+  for (const result of results) {
+    await prisma.productionResult.upsert({
+      where: { id: result.id },
+      create: result,
+      update: {},
+    })
+  }
+
+  // completedQty 갱신 (총 양품 75)
+  await prisma.workOrderOperation.update({
+    where: { id: 'woo-2026-001-10' },
+    data: { completedQty: 75 },
+  })
+}
+
 async function seedCodeGroups() {
   const groups = [
     {
@@ -1886,6 +1933,9 @@ async function main() {
   console.log('  [14/17] WorkOrders + WorkOrderOperations');
   await seedWorkOrders();
 
+  console.log('  [14+] ProductionResults');
+  await seedProductionResults();
+
   console.log('  [15/17] CodeGroups + CommonCodes');
   await seedCodeGroups();
 
@@ -1931,6 +1981,7 @@ async function main() {
   console.log('  - BOM: 2 / BOMItem: 5');
   console.log('  - Routing: 2 / RoutingOperation: 7');
   console.log('  - WorkOrder: 2 / WorkOrderOperation: 4');
+  console.log('  - ProductionResult: 3 (WO-2026-001 seq=10)');
   console.log('  - CodeGroup: 4 / CommonCode: 17');
   console.log('  - ProductionPlan: 1 / PlanItem: 2');
   console.log('  - RolePermission: ~212 (5 roles × 13 resources)');
