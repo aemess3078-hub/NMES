@@ -696,7 +696,7 @@ async function seedPurchaseOrders() {
           where: { purchaseOrderId: created.id },
         })
         for (const poItem of poItems) {
-          if (poItem.receivedQty > 0) {
+          if (Number(poItem.receivedQty) > 0) {
             await prisma.receivingInspection.create({
               data: {
                 purchaseOrderItemId: poItem.id,
