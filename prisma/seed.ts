@@ -1621,7 +1621,7 @@ async function seedPurchaseData() {
     });
   }
 
-  // PurchaseOrder 2
+  // PurchaseOrder 2 - DRAFT
   const po2 = await prisma.purchaseOrder.upsert({
     where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'PO-2026-002' } },
     update: {},
@@ -1641,6 +1641,88 @@ async function seedPurchaseData() {
       where: { purchaseOrderId_itemId: { purchaseOrderId: po2.id, itemId: item.id } },
       update: {},
       create: { purchaseOrderId: po2.id, itemId: item.id, qty: 50, unitPrice: 10000 },
+    });
+  }
+
+  // 공급사2 조회
+  const supplier2 = await prisma.businessPartner.findUnique({ where: { id: IDS.businessPartners.supplier2 } });
+
+  // PurchaseOrder 3 - ORDERED (입고대기) - supplier2
+  const po3 = await prisma.purchaseOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'PO-2026-003' } },
+    update: { status: PurchaseOrderStatus.ORDERED },
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      supplierId: supplier2?.id ?? supplier.id,
+      orderNo: 'PO-2026-003',
+      orderDate: new Date('2026-03-10'),
+      expectedDate: new Date('2026-03-25'),
+      status: PurchaseOrderStatus.ORDERED,
+      currency: 'KRW',
+      note: '긴급 원자재 발주',
+    },
+  });
+  if (rawItems[1]) {
+    await prisma.purchaseOrderItem.upsert({
+      where: { purchaseOrderId_itemId: { purchaseOrderId: po3.id, itemId: rawItems[1].id } },
+      update: {},
+      create: { purchaseOrderId: po3.id, itemId: rawItems[1].id, qty: 200, unitPrice: 8000 },
+    });
+  }
+  if (rawItems[2]) {
+    await prisma.purchaseOrderItem.upsert({
+      where: { purchaseOrderId_itemId: { purchaseOrderId: po3.id, itemId: rawItems[2].id } },
+      update: {},
+      create: { purchaseOrderId: po3.id, itemId: rawItems[2].id, qty: 150, unitPrice: 12000 },
+    });
+  }
+
+  // PurchaseOrder 4 - PARTIAL_RECEIVED (부분입고) - supplier1
+  const po4 = await prisma.purchaseOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'PO-2026-004' } },
+    update: { status: PurchaseOrderStatus.PARTIAL_RECEIVED },
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      supplierId: supplier.id,
+      orderNo: 'PO-2026-004',
+      orderDate: new Date('2026-03-05'),
+      expectedDate: new Date('2026-03-20'),
+      status: PurchaseOrderStatus.PARTIAL_RECEIVED,
+      currency: 'KRW',
+      note: '소모품 정기 발주 (부분입고)',
+    },
+  });
+  if (rawItems[0]) {
+    await prisma.purchaseOrderItem.upsert({
+      where: { purchaseOrderId_itemId: { purchaseOrderId: po4.id, itemId: rawItems[0].id } },
+      update: {},
+      create: { purchaseOrderId: po4.id, itemId: rawItems[0].id, qty: 300, unitPrice: 9500, receivedQty: 100 },
+    });
+  }
+
+  // PurchaseOrder 5 - ORDERED (입고대기) - supplier2
+  const po5 = await prisma.purchaseOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'PO-2026-005' } },
+    update: { status: PurchaseOrderStatus.ORDERED },
+    create: {
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      supplierId: supplier2?.id ?? supplier.id,
+      orderNo: 'PO-2026-005',
+      orderDate: new Date('2026-03-25'),
+      expectedDate: new Date('2026-04-10'),
+      status: PurchaseOrderStatus.ORDERED,
+      currency: 'KRW',
+      note: '2분기 원자재 사전 발주',
+    },
+  });
+  for (const item of rawItems.slice(0, 2)) {
+    await prisma.purchaseOrderItem.upsert({
+      where: { purchaseOrderId_itemId: { purchaseOrderId: po5.id, itemId: item.id } },
+      update: {},
+      create: { purchaseOrderId: po5.id, itemId: item.id, qty: 500, unitPrice: 9000 },
     });
   }
 }
