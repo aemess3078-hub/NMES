@@ -31,10 +31,9 @@ async function generateTxNo(tenantId: string): Promise<string> {
 }
 
 export async function createReceivingInspection(data: CreateReceivingInspectionInput) {
-  // 기본 입고 위치 조회 (테넌트의 첫 번째 창고 첫 번째 location)
-  const defaultLocation = await prisma.location.findFirst({
-    where: { warehouse: { tenantId: data.tenantId } },
-    include: { warehouse: true },
+  // 기본 입고 창고 조회 (테넌트의 첫 번째 창고)
+  const defaultLocation = await prisma.warehouse.findFirst({
+    where: { tenantId: data.tenantId },
   })
 
   const purchaseOrderItem = await prisma.purchaseOrderItem.findUniqueOrThrow({
@@ -66,10 +65,10 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
     if (data.acceptedQty > 0 && defaultLocation) {
       await tx.inventoryBalance.upsert({
         where: {
-          tenantId_itemId_locationId: {
+          tenantId_itemId_warehouseId: {
             tenantId: data.tenantId,
             itemId: purchaseOrderItem.itemId,
-            locationId: defaultLocation.id,
+            warehouseId: defaultLocation.id,
           },
         },
         update: {
@@ -80,7 +79,7 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
           tenantId: data.tenantId,
           siteId: data.siteId,
           itemId: purchaseOrderItem.itemId,
-          locationId: defaultLocation.id,
+          warehouseId: defaultLocation.id,
           qtyOnHand: data.acceptedQty,
           qtyAvailable: data.acceptedQty,
           qtyHold: 0,
