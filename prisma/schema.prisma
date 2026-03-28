@@ -639,11 +639,12 @@ model EquipmentOperationMap {
 }
 
 model Warehouse {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   tenantId String
   siteId   String
   code     String
   name     String
+  zone     String?
 
   tenant                Tenant                 @relation(fields: [tenantId], references: [id])
   site                  Site                   @relation(fields: [siteId], references: [id])

@@ -11,7 +11,30 @@
       "Bash(netstat -ano)",
       "Bash(taskkill /f /im node.exe)",
       "Bash(echo \"SELECT indexname, indexdef FROM pg_indexes WHERE indexname LIKE ''''%_uidx'''' ORDER BY indexname;\")",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(echo \"SELECT rp.role::text, COUNT\\(*\\)::int as permission_count FROM \"\"RolePermission\"\" rp WHERE rp.\"\"isAllowed\"\" = true GROUP BY rp.role ORDER BY rp.role;\")",
+      "Bash(echo \"SELECT ''''Tenant'''' as entity, COUNT\\(*\\)::int FROM \"\"Tenant\"\" UNION ALL SELECT ''''Site'''', COUNT\\(*\\)::int FROM \"\"Site\"\" UNION ALL SELECT ''''Item'''', COUNT\\(*\\)::int FROM \"\"Item\"\" UNION ALL SELECT ''''WorkOrder'''', COUNT\\(*\\)::int FROM \"\"WorkOrder\"\";\")",
+      "Bash(ls:*)",
+      "Bash(npx next:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node -e \":*)",
+      "Bash(curl -s -b \"nmes-dev-bypass=true; tenantId=tenant-demo-001\" http://localhost:3003/app/mes/bom -o /dev/null -w \"%{http_code}\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -b \"nmes-dev-bypass=true; tenantId=tenant-demo-001\" http://localhost:3003/app/mes/purchase-orders -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s -b \"nmes-dev-bypass=true; tenantId=tenant-demo-001\" http://localhost:3003/app/mes/sales-orders -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s -b \"nmes-dev-bypass=true; tenantId=tenant-demo-001\" http://localhost:3003/app/mes/shipments -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s -b \"nmes-dev-bypass=true; tenantId=tenant-demo-001\" http://localhost:3003/app/mes/mrp -o /dev/null -w \"%{http_code}\")",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(grep -n \"prisma\\\\.$transaction\" src/lib/actions/*.ts)",
+      "Bash(taskkill:*)",
+      "Bash(find 'C:\\\\Users\\\\82102\\\\Documents\\\\New MES\\\\src\\\\lib' -name session* -o -name auth*)",
+      "Bash(grep -rn \"tenantId\\\\|userId\" 'C:\\\\Users\\\\82102\\\\Documents\\\\New MES\\\\src\\\\app\\\\app\\\\mes\\\\inspection' --include=*.tsx)",
+      "Bash(for f:*)",
+      "Bash(do)",
+      "Bash(echo \"=== $f ===\")",
+      "Read(//c/Users/82102/Documents/New MES/src/app/app/mes/$f/**)",
+      "Bash(done)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
