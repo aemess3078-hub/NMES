@@ -275,6 +275,16 @@ enum GatewayStatus {
   ERROR
 }
 
+enum ECNStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWING
+  APPROVED
+  REJECTED
+  IMPLEMENTED
+  CANCELLED
+}
+
 enum EquipmentEventType {
   RUN
   STOP
@@ -325,6 +335,7 @@ model Tenant {
   aiUsageLogs           AIUsageLog[]    @relation("TenantAIUsageLogs")
   quotations            Quotation[]     @relation("TenantQuotations")
   itemCosts             ItemCost[]      @relation("TenantItemCosts")
+  engineeringChanges    EngineeringChange[] @relation("TenantECNs")
 }
 
 model Profile {
@@ -341,6 +352,8 @@ model Profile {
   approvalRequests     ApprovalRequest[]   @relation("Requester")
   approvals            ApprovalRequest[]   @relation("Approver")
   receivingInspections ReceivingInspection[] @relation("ReceivingInspector")
+  ecnRequested         EngineeringChange[] @relation("ECNRequester")
+  ecnApproved          EngineeringChange[] @relation("ECNApprover")
 }
 
 model Site {
@@ -485,6 +498,7 @@ model Item {
   itemPrices             ItemPrice[]         @relation("ItemPrices")
   quotationItems         QuotationItem[]     @relation("ItemQuotationItems")
   itemCosts              ItemCost[]          @relation("ItemCosts")
+  engineeringChanges     EngineeringChange[] @relation("ItemECNs")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1667,4 +1681,49 @@ model ItemCost {
   @@index([tenantId, calculatedAt])
   @@index([bomId])
   @@index([workOrderId])
+}
+
+// ─── Phase 2d-10: 변경관리 (ECN/ECO) ─────────────────────────────────────────
+
+model EngineeringChange {
+  id             String    @id @default(cuid())
+  tenantId       String
+  ecnNo          String
+  title          String
+  reason         String
+  changeType     String
+  targetItemId   String
+  status         ECNStatus @default(DRAFT)
+  requestedBy    String
+  approvedBy     String?
+  requestedAt    DateTime  @default(now())
+  approvedAt     DateTime?
+  implementedAt  DateTime?
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant    Tenant   @relation("TenantECNs", fields: [tenantId], references: [id])
+  item      Item     @relation("ItemECNs", fields: [targetItemId], references: [id])
+  requester Profile  @relation("ECNRequester", fields: [requestedBy], references: [id])
+  approver  Profile? @relation("ECNApprover", fields: [approvedBy], references: [id])
+  details   EngineeringChangeDetail[]
+
+  @@unique([tenantId, ecnNo])
+  @@index([tenantId, status])
+  @@index([targetItemId])
+}
+
+model EngineeringChangeDetail {
+  id                  String @id @default(cuid())
+  engineeringChangeId String
+  changeTarget        String
+  actionType          String
+  beforeValue         Json?
+  afterValue          Json?
+  description         String?
+
+  engineeringChange EngineeringChange @relation(fields: [engineeringChangeId], references: [id])
+
+  @@index([engineeringChangeId])
 }

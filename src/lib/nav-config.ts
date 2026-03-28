@@ -58,6 +58,15 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 40,
         children: [],
       },
+      {
+        id: 'nav-ecn',
+        parentId: 'nav-master',
+        label: '변경관리(ECN)',
+        icon: 'GitPullRequest',
+        href: '/app/mes/ecn',
+        displayOrder: 50,
+        children: [],
+      },
     ],
   },
   {

@@ -1805,6 +1805,9 @@ async function main() {
   console.log('  [23/23] ItemCosts');
   await seedItemCosts();
 
+  console.log('  [24/24] EngineeringChanges (ECN)');
+  await seedECNs();
+
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
@@ -1828,6 +1831,39 @@ async function main() {
   console.log('  - SalesOrder: 2 / ShipmentOrder: 1');
   console.log('  - PurchaseOrder: 2 / ItemPrice: N건');
   console.log('  - Quotation: 2 / QuotationItem: 3');
+}
+
+async function seedECNs() {
+  const existing = await prisma.engineeringChange.findFirst({
+    where: { tenantId: IDS.tenant },
+  });
+  if (existing) return;
+
+  await prisma.engineeringChange.create({
+    data: {
+      id: 'ecn-demo-001',
+      tenantId: IDS.tenant,
+      ecnNo: 'ECN-2026-001',
+      title: '조립품 BOM 자재 수량 변경',
+      reason: '설계 검토 결과 프레임 소요량 증가 필요',
+      changeType: 'BOM',
+      targetItemId: 'item-fg-assy-001',
+      status: 'DRAFT',
+      requestedBy: IDS.profiles.manager,
+      note: '생산성 향상을 위한 자재 구성 최적화',
+      details: {
+        create: [
+          {
+            changeTarget: 'BOM_ITEM',
+            actionType: 'MODIFY',
+            description: '프레임 소요량 1 → 2로 변경',
+            beforeValue: { componentItemId: 'item-semi-frame-001', qtyPer: 1 },
+            afterValue: { componentItemId: 'item-semi-frame-001', qtyPer: 2 },
+          },
+        ],
+      },
+    },
+  });
 }
 
 main()

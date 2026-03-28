@@ -1,5 +1,12 @@
 import { chatCompletion, jsonCompletion, isAIEnabled } from "./openai.service"
 import { logAIUsage } from "./ai-usage.service"
+import {
+  getProductionSummary,
+  getInventorySummary,
+  getSalesOrderSummary,
+  getEquipmentSummary,
+  getQualitySummary,
+} from "./mes-data-query.service"
 
 const MES_SYSTEM_PROMPT = `당신은 NMES(클라우드 제조실행시스템)의 AI 어시스턴트입니다.
 제조업 현장의 생산관리자, 품질관리자, 설비관리자를 돕습니다.
@@ -70,16 +77,99 @@ export async function predictQuality(tenantId: string, processParams: unknown) {
   return data
 }
 
+const MES_KEYWORDS = [
+  "생산", "작업", "재고", "품목", "설비", "품질", "불량", "BOM", "라우팅", "공정",
+  "수주", "발주", "출하", "견적", "원가", "MRP", "소요", "작업지시", "계획",
+  "LOT", "추적", "검사", "납기", "진행", "현황", "실적", "양품", "보전",
+  "자재", "입고", "출고", "창고", "재공", "완제품", "반제품", "원자재",
+  "금형", "클레임", "변경", "ECN", "태그", "게이트웨이", "알람",
+  "대시보드", "보고서", "일보", "월보", "이력",
+]
+
+function isMESRelated(question: string): boolean {
+  const q = question.toLowerCase()
+  return MES_KEYWORDS.some((keyword) => q.includes(keyword.toLowerCase()))
+}
+
 export async function naturalLanguageQuery(
   tenantId: string,
   question: string,
   context?: string
-) {
+): Promise<string> {
+  if (!isMESRelated(question)) {
+    return (
+      "안녕하세요! 저는 NMES 제조실행시스템 전용 AI 어시스턴트입니다.\n\n" +
+      "생산현황, 재고, 품질, 설비, 수주/발주 등 MES 관련 질문에 답변드릴 수 있습니다.\n\n" +
+      "예시:\n" +
+      "• 현재 생산 진행현황 알려줘\n" +
+      "• 재고 부족한 품목이 있어?\n" +
+      "• 오늘 양품률은?\n" +
+      "• 납기 임박한 수주 건 보여줘\n" +
+      "• 설비 가동 상태 알려줘"
+    )
+  }
+
+  let dataContext = ""
+  try {
+    const q = question.toLowerCase()
+    const fetches: Promise<void>[] = []
+
+    if (
+      q.includes("생산") || q.includes("작업") || q.includes("실적") ||
+      q.includes("양품") || q.includes("진행")
+    ) {
+      fetches.push(
+        getProductionSummary(tenantId).then(
+          (data) => { dataContext += `\n[생산현황 데이터]\n${JSON.stringify(data, null, 2)}\n` }
+        )
+      )
+    }
+    if (q.includes("재고") || q.includes("자재") || q.includes("부족") || q.includes("창고")) {
+      fetches.push(
+        getInventorySummary(tenantId).then(
+          (data) => { dataContext += `\n[재고현황 데이터]\n${JSON.stringify(data, null, 2)}\n` }
+        )
+      )
+    }
+    if (q.includes("수주") || q.includes("납기") || q.includes("고객") || q.includes("출하")) {
+      fetches.push(
+        getSalesOrderSummary(tenantId).then(
+          (data) => { dataContext += `\n[수주현황 데이터]\n${JSON.stringify(data, null, 2)}\n` }
+        )
+      )
+    }
+    if (q.includes("설비") || q.includes("가동") || q.includes("비가동") || q.includes("알람")) {
+      fetches.push(
+        getEquipmentSummary(tenantId).then(
+          (data) => { dataContext += `\n[설비현황 데이터]\n${JSON.stringify(data, null, 2)}\n` }
+        )
+      )
+    }
+    if (q.includes("품질") || q.includes("검사") || q.includes("불량") || q.includes("합격")) {
+      fetches.push(
+        getQualitySummary(tenantId).then(
+          (data) => { dataContext += `\n[품질현황 데이터]\n${JSON.stringify(data, null, 2)}\n` }
+        )
+      )
+    }
+
+    await Promise.all(fetches)
+
+    if (!dataContext) {
+      const data = await getProductionSummary(tenantId)
+      dataContext = `\n[생산현황 데이터]\n${JSON.stringify(data, null, 2)}\n`
+    }
+  } catch {
+    dataContext = "\n[데이터 조회 실패 — 일반적인 안내로 응답해주세요]\n"
+  }
+
   const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini"
+  const systemPrompt =
+    MES_SYSTEM_PROMPT +
+    `\n\n당신은 MES 시스템의 실제 데이터를 기반으로 답변합니다.\n아래에 현재 시스템의 실시간 데이터가 제공됩니다. 이 데이터를 기반으로 정확하게 답변하세요.\n\n중요 규칙:\n- MES(제조실행시스템) 관련 질문에만 답변합니다.\n- 제공된 실제 데이터를 인용하여 답변하세요.\n- 숫자와 현황을 구체적으로 알려주세요.\n- 문제가 있으면 개선 제안도 해주세요.\n- 현재 페이지 컨텍스트: ${context ?? "일반"}\n${dataContext}`
+
   const { content, usage } = await chatCompletion({
-    systemPrompt:
-      MES_SYSTEM_PROMPT +
-      `\n\n사용자가 MES 시스템에 대해 질문합니다. 현재 페이지 컨텍스트: ${context ?? "일반"} 가능한 경우 구체적인 데이터나 수치를 포함하여 답변하세요. 데이터를 직접 조회할 수 없으므로, 어떤 화면에서 확인할 수 있는지 안내하세요.`,
+    systemPrompt,
     userMessage: question,
     model,
   })
