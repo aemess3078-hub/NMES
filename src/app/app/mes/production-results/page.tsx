@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic"
 import { cookies } from "next/headers"
 import {
   getProductionResults,
-  getProductionResultSummary,
 } from "@/lib/actions/production-result.actions"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { ProductionResultDataTable } from "./production-result-data-table"
@@ -22,7 +21,6 @@ export default async function ProductionResultsPage() {
   }
 
   const results = await getProductionResults()
-  const summary = await getProductionResultSummary(results)
 
   return (
     <div className="space-y-6">
@@ -34,7 +32,7 @@ export default async function ProductionResultsPage() {
           공정별 생산 실적을 조회하고 양품·불량·재작업 수량을 분석합니다.
         </p>
       </div>
-      <ProductionResultDataTable data={results} summary={summary} />
+      <ProductionResultDataTable data={results} />
     </div>
   )
 }

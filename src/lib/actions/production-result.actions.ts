@@ -38,13 +38,6 @@ export type ProductionResultWithDetails = {
   }
 }
 
-export type ProductionResultSummary = {
-  totalGoodQty: number
-  totalDefectQty: number
-  totalReworkQty: number
-  defectRate: number
-  totalCount: number
-}
 
 export type ProductionResultFilters = {
   orderNo?: string
@@ -141,25 +134,3 @@ export async function getProductionResults(
   }))
 }
 
-// ─── 2. 집계 요약 ──────────────────────────────────────────────────────────────
-
-export async function getProductionResultSummary(
-  results: ProductionResultWithDetails[]
-): Promise<ProductionResultSummary> {
-  const totalGoodQty = results.reduce((sum, r) => sum + r.goodQty, 0)
-  const totalDefectQty = results.reduce((sum, r) => sum + r.defectQty, 0)
-  const totalReworkQty = results.reduce((sum, r) => sum + r.reworkQty, 0)
-  const totalProcessed = totalGoodQty + totalDefectQty + totalReworkQty
-  const defectRate =
-    totalProcessed > 0
-      ? (totalDefectQty / totalProcessed) * 100
-      : 0
-
-  return {
-    totalGoodQty,
-    totalDefectQty,
-    totalReworkQty,
-    defectRate,
-    totalCount: results.length,
-  }
-}

@@ -8,18 +8,15 @@ import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/common/data-table"
 import {
   ProductionResultWithDetails,
-  ProductionResultSummary,
 } from "@/lib/actions/production-result.actions"
 import { getColumns } from "./columns"
 
 interface ProductionResultDataTableProps {
   data: ProductionResultWithDetails[]
-  summary: ProductionResultSummary
 }
 
 export function ProductionResultDataTable({
   data,
-  summary,
 }: ProductionResultDataTableProps) {
   const [orderNoFilter, setOrderNoFilter] = useState("")
 
@@ -41,19 +38,6 @@ export function ProductionResultDataTable({
   }, [filteredData])
 
   const columns = getColumns()
-
-  const filterableColumns = [
-    {
-      id: "operationStatus" as keyof ProductionResultWithDetails,
-      title: "공정상태",
-      options: [
-        { label: "대기", value: "PENDING" },
-        { label: "진행중", value: "IN_PROGRESS" },
-        { label: "완료", value: "COMPLETED" },
-        { label: "건너뜀", value: "SKIPPED" },
-      ],
-    },
-  ]
 
   return (
     <div className="space-y-6">
@@ -179,7 +163,6 @@ export function ProductionResultDataTable({
       <DataTable
         columns={columns}
         data={filteredData}
-        filterableColumns={filterableColumns}
         pageSize={20}
       />
     </div>
