@@ -309,7 +309,7 @@ model Tenant {
   itemCategories        ItemCategory[]
   items                 Item[]
   warehouses            Warehouse[]
-  lotRules              LotRule[]
+  numberingRules        NumberingRule[]
   lots                  Lot[]
   inventoryBalances     InventoryBalance[]
   inventoryTxns         InventoryTransaction[]
@@ -483,7 +483,6 @@ model Item {
   bomItems               BOMItem[]
   itemRoutings           ItemRouting[]
   lots                   Lot[]
-  lotRules               LotRule[]
   inspectionSpecs        InspectionSpec[]
   inventoryBalances      InventoryBalance[]
   inventoryTxns          InventoryTransaction[]
@@ -692,19 +691,36 @@ model Location {
   @@index([warehouseId])
 }
 
-model LotRule {
-  id         String  @id @default(cuid())
-  tenantId   String
-  itemId     String
-  prefix     String?
-  dateFormat String?
-  seqLength  Int     @default(4)
+enum NumberingRuleType {
+  LOT
+  SERIAL
+}
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  item   Item   @relation(fields: [itemId], references: [id])
+model NumberingRule {
+  id        String            @id @default(cuid())
+  tenantId  String
+  type      NumberingRuleType
+  tokens    Json
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
-  @@unique([tenantId, itemId])
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  sequences NumberingSequence[]
+
+  @@unique([tenantId, type])
   @@index([tenantId])
+}
+
+model NumberingSequence {
+  id        String        @id @default(cuid())
+  ruleId    String
+  periodKey String
+  current   Int           @default(0)
+
+  rule      NumberingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, periodKey])
 }
 
 model InspectionSpec {

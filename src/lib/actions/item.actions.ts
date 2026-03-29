@@ -22,6 +22,13 @@ export async function getItemCategories() {
 }
 
 export async function createItem(data: ItemFormValues, tenantId: string) {
+  const existing = await prisma.item.findFirst({
+    where: { tenantId, code: data.code },
+  })
+  if (existing) {
+    throw new Error("DUPLICATE_CODE")
+  }
+
   return prisma.item.create({
     data: {
       tenantId,
@@ -39,6 +46,13 @@ export async function createItem(data: ItemFormValues, tenantId: string) {
 }
 
 export async function updateItem(id: string, data: ItemFormValues) {
+  const existing = await prisma.item.findFirst({
+    where: { code: data.code, NOT: { id } },
+  })
+  if (existing) {
+    throw new Error("DUPLICATE_CODE")
+  }
+
   return prisma.item.update({
     where: { id },
     data: {

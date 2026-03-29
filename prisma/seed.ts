@@ -556,38 +556,48 @@ async function seedItems() {
   }
 }
 
-async function seedLotRules() {
-  // LOT 추적 품목에만 LOT 규칙 설정
-  const lotTrackedItems = [
-    'item-raw-steel-001',
-    'item-raw-alum-001',
-    'item-semi-frame-001',
-    'item-semi-shaft-001',
-    'item-fg-assy-001',
-  ];
+async function seedNumberingRules() {
+  // 테넌트 단위 LOT 번호 규칙: LOT-YYYYMMDD-0001 형식
+  await prisma.numberingRule.upsert({
+    where: { tenantId_type: { tenantId: IDS.tenant, type: 'LOT' } },
+    create: {
+      id: 'nr-lot-001',
+      tenantId: IDS.tenant,
+      type: 'LOT',
+      tokens: [
+        { id: 'tok-1', type: 'FIXED', value: 'LOT' },
+        { id: 'tok-2', type: 'SEPARATOR', value: '-' },
+        { id: 'tok-3', type: 'DATE', format: 'YYYY' },
+        { id: 'tok-4', type: 'DATE', format: 'MM' },
+        { id: 'tok-5', type: 'DATE', format: 'DD' },
+        { id: 'tok-6', type: 'SEPARATOR', value: '-' },
+        { id: 'tok-7', type: 'SEQ', digits: 4 },
+      ],
+      isActive: true,
+    },
+    update: {},
+  });
 
-  const rules: Array<{
-    id: string;
-    itemId: string;
-    prefix: string;
-    dateFormat: string;
-    seqLength: number;
-  }> = [
-    { id: 'lr-steel-001',  itemId: 'item-raw-steel-001',    prefix: 'ST', dateFormat: 'YYMMDD', seqLength: 4 },
-    { id: 'lr-alum-001',   itemId: 'item-raw-alum-001',     prefix: 'AL', dateFormat: 'YYMMDD', seqLength: 4 },
-    { id: 'lr-frame-001',  itemId: 'item-semi-frame-001',   prefix: 'FR', dateFormat: 'YYMMDD', seqLength: 4 },
-    { id: 'lr-shaft-001',  itemId: 'item-semi-shaft-001',   prefix: 'SH', dateFormat: 'YYMMDD', seqLength: 4 },
-    { id: 'lr-assy-001',   itemId: 'item-fg-assy-001',      prefix: 'FG', dateFormat: 'YYMMDD', seqLength: 5 },
-  ];
-
-  for (const rule of rules) {
-    if (!lotTrackedItems.includes(rule.itemId)) continue;
-    await prisma.lotRule.upsert({
-      where: { id: rule.id },
-      create: { ...rule, tenantId: IDS.tenant },
-      update: {},
-    });
-  }
+  // 테넌트 단위 시리얼 번호 규칙: SN-YYYYMMDD-0001 형식
+  await prisma.numberingRule.upsert({
+    where: { tenantId_type: { tenantId: IDS.tenant, type: 'SERIAL' } },
+    create: {
+      id: 'nr-serial-001',
+      tenantId: IDS.tenant,
+      type: 'SERIAL',
+      tokens: [
+        { id: 'tok-s1', type: 'FIXED', value: 'SN' },
+        { id: 'tok-s2', type: 'SEPARATOR', value: '-' },
+        { id: 'tok-s3', type: 'DATE', format: 'YYYY' },
+        { id: 'tok-s4', type: 'DATE', format: 'MM' },
+        { id: 'tok-s5', type: 'DATE', format: 'DD' },
+        { id: 'tok-s6', type: 'SEPARATOR', value: '-' },
+        { id: 'tok-s7', type: 'SEQ', digits: 4 },
+      ],
+      isActive: true,
+    },
+    update: {},
+  });
 }
 
 async function seedBoms() {
@@ -1453,7 +1463,7 @@ async function seedFeatures() {
     { code: 'PRODUCTION_RESULT', name: '작업실적', description: '공정별 생산실적 입력', category: 'PRODUCTION', icon: 'BarChart2', menuCodes: ['production-results'], isCore: false, displayOrder: 70 },
     // MATERIAL
     { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory', 'inventory-transactions'], isCore: false, displayOrder: 80 },
-    { code: 'LOT_TRACKING', name: 'LOT 추적', description: 'LOT 단위 이력 추적', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot-tracking'], isCore: false, displayOrder: 90 },
+    { code: 'LOT_TRACKING', name: 'LOT/시리얼 추적', description: 'LOT/시리얼 단위 이력 추적 및 번호 규칙 설정', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot', 'lot-rules', 'traceability', 'lot-history'], isCore: false, displayOrder: 90 },
     // QUALITY
     { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection'], isCore: false, displayOrder: 100 },
     { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects'], isCore: false, displayOrder: 110 },
@@ -1920,9 +1930,9 @@ async function main() {
   console.log('  [10/11] DefectCodes');
   await seedDefectCodes();
 
-  console.log('  [11/11] Items + LotRules');
+  console.log('  [11/11] Items + NumberingRules');
   await seedItems();
-  await seedLotRules();
+  await seedNumberingRules();
 
   console.log('  [12/14] BOMs + BOMItems');
   await seedBoms();
@@ -1980,7 +1990,7 @@ async function main() {
   console.log('  - Warehouse: 3 / Location: 8');
   console.log('  - BusinessPartner: 5');
   console.log('  - DefectCode: 7');
-  console.log('  - Item: 8 / LotRule: 5');
+  console.log('  - Item: 8 / NumberingRule: 2 (LOT + SERIAL)');
   console.log('  - BOM: 2 / BOMItem: 5');
   console.log('  - Routing: 2 / RoutingOperation: 7');
   console.log('  - WorkOrder: 2 / WorkOrderOperation: 4');

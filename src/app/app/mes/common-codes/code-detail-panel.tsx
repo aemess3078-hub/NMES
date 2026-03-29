@@ -116,7 +116,7 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
           description: form.description.trim() || null,
           displayOrder: isNaN(order) ? 0 : order,
           isActive: form.isActive,
-          extra: extraValue ?? null,
+          extra: extraValue ?? undefined,
         })
       } else {
         await createCommonCode({
@@ -126,7 +126,7 @@ export function CodeDetailPanel({ group }: { group: CodeGroupWithCodes }) {
           description: form.description.trim() || null,
           displayOrder: isNaN(order) ? 0 : order,
           isActive: form.isActive,
-          extra: extraValue ?? null,
+          extra: extraValue ?? undefined,
         })
       }
       setShowDialog(false)

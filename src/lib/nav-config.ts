@@ -438,7 +438,7 @@ export const MES_NAV: NavItem[] = [
       {
         id: 'nav-lot-rules',
         parentId: 'nav-sysadmin',
-        label: 'LOT 규칙',
+        label: '번호 규칙',
         icon: 'Fingerprint',
         href: '/app/mes/lot-rules',
         displayOrder: 30,

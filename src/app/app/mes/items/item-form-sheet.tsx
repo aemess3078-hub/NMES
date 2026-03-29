@@ -92,7 +92,14 @@ export function ItemFormSheet({
       onOpenChange(false)
       router.refresh()
     } catch (error) {
-      console.error("저장 실패:", error)
+      if (error instanceof Error && error.message === "DUPLICATE_CODE") {
+        form.setError("code", {
+          type: "manual",
+          message: "동일한 품목코드가 이미 존재합니다.",
+        })
+      } else {
+        console.error("저장 실패:", error)
+      }
     } finally {
       setIsLoading(false)
     }

@@ -8,6 +8,7 @@ import { Wand2 } from "lucide-react"
 
 import { Form } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   FormSheet,
   FormTextField,
@@ -17,6 +18,9 @@ import {
 } from "@/components/common/form-sheet"
 import { lotFormSchema, LotFormValues } from "./lot-form-schema"
 import { createLot, generateLotNo } from "@/lib/actions/lot.actions"
+import { getRuleContextTokens, generateNumber, getContextCodeOptions } from "@/lib/actions/numbering-rule.actions"
+import type { ContextKey } from "@/lib/types/numbering-rule"
+import { CONTEXT_KEY_LABELS } from "@/lib/types/numbering-rule"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +29,16 @@ interface LotFormSheetProps {
   tenantId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+type ContextStep = {
+  tokens: Array<{
+    key: ContextKey
+    fallback?: string
+    autoValue?: string
+    codeOptions?: { code: string; name: string }[]
+  }>
+  values: Record<string, string>
 }
 
 const ITEM_TYPE_LABELS: Record<string, string> = {
@@ -52,6 +66,7 @@ export function LotFormSheet({
 }: LotFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [contextStep, setContextStep] = useState<ContextStep | null>(null)
   const router = useRouter()
 
   const form = useForm<LotFormValues>({
@@ -62,6 +77,7 @@ export function LotFormSheet({
   useEffect(() => {
     if (open) {
       form.reset(DEFAULT_VALUES)
+      setContextStep(null)
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -73,10 +89,81 @@ export function LotFormSheet({
       alert("품목을 먼저 선택하세요.")
       return
     }
+
     setIsGenerating(true)
     try {
-      const lotNo = await generateLotNo(itemId, tenantId)
+      const selectedItem = items.find((i) => i.id === itemId)
+      const autoContext: Partial<Record<ContextKey, string>> = {}
+      if (selectedItem?.code) autoContext.ITEM_CODE = selectedItem.code
+      if (selectedItem?.itemType) autoContext.ITEM_TYPE = selectedItem.itemType
+
+      const [contextTokens, codeOptionsMap] = await Promise.all([
+        getRuleContextTokens(tenantId, "LOT"),
+        getContextCodeOptions(tenantId, "LOT"),
+      ])
+
+      if (contextTokens.length > 0) {
+        // 컨텍스트 토큰이 있으면 입력 단계 표시
+        const tokensWithAuto = contextTokens.map((t) => ({
+          ...t,
+          autoValue: autoContext[t.key],
+          codeOptions: codeOptionsMap[t.key],
+        }))
+        const initialValues: Record<string, string> = {}
+        for (const t of tokensWithAuto) {
+          // 드롭다운 옵션이 있으면 첫 번째 값을 기본값으로
+          if (t.codeOptions?.length) {
+            initialValues[t.key] = t.autoValue ?? ""
+          } else {
+            initialValues[t.key] = t.autoValue ?? t.fallback ?? ""
+          }
+        }
+        setContextStep({ tokens: tokensWithAuto, values: initialValues })
+      } else {
+        // 컨텍스트 토큰 없으면 바로 생성
+        const lotNo = await generateNumber(tenantId, "LOT", autoContext)
+        form.setValue("lotNo", lotNo, { shouldValidate: true })
+      }
+    } catch {
+      alert("LOT번호 생성에 실패했습니다.")
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  // ─── 컨텍스트 확인 후 번호 생성 ──────────────────────────────────────────────
+
+  const handleContextGenerate = async () => {
+    if (!contextStep) return
+
+    // 빈값 확인
+    const emptyKeys = contextStep.tokens.filter(
+      (t) => !contextStep.values[t.key]?.trim()
+    )
+    if (emptyKeys.length > 0) {
+      const labels = emptyKeys.map((t) => CONTEXT_KEY_LABELS[t.key]).join(", ")
+      const ok = confirm(`${labels} 값이 비어있습니다. 빈값으로 진행하시겠습니까?`)
+      if (!ok) return
+    }
+
+    // 영문/숫자 검증
+    for (const t of contextStep.tokens) {
+      const val = contextStep.values[t.key] ?? ""
+      if (val && !/^[a-zA-Z0-9-]*$/.test(val)) {
+        alert(`${CONTEXT_KEY_LABELS[t.key]}는 영문/숫자/하이픈(-)만 입력 가능합니다.`)
+        return
+      }
+    }
+
+    setIsGenerating(true)
+    try {
+      const context: Partial<Record<ContextKey, string>> = {}
+      for (const [key, val] of Object.entries(contextStep.values)) {
+        if (val.trim()) context[key as ContextKey] = val.trim()
+      }
+      const lotNo = await generateNumber(tenantId, "LOT", context)
       form.setValue("lotNo", lotNo, { shouldValidate: true })
+      setContextStep(null)
     } catch {
       alert("LOT번호 생성에 실패했습니다.")
     } finally {
@@ -158,6 +245,79 @@ export function LotFormSheet({
                   {isGenerating ? "생성 중..." : "자동생성"}
                 </Button>
               </div>
+
+              {/* 컨텍스트 입력 섹션 */}
+              {contextStep && (
+                <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 space-y-2">
+                  <p className="text-[13px] text-muted-foreground font-medium">변수 값 입력</p>
+                  <div className="space-y-2">
+                    {contextStep.tokens.map((t) => (
+                      <div key={t.key} className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[13px] text-foreground font-medium">
+                            {CONTEXT_KEY_LABELS[t.key]}
+                          </label>
+                          {t.autoValue && (
+                            <span className="text-[11px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">
+                              자동
+                            </span>
+                          )}
+                        </div>
+                        {t.codeOptions && t.codeOptions.length > 0 ? (
+                          <select
+                            value={contextStep.values[t.key] ?? ""}
+                            onChange={(e) =>
+                              setContextStep((prev) =>
+                                prev ? { ...prev, values: { ...prev.values, [t.key]: e.target.value } } : null
+                              )
+                            }
+                            className="w-full h-8 text-[13px] px-2 border border-amber-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-amber-300"
+                          >
+                            <option value="">선택하세요</option>
+                            {t.codeOptions.map((opt) => (
+                              <option key={opt.code} value={opt.code}>
+                                {opt.name} ({opt.code})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Input
+                            value={contextStep.values[t.key] ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^A-Za-z0-9-]/g, "")
+                              setContextStep((prev) =>
+                                prev ? { ...prev, values: { ...prev.values, [t.key]: val } } : null
+                              )
+                            }}
+                            placeholder="영문/숫자/하이픈 입력"
+                            className="h-8 text-[13px] border-amber-200 bg-white"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 px-3 text-[13px]"
+                      onClick={handleContextGenerate}
+                      disabled={isGenerating}
+                    >
+                      {isGenerating ? "생성 중..." : "생성"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-3 text-[13px]"
+                      onClick={() => setContextStep(null)}
+                    >
+                      취소
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 수량 */}

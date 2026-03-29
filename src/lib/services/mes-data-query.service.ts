@@ -54,7 +54,7 @@ export async function getInventorySummary(tenantId: string) {
     where: { tenantId },
     include: {
       item: { select: { code: true, name: true, itemType: true, uom: true } },
-      location: { select: { name: true, code: true } },
+      warehouse: { select: { name: true, code: true } },
     },
   })
 
@@ -83,7 +83,7 @@ export async function getInventorySummary(tenantId: string) {
     entry.qtyOnHand += Number(b.qtyOnHand)
     entry.qtyAvailable += Number(b.qtyAvailable)
     entry.qtyHold += Number(b.qtyHold)
-    if (b.location?.name) entry.locations.push(b.location.name)
+    if (b.warehouse?.name) entry.locations.push(b.warehouse.name)
   }
 
   const items = Array.from(byItem.values())

@@ -1,46 +1,48 @@
 import { cookies } from "next/headers"
-import { isFeatureEnabled } from "@/lib/services/feature.service"
-import { getLotRules, getItemsForLot } from "@/lib/actions/lot.actions"
-import { LotRuleDataTable } from "./lot-rule-data-table"
+import { getNumberingRules, getCodeGroupsForBuilder } from "@/lib/actions/numbering-rule.actions"
+import { NumberingRuleBuilder } from "./numbering-rule-builder"
+import type { Token } from "@/lib/types/numbering-rule"
 
 export const dynamic = "force-dynamic"
 
-export default async function LotRulesPage() {
+export default async function NumberingRulesPage() {
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
-  const enabled = await isFeatureEnabled(tenantId, "LOT_TRACKING")
-  if (!enabled) {
-    return (
-      <div className="p-6">
-        <p className="text-muted-foreground">
-          LOT 추적 기능이 활성화되어 있지 않습니다. 기능 관리 페이지에서 LOT_TRACKING을 활성화하세요.
-        </p>
-      </div>
-    )
-  }
-
-  const [rules, items] = await Promise.all([
-    getLotRules(),
-    getItemsForLot(),
+  const [rules, codeGroups] = await Promise.all([
+    getNumberingRules(tenantId),
+    getCodeGroupsForBuilder(tenantId),
   ])
 
+  const lotTokens: Token[] = rules.LOT ? (rules.LOT.tokens as Token[]) : []
+  const serialTokens: Token[] = rules.SERIAL ? (rules.SERIAL.tokens as Token[]) : []
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          LOT 규칙 관리
-        </h1>
+        <h1 className="text-[26px] font-semibold tracking-tight">번호 규칙 관리</h1>
         <p className="text-[15px] text-muted-foreground mt-1">
-          품목별 LOT 번호 자동 생성 규칙을 설정합니다.
+          LOT 및 시리얼 번호의 자동 생성 규칙을 설정합니다.
         </p>
       </div>
 
-      <LotRuleDataTable
-        data={rules as any}
-        items={items}
-        tenantId={tenantId}
-      />
+      <div className="space-y-8">
+        <NumberingRuleBuilder
+          type="LOT"
+          label="LOT 번호 규칙"
+          initialTokens={lotTokens}
+          tenantId={tenantId}
+          codeGroups={codeGroups}
+        />
+        <div className="border-t" />
+        <NumberingRuleBuilder
+          type="SERIAL"
+          label="시리얼 번호 규칙"
+          initialTokens={serialTokens}
+          tenantId={tenantId}
+          codeGroups={codeGroups}
+        />
+      </div>
     </div>
   )
 }

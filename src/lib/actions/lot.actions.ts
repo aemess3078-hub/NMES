@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
+import { generateNumber } from "./numbering-rule.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,13 +43,6 @@ export type CreateLotInput = {
   qty: number
   manufactureDate?: string | null
   expiryDate?: string | null
-}
-
-export type CreateLotRuleInput = {
-  itemId: string
-  prefix?: string | null
-  dateFormat?: string | null
-  seqLength: number
 }
 
 // ─── LOT 전체 조회 ────────────────────────────────────────────────────────────
@@ -137,39 +131,15 @@ export async function updateLotStatus(id: string, status: string) {
 // ─── LOT 번호 자동 생성 ───────────────────────────────────────────────────────
 
 export async function generateLotNo(itemId: string, tenantId: string): Promise<string> {
-  const rule = await prisma.lotRule.findFirst({
-    where: { tenantId, itemId },
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    select: { code: true, itemType: true },
   })
-
-  const today = new Date()
-  const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, "")
-
-  const prefix = rule?.prefix ?? "LOT"
-  const seqLen = rule?.seqLength ?? 3
-
-  // 오늘 날짜 기준 기존 번호 개수 확인
-  const basePattern = `${prefix}-${yyyymmdd}`
-  const count = await prisma.lot.count({
-    where: {
-      tenantId,
-      lotNo: { startsWith: basePattern },
-    },
-  })
-
-  const seq = String(count + 1).padStart(seqLen, "0")
-  const candidate = `${prefix}-${yyyymmdd}-${seq}`
-
-  // 중복 체크
-  const dup = await prisma.lot.findFirst({
-    where: { tenantId, lotNo: candidate },
-  })
-  if (dup) {
-    // 중복이면 count+1 재시도
-    const seq2 = String(count + 2).padStart(seqLen, "0")
-    return `${prefix}-${yyyymmdd}-${seq2}`
+  const context = {
+    ITEM_CODE: item?.code,
+    ITEM_TYPE: item?.itemType,
   }
-
-  return candidate
+  return generateNumber(tenantId, "LOT", context as any)
 }
 
 // ─── 재귀 정추적 헬퍼 ─────────────────────────────────────────────────────────
@@ -286,64 +256,6 @@ export async function searchLotByNo(lotNo: string, tenantId: string) {
     },
     include: { item: true },
   })
-}
-
-// ─── LOT 규칙 조회 ────────────────────────────────────────────────────────────
-
-export async function getLotRules() {
-  return prisma.lotRule.findMany({
-    include: {
-      item: {
-        select: { id: true, code: true, name: true, itemType: true },
-      },
-    },
-    orderBy: { item: { code: "asc" } },
-  })
-}
-
-// ─── LOT 규칙 생성 ────────────────────────────────────────────────────────────
-
-export async function createLotRule(data: CreateLotRuleInput, tenantId: string) {
-  const existing = await prisma.lotRule.findFirst({
-    where: { tenantId, itemId: data.itemId },
-  })
-  if (existing) {
-    throw new Error("해당 품목에 이미 LOT 규칙이 존재합니다.")
-  }
-
-  await prisma.lotRule.create({
-    data: {
-      tenantId,
-      itemId: data.itemId,
-      prefix: data.prefix ?? null,
-      dateFormat: data.dateFormat ?? null,
-      seqLength: data.seqLength,
-    },
-  })
-
-  revalidatePath("/app/mes/lot-rules")
-}
-
-// ─── LOT 규칙 수정 ────────────────────────────────────────────────────────────
-
-export async function updateLotRule(id: string, data: Partial<CreateLotRuleInput>) {
-  await prisma.lotRule.update({
-    where: { id },
-    data: {
-      ...(data.itemId !== undefined && { itemId: data.itemId }),
-      ...(data.prefix !== undefined && { prefix: data.prefix }),
-      ...(data.dateFormat !== undefined && { dateFormat: data.dateFormat }),
-      ...(data.seqLength !== undefined && { seqLength: data.seqLength }),
-    },
-  })
-  revalidatePath("/app/mes/lot-rules")
-}
-
-// ─── LOT 규칙 삭제 ────────────────────────────────────────────────────────────
-
-export async function deleteLotRule(id: string) {
-  await prisma.lotRule.delete({ where: { id } })
-  revalidatePath("/app/mes/lot-rules")
 }
 
 // ─── 품목 목록 (LOT 전용) ─────────────────────────────────────────────────────

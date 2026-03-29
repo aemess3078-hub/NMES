@@ -83,6 +83,7 @@ export type CreateCommonCodeInput = {
   description?: string | null
   displayOrder?: number
   isActive?: boolean
+  extra?: import("@prisma/client").Prisma.NullableJsonNullValueInput | import("@prisma/client").Prisma.InputJsonValue
 }
 
 // 6. 코드 생성

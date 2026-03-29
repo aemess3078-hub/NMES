@@ -47,6 +47,18 @@ import {
   FileCheck,
   Boxes,
   Puzzle,
+  Fingerprint,
+  BookOpen,
+  Calculator,
+  Cog,
+  MapPin,
+  ShoppingCart,
+  FileInput,
+  CircleDollarSign,
+  GitPullRequest,
+  Cpu,
+  Wifi,
+  Cable,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -97,6 +109,18 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileCheck,
   Boxes,
   Puzzle,
+  Fingerprint,
+  BookOpen,
+  Calculator,
+  Cog,
+  MapPin,
+  ShoppingCart,
+  FileInput,
+  CircleDollarSign,
+  GitPullRequest,
+  Cpu,
+  Wifi,
+  Cable,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
