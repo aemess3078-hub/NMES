@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { RoutingFormSheet } from "./routing-form-sheet"
+import { RoutingDetailPanel } from "./routing-detail-panel"
 import { deleteRouting, RoutingWithDetails } from "@/lib/actions/routing.actions"
 
 interface WorkCenter {
@@ -40,6 +41,7 @@ export function RoutingDataTable({
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingRouting, setEditingRouting] = useState<RoutingWithDetails | null>(null)
+  const [detailRouting, setDetailRouting] = useState<RoutingWithDetails | null>(null)
 
   const handleEdit = (routing: RoutingWithDetails) => {
     setEditingRouting(routing)
@@ -57,7 +59,12 @@ export function RoutingDataTable({
     }
   }
 
+  const handleView = (routing: RoutingWithDetails) => {
+    setDetailRouting((prev) => (prev?.id === routing.id ? null : routing))
+  }
+
   const columns = getColumns({
+    onView: handleView,
     onEdit: handleEdit,
     onDelete: handleDelete,
   })
@@ -101,6 +108,13 @@ export function RoutingDataTable({
           },
         ]}
       />
+
+      {detailRouting && (
+        <RoutingDetailPanel
+          routing={detailRouting}
+          onClose={() => setDetailRouting(null)}
+        />
+      )}
 
       <RoutingFormSheet
         open={formOpen}

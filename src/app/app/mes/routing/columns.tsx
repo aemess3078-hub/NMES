@@ -23,6 +23,7 @@ const itemTypeLabels: Record<string, string> = {
 }
 
 export function getColumns(callbacks: {
+  onView: (routing: RoutingWithDetails) => void
   onEdit: (routing: RoutingWithDetails) => void
   onDelete: (routing: RoutingWithDetails) => void
 }): ColumnDef<RoutingWithDetails>[] {
@@ -55,7 +56,12 @@ export function getColumns(callbacks: {
         <DataTableColumnHeader column={column} title="라우팅 코드" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-[14px] font-medium">{row.getValue("code")}</span>
+        <button
+          onClick={() => callbacks.onView(row.original)}
+          className="font-mono text-[14px] font-medium text-primary hover:underline cursor-pointer"
+        >
+          {row.getValue("code")}
+        </button>
       ),
     },
     {
