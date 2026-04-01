@@ -155,7 +155,6 @@ export const MES_NAV: NavItem[] = [
         icon: 'Activity',
         href: '/app/mes/process-progress',
         displayOrder: 40,
-        comingSoon: true,
         children: [],
       },
       {
@@ -165,7 +164,15 @@ export const MES_NAV: NavItem[] = [
         icon: 'RefreshCw',
         href: '/app/mes/rework',
         displayOrder: 50,
-        comingSoon: true,
+        children: [],
+      },
+      {
+        id: 'nav-finished-goods-receipt',
+        parentId: 'nav-production',
+        label: '완제품 입고',
+        icon: 'PackageCheck',
+        href: '/app/mes/finished-goods-receipt',
+        displayOrder: 55,
         children: [],
       },
       {
@@ -252,6 +259,15 @@ export const MES_NAV: NavItem[] = [
         children: [],
       },
       {
+        id: 'nav-final-inspection',
+        parentId: 'nav-quality',
+        label: '최종검사',
+        icon: 'ShieldCheck',
+        href: '/app/mes/final-inspection',
+        displayOrder: 15,
+        children: [],
+      },
+      {
         id: 'nav-defects',
         parentId: 'nav-quality',
         label: '불량관리',
@@ -295,6 +311,15 @@ export const MES_NAV: NavItem[] = [
         icon: 'PackagePlus',
         href: '/app/mes/material-receipt',
         displayOrder: 10,
+        children: [],
+      },
+      {
+        id: 'nav-material-issue',
+        parentId: 'nav-material',
+        label: '자재출고 관리',
+        icon: 'PackageMinus',
+        href: '/app/mes/material-issue',
+        displayOrder: 15,
         children: [],
       },
       {
