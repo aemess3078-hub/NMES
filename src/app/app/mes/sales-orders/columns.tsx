@@ -2,7 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { SalesOrderStatus } from "@prisma/client"
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { MoreHorizontal, Pencil, Trash2, ArrowRight } from "lucide-react"
 import { format, isPast, isWithinInterval, addDays } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -42,7 +42,8 @@ const STATUS_CONFIG: Record<
 
 export function getColumns(
   onEdit: (row: SalesOrderRow) => void,
-  onDelete: (id: string) => void
+  onDelete: (id: string) => void,
+  onProcess?: (row: SalesOrderRow) => void
 ): ColumnDef<SalesOrderRow>[] {
   return [
     {
@@ -158,6 +159,14 @@ export function getColumns(
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {onProcess && !["SHIPPED", "CLOSED", "CANCELLED"].includes(row.original.status) && (
+              <>
+                <DropdownMenuItem onClick={() => onProcess(row.original)}>
+                  <ArrowRight className="mr-2 h-4 w-4" /> 수주처리
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem onClick={() => onEdit(row.original)}>
               <Pencil className="mr-2 h-4 w-4" /> 수정
             </DropdownMenuItem>

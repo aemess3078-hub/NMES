@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns, SalesOrderRow } from "./columns"
 import { SalesOrderFormSheet } from "./sales-order-form-sheet"
+import { SalesOrderProcessDialog } from "./sales-order-process-dialog"
 import { deleteSalesOrder } from "@/lib/actions/sales-order.actions"
 
 type CustomerOption = { id: string; name: string; code: string }
@@ -32,11 +33,18 @@ export function SalesOrderDataTable({
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingOrder, setEditingOrder] = useState<SalesOrderRow | null>(null)
+  const [processDialogOpen, setProcessDialogOpen] = useState(false)
+  const [processingOrder, setProcessingOrder] = useState<SalesOrderRow | null>(null)
 
   const handleEdit = (row: SalesOrderRow) => {
     setEditingOrder(row)
     setFormMode("edit")
     setFormOpen(true)
+  }
+
+  const handleProcess = (row: SalesOrderRow) => {
+    setProcessingOrder(row)
+    setProcessDialogOpen(true)
   }
 
   const handleDelete = async (id: string) => {
@@ -59,7 +67,7 @@ export function SalesOrderDataTable({
     }
   }
 
-  const columns = getColumns(handleEdit, handleDelete)
+  const columns = getColumns(handleEdit, handleDelete, handleProcess)
 
   const filterableColumns = [
     {
@@ -110,6 +118,14 @@ export function SalesOrderDataTable({
         siteId={siteId}
         customers={customers}
         items={items}
+      />
+
+      <SalesOrderProcessDialog
+        open={processDialogOpen}
+        onOpenChange={setProcessDialogOpen}
+        salesOrder={processingOrder}
+        tenantId={tenantId}
+        siteId={siteId}
       />
     </div>
   )
