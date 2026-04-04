@@ -22,7 +22,15 @@ export type SalesOrderRow = {
   orderDate: Date | string
   deliveryDate: Date | string
   status: SalesOrderStatus
-  items: { qty: number | string; unitPrice?: number | null }[]
+  items: {
+    id: string
+    qty: number | string
+    unitPrice?: number | null
+    shippedQty?: number | null
+    deliveryDate?: Date | string | null
+    note?: string | null
+    item: { id: string; code: string; name: string; uom: string; itemType: string }
+  }[]
   totalAmount?: number | null
   currency: string
 }
@@ -43,7 +51,8 @@ const STATUS_CONFIG: Record<
 export function getColumns(
   onEdit: (row: SalesOrderRow) => void,
   onDelete: (id: string) => void,
-  onProcess?: (row: SalesOrderRow) => void
+  onProcess?: (row: SalesOrderRow) => void,
+  onViewDetail?: (row: SalesOrderRow) => void
 ): ColumnDef<SalesOrderRow>[] {
   return [
     {
@@ -70,7 +79,12 @@ export function getColumns(
       accessorKey: "orderNo",
       header: "수주번호",
       cell: ({ row }) => (
-        <span className="font-mono text-[13px] font-medium">{row.original.orderNo}</span>
+        <button
+          onClick={() => onViewDetail?.(row.original)}
+          className="font-mono text-[13px] font-medium text-primary hover:underline"
+        >
+          {row.original.orderNo}
+        </button>
       ),
     },
     {

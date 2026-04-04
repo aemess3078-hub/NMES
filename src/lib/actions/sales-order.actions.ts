@@ -218,6 +218,221 @@ export async function checkInventoryForSalesOrder(
   })
 }
 
+// ─── 수주 충족 현황 분석 ───────────────────────────────────────────────────────
+
+export type MaterialShortage = {
+  itemId: string
+  itemCode: string
+  itemName: string
+  uom: string
+  neededQty: number
+  availableQty: number
+  shortageQty: number
+}
+
+export type FulfillmentRow = {
+  itemId: string
+  itemCode: string
+  itemName: string
+  uom: string
+  confirmedQty: number
+  inProductionQty: number
+  partialShippedQty: number
+  draftQty: number
+  totalOrderedQty: number
+  finishedGoodsStock: number
+  fromSemiFinished: number
+  fromRawMaterial: number
+  totalFulfillable: number
+  shortageQty: number
+  materialShortages: MaterialShortage[]
+}
+
+export async function getSalesOrderFulfillmentStatus(
+  tenantId: string,
+  includeNonConfirmed: boolean
+): Promise<FulfillmentRow[]> {
+  const statusFilter: SalesOrderStatus[] = [
+    "CONFIRMED",
+    "IN_PRODUCTION",
+    "PARTIAL_SHIPPED",
+  ]
+  if (includeNonConfirmed) statusFilter.push("DRAFT")
+
+  const orders = await prisma.salesOrder.findMany({
+    where: { tenantId, status: { in: statusFilter } },
+    include: {
+      items: {
+        include: {
+          item: {
+            select: { id: true, code: true, name: true, uom: true, itemType: true },
+          },
+        },
+      },
+    },
+  })
+
+  // 품목별 수주 잔여량 집계
+  type ItemAccumulator = {
+    itemCode: string
+    itemName: string
+    uom: string
+    confirmedQty: number
+    inProductionQty: number
+    partialShippedQty: number
+    draftQty: number
+  }
+
+  const itemMap = new Map<string, ItemAccumulator>()
+
+  for (const order of orders) {
+    for (const soi of order.items) {
+      const orderedQty = Number(soi.qty)
+      const shippedQty = Number(soi.shippedQty ?? 0)
+      const remainingQty = Math.max(0, orderedQty - shippedQty)
+
+      if (!itemMap.has(soi.itemId)) {
+        itemMap.set(soi.itemId, {
+          itemCode: soi.item.code,
+          itemName: soi.item.name,
+          uom: soi.item.uom,
+          confirmedQty: 0,
+          inProductionQty: 0,
+          partialShippedQty: 0,
+          draftQty: 0,
+        })
+      }
+      const acc = itemMap.get(soi.itemId)!
+
+      if (order.status === "CONFIRMED") acc.confirmedQty += remainingQty
+      else if (order.status === "IN_PRODUCTION") acc.inProductionQty += remainingQty
+      else if (order.status === "PARTIAL_SHIPPED") acc.partialShippedQty += remainingQty
+      else if (order.status === "DRAFT") acc.draftQty += remainingQty
+    }
+  }
+
+  if (itemMap.size === 0) return []
+
+  const itemIds = Array.from(itemMap.keys())
+
+  // BOM 조회
+  const boms = await prisma.bOM.findMany({
+    where: { tenantId, itemId: { in: itemIds }, isDefault: true },
+    include: { bomItems: { include: { componentItem: true } } },
+  })
+  const bomMap = new Map(boms.map((b) => [b.itemId, b]))
+
+  // 재고 조회
+  const balances = await prisma.inventoryBalance.findMany({
+    where: { tenantId },
+    select: { itemId: true, qtyAvailable: true },
+  })
+  const inventoryMap = new Map<string, number>()
+  for (const b of balances) {
+    inventoryMap.set(b.itemId, (inventoryMap.get(b.itemId) ?? 0) + Number(b.qtyAvailable))
+  }
+
+  const results: FulfillmentRow[] = []
+
+  for (const [itemId, acc] of Array.from(itemMap.entries())) {
+    const totalOrderedQty =
+      acc.confirmedQty + acc.inProductionQty + acc.partialShippedQty + acc.draftQty
+
+    const fgStock = inventoryMap.get(itemId) ?? 0
+    let remaining = Math.max(0, totalOrderedQty - fgStock)
+
+    const bom = bomMap.get(itemId)
+
+    let fromSF = 0
+    let fromRM = 0
+    const materialShortages: MaterialShortage[] = []
+
+    if (bom) {
+      // 반제품(SF) 처리
+      const sfComponents = bom.bomItems.filter(
+        (c) => c.componentItem.itemType === "SEMI_FINISHED"
+      )
+      for (const comp of sfComponents) {
+        if (remaining <= 0) break
+        const sfStock = inventoryMap.get(comp.componentItemId) ?? 0
+        const qtyPer = Number(comp.qtyPer)
+        const canMake = qtyPer > 0 ? Math.floor(sfStock / qtyPer) : 0
+        const use = Math.min(remaining, canMake)
+        fromSF += use
+        remaining -= use
+      }
+
+      // 원자재(RM) 처리
+      const rmComponents = bom.bomItems.filter(
+        (c) => c.componentItem.itemType === "RAW_MATERIAL"
+      )
+      if (remaining > 0 && rmComponents.length > 0) {
+        let canFromRM = remaining
+        for (const rm of rmComponents) {
+          const rmStock = inventoryMap.get(rm.componentItemId) ?? 0
+          const qtyPer = Number(rm.qtyPer)
+          const possible = qtyPer > 0 ? Math.floor(rmStock / qtyPer) : 0
+          canFromRM = Math.min(canFromRM, possible)
+        }
+        fromRM = canFromRM
+        remaining -= fromRM
+      }
+
+      // 자재 부족 계산
+      const totalNeedFromRM = fromRM + remaining
+      if (totalNeedFromRM > 0) {
+        const rmComponents2 = bom.bomItems.filter(
+          (c) => c.componentItem.itemType === "RAW_MATERIAL"
+        )
+        for (const rm of rmComponents2) {
+          const qtyPer = Number(rm.qtyPer)
+          const neededQty = Math.ceil(totalNeedFromRM * qtyPer)
+          const availableQty = inventoryMap.get(rm.componentItemId) ?? 0
+          const shortage = Math.max(0, neededQty - availableQty)
+          if (shortage > 0) {
+            materialShortages.push({
+              itemId: rm.componentItemId,
+              itemCode: rm.componentItem.code,
+              itemName: rm.componentItem.name,
+              uom: rm.componentItem.uom,
+              neededQty,
+              availableQty,
+              shortageQty: shortage,
+            })
+          }
+        }
+      }
+    }
+
+    const shortageQty = remaining
+    const totalFulfillable = Math.min(totalOrderedQty, fgStock + fromSF + fromRM)
+
+    results.push({
+      itemId,
+      itemCode: acc.itemCode,
+      itemName: acc.itemName,
+      uom: acc.uom,
+      confirmedQty: acc.confirmedQty,
+      inProductionQty: acc.inProductionQty,
+      partialShippedQty: acc.partialShippedQty,
+      draftQty: acc.draftQty,
+      totalOrderedQty,
+      finishedGoodsStock: fgStock,
+      fromSemiFinished: fromSF,
+      fromRawMaterial: fromRM,
+      totalFulfillable,
+      shortageQty,
+      materialShortages,
+    })
+  }
+
+  return results.sort((a, b) => {
+    if (a.shortageQty > 0 && b.shortageQty <= 0) return -1
+    if (a.shortageQty <= 0 && b.shortageQty > 0) return 1
+    return a.itemCode.localeCompare(b.itemCode)
+  })
+}
+
 // ─── S4: 생산의뢰 생성 ─────────────────────────────────────────────────────────
 
 export async function requestProductionFromSalesOrder(

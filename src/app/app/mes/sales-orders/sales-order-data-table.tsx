@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns, SalesOrderRow } from "./columns"
 import { SalesOrderFormSheet } from "./sales-order-form-sheet"
 import { SalesOrderProcessDialog } from "./sales-order-process-dialog"
+import { SalesOrderDetailSheet } from "./sales-order-detail-sheet"
+import { SalesOrderFulfillmentPanel } from "./sales-order-fulfillment-panel"
 import { deleteSalesOrder } from "@/lib/actions/sales-order.actions"
 
 type CustomerOption = { id: string; name: string; code: string }
@@ -30,11 +33,16 @@ export function SalesOrderDataTable({
   items,
 }: SalesOrderDataTableProps) {
   const router = useRouter()
+
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingOrder, setEditingOrder] = useState<SalesOrderRow | null>(null)
+
   const [processDialogOpen, setProcessDialogOpen] = useState(false)
   const [processingOrder, setProcessingOrder] = useState<SalesOrderRow | null>(null)
+
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailOrder, setDetailOrder] = useState<SalesOrderRow | null>(null)
 
   const handleEdit = (row: SalesOrderRow) => {
     setEditingOrder(row)
@@ -45,6 +53,11 @@ export function SalesOrderDataTable({
   const handleProcess = (row: SalesOrderRow) => {
     setProcessingOrder(row)
     setProcessDialogOpen(true)
+  }
+
+  const handleViewDetail = (row: SalesOrderRow) => {
+    setDetailOrder(row)
+    setDetailOpen(true)
   }
 
   const handleDelete = async (id: string) => {
@@ -67,7 +80,7 @@ export function SalesOrderDataTable({
     }
   }
 
-  const columns = getColumns(handleEdit, handleDelete, handleProcess)
+  const columns = getColumns(handleEdit, handleDelete, handleProcess, handleViewDetail)
 
   const filterableColumns = [
     {
@@ -87,27 +100,40 @@ export function SalesOrderDataTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditingOrder(null)
-            setFormMode("create")
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          수주 등록
-        </Button>
-      </div>
+      <Tabs defaultValue="orders">
+        <TabsList>
+          <TabsTrigger value="orders">수주 목록</TabsTrigger>
+          <TabsTrigger value="fulfillment">수주 충족 현황</TabsTrigger>
+        </TabsList>
 
-      <DataTable
-        columns={columns}
-        data={data}
-        searchableColumns={[
-          { id: "orderNo" as keyof SalesOrderRow, title: "수주번호" },
-        ]}
-        filterableColumns={filterableColumns}
-      />
+        <TabsContent value="orders" className="mt-4 space-y-4">
+          <div className="flex justify-end">
+            <Button
+              onClick={() => {
+                setEditingOrder(null)
+                setFormMode("create")
+                setFormOpen(true)
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              수주 등록
+            </Button>
+          </div>
+
+          <DataTable
+            columns={columns}
+            data={data}
+            searchableColumns={[
+              { id: "orderNo" as keyof SalesOrderRow, title: "수주번호" },
+            ]}
+            filterableColumns={filterableColumns}
+          />
+        </TabsContent>
+
+        <TabsContent value="fulfillment" className="mt-4">
+          <SalesOrderFulfillmentPanel tenantId={tenantId} />
+        </TabsContent>
+      </Tabs>
 
       <SalesOrderFormSheet
         open={formOpen}
@@ -126,6 +152,12 @@ export function SalesOrderDataTable({
         salesOrder={processingOrder}
         tenantId={tenantId}
         siteId={siteId}
+      />
+
+      <SalesOrderDetailSheet
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        salesOrder={detailOrder}
       />
     </div>
   )
