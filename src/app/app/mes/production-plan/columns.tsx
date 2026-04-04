@@ -122,6 +122,21 @@ export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps):
       ),
     },
     {
+      id: "salesOrderBased",
+      accessorFn: (row) => row.items.some((i) => i.salesOrderItemId != null),
+      header: "유형",
+      cell: ({ row }) => {
+        const isSalesBased = row.getValue("salesOrderBased") as boolean
+        return isSalesBased ? (
+          <Badge className="text-[12px] bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50">
+            수주기반
+          </Badge>
+        ) : (
+          <span className="text-[13px] text-muted-foreground/60">—</span>
+        )
+      },
+    },
+    {
       id: "itemCount",
       accessorFn: (row) => row.items.length,
       header: "품목 수",

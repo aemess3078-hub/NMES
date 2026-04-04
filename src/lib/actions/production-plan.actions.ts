@@ -25,12 +25,28 @@ export type PlanWithDetails = {
     itemId: string
     bomId: string | null
     routingId: string | null
+    salesOrderItemId: string | null
     plannedQty: any // Decimal
     note: string | null
     item: { id: string; code: string; name: string; itemType: string }
     bom: { id: string; version: string } | null
     routing: { id: string; version: string } | null
     workOrders: { id: string; orderNo: string; status: string }[]
+    salesOrderItem: {
+      id: string
+      qty: any
+      unitPrice: any | null
+      deliveryDate: Date | null
+      note: string | null
+      salesOrder: {
+        id: string
+        orderNo: string
+        orderDate: Date
+        deliveryDate: Date
+        status: string
+        customer: { id: string; code: string; name: string }
+      }
+    } | null
   }[]
 }
 
@@ -75,6 +91,20 @@ export async function getProductionPlans(): Promise<PlanWithDetails[]> {
           workOrders: {
             select: { id: true, orderNo: true, status: true },
           },
+          salesOrderItem: {
+            include: {
+              salesOrder: {
+                select: {
+                  id: true,
+                  orderNo: true,
+                  orderDate: true,
+                  deliveryDate: true,
+                  status: true,
+                  customer: { select: { id: true, code: true, name: true } },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -102,6 +132,20 @@ export async function getPlanById(id: string): Promise<PlanWithDetails | null> {
           },
           workOrders: {
             select: { id: true, orderNo: true, status: true },
+          },
+          salesOrderItem: {
+            include: {
+              salesOrder: {
+                select: {
+                  id: true,
+                  orderNo: true,
+                  orderDate: true,
+                  deliveryDate: true,
+                  status: true,
+                  customer: { select: { id: true, code: true, name: true } },
+                },
+              },
+            },
           },
         },
       },
