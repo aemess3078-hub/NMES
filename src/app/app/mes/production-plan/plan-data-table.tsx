@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { PlanFormSheet } from "./plan-form-sheet"
+import { PlanDetailSheet } from "./plan-detail-sheet"
 import { deletePlan, PlanWithDetails } from "@/lib/actions/production-plan.actions"
 
 interface PlanDataTableProps {
@@ -22,6 +23,8 @@ export function PlanDataTable({ data, sites, items, tenantId }: PlanDataTablePro
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingPlan, setEditingPlan] = useState<PlanWithDetails | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailPlan, setDetailPlan] = useState<PlanWithDetails | null>(null)
 
   const handleEdit = (plan: PlanWithDetails) => {
     setEditingPlan(plan)
@@ -48,9 +51,15 @@ export function PlanDataTable({ data, sites, items, tenantId }: PlanDataTablePro
     }
   }
 
+  const handleViewDetail = (plan: PlanWithDetails) => {
+    setDetailPlan(plan)
+    setDetailOpen(true)
+  }
+
   const columns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
+    onViewDetail: handleViewDetail,
   })
 
   const filterableColumns = [
@@ -108,6 +117,12 @@ export function PlanDataTable({ data, sites, items, tenantId }: PlanDataTablePro
         sites={sites}
         items={items}
         tenantId={tenantId}
+      />
+
+      <PlanDetailSheet
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        plan={detailPlan}
       />
     </div>
   )

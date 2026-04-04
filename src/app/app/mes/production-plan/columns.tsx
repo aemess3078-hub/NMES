@@ -26,13 +26,14 @@ const planStatusLabels: Record<PlanStatus, string> = {
 type GetColumnsProps = {
   onEdit: (plan: PlanWithDetails) => void
   onDelete: (plan: PlanWithDetails) => void
+  onViewDetail: (plan: PlanWithDetails) => void
 }
 
 function formatDate(date: Date): string {
   return new Date(date).toISOString().split("T")[0]
 }
 
-export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
+export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
   return [
     {
       id: "select",
@@ -62,9 +63,12 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Pla
         <DataTableColumnHeader column={column} title="계획번호" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono font-medium text-[14px]">
+        <button
+          className="font-mono font-medium text-[14px] text-primary underline-offset-4 hover:underline cursor-pointer"
+          onClick={() => onViewDetail(row.original)}
+        >
           {row.getValue("planNo")}
-        </span>
+        </button>
       ),
     },
     {
