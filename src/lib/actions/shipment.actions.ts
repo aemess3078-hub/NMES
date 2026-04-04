@@ -27,9 +27,21 @@ export async function getShippableSalesOrders(tenantId: string) {
       tenantId,
       status: { in: ["CONFIRMED", "IN_PRODUCTION", "PARTIAL_SHIPPED"] },
     },
-    include: {
-      customer: true,
-      items: { include: { item: true } },
+    select: {
+      id: true,
+      orderNo: true,
+      status: true,
+      deliveryDate: true,
+      customer: { select: { name: true } },
+      items: {
+        select: {
+          id: true,
+          itemId: true,
+          qty: true,
+          shippedQty: true,
+          item: { select: { id: true, code: true, name: true } },
+        },
+      },
     },
     orderBy: { deliveryDate: "asc" },
   })

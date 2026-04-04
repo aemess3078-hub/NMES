@@ -45,6 +45,7 @@ interface ShipmentFormSheetProps {
   warehouses: WarehouseOption[]
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultSalesOrderId?: string
 }
 
 // ─── Default Values ───────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ export function ShipmentFormSheet({
   warehouses,
   open,
   onOpenChange,
+  defaultSalesOrderId,
 }: ShipmentFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -84,12 +86,33 @@ export function ShipmentFormSheet({
 
   useEffect(() => {
     if (open) {
-      form.reset({
+      const base = {
         ...DEFAULT_VALUES,
         plannedDate: new Date().toISOString().split("T")[0],
-      })
+      }
+      if (defaultSalesOrderId) {
+        form.reset({ ...base, salesOrderId: defaultSalesOrderId })
+        // 미출하 품목 자동 로딩
+        const selectedOrder = salesOrders.find((so) => so.id === defaultSalesOrderId)
+        if (selectedOrder) {
+          const shippableItems = selectedOrder.items.filter(
+            (i) => Number(i.qty) - Number(i.shippedQty) > 0
+          )
+          replace(
+            shippableItems.map((i) => ({
+              salesOrderItemId: i.id,
+              itemId: i.itemId,
+              qty: Number(i.qty) - Number(i.shippedQty),
+              lotId: undefined,
+            }))
+          )
+        }
+      } else {
+        form.reset(base)
+        replace([])
+      }
     }
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, defaultSalesOrderId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── 수주 선택 핸들러 ────────────────────────────────────────────────────────
 
