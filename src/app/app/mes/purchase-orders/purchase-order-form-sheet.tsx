@@ -49,12 +49,10 @@ interface PurchaseOrderFormSheetProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// 발주 등록/수정 시 선택 가능한 상태 (입고 이후 상태는 자재입고관리에서 자동 관리)
 const STATUS_OPTIONS: { label: string; value: PurchaseOrderStatus }[] = [
   { label: "초안",     value: "DRAFT" },
   { label: "발주완료", value: "ORDERED" },
-  { label: "부분입고", value: "PARTIAL_RECEIVED" },
-  { label: "입고완료", value: "RECEIVED" },
-  { label: "종료",     value: "CLOSED" },
   { label: "취소",     value: "CANCELLED" },
 ]
 

@@ -2,8 +2,9 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { PurchaseOrderStatus } from "@prisma/client"
-import { MoreHorizontal, Pencil, Trash2, PackageCheck } from "lucide-react"
+import { MoreHorizontal, Pencil, Trash2, ArrowRight } from "lucide-react"
 import { format, isPast } from "date-fns"
+import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -48,7 +49,6 @@ const STATUS_CONFIG: Record<
 
 export function getColumns(
   onEdit: (row: PurchaseOrderRow) => void,
-  onReceiving: (row: PurchaseOrderRow) => void,
   onDelete: (id: string) => void
 ): ColumnDef<PurchaseOrderRow>[] {
   return [
@@ -171,34 +171,43 @@ export function getColumns(
     {
       id: "actions",
       cell: ({ row }) => {
-        const canReceive =
+        const canGoToReceipt =
           row.original.status === "ORDERED" || row.original.status === "PARTIAL_RECEIVED"
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(row.original)}>
-                <Pencil className="mr-2 h-4 w-4" /> 수정
-              </DropdownMenuItem>
-              {canReceive && (
-                <DropdownMenuItem onClick={() => onReceiving(row.original)}>
-                  <PackageCheck className="mr-2 h-4 w-4" /> 입고검사
+          <div className="flex items-center gap-1.5">
+            {canGoToReceipt && (
+              <Link href="/app/mes/material-receipt">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[12px] gap-1 text-primary border-primary/30 hover:bg-primary/5"
+                >
+                  <ArrowRight className="h-3.5 w-3.5" />
+                  자재입고 관리
+                </Button>
+              </Link>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit(row.original)}>
+                  <Pencil className="mr-2 h-4 w-4" /> 수정
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => onDelete(row.original.id)}
-                disabled={row.original.status !== "DRAFT"}
-              >
-                <Trash2 className="mr-2 h-4 w-4" /> 삭제
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => onDelete(row.original.id)}
+                  disabled={row.original.status !== "DRAFT"}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> 삭제
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         )
       },
     },

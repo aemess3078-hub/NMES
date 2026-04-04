@@ -30,7 +30,6 @@ import { PurchaseOrderStatus } from "@prisma/client"
 
 import { getColumns, PurchaseOrderRow } from "./columns"
 import { PurchaseOrderFormSheet } from "./purchase-order-form-sheet"
-import { ReceivingDialog } from "./receiving-dialog"
 import { deletePurchaseOrder } from "@/lib/actions/purchase-order.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,11 +65,10 @@ export function PurchaseOrderDataTable({
 }: PurchaseOrderDataTableProps) {
   const router = useRouter()
 
-  // ─── Sheet / Dialog 상태 ─────────────────────────────────────────────────────
+  // ─── Sheet 상태 ──────────────────────────────────────────────────────────────
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetMode, setSheetMode] = useState<"create" | "edit">("create")
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderRow | null>(null)
-  const [receivingOrder, setReceivingOrder] = useState<PurchaseOrderRow | null>(null)
 
   // ─── 필터 상태 ───────────────────────────────────────────────────────────────
   const [searchText, setSearchText] = useState("")
@@ -96,10 +94,6 @@ export function PurchaseOrderDataTable({
     setSheetOpen(true)
   }
 
-  function handleReceiving(row: PurchaseOrderRow) {
-    setReceivingOrder(row)
-  }
-
   async function handleDelete(id: string) {
     if (!confirm("발주를 삭제하시겠습니까? DRAFT 상태만 삭제할 수 있습니다.")) return
     try {
@@ -113,7 +107,7 @@ export function PurchaseOrderDataTable({
   // ─── 테이블 ──────────────────────────────────────────────────────────────────
 
   const columns = useMemo(
-    () => getColumns(handleEdit, handleReceiving, handleDelete),
+    () => getColumns(handleEdit, handleDelete),
     [] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
@@ -225,16 +219,6 @@ export function PurchaseOrderDataTable({
         onOpenChange={setSheetOpen}
       />
 
-      {/* ReceivingDialog */}
-      {receivingOrder && (
-        <ReceivingDialog
-          purchaseOrder={receivingOrder}
-          tenantId={tenantId}
-          siteId={siteId}
-          open={!!receivingOrder}
-          onClose={() => setReceivingOrder(null)}
-        />
-      )}
     </div>
   )
 }
