@@ -89,13 +89,16 @@ export function MrpDashboard({ plans, tenantId, siteId }: Props) {
     }
   }
 
+  const selectedPlan = plans.find((p) => p.id === selectedPlanId)
+
   const handleBulkOrder = async () => {
-    if (!mrpResult || selectedItemIds.size === 0) return
+    if (!mrpResult || selectedItemIds.size === 0 || !selectedPlan) return
     setIsCreatingPO(true)
     const items = mrpResult.items
       .filter((i) => selectedItemIds.has(i.itemId))
       .map((i) => ({ itemId: i.itemId, qty: i.suggestedOrderQty }))
-    const result = await createPurchaseOrdersFromMRP(items, tenantId, siteId)
+    const planSiteId = (selectedPlan as any).siteId ?? siteId
+    const result = await createPurchaseOrdersFromMRP(items, tenantId, planSiteId)
     setIsCreatingPO(false)
     if (result.success) {
       setMessage(`발주 생성 완료: ${result.orderNo}`)
@@ -106,8 +109,10 @@ export function MrpDashboard({ plans, tenantId, siteId }: Props) {
   }
 
   const handleCreateOrder = async (itemId: string, qty: number) => {
+    if (!selectedPlan) return
     setIsCreatingPO(true)
-    const result = await createPurchaseOrdersFromMRP([{ itemId, qty }], tenantId, siteId)
+    const planSiteId = (selectedPlan as any).siteId ?? siteId
+    const result = await createPurchaseOrdersFromMRP([{ itemId, qty }], tenantId, planSiteId)
     setIsCreatingPO(false)
     setMessage(
       result.success

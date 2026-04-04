@@ -54,12 +54,25 @@ export async function createPurchaseOrdersFromMRP(
       return { success: false, error: "등록된 공급사가 없습니다." }
     }
 
+    // siteId 유효성 검증: 없으면 테넌트의 첫 번째 사이트 사용
+    let resolvedSiteId = siteId
+    const siteExists = siteId
+      ? await prisma.site.findFirst({ where: { id: siteId, tenantId } })
+      : null
+    if (!siteExists) {
+      const firstSite = await prisma.site.findFirst({ where: { tenantId } })
+      if (!firstSite) {
+        return { success: false, error: "등록된 공장(사이트)이 없습니다." }
+      }
+      resolvedSiteId = firstSite.id
+    }
+
     const orderNo = `PO-MRP-${Date.now()}`
 
     await prisma.purchaseOrder.create({
       data: {
         tenantId,
-        siteId,
+        siteId: resolvedSiteId,
         supplierId: defaultSupplier.id,
         orderNo,
         orderDate: new Date(),
