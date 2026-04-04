@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Bot, AlertTriangle, Loader2, PackagePlus } from "lucide-react"
+import { Bot, AlertTriangle, Loader2, PackagePlus, CheckCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getAISuggestion } from "@/lib/actions/mrp.actions"
 import type { MRPResult } from "@/lib/services/mrp.service"
@@ -15,13 +15,24 @@ const URGENCY_CONFIG = {
 
 type Props = {
   mrpResult: MRPResult | null
-  onCreateOrder: (itemId: string, qty: number) => void
+  onCreateOrder: (itemId: string, qty: number) => Promise<boolean>
 }
 
 export function AISuggestionPanel({ mrpResult, onCreateOrder }: Props) {
   const [suggestion, setSuggestion] = useState<AIOrderSuggestion | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [orderedItemIds, setOrderedItemIds] = useState<Set<string>>(new Set())
+  const [loadingItemId, setLoadingItemId] = useState<string | null>(null)
+
+  const handleOrderClick = async (itemId: string, qty: number) => {
+    setLoadingItemId(itemId)
+    const success = await onCreateOrder(itemId, qty)
+    setLoadingItemId(null)
+    if (success) {
+      setOrderedItemIds((prev) => new Set(prev).add(itemId))
+    }
+  }
 
   const handleAnalyze = async () => {
     if (!mrpResult) return
@@ -149,17 +160,27 @@ export function AISuggestionPanel({ mrpResult, onCreateOrder }: Props) {
                             {urgCfg.label}
                           </span>
                         </div>
-                        {mrpItem && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-[12px] gap-1"
-                            onClick={() => onCreateOrder(mrpItem.itemId, s.suggestedQty)}
-                          >
-                            <PackagePlus className="w-3.5 h-3.5" />
-                            발주 생성
-                          </Button>
-                        )}
+                        {mrpItem && (() => {
+                          const isDone = orderedItemIds.has(mrpItem.itemId)
+                          const isItemLoading = loadingItemId === mrpItem.itemId
+                          return (
+                            <Button
+                              size="sm"
+                              variant={isDone ? "default" : "outline"}
+                              className="h-7 text-[12px] gap-1"
+                              disabled={isDone || isItemLoading}
+                              onClick={() => handleOrderClick(mrpItem.itemId, s.suggestedQty)}
+                            >
+                              {isItemLoading ? (
+                                <><Loader2 className="w-3.5 h-3.5 animate-spin" />생성 중...</>
+                              ) : isDone ? (
+                                <><CheckCircle className="w-3.5 h-3.5" />발주 완료</>
+                              ) : (
+                                <><PackagePlus className="w-3.5 h-3.5" />발주 생성</>
+                              )}
+                            </Button>
+                          )
+                        })()}
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[13px]">
                         <div>

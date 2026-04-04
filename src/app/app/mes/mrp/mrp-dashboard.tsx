@@ -108,8 +108,8 @@ export function MrpDashboard({ plans, tenantId, siteId }: Props) {
     }
   }
 
-  const handleCreateOrder = async (itemId: string, qty: number) => {
-    if (!selectedPlan) return
+  const handleCreateOrder = async (itemId: string, qty: number): Promise<boolean> => {
+    if (!selectedPlan) return false
     setIsCreatingPO(true)
     const planSiteId = (selectedPlan as any).siteId ?? siteId
     const result = await createPurchaseOrdersFromMRP([{ itemId, qty }], tenantId, planSiteId)
@@ -119,6 +119,7 @@ export function MrpDashboard({ plans, tenantId, siteId }: Props) {
         ? `발주 생성 완료: ${result.orderNo}`
         : `오류: ${result.error}`
     )
+    return result.success
   }
 
   const summaryCards: SummaryCard[] = mrpResult
