@@ -17,7 +17,7 @@ export type InventoryBalanceWithDetails = {
   qtyAvailable: any   // Decimal
   qtyHold: any        // Decimal
   updatedAt: Date
-  warehouse: { id: string; code: string; name: string; siteId: string }
+  warehouse: { id: string; code: string; name: string; siteId: string; site: { id: string; code: string; name: string } }
   item: { id: string; code: string; name: string; itemType: string; uom: string }
   lot: { id: string; lotNo: string } | null
 }
@@ -47,7 +47,7 @@ export type InventoryTransactionWithDetails = {
 export async function getInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
   return prisma.inventoryBalance.findMany({
     include: {
-      warehouse: true,
+      warehouse: { include: { site: true } },
       item: true,
       lot: { select: { id: true, lotNo: true } },
     },
@@ -56,6 +56,14 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
       { item: { code: "asc" } },
     ],
   }) as any
+}
+
+export async function getWarehousesBySite(siteId: string) {
+  return prisma.warehouse.findMany({
+    where: { siteId },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  })
 }
 
 // ─── 트랜잭션 이력 조회 (최신 200건) ──────────────────────────────────────────
