@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -23,6 +23,8 @@ import {
 import { createReceivingInspection } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
+import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
+import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +69,9 @@ export function ReceivingFormDialog({
 }: ReceivingFormDialogProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const [inspections, setInspections] = useState<ItemInspection[]>(() =>
     purchaseOrder.items.map((oi) => {
@@ -89,6 +94,21 @@ export function ReceivingFormDialog({
       }
     })
   )
+
+  function handleScan(parsed: ParsedBarcode) {
+    const idx = inspections.findIndex(
+      (ins) => ins.itemCode === parsed.itemCode
+    )
+    if (idx === -1) {
+      alert(`품목 코드 "${parsed.itemCode}"가 이 발주에 없습니다.`)
+      return
+    }
+    setHighlightedIndex(idx)
+    // 해당 품목 행으로 스크롤
+    itemRefs.current[idx]?.scrollIntoView({ behavior: "smooth", block: "center" })
+    // 3초 후 하이라이트 해제
+    setTimeout(() => setHighlightedIndex(null), 3000)
+  }
 
   function updateInspection(index: number, patch: Partial<ItemInspection>) {
     setInspections((prev) =>
@@ -143,11 +163,25 @@ export function ReceivingFormDialog({
           </p>
         </DialogHeader>
 
+        {/* 바코드 스캔 */}
+        <div className="space-y-1">
+          <p className="text-[13px] font-medium text-muted-foreground">바코드 스캔</p>
+          <BarcodeScanInput
+            onScan={handleScan}
+            placeholder="품목 바코드를 스캔하면 해당 행으로 이동합니다"
+          />
+        </div>
+
         <div className="space-y-5 py-2">
           {inspections.map((ins, index) => (
             <div
               key={ins.purchaseOrderItemId}
-              className="rounded-lg border bg-card p-4 space-y-4"
+              ref={(el) => { itemRefs.current[index] = el }}
+              className={`rounded-lg border p-4 space-y-4 transition-colors duration-300 ${
+                highlightedIndex === index
+                  ? "border-green-400 bg-green-50"
+                  : "bg-card"
+              }`}
             >
               {/* 품목 헤더 */}
               <div>
@@ -257,7 +291,14 @@ export function ReceivingFormDialog({
           ))}
         </div>
 
-        <DialogFooter className="pt-2">
+        <DialogFooter className="pt-2 flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setPrintOpen(true)}
+            className="mr-auto"
+          >
+            바코드 라벨 출력
+          </Button>
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             취소
           </Button>
@@ -266,6 +307,19 @@ export function ReceivingFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* 바코드 라벨 출력 다이얼로그 */}
+      <BarcodePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title={`바코드 라벨 — ${purchaseOrder.orderNo}`}
+        items={inspections.map((ins) => ({
+          itemCode: ins.itemCode,
+          itemName: ins.itemName,
+          quantity: parseFloat(ins.thisReceivedQty) || ins.pendingQty,
+          uom: ins.uom,
+        }))}
+      />
     </Dialog>
   )
 }
