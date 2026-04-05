@@ -9,7 +9,9 @@ export const transactionFormSchema = z.object({
   txType: z.string().min(1, "유형을 선택하세요"),
   qty: z.number().positive("수량은 양수여야 합니다"),
   refType: z.string().optional().nullable(),
-  note: z.string().optional().nullable(),  // 상세 구역
+  refId: z.string().optional().nullable(),
+  issueDestType: z.enum(["SO", "WO", "OTHER"]).optional().nullable(), // UI 전용
+  note: z.string().optional().nullable(),
 })
 
 export type TransactionFormValues = z.infer<typeof transactionFormSchema>

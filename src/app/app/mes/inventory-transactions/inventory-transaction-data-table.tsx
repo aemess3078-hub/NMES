@@ -13,7 +13,7 @@ import { InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions
 interface InventoryTransactionDataTableProps {
   data: InventoryTransactionWithDetails[]
   sites: { id: string; code: string; name: string }[]
-  locations: { id: string; code: string; name: string }[]
+  locations: { id: string; code: string; name: string; siteId: string }[]
   tenantId: string
 }
 

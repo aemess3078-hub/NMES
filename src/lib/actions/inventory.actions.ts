@@ -85,7 +85,7 @@ export async function getInventoryTransactions(): Promise<InventoryTransactionWi
 
 export async function getWarehousesForTransaction() {
   return prisma.warehouse.findMany({
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, siteId: true },
     orderBy: { name: "asc" },
   })
 }
@@ -105,6 +105,35 @@ export async function getSitesForInventory() {
   return prisma.site.findMany({
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
+  })
+}
+
+// ─── 사이트별 수주 목록 (출고 목적지 - 고객사 출하) ─────────────────────────────
+
+export async function getSalesOrdersForSite(siteId: string) {
+  return prisma.salesOrder.findMany({
+    where: { siteId, status: { notIn: ["CANCELLED", "CLOSED"] } },
+    select: {
+      id: true,
+      orderNo: true,
+      customer: { select: { name: true } },
+    },
+    orderBy: { orderNo: "desc" },
+  })
+}
+
+// ─── 사이트별 작업지시 목록 (출고 목적지 - 생산투입) ────────────────────────────
+
+export async function getWorkOrdersForSite(siteId: string) {
+  return prisma.workOrder.findMany({
+    where: { siteId, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+    select: {
+      id: true,
+      orderNo: true,
+      item: { select: { name: true } },
+      status: true,
+    },
+    orderBy: { orderNo: "desc" },
   })
 }
 
@@ -147,6 +176,7 @@ export type CreateTransactionInput = {
   txType: TransactionType
   qty: number
   refType?: string | null
+  refId?: string | null
   note?: string | null
 }
 
@@ -256,7 +286,7 @@ export async function createTransaction(
         txType: data.txType,
         qty: data.qty,
         refType: data.refType ?? null,
-        refId: null,
+        refId: data.refId ?? null,
         note: data.note ?? null,
         txAt: new Date(),
       },
