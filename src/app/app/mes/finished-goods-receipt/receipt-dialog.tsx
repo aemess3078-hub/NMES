@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { PackagePlus } from "lucide-react"
+import { PackagePlus, CheckCircle2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,8 @@ import {
   WarehouseWithLocations,
   createFinishedGoodsReceiptAction,
 } from "@/lib/actions/finished-goods.actions"
+import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
+import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
 interface ReceiptDialogProps {
   open: boolean
@@ -46,8 +48,18 @@ export function ReceiptDialog({
   const [warehouseId, setWarehouseId] = useState("")
   const [locationId, setLocationId] = useState("")
   const [receiptQty, setReceiptQty] = useState("")
+  const [scanVerified, setScanVerified] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
 
   if (!workOrder) return null
+
+  function handleScan(parsed: ParsedBarcode) {
+    if (parsed.itemCode !== workOrder!.item.code) {
+      alert(`스캔한 품목(${parsed.itemCode})이 작업지시 품목(${workOrder!.item.code})과 다릅니다.`)
+      return
+    }
+    setScanVerified(true)
+  }
 
   const selectedWarehouse = warehouses.find((wh) => wh.id === warehouseId)
 
@@ -61,6 +73,7 @@ export function ReceiptDialog({
       setWarehouseId("")
       setLocationId("")
       setReceiptQty("")
+      setScanVerified(false)
     } else {
       setReceiptQty(String(workOrder.pendingQty))
     }
@@ -114,6 +127,22 @@ export function ReceiptDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* 바코드 스캔 검증 */}
+          <div className="space-y-1">
+            <p className="text-[13px] font-medium text-muted-foreground">완제품 바코드 스캔</p>
+            {scanVerified ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-green-50 border border-green-200">
+                <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                <span className="text-[13px] text-green-700 font-medium">품목 확인 완료 — [{workOrder.item.code}] {workOrder.item.name}</span>
+              </div>
+            ) : (
+              <BarcodeScanInput
+                onScan={handleScan}
+                placeholder="완제품 바코드를 스캔하여 품목을 확인하세요 (선택)"
+              />
+            )}
+          </div>
+
           {/* 작업지시 정보 */}
           <div className="rounded-lg bg-muted/50 p-3 space-y-1">
             <div className="text-[13px] text-muted-foreground">작업지시</div>
@@ -206,6 +235,13 @@ export function ReceiptDialog({
         <DialogFooter>
           <Button
             variant="outline"
+            onClick={() => setPrintOpen(true)}
+            className="mr-auto"
+          >
+            바코드 라벨 출력
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => handleOpen(false)}
             disabled={isPending}
           >
@@ -221,6 +257,18 @@ export function ReceiptDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <BarcodePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title={`완제품 라벨 — ${workOrder.orderNo}`}
+        items={[{
+          itemCode: workOrder.item.code,
+          itemName: workOrder.item.name,
+          quantity: Number(receiptQty) || workOrder.pendingQty,
+          uom: workOrder.item.uom,
+        }]}
+      />
     </Dialog>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -26,6 +26,8 @@ import {
   WarehouseStockOption,
   issueMaterialsForWorkOrder,
 } from "@/lib/actions/material-issue.actions"
+import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
+import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
 interface IssueFormDialogProps {
   open: boolean
@@ -46,11 +48,25 @@ export function IssueFormDialog({
   const [isPending, startTransition] = useTransition()
   const [warehouseId, setWarehouseId] = useState("")
   const [qtyMap, setQtyMap] = useState<Record<string, string>>({})
+  const [printOpen, setPrintOpen] = useState(false)
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null)
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   if (!workOrder) return null
 
   const pendingMaterials = workOrder.materials.filter((m) => m.pendingQty > 0)
   const selectedWarehouse = warehouses.find((wh) => wh.id === warehouseId)
+
+  function handleScan(parsed: ParsedBarcode) {
+    const matched = pendingMaterials.find((m) => m.item.code === parsed.itemCode)
+    if (!matched) {
+      alert(`품목 코드 "${parsed.itemCode}"가 이 작업지시의 출고 자재에 없습니다.`)
+      return
+    }
+    setHighlightedItemId(matched.itemId)
+    rowRefs.current[matched.itemId]?.scrollIntoView({ behavior: "smooth", block: "center" })
+    setTimeout(() => setHighlightedItemId(null), 3000)
+  }
 
   const handleOpen = (v: boolean) => {
     if (!v) {
@@ -117,6 +133,15 @@ export function IssueFormDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
+          {/* 바코드 스캔 */}
+          <div className="space-y-1">
+            <p className="text-[13px] font-medium text-muted-foreground">바코드 스캔</p>
+            <BarcodeScanInput
+              onScan={handleScan}
+              placeholder="자재 바코드를 스캔하면 해당 행으로 이동합니다"
+            />
+          </div>
+
           {/* 작업지시 정보 */}
           <div className="rounded-lg bg-muted/50 p-3 space-y-1">
             <div className="text-[13px] text-muted-foreground">작업지시</div>
@@ -172,11 +197,15 @@ export function IssueFormDialog({
                   const stock = selectedWarehouse?.itemStocks[m.itemId] ?? m.currentStock
                   const issueQty = Number(qtyMap[m.itemId] ?? 0)
                   const isOverStock = issueQty > stock
+                  const isHighlighted = highlightedItemId === m.itemId
 
                   return (
                     <div
                       key={m.itemId}
-                      className="grid grid-cols-[1fr_80px_80px_80px_100px] items-center border-b last:border-0 hover:bg-muted/10"
+                      ref={(el) => { rowRefs.current[m.itemId] = el }}
+                      className={`grid grid-cols-[1fr_80px_80px_80px_100px] items-center border-b last:border-0 transition-colors duration-300 ${
+                        isHighlighted ? "bg-green-50 border-green-300" : "hover:bg-muted/10"
+                      }`}
                     >
                       <div className="py-2.5 px-3">
                         <div className="text-[14px] font-medium">{m.item.name}</div>
@@ -237,6 +266,14 @@ export function IssueFormDialog({
         </div>
 
         <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setPrintOpen(true)}
+            className="mr-auto"
+            disabled={pendingMaterials.length === 0}
+          >
+            바코드 라벨 출력
+          </Button>
           <Button variant="outline" onClick={() => handleOpen(false)} disabled={isPending}>
             취소
           </Button>
@@ -248,6 +285,18 @@ export function IssueFormDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <BarcodePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title={`출고 자재 라벨 — ${workOrder.orderNo}`}
+        items={pendingMaterials.map((m) => ({
+          itemCode: m.item.code,
+          itemName: m.item.name,
+          quantity: Number(qtyMap[m.itemId] ?? m.pendingQty),
+          uom: m.item.uom,
+        }))}
+      />
     </Dialog>
   )
 }

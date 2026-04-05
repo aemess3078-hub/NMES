@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
-import { Trash2 } from "lucide-react"
+import { Trash2, Printer } from "lucide-react"
 
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,8 @@ import {
 import { FormSheet } from "@/components/common/form-sheet/form-sheet"
 import { shipmentFormSchema, ShipmentFormValues } from "./shipment-form-schema"
 import { createShipment } from "@/lib/actions/shipment.actions"
+import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
+import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,9 @@ export function ShipmentFormSheet({
   defaultSalesOrderId,
 }: ShipmentFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
+  const rowRefs = useRef<(HTMLDivElement | null)[]>([])
   const router = useRouter()
 
   const form = useForm<ShipmentFormValues>({
@@ -113,6 +118,26 @@ export function ShipmentFormSheet({
       }
     }
   }, [open, defaultSalesOrderId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── 바코드 스캔 핸들러 ──────────────────────────────────────────────────────
+
+  function handleScan(parsed: ParsedBarcode) {
+    if (!selectedOrder) {
+      alert("먼저 수주를 선택하세요.")
+      return
+    }
+    const idx = fields.findIndex((f) => {
+      const soItem = selectedOrder.items.find((i) => i.id === f.salesOrderItemId)
+      return soItem?.item.code === parsed.itemCode
+    })
+    if (idx === -1) {
+      alert(`품목 코드 "${parsed.itemCode}"가 이 출하의 품목 목록에 없습니다.`)
+      return
+    }
+    setHighlightedIndex(idx)
+    rowRefs.current[idx]?.scrollIntoView({ behavior: "smooth", block: "center" })
+    setTimeout(() => setHighlightedIndex(null), 3000)
+  }
 
   // ─── 수주 선택 핸들러 ────────────────────────────────────────────────────────
 
@@ -282,7 +307,28 @@ export function ShipmentFormSheet({
 
           {/* 출하 품목 */}
           <div className="pt-4 border-t space-y-3">
-            <p className="text-[15px] font-medium text-foreground">출하 품목</p>
+            <div className="flex items-center justify-between">
+              <p className="text-[15px] font-medium text-foreground">출하 품목</p>
+              {fields.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-[13px] gap-1.5"
+                  onClick={() => setPrintOpen(true)}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  라벨 출력
+                </Button>
+              )}
+            </div>
+
+            {selectedOrderId && fields.length > 0 && (
+              <BarcodeScanInput
+                onScan={handleScan}
+                placeholder="품목 바코드를 스캔하면 해당 행으로 이동합니다"
+              />
+            )}
 
             {!selectedOrderId && (
               <div className="rounded-md border border-dashed py-8 text-center text-[14px] text-muted-foreground">
@@ -316,7 +362,10 @@ export function ShipmentFormSheet({
                   return (
                     <div
                       key={field.id}
-                      className="grid grid-cols-[1fr_80px_30px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
+                      ref={(el) => { rowRefs.current[index] = el }}
+                      className={`grid grid-cols-[1fr_80px_30px] gap-0 items-start px-3 py-2 border-t first:border-t-0 transition-colors duration-300 ${
+                        highlightedIndex === index ? "bg-green-50" : "hover:bg-muted/20"
+                      }`}
                     >
                       {/* 품목명 */}
                       <div className="pr-2 py-1">
@@ -383,6 +432,20 @@ export function ShipmentFormSheet({
           </div>
         </div>
       </Form>
+
+      <BarcodePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title="출하 라벨 출력"
+        items={fields.map((f) => {
+          const soItem = selectedOrder?.items.find((i) => i.id === f.salesOrderItemId)
+          return {
+            itemCode: soItem?.item.code ?? "",
+            itemName: soItem?.item.name ?? "",
+            quantity: f.qty as number,
+          }
+        })}
+      />
     </FormSheet>
   )
 }
