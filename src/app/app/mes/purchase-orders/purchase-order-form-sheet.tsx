@@ -402,26 +402,21 @@ export function PurchaseOrderFormSheet({
             {fields.length > 0 && (
               <div className="rounded-md border overflow-hidden">
                 {/* 헤더 */}
-                <div className="grid grid-cols-[1fr_60px_80px_80px_60px_28px] gap-0 bg-muted/50 px-3 py-2 text-[12px] font-medium text-muted-foreground">
+                <div className="grid grid-cols-[1fr_60px_80px_80px_28px] gap-0 bg-muted/50 px-3 py-2 text-[12px] font-medium text-muted-foreground">
                   <span>품목</span>
                   <span className="text-right">수량</span>
                   <span className="text-right">단가</span>
                   <span className="text-right">현재고</span>
-                  <span className="text-right">부족분</span>
                   <span></span>
                 </div>
 
                 {fields.map((field, index) => {
                   const stock = stockInfo[index]
-                  const qty = form.watch(`items.${index}.qty`) ?? 0
-                  const shortage = stock
-                    ? Number(qty) - stock.qtyAvailable
-                    : null
 
                   return (
                     <div
                       key={field.id}
-                      className="grid grid-cols-[1fr_60px_80px_80px_60px_28px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
+                      className="grid grid-cols-[1fr_60px_80px_80px_28px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
                     >
                       {/* 품목 Select */}
                       <FormField
@@ -509,23 +504,6 @@ export function PurchaseOrderFormSheet({
                         <span className="text-[12px] text-muted-foreground h-8 flex items-center">
                           {stock ? stock.qtyOnHand.toLocaleString() : "—"}
                         </span>
-                      </div>
-
-                      {/* 부족분 */}
-                      <div className="flex items-center justify-end pr-1">
-                        {shortage !== null ? (
-                          <span
-                            className={`text-[12px] font-medium h-8 flex items-center ${
-                              shortage > 0 ? "text-red-500" : "text-green-600"
-                            }`}
-                          >
-                            {shortage > 0 ? `+${shortage.toLocaleString()}` : shortage.toLocaleString()}
-                          </span>
-                        ) : (
-                          <span className="text-[12px] text-muted-foreground h-8 flex items-center">
-                            —
-                          </span>
-                        )}
                       </div>
 
                       {/* 삭제 */}

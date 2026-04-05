@@ -20,16 +20,16 @@ import {
   FormTextField,
 } from "@/components/common/form-sheet"
 import { transactionFormSchema, TransactionFormValues } from "./transaction-form-schema"
-import { createTransaction } from "@/lib/actions/inventory.actions"
+import { createTransaction, getItemsForSite } from "@/lib/actions/inventory.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LocationOption = { id: string; code: string; name: string }
+type SiteItem = { id: string; code: string; name: string; itemType: string; uom: string; qtyOnHand: number }
 
 interface TransactionFormSheetProps {
   sites: { id: string; code: string; name: string }[]
   locations: LocationOption[]
-  items: { id: string; code: string; name: string; itemType: string; uom: string }[]
   tenantId: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -70,13 +70,14 @@ const DEFAULT_VALUES: TransactionFormValues = {
 export function TransactionFormSheet({
   sites,
   locations,
-  items,
   tenantId,
   open,
   onOpenChange,
 }: TransactionFormSheetProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [siteItems, setSiteItems] = useState<SiteItem[]>([])
+  const [itemsLoading, setItemsLoading] = useState(false)
 
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(transactionFormSchema),
@@ -86,8 +87,24 @@ export function TransactionFormSheet({
   const txType = form.watch("txType")
 
   useEffect(() => {
-    if (open) form.reset(DEFAULT_VALUES)
+    if (open) {
+      form.reset(DEFAULT_VALUES)
+      setSiteItems([])
+    }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSiteChange = async (siteId: string) => {
+    form.setValue("siteId", siteId)
+    form.setValue("itemId", "")
+    setSiteItems([])
+    setItemsLoading(true)
+    try {
+      const result = await getItemsForSite(siteId)
+      setSiteItems(result)
+    } finally {
+      setItemsLoading(false)
+    }
+  }
 
   const handleTxTypeChange = (value: string) => {
     form.setValue("txType", value)
@@ -176,7 +193,7 @@ export function TransactionFormSheet({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>사이트</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || undefined}>
+                    <Select onValueChange={handleSiteChange} value={field.value || undefined}>
                       <SelectTrigger>
                         <SelectValue placeholder="사이트 선택" />
                       </SelectTrigger>
@@ -201,14 +218,31 @@ export function TransactionFormSheet({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>품목</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || undefined}>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || undefined}
+                    disabled={!form.watch("siteId") || itemsLoading}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder="품목 선택" />
+                      <SelectValue
+                        placeholder={
+                          !form.watch("siteId")
+                            ? "사이트를 먼저 선택하세요"
+                            : itemsLoading
+                            ? "품목 불러오는 중..."
+                            : siteItems.length === 0
+                            ? "해당 사이트에 재고 없음"
+                            : "품목 선택"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      {items.map((item) => (
+                      {siteItems.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
-                          [{item.code}] {item.name} ({ITEM_TYPE_LABELS[item.itemType] ?? item.itemType} / {item.uom})
+                          <div className="flex items-center justify-between gap-4 w-full">
+                            <span>[{item.code}] {item.name} ({ITEM_TYPE_LABELS[item.itemType] ?? item.itemType} / {item.uom})</span>
+                            <span className="text-muted-foreground text-[12px] shrink-0">재고 {item.qtyOnHand.toLocaleString()}</span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>

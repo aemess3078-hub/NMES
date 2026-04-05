@@ -14,7 +14,6 @@ interface InventoryTransactionDataTableProps {
   data: InventoryTransactionWithDetails[]
   sites: { id: string; code: string; name: string }[]
   locations: { id: string; code: string; name: string }[]
-  items: { id: string; code: string; name: string; itemType: string; uom: string }[]
   tenantId: string
 }
 
@@ -22,7 +21,6 @@ export function InventoryTransactionDataTable({
   data,
   sites,
   locations,
-  items,
   tenantId,
 }: InventoryTransactionDataTableProps) {
   const router = useRouter()
@@ -69,7 +67,6 @@ export function InventoryTransactionDataTable({
         onOpenChange={setFormOpen}
         sites={sites}
         locations={locations}
-        items={items}
         tenantId={tenantId}
       />
     </div>

@@ -108,6 +108,34 @@ export async function getSitesForInventory() {
   })
 }
 
+// ─── 사이트별 품목 목록 (재고 보유 품목만) ──────────────────────────────────────
+
+export async function getItemsForSite(siteId: string) {
+  const balances = await prisma.inventoryBalance.findMany({
+    where: { siteId },
+    select: {
+      qtyOnHand: true,
+      item: {
+        select: { id: true, code: true, name: true, itemType: true, uom: true },
+      },
+    },
+    orderBy: { item: { code: "asc" } },
+  })
+
+  // 같은 품목이 여러 창고에 있을 수 있으므로 집계
+  const map = new Map<string, { id: string; code: string; name: string; itemType: string; uom: string; qtyOnHand: number }>()
+  for (const b of balances) {
+    const existing = map.get(b.item.id)
+    if (existing) {
+      existing.qtyOnHand += Number(b.qtyOnHand)
+    } else {
+      map.set(b.item.id, { ...b.item, qtyOnHand: Number(b.qtyOnHand) })
+    }
+  }
+
+  return Array.from(map.values())
+}
+
 // ─── CreateTransaction 타입 ───────────────────────────────────────────────────
 
 export type CreateTransactionInput = {

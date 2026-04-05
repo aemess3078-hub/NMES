@@ -3,7 +3,6 @@ import { isFeatureEnabled } from "@/lib/services/feature.service"
 import {
   getInventoryTransactions,
   getWarehousesForTransaction,
-  getItemsForInventory,
   getSitesForInventory,
 } from "@/lib/actions/inventory.actions"
 import { InventoryTransactionDataTable } from "./inventory-transaction-data-table"
@@ -23,10 +22,9 @@ export default async function InventoryTransactionsPage() {
     )
   }
 
-  const [transactions, locations, items, sites] = await Promise.all([
+  const [transactions, locations, sites] = await Promise.all([
     getInventoryTransactions(),
     getWarehousesForTransaction(),
-    getItemsForInventory(),
     getSitesForInventory(),
   ])
 
@@ -46,7 +44,6 @@ export default async function InventoryTransactionsPage() {
         data={transactions}
         sites={sites}
         locations={locations}
-        items={items}
         tenantId={tenantId}
       />
     </div>
