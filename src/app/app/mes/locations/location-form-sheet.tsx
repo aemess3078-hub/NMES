@@ -62,7 +62,7 @@ export function LocationFormSheet({ mode, location, sites, open, onOpenChange }:
         zone: "",
       })
     }
-  }, [mode, location, open])
+  }, [mode, location, open, form, sites])
 
   const onSubmit = async (values: FormValues) => {
     try {

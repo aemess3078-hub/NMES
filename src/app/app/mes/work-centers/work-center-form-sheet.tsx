@@ -62,7 +62,7 @@ export function WorkCenterFormSheet({ mode, workCenter, sites, open, onOpenChang
     if (mode === "create" && open) {
       form.reset({ siteId: sites[0]?.id ?? "", code: "", name: "", kind: WorkCenterKind.ASSEMBLY })
     }
-  }, [mode, workCenter, open])
+  }, [mode, workCenter, open, form, sites])
 
   const onSubmit = async (values: FormValues) => {
     try {

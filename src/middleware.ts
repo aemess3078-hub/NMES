@@ -6,7 +6,12 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareSupabaseClient(req, res);
 
-  const isDevBypass = req.cookies.get('nmes-dev-bypass')?.value === 'true';
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const isDevBypassEnabled = process.env.NMES_ENABLE_DEV_BYPASS === 'true';
+  const isDevBypass =
+    isDevelopment &&
+    isDevBypassEnabled &&
+    req.cookies.get('nmes-dev-bypass')?.value === 'true';
 
   const { data: { session } } = await supabase.auth.getSession();
 

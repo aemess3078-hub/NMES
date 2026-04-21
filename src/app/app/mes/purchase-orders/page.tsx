@@ -24,7 +24,7 @@ export default async function PurchaseOrdersPage() {
         </p>
       </div>
       <PurchaseOrderDataTable
-        data={orders as any} // eslint-disable-line @typescript-eslint/no-explicit-any
+        data={orders as any}
         tenantId={tenantId}
         siteId={siteId}
         suppliers={suppliers}

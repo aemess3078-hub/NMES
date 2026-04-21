@@ -24,7 +24,7 @@ export default async function ItemPricesPage() {
         </p>
       </div>
       <ItemPriceDataTable
-        data={prices as any} // eslint-disable-line @typescript-eslint/no-explicit-any
+        data={prices as any}
         tenantId={tenantId}
         partners={partners}
         items={items}

@@ -59,7 +59,7 @@ export function SiteFormSheet({ mode, site, open, onOpenChange }: Props) {
     } else {
       form.reset({ code: "", name: "", type: "FACTORY" as SiteType })
     }
-  }, [mode, site, open])
+  }, [mode, site, open, form])
 
   const onSubmit = async (values: FormValues) => {
     try {

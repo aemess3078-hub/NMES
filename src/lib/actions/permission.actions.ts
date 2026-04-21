@@ -35,8 +35,10 @@ export async function getPermissionMatrix(tenantId: string): Promise<PermissionM
   for (const perm of permissions) {
     if (!matrix[perm.resource]) matrix[perm.resource] = {}
     if (!matrix[perm.resource][perm.role]) matrix[perm.resource][perm.role] = {}
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    matrix[perm.resource][perm.role]![perm.action] = {
+    const rolePermissions = matrix[perm.resource][perm.role]
+    if (!rolePermissions) continue
+
+    rolePermissions[perm.action] = {
       id: perm.id,
       isAllowed: perm.isAllowed,
     }

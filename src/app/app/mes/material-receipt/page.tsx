@@ -25,7 +25,7 @@ export default async function MaterialReceiptPage() {
         </p>
       </div>
       <MaterialReceiptDataTable
-        data={pendingOrders as any} // eslint-disable-line @typescript-eslint/no-explicit-any
+        data={pendingOrders as any}
         tenantId={tenantId}
         siteId={siteId}
       />

@@ -102,7 +102,7 @@ export function ECNFormSheet({ open, onOpenChange, mode, editingECN, items, tena
         details: [],
       })
     }
-  }, [mode, editingECN, open])
+  }, [mode, editingECN, open, reset])
 
   useEffect(() => {
     if (!targetItemId) return
