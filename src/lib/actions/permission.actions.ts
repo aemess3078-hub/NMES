@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { UserRole, PermissionAction } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { getTenantId, requireRole } from "@/lib/auth"
 
 export type PermissionRecord = {
   id: string
@@ -49,6 +50,14 @@ export async function getPermissionMatrix(tenantId: string): Promise<PermissionM
 
 // 3. 단건 토글
 export async function updatePermission(id: string, isAllowed: boolean) {
+  // 서버 권한 검증: ADMIN 이상만 가능
+  await requireRole("ADMIN")
+
+  // 오너 권한은 수정 불가
+  const perm = await prisma.rolePermission.findUnique({ where: { id } })
+  if (!perm) throw new Error("권한 레코드를 찾을 수 없습니다.")
+  if (perm.role === "OWNER") throw new Error("OWNER 권한은 수정할 수 없습니다.")
+
   await prisma.rolePermission.update({ where: { id }, data: { isAllowed } })
   revalidatePath("/app/mes/users")
 }
@@ -57,10 +66,27 @@ export async function updatePermission(id: string, isAllowed: boolean) {
 export async function bulkUpdatePermissions(
   updates: { id: string; isAllowed: boolean }[]
 ) {
+  await requireRole("ADMIN")
+
   await prisma.$transaction(
     updates.map(({ id, isAllowed }) =>
       prisma.rolePermission.update({ where: { id }, data: { isAllowed } })
     )
   )
   revalidatePath("/app/mes/users")
+}
+
+// 5. 사용자의 특정 리소스+액션 권한 확인
+export async function checkPermission(
+  tenantId: string,
+  role: UserRole,
+  resource: string,
+  action: PermissionAction
+): Promise<boolean> {
+  if (role === "OWNER") return true
+
+  const perm = await prisma.rolePermission.findFirst({
+    where: { tenantId, role, resource, action },
+  })
+  return perm?.isAllowed ?? false
 }

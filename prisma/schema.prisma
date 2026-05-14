@@ -187,6 +187,12 @@ enum ApprovalStatus {
   WITHDRAWN
 }
 
+enum SignupRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum AuditAction {
   CREATE
   UPDATE
@@ -337,15 +343,18 @@ model Tenant {
   quotations            Quotation[]     @relation("TenantQuotations")
   itemCosts             ItemCost[]      @relation("TenantItemCosts")
   engineeringChanges    EngineeringChange[] @relation("TenantECNs")
+  signupRequests        SignupRequest[]
 }
 
 model Profile {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String
-  avatarUrl String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  email      String   @unique
+  name       String
+  avatarUrl  String?
+  department String?
+  phone      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   tenantUsers          TenantUser[]
   qualityInspections   QualityInspection[]
@@ -355,6 +364,8 @@ model Profile {
   receivingInspections ReceivingInspection[] @relation("ReceivingInspector")
   ecnRequested         EngineeringChange[] @relation("ECNRequester")
   ecnApproved          EngineeringChange[] @relation("ECNApprover")
+  signupsApproved      SignupRequest[]      @relation("SignupApprover")
+  signupsRejected      SignupRequest[]      @relation("SignupRejector")
 }
 
 model Site {
@@ -404,6 +415,31 @@ model TenantUser {
   @@index([siteId])
   @@index([tenantId, profileId])
   @@index([tenantId, siteId, role])
+}
+
+model SignupRequest {
+  id            String              @id @default(cuid())
+  tenantId      String
+  email         String
+  name          String
+  department    String?
+  phone         String?
+  requestedRole UserRole            @default(OPERATOR)
+  status        SignupRequestStatus @default(PENDING)
+  createdAt     DateTime            @default(now())
+  approvedAt    DateTime?
+  approvedById  String?
+  rejectedAt    DateTime?
+  rejectedById  String?
+  rejectReason  String?
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  approvedBy Profile? @relation("SignupApprover", fields: [approvedById], references: [id])
+  rejectedBy Profile? @relation("SignupRejector", fields: [rejectedById], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([email])
 }
 
 model WorkCenter {

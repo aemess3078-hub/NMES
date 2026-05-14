@@ -213,19 +213,27 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
         </Button>
       </form>
 
-      <div className="mt-4 text-center">
+      <div className="mt-4 text-center space-y-2">
         <button
           type="button"
           onClick={() => {
             setSignupMode(!signupMode)
             setError("")
           }}
-          className="text-sm text-slate-400 hover:text-slate-600 transition-colors"
+          className="text-sm text-slate-400 hover:text-slate-600 transition-colors block w-full"
         >
           {signupMode
             ? "이미 계정이 있으신가요? 로그인 →"
             : "계정이 없으신가요? 회원가입 →"}
         </button>
+        {!signupMode && (
+          <a
+            href="/signup-request"
+            className="text-sm text-blue-400 hover:text-blue-600 transition-colors block"
+          >
+            관리자 승인 방식으로 가입 신청 →
+          </a>
+        )}
       </div>
     </div>
   )
