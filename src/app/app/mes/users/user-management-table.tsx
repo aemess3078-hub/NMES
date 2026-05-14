@@ -83,11 +83,11 @@ export function UserManagementTable({
   function handleRoleChange(tenantUserId: string, newRole: UserRole) {
     setError(null)
     startTransition(async () => {
-      try {
-        await updateUserRole(tenantUserId, newRole)
+      const result = await updateUserRole(tenantUserId, newRole)
+      if (result.success) {
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "역할 변경에 실패했습니다.")
+      } else {
+        setError(result.error ?? "역할 변경에 실패했습니다.")
       }
     })
   }
@@ -96,11 +96,11 @@ export function UserManagementTable({
     if (!confirm("이 사용자를 비활성화하시겠습니까?")) return
     setError(null)
     startTransition(async () => {
-      try {
-        await deactivateUser(tenantUserId)
+      const result = await deactivateUser(tenantUserId)
+      if (result.success) {
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "비활성화에 실패했습니다.")
+      } else {
+        setError(result.error ?? "비활성화에 실패했습니다.")
       }
     })
   }
@@ -108,11 +108,11 @@ export function UserManagementTable({
   function handleReactivate(tenantUserId: string) {
     setError(null)
     startTransition(async () => {
-      try {
-        await reactivateUser(tenantUserId)
+      const result = await reactivateUser(tenantUserId)
+      if (result.success) {
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "재활성화에 실패했습니다.")
+      } else {
+        setError(result.error ?? "재활성화에 실패했습니다.")
       }
     })
   }
@@ -121,12 +121,12 @@ export function UserManagementTable({
     if (!enrollTarget) return
     setError(null)
     startTransition(async () => {
-      try {
-        await enrollSupabaseUser(enrollTarget.profileId, enrollRole)
+      const result = await enrollSupabaseUser(enrollTarget.profileId, enrollRole)
+      if (result.success) {
         setEnrollTarget(null)
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "등록에 실패했습니다.")
+      } else {
+        setError(result.error ?? "등록에 실패했습니다.")
       }
     })
   }

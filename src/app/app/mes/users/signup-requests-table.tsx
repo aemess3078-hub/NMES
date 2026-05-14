@@ -72,12 +72,12 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
     if (!approveTarget) return
     setError(null)
     startTransition(async () => {
-      try {
-        await approveSignupRequest(approveTarget.id, grantedRole)
+      const result = await approveSignupRequest(approveTarget.id, grantedRole)
+      if (result.success) {
         setApproveTarget(null)
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "오류가 발생했습니다.")
+      } else {
+        setError(result.error ?? "오류가 발생했습니다.")
       }
     })
   }
@@ -86,13 +86,13 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
     if (!rejectTarget || !rejectReason.trim()) return
     setError(null)
     startTransition(async () => {
-      try {
-        await rejectSignupRequest(rejectTarget.id, rejectReason.trim())
+      const result = await rejectSignupRequest(rejectTarget.id, rejectReason.trim())
+      if (result.success) {
         setRejectTarget(null)
         setRejectReason("")
         router.refresh()
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "오류가 발생했습니다.")
+      } else {
+        setError(result.error ?? "오류가 발생했습니다.")
       }
     })
   }

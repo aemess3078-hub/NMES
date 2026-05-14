@@ -107,99 +107,86 @@ export async function getSignupRequests(
 export async function approveSignupRequest(
   requestId: string,
   grantedRole: UserRole
-): Promise<void> {
-  const tenantId = await getTenantId()
-  const actor = await requireRole("ADMIN")
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const tenantId = await getTenantId()
+    const actor = await requireRole("ADMIN")
 
-  const request = await prisma.signupRequest.findFirst({
-    where: { id: requestId, tenantId, status: "PENDING" },
-  })
-  if (!request) throw new Error("신청을 찾을 수 없거나 이미 처리되었습니다.")
+    const request = await prisma.signupRequest.findFirst({
+      where: { id: requestId, tenantId, status: "PENDING" },
+    })
+    if (!request) return { success: false, error: "신청을 찾을 수 없거나 이미 처리되었습니다." }
 
-  // 1. Supabase Auth에 초대 이메일 발송 + 사용자 생성
-  const supabase = createAdminClient()
-  const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
-    request.email,
-    {
-      data: {
-        name: request.name,
-        tenantId,
-      },
+    // 1. Supabase Auth에 초대 이메일 발송 + 사용자 생성
+    const supabase = createAdminClient()
+    const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+      request.email,
+      { data: { name: request.name, tenantId } }
+    )
+    if (inviteError) {
+      return { success: false, error: `Supabase 사용자 생성 실패: ${inviteError.message}` }
     }
-  )
-  if (inviteError) {
-    throw new Error(`Supabase 사용자 생성 실패: ${inviteError.message}`)
-  }
 
-  const authUserId = inviteData.user.id
+    const authUserId = inviteData.user.id
 
-  // 2. Profile 생성 (없을 경우)
-  await prisma.profile.upsert({
-    where: { id: authUserId },
-    create: {
-      id: authUserId,
-      email: request.email,
-      name: request.name,
-      department: request.department,
-      phone: request.phone,
-    },
-    update: {
-      name: request.name,
-      department: request.department,
-      phone: request.phone,
-    },
-  })
-
-  // 3. TenantUser 생성 (없을 경우)
-  const existingTU = await prisma.tenantUser.findFirst({
-    where: { tenantId, profileId: authUserId },
-  })
-  if (!existingTU) {
-    await prisma.tenantUser.create({
-      data: {
-        tenantId,
-        profileId: authUserId,
-        role: grantedRole,
-        isActive: true,
+    // 2. Profile 생성 (없을 경우)
+    await prisma.profile.upsert({
+      where: { id: authUserId },
+      create: {
+        id: authUserId,
+        email: request.email,
+        name: request.name,
+        department: request.department,
+        phone: request.phone,
+      },
+      update: {
+        name: request.name,
+        department: request.department,
+        phone: request.phone,
       },
     })
-  } else {
-    await prisma.tenantUser.update({
-      where: { id: existingTU.id },
-      data: { role: grantedRole, isActive: true },
+
+    // 3. TenantUser 생성 (없을 경우)
+    const existingTU = await prisma.tenantUser.findFirst({
+      where: { tenantId, profileId: authUserId },
     })
-  }
+    if (!existingTU) {
+      await prisma.tenantUser.create({
+        data: { tenantId, profileId: authUserId, role: grantedRole, isActive: true },
+      })
+    } else {
+      await prisma.tenantUser.update({
+        where: { id: existingTU.id },
+        data: { role: grantedRole, isActive: true },
+      })
+    }
 
-  // 4. SignupRequest 상태 업데이트
-  const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
-  await prisma.signupRequest.update({
-    where: { id: requestId },
-    data: {
-      status: "APPROVED",
-      approvedAt: new Date(),
-      approvedById: actorProfileId,
-    },
-  })
+    // 4. SignupRequest 상태 업데이트
+    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
+    await prisma.signupRequest.update({
+      where: { id: requestId },
+      data: { status: "APPROVED", approvedAt: new Date(), approvedById: actorProfileId },
+    })
 
-  // 5. AuditLog 기록
-  if (actorProfileId) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actorProfileId,
-        entityType: "SignupRequest",
-        entityId: requestId,
-        action: "APPROVE",
-        afterData: {
-          email: request.email,
-          name: request.name,
-          grantedRole,
+    // 5. AuditLog 기록
+    if (actorProfileId) {
+      await prisma.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actorProfileId,
+          entityType: "SignupRequest",
+          entityId: requestId,
+          action: "APPROVE",
+          afterData: { email: request.email, name: request.name, grantedRole },
         },
-      },
-    })
-  }
+      })
+    }
 
-  revalidatePath("/app/mes/users")
+    revalidatePath("/app/mes/users")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+  }
 }
 
 // ─── 관리자: 거절 ─────────────────────────────────────────────────────────────
@@ -207,42 +194,41 @@ export async function approveSignupRequest(
 export async function rejectSignupRequest(
   requestId: string,
   rejectReason: string
-): Promise<void> {
-  const tenantId = await getTenantId()
-  const actor = await requireRole("ADMIN")
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const tenantId = await getTenantId()
+    const actor = await requireRole("ADMIN")
 
-  const request = await prisma.signupRequest.findFirst({
-    where: { id: requestId, tenantId, status: "PENDING" },
-  })
-  if (!request) throw new Error("신청을 찾을 수 없거나 이미 처리되었습니다.")
-
-  const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
-
-  await prisma.signupRequest.update({
-    where: { id: requestId },
-    data: {
-      status: "REJECTED",
-      rejectedAt: new Date(),
-      rejectedById: actorProfileId,
-      rejectReason,
-    },
-  })
-
-  // AuditLog 기록
-  if (actorProfileId) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actorProfileId,
-        entityType: "SignupRequest",
-        entityId: requestId,
-        action: "REJECT",
-        afterData: { email: request.email, rejectReason },
-      },
+    const request = await prisma.signupRequest.findFirst({
+      where: { id: requestId, tenantId, status: "PENDING" },
     })
-  }
+    if (!request) return { success: false, error: "신청을 찾을 수 없거나 이미 처리되었습니다." }
 
-  revalidatePath("/app/mes/users")
+    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
+
+    await prisma.signupRequest.update({
+      where: { id: requestId },
+      data: { status: "REJECTED", rejectedAt: new Date(), rejectedById: actorProfileId, rejectReason },
+    })
+
+    if (actorProfileId) {
+      await prisma.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actorProfileId,
+          entityType: "SignupRequest",
+          entityId: requestId,
+          action: "REJECT",
+          afterData: { email: request.email, rejectReason },
+        },
+      })
+    }
+
+    revalidatePath("/app/mes/users")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+  }
 }
 
 // ─── 관리자: PENDING 건수 조회 ────────────────────────────────────────────────
