@@ -2,7 +2,7 @@
 
 import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
-import { PartnerType, PartnerStatus } from "@prisma/client"
+import { Prisma, PartnerType, PartnerStatus } from "@prisma/client"
 
 export type BusinessPartner = {
   id: string
@@ -23,11 +23,11 @@ export type BusinessPartnerFormValues = {
 export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promise<BusinessPartner[]> {
   const { tenantId } = await requireTenantContext()
 
-  const where: Record<string, unknown> = { tenantId }
+  const where: Prisma.BusinessPartnerWhereInput = { tenantId }
   if (type === "CUSTOMER") {
-    where.partnerType = { in: ["CUSTOMER", "BOTH"] }
+    where.partnerType = { in: [PartnerType.CUSTOMER, PartnerType.BOTH] }
   } else if (type === "SUPPLIER") {
-    where.partnerType = { in: ["SUPPLIER", "BOTH"] }
+    where.partnerType = { in: [PartnerType.SUPPLIER, PartnerType.BOTH] }
   }
 
   return prisma.businessPartner.findMany({

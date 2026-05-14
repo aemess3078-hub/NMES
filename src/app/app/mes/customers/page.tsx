@@ -1,10 +1,15 @@
-import { getBusinessPartners } from "@/lib/actions/business-partner.actions"
+import { getBusinessPartners, BusinessPartner } from "@/lib/actions/business-partner.actions"
 import { PartnerDataTable } from "../business-partners/partner-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function CustomersPage() {
-  const partners = await getBusinessPartners("CUSTOMER")
+  let partners: BusinessPartner[] = []
+  try {
+    partners = await getBusinessPartners("CUSTOMER")
+  } catch (err) {
+    console.error("[CustomersPage] getBusinessPartners 실패:", err)
+  }
 
   return (
     <div className="space-y-6">
