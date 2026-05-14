@@ -1486,6 +1486,8 @@ async function seedFeatures() {
     { code: 'QUOTATION', name: '견적관리', description: '고객 견적서 관리 및 수주 전환', category: 'SALES', icon: 'FileText', menuCodes: ['quotations'], isCore: false, displayOrder: 50 },
     // ANALYTICS
     { code: 'COSTING', name: '원가분석', description: 'BOM 기반 표준원가와 실적 기반 실제원가 비교', category: 'ANALYTICS', icon: 'Calculator', menuCodes: ['costing'], isCore: false, displayOrder: 90 },
+    // PARTNER
+    { code: 'PARTNER_MANAGEMENT', name: '고객사/거래처 관리', description: '고객사 및 거래처 마스터 관리', category: 'MASTER', icon: 'Handshake', menuCodes: ['customers', 'vendors'], isCore: false, displayOrder: 15 },
   ];
 
   for (const f of features) {
@@ -1543,7 +1545,7 @@ async function seedFeatures() {
       'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'DEFECT_MANAGEMENT',
       'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
       'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE', 'MRP',
-      'COSTING',
+      'COSTING', 'PARTNER_MANAGEMENT',
     ];
     for (const code of enableCodes) {
       const feat = await prisma.featureDefinition.findUnique({ where: { code } });
