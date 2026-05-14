@@ -306,23 +306,7 @@ export function AIChatPanel({ open, onClose }: Props) {
             />
           ))}
 
-          {/* 로딩 인디케이터 (스트리밍 시작 전 짧은 순간) */}
-          {isLoading && messages[messages.length - 1]?.content === "" && (
-            <div className="flex gap-2 items-start">
-              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center mt-0.5 flex-shrink-0">
-                <Bot className="w-4 h-4 text-primary" />
-              </div>
-              <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
-                <div className="flex gap-1.5 items-center">
-                  <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:0ms]" />
-                  <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:150ms]" />
-                  <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:300ms]" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div ref={bottomRef} />
+<div ref={bottomRef} />
         </div>
 
         {/* ── 추천 질문 ── */}

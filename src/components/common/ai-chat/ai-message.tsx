@@ -127,10 +127,17 @@ export function AIMessage({ message, selected, onToggleSelect }: Props) {
               : "bg-muted text-foreground rounded-tl-sm w-full"
           }`}
         >
-          {isUser
-            ? message.content
-            : renderMarkdown(message.content, message.streaming)
-          }
+          {isUser ? (
+            message.content
+          ) : message.streaming && message.content === "" ? (
+            <div className="flex gap-1.5 items-center py-0.5">
+              <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:0ms]" />
+              <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:150ms]" />
+              <span className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:300ms]" />
+            </div>
+          ) : (
+            renderMarkdown(message.content, message.streaming)
+          )}
         </div>
         <span className="text-[11px] text-muted-foreground/50 px-1">
           {message.timestamp.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
