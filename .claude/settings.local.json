@@ -34,7 +34,22 @@
       "Bash(echo \"=== $f ===\")",
       "Read(//c/Users/82102/Documents/New MES/src/app/app/mes/$f/**)",
       "Bash(done)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(grep -n \"code: ''ITEM''\" prisma/seed.ts)",
+      "Bash(sed -i \"s/menuCodes: \\\\[''inventory'', ''inventory-transactions'', ''locations'', ''sites''\\\\]/menuCodes: [''inventory'', ''inventory-transactions'']/\" prisma/seed.ts)",
+      "Bash(grep -n \"code: ''INVENTORY''\" prisma/seed.ts)",
+      "Bash(npx playwright:*)",
+      "Bash(grep -v \"//\")",
+      "Bash($env:PRISMA_FORCE_MIGRATIONS='true')",
+      "Bash(PRISMA_FORCE_MIGRATIONS=true npx prisma migrate dev --name refactor-routing-item-separation --create-only --skip-seed)",
+      "Bash(npx tsx -e \":*)",
+      "Bash(npx tsx --tsconfig tsconfig.node.json -e \":*)",
+      "Bash(find '/c/Users/82102/Documents/New MES/src/app/app/mes' -type f -name *detail* -o -type f -name *[id]*)",
+      "Bash(find '/c/Users/82102/Documents/New MES/src' -name *work-center* -type f)",
+      "Bash(npx shadcn@latest add tabs --yes)",
+      "Bash(for dir:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/82102/Documents/New MES/src/app/app/mes/$dir/**)"
     ]
   }
 }

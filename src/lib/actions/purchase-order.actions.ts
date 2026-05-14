@@ -1,12 +1,12 @@
 "use server"
 
+import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { PurchaseOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
-// ─── Query Functions ──────────────────────────────────────────────────────────
-
-export async function getPurchaseOrders(tenantId: string) {
+export async function getPurchaseOrders(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.purchaseOrder.findMany({
     where: { tenantId },
     include: {
@@ -22,14 +22,16 @@ export async function getPurchaseOrders(tenantId: string) {
   })
 }
 
-export async function getSuppliers(tenantId: string) {
+export async function getSuppliers(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.businessPartner.findMany({
     where: { tenantId, partnerType: { in: ["SUPPLIER", "BOTH"] } },
     orderBy: { name: "asc" },
   })
 }
 
-export async function getRawMaterials(tenantId: string) {
+export async function getRawMaterials(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.item.findMany({
     where: {
       tenantId,
@@ -42,8 +44,9 @@ export async function getRawMaterials(tenantId: string) {
 
 export async function getItemCurrentStock(
   itemId: string,
-  tenantId: string
+  _tenantId?: string
 ): Promise<{ qtyOnHand: number; qtyAvailable: number }> {
+  const { tenantId } = await requireTenantContext()
   const balances = await prisma.inventoryBalance.findMany({
     where: { itemId, tenantId },
   })
@@ -53,10 +56,11 @@ export async function getItemCurrentStock(
 }
 
 export async function getItemPrice(
-  tenantId: string,
+  _tenantId: string,
   itemId: string,
   partnerId: string
 ) {
+  const { tenantId } = await requireTenantContext()
   return prisma.itemPrice.findFirst({
     where: {
       tenantId,
@@ -70,8 +74,6 @@ export async function getItemPrice(
   })
 }
 
-// ─── Business Logic ───────────────────────────────────────────────────────────
-
 async function generatePurchaseOrderNo(tenantId: string): Promise<string> {
   const year = new Date().getFullYear()
   const prefix = `PO-${year}-`
@@ -83,8 +85,6 @@ async function generatePurchaseOrderNo(tenantId: string): Promise<string> {
   const seq = last ? (parseInt(last.orderNo.split("-")[2] ?? "0", 10) || 0) + 1 : 1
   return `${prefix}${String(seq).padStart(3, "0")}`
 }
-
-// ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export type CreatePurchaseOrderItemInput = {
   itemId: string
@@ -105,15 +105,40 @@ export type CreatePurchaseOrderInput = {
 }
 
 export async function createPurchaseOrder(
-  tenantId: string,
-  siteId: string,
+  _tenantId: string,
+  _siteId: string,
   data: CreatePurchaseOrderInput
 ) {
+  const { tenantId, siteId } = await requireTenantContext()
+
+  if (!siteId) {
+    throw new Error("Tenant site context not found")
+  }
+
+  const [supplier, items] = await Promise.all([
+    prisma.businessPartner.findFirst({
+      where: { id: data.supplierId, tenantId },
+      select: { id: true },
+    }),
+    prisma.item.findMany({
+      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
+      select: { id: true },
+    }),
+  ])
+
+  if (!supplier) {
+    throw new Error("Supplier not found in tenant scope")
+  }
+
+  if (items.length !== data.items.length) {
+    throw new Error("One or more items are outside tenant scope")
+  }
+
   const orderNo = await generatePurchaseOrderNo(tenantId)
 
   const itemsWithStock = await Promise.all(
     data.items.map(async (item) => {
-      const stock = await getItemCurrentStock(item.itemId, tenantId)
+      const stock = await getItemCurrentStock(item.itemId)
       return { ...item, stockAtOrder: stock.qtyOnHand }
     })
   )
@@ -157,15 +182,38 @@ export type UpdatePurchaseOrderInput = {
 }
 
 export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderInput) {
-  const current = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const current = await prisma.purchaseOrder.findFirstOrThrow({
+    where: { id, tenantId },
+  })
   const canEditItems = current.status === "DRAFT"
+
+  if (data.supplierId) {
+    const supplier = await prisma.businessPartner.findFirst({
+      where: { id: data.supplierId, tenantId },
+      select: { id: true },
+    })
+    if (!supplier) throw new Error("Supplier not found in tenant scope")
+  }
+
+  if (data.items?.length) {
+    const items = await prisma.item.findMany({
+      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
+      select: { id: true },
+    })
+    if (items.length !== data.items.length) {
+      throw new Error("One or more items are outside tenant scope")
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     if (canEditItems && data.items) {
-      await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } })
+      await tx.purchaseOrderItem.deleteMany({
+        where: { purchaseOrderId: id, purchaseOrder: { tenantId } },
+      })
     }
     await tx.purchaseOrder.update({
-      where: { id },
+      where: { id: current.id },
       data: {
         ...(data.supplierId !== undefined && { supplierId: data.supplierId }),
         ...(data.orderDate !== undefined && { orderDate: data.orderDate }),
@@ -192,11 +240,18 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
 }
 
 export async function deletePurchaseOrder(id: string) {
-  const order = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const order = await prisma.purchaseOrder.findFirstOrThrow({
+    where: { id, tenantId },
+  })
   if (order.status !== "DRAFT") {
-    throw new Error("DRAFT 상태인 발주만 삭제할 수 있습니다.")
+    throw new Error("Only draft purchase orders can be deleted")
   }
-  await prisma.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } })
-  await prisma.purchaseOrder.delete({ where: { id } })
+  await prisma.purchaseOrderItem.deleteMany({
+    where: { purchaseOrderId: id, purchaseOrder: { tenantId } },
+  })
+  await prisma.purchaseOrder.delete({
+    where: { id: order.id },
+  })
   revalidatePath("/app/mes/purchase-orders")
 }

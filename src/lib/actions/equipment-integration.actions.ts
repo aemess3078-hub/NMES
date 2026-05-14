@@ -1,5 +1,6 @@
 "use server"
 
+import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import {
   ConnectionProtocol,
@@ -9,8 +10,6 @@ import {
   Prisma,
 } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type EdgeGatewayRow = {
   id: string
@@ -67,8 +66,6 @@ export type DataTagRow = {
   }
 }
 
-// ─── Input Types ──────────────────────────────────────────────────────────────
-
 export type CreateGatewayInput = {
   siteId: string
   name: string
@@ -123,9 +120,8 @@ export type UpdateTagInput = {
   deadband?: number | null
 }
 
-// ─── EdgeGateway CRUD ─────────────────────────────────────────────────────────
-
-export async function getGateways(tenantId: string): Promise<EdgeGatewayRow[]> {
+export async function getGateways(_tenantId?: string): Promise<EdgeGatewayRow[]> {
+  const { tenantId } = await requireTenantContext()
   const rows = await prisma.edgeGateway.findMany({
     where: { tenantId },
     include: {
@@ -139,8 +135,18 @@ export async function getGateways(tenantId: string): Promise<EdgeGatewayRow[]> {
 
 export async function createGateway(
   data: CreateGatewayInput,
-  tenantId: string
+  _tenantId?: string
 ): Promise<{ id: string; apiKey: string }> {
+  const { tenantId } = await requireTenantContext()
+  const site = await prisma.site.findFirst({
+    where: { id: data.siteId, tenantId },
+    select: { id: true },
+  })
+
+  if (!site) {
+    throw new Error("Site not found in tenant scope")
+  }
+
   const gateway = await prisma.edgeGateway.create({
     data: {
       tenantId,
@@ -156,33 +162,44 @@ export async function createGateway(
 }
 
 export async function updateGateway(id: string, data: UpdateGatewayInput) {
-  await prisma.edgeGateway.update({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.edgeGateway.updateMany({
+    where: { id, tenantId },
     data: {
       ...(data.name !== undefined && { name: data.name }),
       ...(data.description !== undefined && { description: data.description }),
       ...(data.status !== undefined && { status: data.status }),
     },
   })
+
+  if (result.count === 0) {
+    throw new Error("Gateway not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/gateways")
 }
 
 export async function deleteGateway(id: string) {
+  const { tenantId } = await requireTenantContext()
   const connCount = await prisma.equipmentConnection.count({
-    where: { gatewayId: id },
+    where: { gatewayId: id, gateway: { tenantId } },
   })
   if (connCount > 0) {
-    throw new Error("이 게이트웨이에 연결된 설비가 있어 삭제할 수 없습니다.")
+    throw new Error("Cannot delete gateway with active connections")
   }
-  await prisma.edgeGateway.delete({ where: { id } })
+
+  const result = await prisma.edgeGateway.deleteMany({ where: { id, tenantId } })
+  if (result.count === 0) {
+    throw new Error("Gateway not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/gateways")
 }
 
-// ─── EquipmentConnection CRUD ─────────────────────────────────────────────────
-
 export async function getConnections(
-  tenantId: string
+  _tenantId?: string
 ): Promise<EquipmentConnectionRow[]> {
+  const { tenantId } = await requireTenantContext()
   const rows = await prisma.equipmentConnection.findMany({
     where: {
       equipment: { tenantId },
@@ -198,17 +215,34 @@ export async function getConnections(
 }
 
 export async function createConnection(data: CreateConnectionInput) {
-  const existing = await prisma.equipmentConnection.findUnique({
-    where: {
-      equipmentId_gatewayId: {
-        equipmentId: data.equipmentId,
-        gatewayId: data.gatewayId,
+  const { tenantId } = await requireTenantContext()
+  const [equipment, gateway, existing] = await Promise.all([
+    prisma.equipment.findFirst({
+      where: { id: data.equipmentId, tenantId },
+      select: { id: true },
+    }),
+    prisma.edgeGateway.findFirst({
+      where: { id: data.gatewayId, tenantId },
+      select: { id: true },
+    }),
+    prisma.equipmentConnection.findUnique({
+      where: {
+        equipmentId_gatewayId: {
+          equipmentId: data.equipmentId,
+          gatewayId: data.gatewayId,
+        },
       },
-    },
-  })
-  if (existing) {
-    throw new Error("이 설비와 게이트웨이 조합의 연결이 이미 존재합니다.")
+    }),
+  ])
+
+  if (!equipment || !gateway) {
+    throw new Error("Connection target not found in tenant scope")
   }
+
+  if (existing) {
+    throw new Error("Connection already exists")
+  }
+
   await prisma.equipmentConnection.create({
     data: {
       equipmentId: data.equipmentId,
@@ -226,8 +260,9 @@ export async function updateConnection(
   id: string,
   data: UpdateConnectionInput
 ) {
-  await prisma.equipmentConnection.update({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.equipmentConnection.updateMany({
+    where: { id, equipment: { tenantId } },
     data: {
       ...(data.protocol !== undefined && { protocol: data.protocol }),
       ...(data.host !== undefined && { host: data.host }),
@@ -235,29 +270,48 @@ export async function updateConnection(
       ...(data.config !== undefined && { config: data.config ?? Prisma.JsonNull }),
     },
   })
+
+  if (result.count === 0) {
+    throw new Error("Connection not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/equipment-connections")
 }
 
 export async function deleteConnection(id: string) {
-  const tagCount = await prisma.dataTag.count({ where: { connectionId: id } })
+  const { tenantId } = await requireTenantContext()
+  const tagCount = await prisma.dataTag.count({
+    where: { connectionId: id, connection: { equipment: { tenantId } } },
+  })
   if (tagCount > 0) {
-    throw new Error("이 연결에 등록된 태그가 있어 삭제할 수 없습니다.")
+    throw new Error("Cannot delete connection with registered tags")
   }
-  await prisma.equipmentConnection.delete({ where: { id } })
+
+  const result = await prisma.equipmentConnection.deleteMany({
+    where: { id, equipment: { tenantId } },
+  })
+  if (result.count === 0) {
+    throw new Error("Connection not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/equipment-connections")
 }
 
 export async function toggleConnectionActive(id: string, isActive: boolean) {
-  await prisma.equipmentConnection.update({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.equipmentConnection.updateMany({
+    where: { id, equipment: { tenantId } },
     data: { isActive },
   })
+  if (result.count === 0) {
+    throw new Error("Connection not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/equipment-connections")
 }
 
-// ─── DataTag CRUD ─────────────────────────────────────────────────────────────
-
-export async function getTags(tenantId: string): Promise<DataTagRow[]> {
+export async function getTags(_tenantId?: string): Promise<DataTagRow[]> {
+  const { tenantId } = await requireTenantContext()
   const rows = await prisma.dataTag.findMany({
     where: {
       connection: {
@@ -280,17 +334,30 @@ export async function getTags(tenantId: string): Promise<DataTagRow[]> {
 }
 
 export async function createTag(data: CreateTagInput) {
-  const existing = await prisma.dataTag.findUnique({
-    where: {
-      connectionId_tagCode: {
-        connectionId: data.connectionId,
-        tagCode: data.tagCode,
+  const { tenantId } = await requireTenantContext()
+  const [connection, existing] = await Promise.all([
+    prisma.equipmentConnection.findFirst({
+      where: { id: data.connectionId, equipment: { tenantId } },
+      select: { id: true },
+    }),
+    prisma.dataTag.findUnique({
+      where: {
+        connectionId_tagCode: {
+          connectionId: data.connectionId,
+          tagCode: data.tagCode,
+        },
       },
-    },
-  })
-  if (existing) {
-    throw new Error(`태그코드 '${data.tagCode}'는 이 연결에 이미 존재합니다.`)
+    }),
+  ])
+
+  if (!connection) {
+    throw new Error("Connection not found in tenant scope")
   }
+
+  if (existing) {
+    throw new Error("Tag code already exists on this connection")
+  }
+
   await prisma.dataTag.create({
     data: {
       connectionId: data.connectionId,
@@ -310,8 +377,9 @@ export async function createTag(data: CreateTagInput) {
 }
 
 export async function updateTag(id: string, data: UpdateTagInput) {
-  await prisma.dataTag.update({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.dataTag.updateMany({
+    where: { id, connection: { equipment: { tenantId } } },
     data: {
       ...(data.displayName !== undefined && { displayName: data.displayName }),
       ...(data.dataType !== undefined && { dataType: data.dataType }),
@@ -324,26 +392,43 @@ export async function updateTag(id: string, data: UpdateTagInput) {
       ...(data.deadband !== undefined && { deadband: data.deadband }),
     },
   })
+  if (result.count === 0) {
+    throw new Error("Tag not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/tags")
 }
 
 export async function deleteTag(id: string) {
-  await prisma.tagSnapshot.deleteMany({ where: { tagId: id } })
-  await prisma.dataTag.delete({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  await prisma.tagSnapshot.deleteMany({
+    where: { tagId: id, tag: { connection: { equipment: { tenantId } } } },
+  })
+  const result = await prisma.dataTag.deleteMany({
+    where: { id, connection: { equipment: { tenantId } } },
+  })
+  if (result.count === 0) {
+    throw new Error("Tag not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/tags")
 }
 
 export async function toggleTagActive(id: string, isActive: boolean) {
-  await prisma.dataTag.update({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.dataTag.updateMany({
+    where: { id, connection: { equipment: { tenantId } } },
     data: { isActive },
   })
+  if (result.count === 0) {
+    throw new Error("Tag not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/tags")
 }
 
-// ─── Lookup Helpers ───────────────────────────────────────────────────────────
-
-export async function getSitesForGateway(tenantId: string) {
+export async function getSitesForGateway(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.site.findMany({
     where: { tenantId },
     select: { id: true, code: true, name: true },
@@ -351,7 +436,8 @@ export async function getSitesForGateway(tenantId: string) {
   })
 }
 
-export async function getEquipmentsForConnection(tenantId: string) {
+export async function getEquipmentsForConnection(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.equipment.findMany({
     where: { tenantId, status: "ACTIVE" },
     select: {
@@ -364,7 +450,8 @@ export async function getEquipmentsForConnection(tenantId: string) {
   })
 }
 
-export async function getGatewaysForConnection(tenantId: string) {
+export async function getGatewaysForConnection(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.edgeGateway.findMany({
     where: { tenantId },
     select: { id: true, name: true, status: true },
@@ -372,7 +459,8 @@ export async function getGatewaysForConnection(tenantId: string) {
   })
 }
 
-export async function getConnectionsForTag(tenantId: string) {
+export async function getConnectionsForTag(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   return prisma.equipmentConnection.findMany({
     where: {
       equipment: { tenantId },

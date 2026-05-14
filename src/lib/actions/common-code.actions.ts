@@ -1,9 +1,9 @@
 "use server"
 
+import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 
-// 타입 정의
 export type CodeGroupWithCodes = {
   id: string
   tenantId: string
@@ -28,23 +28,25 @@ export type CodeGroupWithCodes = {
   }[]
 }
 
-// 1. 전체 CodeGroup + codes 조회
 export async function getCodeGroups(): Promise<CodeGroupWithCodes[]> {
+  const { tenantId } = await requireTenantContext()
+
   return prisma.codeGroup.findMany({
+    where: { tenantId },
     include: { codes: { orderBy: { displayOrder: "asc" } } },
     orderBy: { groupCode: "asc" },
   })
 }
 
-// 2. 단건 조회
 export async function getCodeGroupById(id: string): Promise<CodeGroupWithCodes | null> {
-  return prisma.codeGroup.findUnique({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+
+  return prisma.codeGroup.findFirst({
+    where: { id, tenantId },
     include: { codes: { orderBy: { displayOrder: "asc" } } },
   })
 }
 
-// CodeGroup 입력 타입
 export type CreateCodeGroupInput = {
   groupCode: string
   groupName: string
@@ -52,30 +54,53 @@ export type CreateCodeGroupInput = {
   isActive?: boolean
 }
 
-// 3. 그룹 생성
-export async function createCodeGroup(data: CreateCodeGroupInput, tenantId: string) {
+export async function createCodeGroup(data: CreateCodeGroupInput, _tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
+
   await prisma.codeGroup.create({
     data: { ...data, tenantId },
   })
   revalidatePath("/app/mes/common-codes")
 }
 
-// 4. 그룹 수정
 export async function updateCodeGroup(id: string, data: Partial<CreateCodeGroupInput>) {
-  await prisma.codeGroup.update({ where: { id }, data })
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.codeGroup.updateMany({
+    where: { id, tenantId },
+    data,
+  })
+
+  if (result.count === 0) {
+    throw new Error("Code group not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/common-codes")
 }
 
-// 5. 그룹 삭제 (isSystem=true면 불가)
 export async function deleteCodeGroup(id: string) {
-  const group = await prisma.codeGroup.findUnique({ where: { id } })
-  if (group?.isSystem) throw new Error("시스템 코드 그룹은 삭제할 수 없습니다")
-  await prisma.commonCode.deleteMany({ where: { groupId: id } })
-  await prisma.codeGroup.delete({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const group = await prisma.codeGroup.findFirst({
+    where: { id, tenantId },
+    select: { id: true, isSystem: true },
+  })
+
+  if (!group) {
+    throw new Error("Code group not found in tenant scope")
+  }
+
+  if (group.isSystem) {
+    throw new Error("System code groups cannot be deleted")
+  }
+
+  await prisma.commonCode.deleteMany({
+    where: { groupId: id, group: { tenantId } },
+  })
+  await prisma.codeGroup.deleteMany({
+    where: { id, tenantId },
+  })
   revalidatePath("/app/mes/common-codes")
 }
 
-// CommonCode 입력 타입
 export type CreateCommonCodeInput = {
   groupId: string
   code: string
@@ -86,29 +111,61 @@ export type CreateCommonCodeInput = {
   extra?: import("@prisma/client").Prisma.NullableJsonNullValueInput | import("@prisma/client").Prisma.InputJsonValue
 }
 
-// 6. 코드 생성
 export async function createCommonCode(data: CreateCommonCodeInput) {
+  const { tenantId } = await requireTenantContext()
+  const group = await prisma.codeGroup.findFirst({
+    where: { id: data.groupId, tenantId },
+    select: { id: true },
+  })
+
+  if (!group) {
+    throw new Error("Code group not found in tenant scope")
+  }
+
   await prisma.commonCode.create({ data })
   revalidatePath("/app/mes/common-codes")
 }
 
-// 7. 코드 수정
 export async function updateCommonCode(
   id: string,
   data: Partial<Omit<CreateCommonCodeInput, "groupId">>
 ) {
-  await prisma.commonCode.update({ where: { id }, data })
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.commonCode.updateMany({
+    where: { id, group: { tenantId } },
+    data,
+  })
+
+  if (result.count === 0) {
+    throw new Error("Code not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/common-codes")
 }
 
-// 8. 코드 삭제
 export async function deleteCommonCode(id: string) {
-  await prisma.commonCode.delete({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.commonCode.deleteMany({
+    where: { id, group: { tenantId } },
+  })
+
+  if (result.count === 0) {
+    throw new Error("Code not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/common-codes")
 }
 
-// 9. 코드 활성/비활성 토글
 export async function toggleCodeActive(id: string, isActive: boolean) {
-  await prisma.commonCode.update({ where: { id }, data: { isActive } })
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.commonCode.updateMany({
+    where: { id, group: { tenantId } },
+    data: { isActive },
+  })
+
+  if (result.count === 0) {
+    throw new Error("Code not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/common-codes")
 }

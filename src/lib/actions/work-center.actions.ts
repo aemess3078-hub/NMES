@@ -1,5 +1,6 @@
 "use server"
 
+import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { WorkCenterKind } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -17,7 +18,10 @@ export type WorkCenterWithDetails = {
 }
 
 export async function getWorkCentersWithDetails(): Promise<WorkCenterWithDetails[]> {
+  const { tenantId } = await requireTenantContext()
+
   return prisma.workCenter.findMany({
+    where: { site: { tenantId } },
     include: {
       site: true,
       _count: { select: { routingOperations: true } },
@@ -27,7 +31,10 @@ export async function getWorkCentersWithDetails(): Promise<WorkCenterWithDetails
 }
 
 export async function getSitesForWorkCenter() {
+  const { tenantId } = await requireTenantContext()
+
   return prisma.site.findMany({
+    where: { tenantId },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
@@ -41,18 +48,51 @@ export type CreateWorkCenterInput = {
 }
 
 export async function createWorkCenter(data: CreateWorkCenterInput) {
+  const { tenantId } = await requireTenantContext()
+  const site = await prisma.site.findFirst({
+    where: { id: data.siteId, tenantId },
+    select: { id: true },
+  })
+
+  if (!site) {
+    throw new Error("Site not found in tenant scope")
+  }
+
   await prisma.workCenter.create({ data })
   revalidatePath("/app/mes/work-centers")
 }
 
 export async function updateWorkCenter(id: string, data: Omit<CreateWorkCenterInput, "siteId">) {
-  await prisma.workCenter.update({ where: { id }, data })
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.workCenter.updateMany({
+    where: { id, site: { tenantId } },
+    data,
+  })
+
+  if (result.count === 0) {
+    throw new Error("Work center not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/work-centers")
 }
 
 export async function deleteWorkCenter(id: string) {
-  const count = await prisma.routingOperation.count({ where: { workCenterId: id } })
-  if (count > 0) throw new Error(`이 공정을 사용하는 라우팅 공정이 ${count}건 있습니다. 먼저 라우팅에서 제거해주세요.`)
-  await prisma.workCenter.delete({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const count = await prisma.routingOperation.count({
+    where: { workCenterId: id, workCenter: { site: { tenantId } } },
+  })
+
+  if (count > 0) {
+    throw new Error("Cannot delete work center referenced by routing operations")
+  }
+
+  const result = await prisma.workCenter.deleteMany({
+    where: { id, site: { tenantId } },
+  })
+
+  if (result.count === 0) {
+    throw new Error("Work center not found in tenant scope")
+  }
+
   revalidatePath("/app/mes/work-centers")
 }

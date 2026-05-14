@@ -1,10 +1,12 @@
 "use server"
 
+import { requireTenantContext } from "@/lib/auth"
 import { enableFeature, disableFeature, getFeatureCatalog } from "@/lib/services/feature.service"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 
-export async function getCatalogWithStatus(tenantId: string) {
+export async function getCatalogWithStatus(_tenantId?: string) {
+  const { tenantId } = await requireTenantContext()
   const [catalog, tenantFeatures] = await Promise.all([
     getFeatureCatalog(),
     prisma.tenantFeature.findMany({ where: { tenantId }, include: { feature: true } }),
@@ -20,14 +22,16 @@ export async function getCatalogWithStatus(tenantId: string) {
   }))
 }
 
-export async function enableFeatureAction(tenantId: string, featureCode: string) {
+export async function enableFeatureAction(_tenantId: string, featureCode: string) {
+  const { tenantId } = await requireTenantContext()
   const result = await enableFeature(tenantId, featureCode)
   revalidatePath("/app/mes/features")
   revalidatePath("/app/mes")
   return result
 }
 
-export async function disableFeatureAction(tenantId: string, featureCode: string) {
+export async function disableFeatureAction(_tenantId: string, featureCode: string) {
+  const { tenantId } = await requireTenantContext()
   const result = await disableFeature(tenantId, featureCode)
   revalidatePath("/app/mes/features")
   revalidatePath("/app/mes")

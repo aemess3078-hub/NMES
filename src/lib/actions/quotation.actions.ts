@@ -1,5 +1,6 @@
 "use server"
 
+import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { QuotationStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -56,7 +57,9 @@ const QUOTATION_INCLUDE = {
 } as const
 
 export async function getQuotations(): Promise<QuotationWithDetails[]> {
+  const { tenantId } = await requireTenantContext()
   const results = await prisma.quotation.findMany({
+    where: { tenantId },
     include: QUOTATION_INCLUDE,
     orderBy: { createdAt: "desc" },
   })
@@ -64,24 +67,31 @@ export async function getQuotations(): Promise<QuotationWithDetails[]> {
 }
 
 export async function getQuotationById(id: string): Promise<QuotationWithDetails | null> {
-  const result = await prisma.quotation.findUnique({
-    where: { id },
+  const { tenantId } = await requireTenantContext()
+  const result = await prisma.quotation.findFirst({
+    where: { id, tenantId },
     include: QUOTATION_INCLUDE,
   })
   return result ? serializeQuotation(result) : null
 }
 
 export async function getCustomersForQuotation() {
+  const { tenantId } = await requireTenantContext()
   return prisma.businessPartner.findMany({
-    where: { partnerType: { in: ["CUSTOMER", "BOTH"] } },
+    where: { tenantId, partnerType: { in: ["CUSTOMER", "BOTH"] } },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
 }
 
 export async function getFinishedItems() {
+  const { tenantId } = await requireTenantContext()
   return prisma.item.findMany({
-    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] }, status: "ACTIVE" },
+    where: {
+      tenantId,
+      itemType: { in: ["FINISHED", "SEMI_FINISHED"] },
+      status: "ACTIVE",
+    },
     select: { id: true, code: true, name: true, itemType: true, uom: true },
     orderBy: { name: "asc" },
   })
@@ -91,8 +101,10 @@ export async function getItemPriceForCustomer(
   itemId: string,
   customerId: string
 ): Promise<number | null> {
+  const { tenantId } = await requireTenantContext()
   const result = await prisma.itemPrice.findFirst({
     where: {
+      tenantId,
       itemId,
       partnerId: customerId,
       priceType: "SALES",
@@ -116,12 +128,31 @@ async function generateQuotationNo(tenantId: string): Promise<string> {
   return `${prefix}${String(seq).padStart(3, "0")}`
 }
 
-export async function createQuotation(data: QuotationFormValues, tenantId: string) {
+export async function createQuotation(data: QuotationFormValues, _tenantId?: string) {
+  const { tenantId, siteId: sessionSiteId } = await requireTenantContext()
   const quotationNo = await generateQuotationNo(tenantId)
   const totalAmount = data.items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0)
 
-  const sites = await prisma.site.findMany({ where: { tenantId }, take: 1 })
-  const siteId = data.siteId || sites[0]?.id
+  const siteId = data.siteId || sessionSiteId
+  if (!siteId) {
+    throw new Error("Tenant site context not found")
+  }
+
+  const [site, customer, items] = await Promise.all([
+    prisma.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } }),
+    prisma.businessPartner.findFirst({
+      where: { id: data.customerId, tenantId },
+      select: { id: true },
+    }),
+    prisma.item.findMany({
+      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
+      select: { id: true },
+    }),
+  ])
+
+  if (!site) throw new Error("Site not found in tenant scope")
+  if (!customer) throw new Error("Customer not found in tenant scope")
+  if (items.length !== data.items.length) throw new Error("One or more items are outside tenant scope")
 
   await prisma.quotation.create({
     data: {
@@ -149,18 +180,37 @@ export async function createQuotation(data: QuotationFormValues, tenantId: strin
 }
 
 export async function updateQuotation(id: string, data: QuotationFormValues) {
-  const current = await prisma.quotation.findUniqueOrThrow({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const current = await prisma.quotation.findFirstOrThrow({
+    where: { id, tenantId },
+  })
   const lockedStatuses: QuotationStatus[] = ["WON", "LOST", "EXPIRED", "CANCELLED"]
   if (lockedStatuses.includes(current.status)) {
-    throw new Error("이 상태에서는 수정할 수 없습니다")
+    throw new Error("Locked quotations cannot be edited")
   }
+
+  const [site, customer, items] = await Promise.all([
+    prisma.site.findFirst({ where: { id: data.siteId, tenantId }, select: { id: true } }),
+    prisma.businessPartner.findFirst({
+      where: { id: data.customerId, tenantId },
+      select: { id: true },
+    }),
+    prisma.item.findMany({
+      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
+      select: { id: true },
+    }),
+  ])
+
+  if (!site) throw new Error("Site not found in tenant scope")
+  if (!customer) throw new Error("Customer not found in tenant scope")
+  if (items.length !== data.items.length) throw new Error("One or more items are outside tenant scope")
 
   const totalAmount = data.items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0)
 
   await prisma.$transaction([
-    prisma.quotationItem.deleteMany({ where: { quotationId: id } }),
+    prisma.quotationItem.deleteMany({ where: { quotationId: id, quotation: { tenantId } } }),
     prisma.quotation.update({
-      where: { id },
+      where: { id: current.id },
       data: {
         customerId: data.customerId,
         siteId: data.siteId,
@@ -185,34 +235,37 @@ export async function updateQuotation(id: string, data: QuotationFormValues) {
 }
 
 export async function deleteQuotation(id: string) {
-  const current = await prisma.quotation.findUniqueOrThrow({ where: { id } })
+  const { tenantId } = await requireTenantContext()
+  const current = await prisma.quotation.findFirstOrThrow({
+    where: { id, tenantId },
+  })
   if (current.status !== "DRAFT") {
-    throw new Error("초안(DRAFT) 상태의 견적만 삭제할 수 있습니다")
+    throw new Error("Only draft quotations can be deleted")
   }
   await prisma.$transaction([
-    prisma.quotationItem.deleteMany({ where: { quotationId: id } }),
-    prisma.quotation.delete({ where: { id } }),
+    prisma.quotationItem.deleteMany({ where: { quotationId: id, quotation: { tenantId } } }),
+    prisma.quotation.delete({ where: { id: current.id } }),
   ])
   revalidatePath("/app/mes/quotations")
 }
 
 export async function convertToSalesOrder(
   quotationId: string,
-  tenantId: string
+  _tenantId?: string
 ): Promise<string> {
-  const quotation = await prisma.quotation.findUniqueOrThrow({
-    where: { id: quotationId },
+  const { tenantId } = await requireTenantContext()
+  const quotation = await prisma.quotation.findFirstOrThrow({
+    where: { id: quotationId, tenantId },
     include: { items: true },
   })
 
   if (quotation.status !== "WON") {
-    throw new Error("수주 확정(WON) 상태의 견적만 수주로 전환할 수 있습니다")
+    throw new Error("Only won quotations can be converted")
   }
   if (quotation.convertedSalesOrderId) {
-    throw new Error("이미 수주로 전환된 견적입니다")
+    throw new Error("Quotation already converted to sales order")
   }
 
-  // 수주 번호 생성
   const year = new Date().getFullYear()
   const prefix = `SO-${year}-`
   const last = await prisma.salesOrder.findFirst({
@@ -235,7 +288,7 @@ export async function convertToSalesOrder(
         status: "DRAFT",
         totalAmount: quotation.totalAmount,
         currency: quotation.currency,
-        note: `견적 ${quotation.quotationNo}에서 전환`,
+        note: `Converted from quotation ${quotation.quotationNo}`,
         items: {
           create: quotation.items.map((item) => ({
             itemId: item.itemId,
@@ -247,7 +300,7 @@ export async function convertToSalesOrder(
     })
 
     await tx.quotation.update({
-      where: { id: quotationId },
+      where: { id: quotation.id },
       data: { convertedSalesOrderId: salesOrder.id },
     })
 
