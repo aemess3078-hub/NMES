@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { createReceivingInspection } from "@/lib/actions/receiving.actions"
+import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
 import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
@@ -60,6 +60,8 @@ const RESULT_OPTIONS: { label: string; value: ReceivingInspectionResult }[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+type Warehouse = { id: string; code: string; name: string }
+
 export function ReceivingFormDialog({
   purchaseOrder,
   tenantId,
@@ -72,6 +74,16 @@ export function ReceivingFormDialog({
   const [printOpen, setPrintOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
   const itemRefs = useRef<(HTMLDivElement | null)[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseId, setWarehouseId] = useState<string>("")
+
+  useEffect(() => {
+    if (!open || !siteId) return
+    getWarehousesForSite(siteId).then((whs) => {
+      setWarehouses(whs)
+      if (whs.length > 0) setWarehouseId(whs[0].id)
+    })
+  }, [open, siteId])
 
   const [inspections, setInspections] = useState<ItemInspection[]>(() =>
     purchaseOrder.items.map((oi) => {
@@ -132,7 +144,7 @@ export function ReceivingFormDialog({
         await createReceivingInspection({
           purchaseOrderItemId: ins.purchaseOrderItemId,
           purchaseOrderId: purchaseOrder.id,
-          tenantId,
+          warehouseId,
           siteId,
           receivedQty: received,
           acceptedQty: parseFloat(ins.thisAcceptedQty) || 0,
@@ -162,6 +174,29 @@ export function ReceivingFormDialog({
             {purchaseOrder.supplier.name} · 발주품목 {purchaseOrder.items.length}건
           </p>
         </DialogHeader>
+
+        {/* 입고 창고 선택 */}
+        <div className="space-y-1.5">
+          <Label className="text-[13px] font-medium">입고 창고 <span className="text-destructive">*</span></Label>
+          {warehouses.length === 0 ? (
+            <p className="text-[13px] text-destructive">
+              이 사이트에 등록된 창고가 없습니다. 로케이션 관리에서 창고를 먼저 추가해주세요.
+            </p>
+          ) : (
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="h-8 text-[13px]">
+                <SelectValue placeholder="창고 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((wh) => (
+                  <SelectItem key={wh.id} value={wh.id} className="text-[13px]">
+                    [{wh.code}] {wh.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
 
         {/* 바코드 스캔 */}
         <div className="space-y-1">
@@ -302,7 +337,7 @@ export function ReceivingFormDialog({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             취소
           </Button>
-          <Button onClick={handleConfirm} disabled={isLoading}>
+          <Button onClick={handleConfirm} disabled={isLoading || !warehouseId}>
             {isLoading ? "처리 중..." : "입고 확정"}
           </Button>
         </DialogFooter>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { createReceivingInspection } from "@/lib/actions/receiving.actions"
+import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { PurchaseOrderRow } from "./columns"
 
@@ -58,6 +58,8 @@ const RESULT_OPTIONS: { label: string; value: ReceivingInspectionResult }[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+type Warehouse = { id: string; code: string; name: string }
+
 export function ReceivingDialog({
   purchaseOrder,
   tenantId,
@@ -67,6 +69,16 @@ export function ReceivingDialog({
 }: ReceivingDialogProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouseId, setWarehouseId] = useState<string>("")
+
+  useEffect(() => {
+    if (!open || !siteId) return
+    getWarehousesForSite(siteId).then((whs) => {
+      setWarehouses(whs)
+      if (whs.length > 0) setWarehouseId(whs[0].id)
+    })
+  }, [open, siteId])
 
   const [inspections, setInspections] = useState<ItemInspection[]>(() =>
     purchaseOrder.items.map((item) => {
@@ -106,7 +118,7 @@ export function ReceivingDialog({
         await createReceivingInspection({
           purchaseOrderItemId: ins.purchaseOrderItemId,
           purchaseOrderId: purchaseOrder.id,
-          tenantId,
+          warehouseId,
           siteId,
           receivedQty: received,
           acceptedQty: parseFloat(ins.thisAcceptedQty) || 0,
@@ -133,6 +145,29 @@ export function ReceivingDialog({
             입고검사 — {purchaseOrder.orderNo}
           </DialogTitle>
         </DialogHeader>
+
+        {/* 입고 창고 선택 */}
+        <div className="space-y-1.5">
+          <Label className="text-[13px] font-medium">입고 창고 <span className="text-destructive">*</span></Label>
+          {warehouses.length === 0 ? (
+            <p className="text-[13px] text-destructive">
+              이 사이트에 등록된 창고가 없습니다. 로케이션 관리에서 창고를 먼저 추가해주세요.
+            </p>
+          ) : (
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="h-8 text-[13px]">
+                <SelectValue placeholder="창고 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((wh) => (
+                  <SelectItem key={wh.id} value={wh.id} className="text-[13px]">
+                    [{wh.code}] {wh.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
 
         <div className="space-y-6 py-2">
           {inspections.map((ins, index) => (
@@ -239,7 +274,7 @@ export function ReceivingDialog({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             취소
           </Button>
-          <Button onClick={handleSave} disabled={isLoading}>
+          <Button onClick={handleSave} disabled={isLoading || !warehouseId}>
             {isLoading ? "저장 중..." : "저장"}
           </Button>
         </DialogFooter>
