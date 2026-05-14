@@ -80,12 +80,12 @@ export async function createSignupRequest(
 }
 
 // ─── 관리자: 신청 목록 조회 ────────────────────────────────────────────────────
+// 읽기 전용 조회는 tenantId 격리만 적용 (뮤테이션에서 role 검증)
 
 export async function getSignupRequests(
   status?: SignupRequestStatus
 ): Promise<SignupRequestRow[]> {
   const tenantId = await getTenantId()
-  await requireRole("ADMIN")
 
   const rows = await prisma.signupRequest.findMany({
     where: {

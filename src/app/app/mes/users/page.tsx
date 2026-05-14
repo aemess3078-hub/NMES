@@ -73,13 +73,7 @@ export default async function UsersPage() {
 
         {/* 가입 신청 관리 */}
         <TabsContent value="signup-requests" className="mt-4">
-          {signupData.length === 0 && signupRequests.status === "rejected" ? (
-            <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
-              가입 신청 목록을 보려면 관리자(ADMIN) 이상 권한이 필요합니다.
-            </div>
-          ) : (
-            <SignupRequestsTable requests={signupData} />
-          )}
+          <SignupRequestsTable requests={signupData} />
         </TabsContent>
       </Tabs>
     </div>
