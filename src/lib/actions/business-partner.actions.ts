@@ -1,5 +1,6 @@
 "use server"
 
+import { getTenantId } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, PartnerType, PartnerStatus } from "@prisma/client"
 
@@ -20,53 +21,46 @@ export type BusinessPartnerFormValues = {
 }
 
 export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promise<BusinessPartner[]> {
-  const where: Prisma.BusinessPartnerWhereInput = {}
+  const tenantId = await getTenantId()
+  const where: Prisma.BusinessPartnerWhereInput = { tenantId }
   if (type === "CUSTOMER") {
     where.partnerType = { in: [PartnerType.CUSTOMER, PartnerType.BOTH] }
   } else if (type === "SUPPLIER") {
     where.partnerType = { in: [PartnerType.SUPPLIER, PartnerType.BOTH] }
   }
 
-  return prisma.businessPartner.findMany({
-    where,
-    orderBy: { code: "asc" },
-  })
+  return prisma.businessPartner.findMany({ where, orderBy: { code: "asc" } })
 }
 
-export async function createBusinessPartner(tenantId: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
+export async function createBusinessPartner(_tenantId: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
+  const tenantId = await getTenantId()
   const existing = await prisma.businessPartner.findFirst({
     where: { tenantId, code: data.code },
   })
   if (existing) throw new Error("DUPLICATE_CODE")
 
   return prisma.businessPartner.create({
-    data: {
-      tenantId,
-      code: data.code,
-      name: data.name,
-      partnerType: data.partnerType,
-      status: data.status,
-    },
+    data: { tenantId, code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
   })
 }
 
 export async function updateBusinessPartner(id: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
-  const existing = await prisma.businessPartner.findFirst({
-    where: { code: data.code, NOT: { id } },
+  const tenantId = await getTenantId()
+  const owned = await prisma.businessPartner.findFirst({ where: { id, tenantId } })
+  if (!owned) throw new Error("NOT_FOUND")
+
+  const duplicate = await prisma.businessPartner.findFirst({
+    where: { tenantId, code: data.code, NOT: { id } },
   })
-  if (existing) throw new Error("DUPLICATE_CODE")
+  if (duplicate) throw new Error("DUPLICATE_CODE")
 
   return prisma.businessPartner.update({
     where: { id },
-    data: {
-      code: data.code,
-      name: data.name,
-      partnerType: data.partnerType,
-      status: data.status,
-    },
+    data: { code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
   })
 }
 
 export async function deleteBusinessPartner(id: string): Promise<void> {
-  await prisma.businessPartner.delete({ where: { id } })
+  const tenantId = await getTenantId()
+  await prisma.businessPartner.deleteMany({ where: { id, tenantId } })
 }

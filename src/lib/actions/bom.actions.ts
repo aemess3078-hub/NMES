@@ -1,5 +1,6 @@
 "use server"
 
+import { getTenantId } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { BOMStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -49,7 +50,9 @@ function serializeBom(bom: any): BOMWithDetails {
 }
 
 export async function getBoms(): Promise<BOMWithDetails[]> {
+  const tenantId = await getTenantId()
   const boms = await prisma.bOM.findMany({
+    where: { tenantId },
     include: {
       item: { include: { category: true } },
       bomItems: {
@@ -63,8 +66,9 @@ export async function getBoms(): Promise<BOMWithDetails[]> {
 }
 
 export async function getBomById(id: string): Promise<BOMWithDetails | null> {
-  const bom = await prisma.bOM.findUnique({
-    where: { id },
+  const tenantId = await getTenantId()
+  const bom = await prisma.bOM.findFirst({
+    where: { id, tenantId },
     include: {
       item: { include: { category: true } },
       bomItems: {
@@ -77,15 +81,18 @@ export async function getBomById(id: string): Promise<BOMWithDetails | null> {
 }
 
 export async function getItemsForBom() {
+  const tenantId = await getTenantId()
   return prisma.item.findMany({
-    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
+    where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { code: "asc" },
   })
 }
 
 export async function getComponentItems() {
+  const tenantId = await getTenantId()
   return prisma.item.findMany({
+    where: { tenantId },
     select: { id: true, code: true, name: true, itemType: true, uom: true },
     orderBy: { code: "asc" },
   })
@@ -106,7 +113,8 @@ export type CreateBomInput = {
   bomItems: BOMItemInput[]
 }
 
-export async function createBom(data: CreateBomInput, tenantId: string) {
+export async function createBom(data: CreateBomInput, _tenantId?: string) {
+  const tenantId = await getTenantId()
   const { bomItems, ...bomFields } = data
   await prisma.bOM.create({
     data: {
@@ -126,6 +134,10 @@ export async function createBom(data: CreateBomInput, tenantId: string) {
 }
 
 export async function updateBom(id: string, data: CreateBomInput) {
+  const tenantId = await getTenantId()
+  const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
+  if (!owned) throw new Error("NOT_FOUND")
+
   const { bomItems, ...bomFields } = data
   const { itemId, version, isDefault, status } = bomFields
   await prisma.$transaction([
@@ -152,6 +164,10 @@ export async function updateBom(id: string, data: CreateBomInput) {
 }
 
 export async function deleteBom(id: string) {
+  const tenantId = await getTenantId()
+  const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
+  if (!owned) throw new Error("NOT_FOUND")
+
   await prisma.$transaction([
     prisma.bOMItem.deleteMany({ where: { bomId: id } }),
     prisma.bOM.delete({ where: { id } }),

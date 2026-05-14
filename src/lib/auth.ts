@@ -1,7 +1,17 @@
 'use server';
 
+import { cookies } from 'next/headers';
 import { createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+
+/**
+ * 쿠키에서 tenantId를 읽어 반환합니다.
+ * 모든 server action에서 tenant 데이터 격리에 사용합니다.
+ */
+export async function getTenantId(): Promise<string> {
+  const store = await cookies();
+  return store.get('tenantId')?.value ?? 'tenant-demo-001';
+}
 
 /**
  * 현재 로그인 유저의 ID를 반환하고, profiles 테이블에 row가 없으면 자동 생성합니다.

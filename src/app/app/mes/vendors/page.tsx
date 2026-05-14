@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic"
 
 export default async function VendorsPage() {
   const partners = await getBusinessPartners("SUPPLIER")
-  const tenantId = partners[0]?.tenantId ?? ""
 
   return (
     <div className="space-y-6">
@@ -19,7 +18,7 @@ export default async function VendorsPage() {
           </p>
         </div>
       </div>
-      <PartnerDataTable partners={partners} fixedType="SUPPLIER" entityName="거래처" tenantId={tenantId} />
+      <PartnerDataTable partners={partners} fixedType="SUPPLIER" entityName="거래처" />
     </div>
   )
 }

@@ -21,7 +21,6 @@ interface PartnerFormSheetProps {
   defaultValues?: Partial<PartnerFormValues>
   partnerId?: string
   fixedType?: PartnerType
-  tenantId: string
 }
 
 const DEFAULT_FORM_VALUES: PartnerFormValues = {
@@ -44,7 +43,6 @@ export function PartnerFormSheet({
   defaultValues,
   partnerId,
   fixedType,
-  tenantId,
 }: PartnerFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -64,7 +62,7 @@ export function PartnerFormSheet({
     setIsLoading(true)
     try {
       if (mode === "create") {
-        await createBusinessPartner(tenantId, values)
+        await createBusinessPartner("", values)
       } else if (partnerId) {
         await updateBusinessPartner(partnerId, values)
       }

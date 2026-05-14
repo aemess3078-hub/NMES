@@ -1,5 +1,6 @@
 "use server"
 
+import { getTenantId } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { WorkCenterKind } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -17,7 +18,9 @@ export type WorkCenterWithDetails = {
 }
 
 export async function getWorkCentersWithDetails(): Promise<WorkCenterWithDetails[]> {
+  const tenantId = await getTenantId()
   return prisma.workCenter.findMany({
+    where: { site: { tenantId } },
     include: {
       site: true,
       _count: { select: { routingOperations: true } },
@@ -27,7 +30,9 @@ export async function getWorkCentersWithDetails(): Promise<WorkCenterWithDetails
 }
 
 export async function getSitesForWorkCenter() {
+  const tenantId = await getTenantId()
   return prisma.site.findMany({
+    where: { tenantId },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
@@ -46,13 +51,26 @@ export async function createWorkCenter(data: CreateWorkCenterInput) {
 }
 
 export async function updateWorkCenter(id: string, data: Omit<CreateWorkCenterInput, "siteId">) {
+  const tenantId = await getTenantId()
+  const owned = await prisma.workCenter.findFirst({
+    where: { id, site: { tenantId } },
+  })
+  if (!owned) throw new Error("NOT_FOUND")
+
   await prisma.workCenter.update({ where: { id }, data })
   revalidatePath("/app/mes/work-centers")
 }
 
 export async function deleteWorkCenter(id: string) {
+  const tenantId = await getTenantId()
+  const owned = await prisma.workCenter.findFirst({
+    where: { id, site: { tenantId } },
+  })
+  if (!owned) throw new Error("NOT_FOUND")
+
   const count = await prisma.routingOperation.count({ where: { workCenterId: id } })
   if (count > 0) throw new Error(`이 공정을 사용하는 라우팅 공정이 ${count}건 있습니다. 먼저 라우팅에서 제거해주세요.`)
+
   await prisma.workCenter.delete({ where: { id } })
   revalidatePath("/app/mes/work-centers")
 }

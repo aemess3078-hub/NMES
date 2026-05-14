@@ -15,10 +15,9 @@ interface PartnerDataTableProps {
   partners: BusinessPartner[]
   fixedType: PartnerType
   entityName: string
-  tenantId: string
 }
 
-export function PartnerDataTable({ partners, fixedType, entityName, tenantId }: PartnerDataTableProps) {
+export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDataTableProps) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
@@ -98,7 +97,6 @@ export function PartnerDataTable({ partners, fixedType, entityName, tenantId }: 
         defaultValues={defaultValues}
         partnerId={editingPartner?.id}
         fixedType={fixedType}
-        tenantId={tenantId}
       />
     </div>
   )

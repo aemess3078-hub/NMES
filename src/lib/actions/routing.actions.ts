@@ -1,5 +1,6 @@
 "use server"
 
+import { getTenantId } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { RoutingStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -32,18 +33,18 @@ export type RoutingWithDetails = {
     operationCode: string
     name: string
     workCenterId: string
-    standardTime: any // Decimal
+    standardTime: any
     workCenter: { id: string; code: string; name: string }
   }[]
 }
 
 export async function getRoutings(): Promise<RoutingWithDetails[]> {
+  const tenantId = await getTenantId()
   return prisma.routing.findMany({
+    where: { tenantId },
     include: {
       items: {
-        include: {
-          item: { include: { category: true } },
-        },
+        include: { item: { include: { category: true } } },
       },
       operations: {
         include: { workCenter: true },
@@ -55,13 +56,12 @@ export async function getRoutings(): Promise<RoutingWithDetails[]> {
 }
 
 export async function getRoutingById(id: string): Promise<RoutingWithDetails | null> {
-  return prisma.routing.findUnique({
-    where: { id },
+  const tenantId = await getTenantId()
+  return prisma.routing.findFirst({
+    where: { id, tenantId },
     include: {
       items: {
-        include: {
-          item: { include: { category: true } },
-        },
+        include: { item: { include: { category: true } } },
       },
       operations: {
         include: { workCenter: true },
@@ -72,15 +72,18 @@ export async function getRoutingById(id: string): Promise<RoutingWithDetails | n
 }
 
 export async function getItemsForRouting() {
+  const tenantId = await getTenantId()
   return prisma.item.findMany({
-    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
+    where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { code: "asc" },
   })
 }
 
 export async function getWorkCenters() {
+  const tenantId = await getTenantId()
   return prisma.workCenter.findMany({
+    where: { site: { tenantId } },
     select: { id: true, code: true, name: true },
     orderBy: { code: "asc" },
   })
@@ -99,13 +102,13 @@ export type CreateRoutingInput = {
   name: string
   version: string
   status: RoutingStatus
-  // ItemRouting 생성용
   itemId: string
   isDefault: boolean
   operations: RoutingOperationInput[]
 }
 
-export async function createRouting(data: CreateRoutingInput, tenantId: string) {
+export async function createRouting(data: CreateRoutingInput, _tenantId?: string) {
+  const tenantId = await getTenantId()
   const { operations, itemId, isDefault, ...routingFields } = data
 
   await prisma.$transaction(async (tx) => {
@@ -126,12 +129,7 @@ export async function createRouting(data: CreateRoutingInput, tenantId: string) 
     })
 
     await tx.itemRouting.create({
-      data: {
-        tenantId,
-        itemId,
-        routingId: routing.id,
-        isDefault,
-      },
+      data: { tenantId, itemId, routingId: routing.id, isDefault },
     })
   })
 
@@ -139,20 +137,19 @@ export async function createRouting(data: CreateRoutingInput, tenantId: string) 
 }
 
 export async function updateRouting(id: string, data: CreateRoutingInput) {
+  const tenantId = await getTenantId()
+  const owned = await prisma.routing.findFirst({ where: { id, tenantId } })
+  if (!owned) throw new Error("NOT_FOUND")
+
   const { operations, itemId, isDefault, ...routingFields } = data
   const { code, name, version, status } = routingFields
 
   await prisma.$transaction(async (tx) => {
-    // 기존 공정 삭제 후 재생성
     await tx.routingOperation.deleteMany({ where: { routingId: id } })
-
     await tx.routing.update({
       where: { id },
       data: {
-        code,
-        name,
-        version,
-        status,
+        code, name, version, status,
         operations: {
           create: operations.map((op) => ({
             seq: op.seq,
@@ -164,31 +161,21 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
         },
       },
     })
-
-    // ItemRouting upsert: itemId+routingId 기준으로 isDefault 갱신 또는 신규 생성
-    const routing = await tx.routing.findUnique({
-      where: { id },
-      select: { tenantId: true },
+    await tx.itemRouting.upsert({
+      where: { itemId_routingId: { itemId, routingId: id } },
+      create: { tenantId, itemId, routingId: id, isDefault },
+      update: { isDefault },
     })
-
-    if (routing) {
-      await tx.itemRouting.upsert({
-        where: { itemId_routingId: { itemId, routingId: id } },
-        create: {
-          tenantId: routing.tenantId,
-          itemId,
-          routingId: id,
-          isDefault,
-        },
-        update: { isDefault },
-      })
-    }
   })
 
   revalidatePath("/app/mes/routing")
 }
 
 export async function deleteRouting(id: string) {
+  const tenantId = await getTenantId()
+  const owned = await prisma.routing.findFirst({ where: { id, tenantId } })
+  if (!owned) throw new Error("NOT_FOUND")
+
   await prisma.$transaction([
     prisma.itemRouting.deleteMany({ where: { routingId: id } }),
     prisma.routingOperation.deleteMany({ where: { routingId: id } }),
