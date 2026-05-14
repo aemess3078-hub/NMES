@@ -198,7 +198,7 @@ export function UserManagementTable({
                     </Badge>
                   </td>
                   <td className="px-5 py-3 text-[13px] text-muted-foreground">
-                    {user.createdAt.toLocaleDateString("ko-KR")}
+                    {new Date(user.createdAt).toLocaleDateString("ko-KR")}
                   </td>
                   <td className="px-5 py-3">
                     {!user.enrolled ? (

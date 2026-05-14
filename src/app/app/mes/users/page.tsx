@@ -8,21 +8,18 @@ import { PermissionMatrixTable } from "./permission-matrix"
 import { UserManagementTable } from "./user-management-table"
 import { SignupRequestsTable } from "./signup-requests-table"
 import { cookies } from "next/headers"
-import { getCurrentUser } from "@/lib/auth"
 
 export default async function UsersPage() {
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
-  const [currentUser, matrix, users, signupRequests, pendingCount] = await Promise.allSettled([
-    getCurrentUser(),
+  const [matrix, users, signupRequests, pendingCount] = await Promise.allSettled([
     getPermissionMatrix(tenantId),
     getTenantUsers(),
     getSignupRequests(),
     getPendingSignupCount(),
   ])
 
-  const me = currentUser.status === "fulfilled" ? currentUser.value : null
   const matrixData = matrix.status === "fulfilled" ? matrix.value : {}
   const usersData = users.status === "fulfilled" ? users.value : []
   const signupData = signupRequests.status === "fulfilled" ? signupRequests.value : []
@@ -67,7 +64,7 @@ export default async function UsersPage() {
               사용자 목록을 불러오려면 관리자(ADMIN) 이상 권한이 필요합니다.
             </div>
           ) : (
-            <UserManagementTable users={usersData} currentUserId={me?.id ?? ""} />
+            <UserManagementTable users={usersData} currentUserId="" />
           )}
         </TabsContent>
 

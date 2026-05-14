@@ -26,12 +26,16 @@ export type TenantUserRow = {
 export async function getTenantUsers(): Promise<TenantUserRow[]> {
   const tenantId = await getTenantId()
 
-  // 1. Supabase Auth 전체 유저 목록 (admin API)
-  const supabase = createAdminClient()
-  const { data: authData, error } = await supabase.auth.admin.listUsers({ perPage: 1000 })
-  if (error) throw new Error(`Supabase Auth 조회 실패: ${error.message}`)
-
-  const authUsers = authData.users
+  // 1. Supabase Auth 전체 유저 목록 (admin API) - 실패해도 DB 데이터는 유지
+  type AuthUser = { id: string; email?: string; created_at: string; user_metadata?: Record<string, string> }
+  let authUsers: AuthUser[] = []
+  try {
+    const supabase = createAdminClient()
+    const { data: authData, error } = await supabase.auth.admin.listUsers({ perPage: 1000 })
+    if (!error && authData?.users) authUsers = authData.users as AuthUser[]
+  } catch {
+    // Supabase admin API 실패 시 DB 유저만 표시
+  }
 
   // 2. MES DB의 TenantUser 레코드
   const tenantUsers = await prisma.tenantUser.findMany({
