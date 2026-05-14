@@ -1,6 +1,5 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 
@@ -15,10 +14,7 @@ export type LocationWithSite = {
 }
 
 export async function getLocations(): Promise<LocationWithSite[]> {
-  const { tenantId } = await requireTenantContext()
-
   return prisma.warehouse.findMany({
-    where: { tenantId },
     include: {
       site: { select: { id: true, code: true, name: true } },
     },
@@ -27,10 +23,7 @@ export async function getLocations(): Promise<LocationWithSite[]> {
 }
 
 export async function getSitesForLocation() {
-  const { tenantId } = await requireTenantContext()
-
   return prisma.site.findMany({
-    where: { tenantId },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
@@ -44,63 +37,35 @@ export type CreateLocationInput = {
 }
 
 export async function createLocation(data: CreateLocationInput) {
-  const { tenantId } = await requireTenantContext()
-  const site = await prisma.site.findFirst({
-    where: { id: data.siteId, tenantId },
-    select: { id: true },
-  })
-
-  if (!site) {
-    throw new Error("Site not found in tenant scope")
-  }
-
   const { zone, ...rest } = data
   await prisma.warehouse.create({
     data: {
       ...rest,
       zone: zone || null,
-      tenantId,
+      tenantId: "tenant-demo-001",
     },
   })
   revalidatePath("/app/mes/locations")
 }
 
 export async function updateLocation(id: string, data: Omit<CreateLocationInput, "siteId">) {
-  const { tenantId } = await requireTenantContext()
   const { zone, ...rest } = data
-
-  const result = await prisma.warehouse.updateMany({
-    where: { id, tenantId },
+  await prisma.warehouse.update({
+    where: { id },
     data: {
       ...rest,
       zone: zone || null,
     },
   })
-
-  if (result.count === 0) {
-    throw new Error("Location not found in tenant scope")
-  }
-
   revalidatePath("/app/mes/locations")
 }
 
 export async function deleteLocation(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const locationCount = await prisma.location.count({
-    where: { warehouseId: id, warehouse: { tenantId } },
-  })
-
+  // Warehouse 하위의 Location(세부 로케이션) 수 확인
+  const locationCount = await prisma.location.count({ where: { warehouseId: id } })
   if (locationCount > 0) {
-    throw new Error("Cannot delete warehouse with child locations")
+    throw new Error(`이 로케이션에 세부 구역이 ${locationCount}건 있습니다. 재고 데이터를 먼저 처리해주세요.`)
   }
-
-  const result = await prisma.warehouse.deleteMany({
-    where: { id, tenantId },
-  })
-
-  if (result.count === 0) {
-    throw new Error("Location not found in tenant scope")
-  }
-
+  await prisma.warehouse.delete({ where: { id } })
   revalidatePath("/app/mes/locations")
 }

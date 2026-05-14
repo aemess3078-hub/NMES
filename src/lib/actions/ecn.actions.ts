@@ -1,6 +1,5 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { ECNStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -58,9 +57,7 @@ async function generateECNNo(tenantId: string): Promise<string> {
 }
 
 export async function getECNs(): Promise<ECNWithDetails[]> {
-  const { tenantId } = await requireTenantContext()
   const results = await prisma.engineeringChange.findMany({
-    where: { tenantId },
     include: ECN_INCLUDE,
     orderBy: { createdAt: "desc" },
   })
@@ -68,31 +65,24 @@ export async function getECNs(): Promise<ECNWithDetails[]> {
 }
 
 export async function getECNById(id: string): Promise<ECNWithDetails | null> {
-  const { tenantId } = await requireTenantContext()
-  const result = await prisma.engineeringChange.findFirst({
-    where: { id, tenantId },
+  const result = await prisma.engineeringChange.findUnique({
+    where: { id },
     include: ECN_INCLUDE,
   })
   return result as any
 }
 
 export async function getItemsForECN() {
-  const { tenantId } = await requireTenantContext()
   return prisma.item.findMany({
-    where: {
-      tenantId,
-      itemType: { in: ["FINISHED", "SEMI_FINISHED"] },
-      status: "ACTIVE",
-    },
+    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] }, status: "ACTIVE" },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { name: "asc" },
   })
 }
 
 export async function getCurrentBOM(itemId: string) {
-  const { tenantId } = await requireTenantContext()
   return prisma.bOM.findFirst({
-    where: { tenantId, itemId, status: "ACTIVE" },
+    where: { itemId, status: "ACTIVE" },
     include: {
       bomItems: {
         include: { componentItem: { select: { id: true, code: true, name: true, uom: true } } },
@@ -103,13 +93,11 @@ export async function getCurrentBOM(itemId: string) {
 }
 
 export async function getCurrentRouting(itemId: string) {
-  const { tenantId } = await requireTenantContext()
   const itemRouting = await prisma.itemRouting.findFirst({
     where: {
-      tenantId,
       itemId,
       isDefault: true,
-      routing: { status: "ACTIVE", tenantId },
+      routing: { status: "ACTIVE" },
     },
     include: {
       routing: {
@@ -142,14 +130,7 @@ export type CreateECNInput = {
   details: ECNDetailInput[]
 }
 
-export async function createECN(data: CreateECNInput, _tenantId: string, _requestedBy: string) {
-  const { tenantId, userId } = await requireTenantContext()
-  const item = await prisma.item.findFirst({
-    where: { id: data.targetItemId, tenantId },
-    select: { id: true },
-  })
-  if (!item) throw new Error("Target item not found in tenant scope")
-
+export async function createECN(data: CreateECNInput, tenantId: string, requestedBy: string) {
   const ecnNo = await generateECNNo(tenantId)
   await prisma.engineeringChange.create({
     data: {
@@ -160,7 +141,7 @@ export async function createECN(data: CreateECNInput, _tenantId: string, _reques
       changeType: data.changeType,
       targetItemId: data.targetItemId,
       status: "DRAFT",
-      requestedBy: userId,
+      requestedBy,
       note: data.note,
       details: {
         create: data.details.map((d) => ({
@@ -177,19 +158,14 @@ export async function createECN(data: CreateECNInput, _tenantId: string, _reques
 }
 
 export async function updateECN(id: string, data: CreateECNInput) {
-  const { tenantId } = await requireTenantContext()
-  const current = await prisma.engineeringChange.findFirstOrThrow({
-    where: { id, tenantId },
-  })
+  const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   if (!["DRAFT", "SUBMITTED"].includes(current.status)) {
-    throw new Error("Only draft or submitted ECNs can be edited")
+    throw new Error("초안 또는 제출 상태의 ECN만 수정할 수 있습니다")
   }
   await prisma.$transaction([
-    prisma.engineeringChangeDetail.deleteMany({
-      where: { engineeringChangeId: id, engineeringChange: { tenantId } },
-    }),
+    prisma.engineeringChangeDetail.deleteMany({ where: { engineeringChangeId: id } }),
     prisma.engineeringChange.update({
-      where: { id: current.id },
+      where: { id },
       data: {
         title: data.title,
         reason: data.reason,
@@ -212,79 +188,64 @@ export async function updateECN(id: string, data: CreateECNInput) {
 }
 
 export async function deleteECN(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const current = await prisma.engineeringChange.findFirstOrThrow({
-    where: { id, tenantId },
-  })
+  const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   if (current.status !== "DRAFT") {
-    throw new Error("Only draft ECNs can be deleted")
+    throw new Error("초안(DRAFT) 상태의 ECN만 삭제할 수 있습니다")
   }
   await prisma.$transaction([
-    prisma.engineeringChangeDetail.deleteMany({
-      where: { engineeringChangeId: id, engineeringChange: { tenantId } },
-    }),
-    prisma.engineeringChange.delete({ where: { id: current.id } }),
+    prisma.engineeringChangeDetail.deleteMany({ where: { engineeringChangeId: id } }),
+    prisma.engineeringChange.delete({ where: { id } }),
   ])
   revalidatePath("/app/mes/ecn")
 }
 
 export async function submitECN(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const current = await prisma.engineeringChange.findFirstOrThrow({
-    where: { id, tenantId },
-  })
-  if (current.status !== "DRAFT") throw new Error("Only draft ECNs can be submitted")
+  const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
+  if (current.status !== "DRAFT") throw new Error("초안 상태의 ECN만 제출할 수 있습니다")
   await prisma.engineeringChange.update({
-    where: { id: current.id },
+    where: { id },
     data: { status: "SUBMITTED" },
   })
   revalidatePath("/app/mes/ecn")
 }
 
-export async function approveECN(id: string, _approvedBy: string) {
-  const { tenantId, userId } = await requireTenantContext()
-  const current = await prisma.engineeringChange.findFirstOrThrow({
-    where: { id, tenantId },
-  })
+export async function approveECN(id: string, approvedBy: string) {
+  const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   if (!["SUBMITTED", "REVIEWING"].includes(current.status)) {
-    throw new Error("Only submitted or reviewing ECNs can be approved")
+    throw new Error("제출 또는 검토 상태의 ECN만 승인할 수 있습니다")
   }
   await prisma.engineeringChange.update({
-    where: { id: current.id },
-    data: { status: "APPROVED", approvedBy: userId, approvedAt: new Date() },
+    where: { id },
+    data: { status: "APPROVED", approvedBy, approvedAt: new Date() },
   })
   revalidatePath("/app/mes/ecn")
 }
 
-export async function rejectECN(id: string, _approvedBy: string) {
-  const { tenantId, userId } = await requireTenantContext()
-  const current = await prisma.engineeringChange.findFirstOrThrow({
-    where: { id, tenantId },
-  })
+export async function rejectECN(id: string, approvedBy: string) {
+  const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   if (!["SUBMITTED", "REVIEWING"].includes(current.status)) {
-    throw new Error("Only submitted or reviewing ECNs can be rejected")
+    throw new Error("제출 또는 검토 상태의 ECN만 반려할 수 있습니다")
   }
   await prisma.engineeringChange.update({
-    where: { id: current.id },
-    data: { status: "REJECTED", approvedBy: userId, approvedAt: new Date() },
+    where: { id },
+    data: { status: "REJECTED", approvedBy, approvedAt: new Date() },
   })
   revalidatePath("/app/mes/ecn")
 }
 
 export async function implementECN(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const ecn = await prisma.engineeringChange.findFirstOrThrow({
-    where: { id, tenantId },
+  const ecn = await prisma.engineeringChange.findUniqueOrThrow({
+    where: { id },
     include: { details: true },
   })
   if (ecn.status !== "APPROVED") {
-    throw new Error("Only approved ECNs can be implemented")
+    throw new Error("승인(APPROVED) 상태의 ECN만 적용할 수 있습니다")
   }
 
   await prisma.$transaction(async (tx) => {
     if (ecn.changeType === "BOM" || ecn.changeType === "BOTH") {
       const currentBOM = await tx.bOM.findFirst({
-        where: { itemId: ecn.targetItemId, status: "ACTIVE", tenantId },
+        where: { itemId: ecn.targetItemId, status: "ACTIVE" },
         include: { bomItems: true },
       })
       if (currentBOM) {
@@ -329,9 +290,8 @@ export async function implementECN(id: string) {
       const currentItemRouting = await tx.itemRouting.findFirst({
         where: {
           itemId: ecn.targetItemId,
-          tenantId,
           isDefault: true,
-          routing: { status: "ACTIVE", tenantId },
+          routing: { status: "ACTIVE" },
         },
         include: { routing: { include: { operations: true } } },
       })
@@ -352,7 +312,7 @@ export async function implementECN(id: string) {
         const newRouting = await tx.routing.create({
           data: {
             tenantId: ecn.tenantId,
-            code: currentRouting.code + "-V" + newVersion.replace(".", ""),
+            code: currentRouting.code + '-V' + newVersion.replace('.', ''),
             name: currentRouting.name,
             version: newVersion,
             status: "ACTIVE",
@@ -360,6 +320,7 @@ export async function implementECN(id: string) {
           },
         })
 
+        // 기존 ItemRouting 비활성화 후 신규 ItemRouting 생성
         await tx.itemRouting.update({
           where: { id: currentItemRouting.id },
           data: { isDefault: false },
@@ -376,10 +337,12 @@ export async function implementECN(id: string) {
     }
 
     await tx.engineeringChange.update({
-      where: { id: ecn.id },
+      where: { id },
       data: { status: "IMPLEMENTED", implementedAt: new Date() },
     })
 
+    // AuditLog: 실제 스키마 필드명 사용
+    // actorId, entityType, entityId, action(AuditAction enum), afterData
     await tx.auditLog.create({
       data: {
         tenantId: ecn.tenantId,

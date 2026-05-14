@@ -1,9 +1,10 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { WorkOrderStatus, OperationStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type WorkOrderWithDetails = {
   id: string
@@ -13,7 +14,7 @@ export type WorkOrderWithDetails = {
   bomId: string
   routingId: string
   orderNo: string
-  plannedQty: any
+  plannedQty: any // Decimal
   status: WorkOrderStatus
   dueDate: Date | null
   productionPlanItemId: string | null
@@ -58,10 +59,10 @@ export type CreateWorkOrderInput = {
   operations: WorkOrderOperationInput[]
 }
 
+// ─── Query Functions ──────────────────────────────────────────────────────────
+
 export async function getWorkOrders(): Promise<WorkOrderWithDetails[]> {
-  const { tenantId } = await requireTenantContext()
   return prisma.workOrder.findMany({
-    where: { tenantId },
     include: {
       item: {
         select: { id: true, code: true, name: true, itemType: true },
@@ -102,9 +103,8 @@ export async function getWorkOrders(): Promise<WorkOrderWithDetails[]> {
 }
 
 export async function getWorkOrderById(id: string): Promise<WorkOrderWithDetails | null> {
-  const { tenantId } = await requireTenantContext()
-  return prisma.workOrder.findFirst({
-    where: { id, tenantId },
+  return prisma.workOrder.findUnique({
+    where: { id },
     include: {
       item: {
         select: { id: true, code: true, name: true, itemType: true },
@@ -144,39 +144,33 @@ export async function getWorkOrderById(id: string): Promise<WorkOrderWithDetails
 }
 
 export async function getSites() {
-  const { tenantId } = await requireTenantContext()
   return prisma.site.findMany({
-    where: { tenantId },
     select: { id: true, code: true, name: true, type: true },
     orderBy: { name: "asc" },
   })
 }
 
 export async function getItemsForWorkOrder() {
-  const { tenantId } = await requireTenantContext()
   return prisma.item.findMany({
-    where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
+    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { code: "asc" },
   })
 }
 
 export async function getBomsForItem(itemId: string) {
-  const { tenantId } = await requireTenantContext()
   return prisma.bOM.findMany({
-    where: { tenantId, itemId, status: "ACTIVE" },
+    where: { itemId, status: "ACTIVE" },
     select: { id: true, version: true, isDefault: true },
     orderBy: { version: "asc" },
   })
 }
 
 export async function getRoutingsForItem(itemId: string) {
-  const { tenantId } = await requireTenantContext()
   const itemRoutings = await prisma.itemRouting.findMany({
     where: {
-      tenantId,
       itemId,
-      routing: { status: "ACTIVE", tenantId },
+      routing: { status: "ACTIVE" },
     },
     include: {
       routing: {
@@ -204,13 +198,13 @@ export async function getRoutingsForItem(itemId: string) {
 }
 
 export async function getEquipments() {
-  const { tenantId } = await requireTenantContext()
   return prisma.equipment.findMany({
-    where: { tenantId },
     select: { id: true, code: true, name: true, equipmentType: true },
     orderBy: { code: "asc" },
   })
 }
+
+// ─── Business Logic ───────────────────────────────────────────────────────────
 
 export async function generateOrderNo(tenantId: string): Promise<string> {
   const year = new Date().getFullYear()
@@ -237,8 +231,9 @@ export async function generateOrderNo(tenantId: string): Promise<string> {
   return `${prefix}${String(nextSeq).padStart(3, "0")}`
 }
 
-export async function createWorkOrder(data: CreateWorkOrderInput, _tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
+
+export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: string) {
   const { operations, dueDate, ...headerFields } = data
 
   await prisma.workOrder.create({
@@ -261,27 +256,28 @@ export async function createWorkOrder(data: CreateWorkOrderInput, _tenantId?: st
 }
 
 export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
-  const { tenantId } = await requireTenantContext()
-  const existing = await prisma.workOrder.findFirst({
-    where: { id, tenantId },
-    select: { id: true, status: true },
+  const existing = await prisma.workOrder.findUnique({
+    where: { id },
+    select: { status: true },
   })
 
   if (!existing) {
-    throw new Error("Work order not found in tenant scope")
+    throw new Error("작업지시를 찾을 수 없습니다.")
   }
 
   const blockedStatuses: WorkOrderStatus[] = ["IN_PROGRESS", "COMPLETED", "CANCELLED"]
   if (blockedStatuses.includes(existing.status)) {
-    throw new Error("This work order status cannot be edited")
+    throw new Error(
+      `'${existing.status}' 상태의 작업지시는 수정할 수 없습니다.`
+    )
   }
 
   const { operations, dueDate, ...headerFields } = data
 
   await prisma.$transaction([
-    prisma.workOrderOperation.deleteMany({ where: { workOrderId: id, workOrder: { tenantId } } }),
+    prisma.workOrderOperation.deleteMany({ where: { workOrderId: id } }),
     prisma.workOrder.update({
-      where: { id: existing.id },
+      where: { id },
       data: {
         ...headerFields,
         dueDate: dueDate ? new Date(dueDate) : null,
@@ -301,24 +297,25 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
 }
 
 export async function deleteWorkOrder(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const existing = await prisma.workOrder.findFirst({
-    where: { id, tenantId },
-    select: { id: true, status: true },
+  const existing = await prisma.workOrder.findUnique({
+    where: { id },
+    select: { status: true },
   })
 
   if (!existing) {
-    throw new Error("Work order not found in tenant scope")
+    throw new Error("작업지시를 찾을 수 없습니다.")
   }
 
   const allowedStatuses: WorkOrderStatus[] = ["DRAFT", "RELEASED"]
   if (!allowedStatuses.includes(existing.status)) {
-    throw new Error("Only draft or released work orders can be deleted")
+    throw new Error(
+      `'${existing.status}' 상태의 작업지시는 삭제할 수 없습니다. DRAFT 또는 RELEASED 상태만 삭제 가능합니다.`
+    )
   }
 
   await prisma.$transaction([
-    prisma.workOrderOperation.deleteMany({ where: { workOrderId: id, workOrder: { tenantId } } }),
-    prisma.workOrder.delete({ where: { id: existing.id } }),
+    prisma.workOrderOperation.deleteMany({ where: { workOrderId: id } }),
+    prisma.workOrder.delete({ where: { id } }),
   ])
 
   revalidatePath("/app/mes/work-orders")

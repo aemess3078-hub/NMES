@@ -1,9 +1,10 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import { generateNumber } from "./numbering-rule.actions"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type LotWithDetails = {
   id: string
@@ -11,7 +12,7 @@ export type LotWithDetails = {
   itemId: string
   lotNo: string
   status: string
-  qty: any
+  qty: any // Decimal (from InventoryBalance total, computed)
   manufactureDate: Date | null
   expiryDate: Date | null
   createdAt: Date
@@ -32,7 +33,7 @@ export type LotGenealogyNode = {
   itemCode: string
   status: string
   qty: any
-  relationType: string | null
+  relationType: string | null // LotGenealogyRelation enum (루트는 null)
   children?: LotGenealogyNode[]
 }
 
@@ -44,10 +45,10 @@ export type CreateLotInput = {
   expiryDate?: string | null
 }
 
+// ─── LOT 전체 조회 ────────────────────────────────────────────────────────────
+
 export async function getLots(): Promise<LotWithDetails[]> {
-  const { tenantId } = await requireTenantContext()
   const lots = await prisma.lot.findMany({
-    where: { tenantId },
     include: {
       item: {
         select: {
@@ -93,17 +94,14 @@ export async function getLots(): Promise<LotWithDetails[]> {
   }) as LotWithDetails[]
 }
 
-export async function createLot(data: CreateLotInput, _tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
-  const [existing, item] = await Promise.all([
-    prisma.lot.findFirst({ where: { tenantId, lotNo: data.lotNo } }),
-    prisma.item.findFirst({ where: { id: data.itemId, tenantId }, select: { id: true } }),
-  ])
+// ─── LOT 생성 ─────────────────────────────────────────────────────────────────
+
+export async function createLot(data: CreateLotInput, tenantId: string) {
+  const existing = await prisma.lot.findFirst({
+    where: { tenantId, lotNo: data.lotNo },
+  })
   if (existing) {
-    throw new Error(`LOT '${data.lotNo}' already exists`)
-  }
-  if (!item) {
-    throw new Error("Item not found in tenant scope")
+    throw new Error(`LOT번호 '${data.lotNo}'는 이미 존재합니다.`)
   }
 
   await prisma.lot.create({
@@ -120,20 +118,21 @@ export async function createLot(data: CreateLotInput, _tenantId?: string) {
   revalidatePath("/app/mes/lot")
 }
 
+// ─── LOT 상태 변경 ────────────────────────────────────────────────────────────
+
 export async function updateLotStatus(id: string, status: string) {
-  const { tenantId } = await requireTenantContext()
-  const result = await prisma.lot.updateMany({
-    where: { id, tenantId },
+  await prisma.lot.update({
+    where: { id },
     data: { status: status as any },
   })
-  if (result.count === 0) throw new Error("Lot not found in tenant scope")
   revalidatePath("/app/mes/lot")
 }
 
-export async function generateLotNo(itemId: string, _tenantId?: string): Promise<string> {
-  const { tenantId } = await requireTenantContext()
-  const item = await prisma.item.findFirst({
-    where: { id: itemId, tenantId },
+// ─── LOT 번호 자동 생성 ───────────────────────────────────────────────────────
+
+export async function generateLotNo(itemId: string, tenantId: string): Promise<string> {
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
     select: { code: true, itemType: true },
   })
   const context = {
@@ -143,20 +142,21 @@ export async function generateLotNo(itemId: string, _tenantId?: string): Promise
   return generateNumber(tenantId, "LOT", context as any)
 }
 
+// ─── 재귀 정추적 헬퍼 ─────────────────────────────────────────────────────────
+
 async function buildForwardTree(
   lotId: string,
-  tenantId: string,
   depth: number = 0
 ): Promise<LotGenealogyNode> {
-  const lot = await prisma.lot.findFirst({
-    where: { id: lotId, tenantId },
+  const lot = await prisma.lot.findUnique({
+    where: { id: lotId },
     include: { item: true },
   })
   if (!lot) throw new Error(`LOT not found: ${lotId}`)
 
   const totalQty = await prisma.inventoryBalance
     .aggregate({
-      where: { lotId, tenantId },
+      where: { lotId },
       _sum: { qtyOnHand: true },
     })
     .then((r) => Number(r._sum.qtyOnHand ?? 0))
@@ -175,11 +175,12 @@ async function buildForwardTree(
   if (depth >= 10) return node
 
   const genealogies = await prisma.lotGenealogy.findMany({
-    where: { parentLotId: lotId, parentLot: { tenantId }, childLot: { tenantId } },
+    where: { parentLotId: lotId },
+    include: { childLot: { include: { item: true } } },
   })
 
   for (const g of genealogies) {
-    const childNode = await buildForwardTree(g.childLotId, tenantId, depth + 1)
+    const childNode = await buildForwardTree(g.childLotId, depth + 1)
     childNode.relationType = g.relationType
     node.children!.push(childNode)
   }
@@ -187,20 +188,21 @@ async function buildForwardTree(
   return node
 }
 
+// ─── 재귀 역추적 헬퍼 ─────────────────────────────────────────────────────────
+
 async function buildBackwardTree(
   lotId: string,
-  tenantId: string,
   depth: number = 0
 ): Promise<LotGenealogyNode> {
-  const lot = await prisma.lot.findFirst({
-    where: { id: lotId, tenantId },
+  const lot = await prisma.lot.findUnique({
+    where: { id: lotId },
     include: { item: true },
   })
   if (!lot) throw new Error(`LOT not found: ${lotId}`)
 
   const totalQty = await prisma.inventoryBalance
     .aggregate({
-      where: { lotId, tenantId },
+      where: { lotId },
       _sum: { qtyOnHand: true },
     })
     .then((r) => Number(r._sum.qtyOnHand ?? 0))
@@ -219,11 +221,12 @@ async function buildBackwardTree(
   if (depth >= 10) return node
 
   const genealogies = await prisma.lotGenealogy.findMany({
-    where: { childLotId: lotId, parentLot: { tenantId }, childLot: { tenantId } },
+    where: { childLotId: lotId },
+    include: { parentLot: { include: { item: true } } },
   })
 
   for (const g of genealogies) {
-    const parentNode = await buildBackwardTree(g.parentLotId, tenantId, depth + 1)
+    const parentNode = await buildBackwardTree(g.parentLotId, depth + 1)
     parentNode.relationType = g.relationType
     node.children!.push(parentNode)
   }
@@ -231,18 +234,21 @@ async function buildBackwardTree(
   return node
 }
 
+// ─── 정추적 (Forward): 이 LOT → 자식 LOT들 ──────────────────────────────────
+
 export async function getLotForwardTrace(lotId: string): Promise<LotGenealogyNode> {
-  const { tenantId } = await requireTenantContext()
-  return buildForwardTree(lotId, tenantId, 0)
+  return buildForwardTree(lotId, 0)
 }
+
+// ─── 역추적 (Backward): 이 LOT ← 부모 LOT들 ─────────────────────────────────
 
 export async function getLotBackwardTrace(lotId: string): Promise<LotGenealogyNode> {
-  const { tenantId } = await requireTenantContext()
-  return buildBackwardTree(lotId, tenantId, 0)
+  return buildBackwardTree(lotId, 0)
 }
 
-export async function searchLotByNo(lotNo: string, _tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
+// ─── LOT 검색 (Traceability 검색용) ──────────────────────────────────────────
+
+export async function searchLotByNo(lotNo: string, tenantId: string) {
   return prisma.lot.findFirst({
     where: {
       tenantId,
@@ -252,8 +258,9 @@ export async function searchLotByNo(lotNo: string, _tenantId?: string) {
   })
 }
 
+// ─── 품목 목록 (LOT 전용) ─────────────────────────────────────────────────────
+
 export async function getItemsForLot() {
-  const { tenantId } = await requireTenantContext()
   return prisma.item.findMany({
     select: {
       id: true,
@@ -263,15 +270,15 @@ export async function getItemsForLot() {
       uom: true,
       categoryId: true,
     },
-    where: { tenantId, status: "ACTIVE" },
+    where: { status: "ACTIVE" },
     orderBy: { code: "asc" },
   })
 }
 
+// ─── 사이트 목록 (LOT 전용) ───────────────────────────────────────────────────
+
 export async function getSitesForLot() {
-  const { tenantId } = await requireTenantContext()
   return prisma.site.findMany({
-    where: { tenantId },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })

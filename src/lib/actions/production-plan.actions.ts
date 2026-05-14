@@ -1,9 +1,10 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { PlanStatus, PlanType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type PlanWithDetails = {
   id: string
@@ -25,7 +26,7 @@ export type PlanWithDetails = {
     bomId: string | null
     routingId: string | null
     salesOrderItemId: string | null
-    plannedQty: any
+    plannedQty: any // Decimal
     note: string | null
     item: { id: string; code: string; name: string; itemType: string }
     bom: { id: string; version: string } | null
@@ -68,10 +69,10 @@ export type CreatePlanInput = {
   items: PlanItemInput[]
 }
 
+// ─── Query Functions ──────────────────────────────────────────────────────────
+
 export async function getProductionPlans(): Promise<PlanWithDetails[]> {
-  const { tenantId } = await requireTenantContext()
   return prisma.productionPlan.findMany({
-    where: { tenantId },
     include: {
       site: {
         select: { id: true, code: true, name: true, type: true },
@@ -112,9 +113,8 @@ export async function getProductionPlans(): Promise<PlanWithDetails[]> {
 }
 
 export async function getPlanById(id: string): Promise<PlanWithDetails | null> {
-  const { tenantId } = await requireTenantContext()
-  return prisma.productionPlan.findFirst({
-    where: { id, tenantId },
+  return prisma.productionPlan.findUnique({
+    where: { id },
     include: {
       site: {
         select: { id: true, code: true, name: true, type: true },
@@ -154,39 +154,33 @@ export async function getPlanById(id: string): Promise<PlanWithDetails | null> {
 }
 
 export async function getSites() {
-  const { tenantId } = await requireTenantContext()
   return prisma.site.findMany({
-    where: { tenantId },
     select: { id: true, code: true, name: true, type: true },
     orderBy: { name: "asc" },
   })
 }
 
 export async function getItemsForPlan() {
-  const { tenantId } = await requireTenantContext()
   return prisma.item.findMany({
-    where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
+    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { code: "asc" },
   })
 }
 
 export async function getBomsForPlanItem(itemId: string) {
-  const { tenantId } = await requireTenantContext()
   return prisma.bOM.findMany({
-    where: { tenantId, itemId, status: "ACTIVE" },
+    where: { itemId, status: "ACTIVE" },
     select: { id: true, version: true, isDefault: true },
     orderBy: { version: "asc" },
   })
 }
 
 export async function getRoutingsForPlanItem(itemId: string) {
-  const { tenantId } = await requireTenantContext()
   const itemRoutings = await prisma.itemRouting.findMany({
     where: {
-      tenantId,
       itemId,
-      routing: { status: "ACTIVE", tenantId },
+      routing: { status: "ACTIVE" },
     },
     include: {
       routing: {
@@ -203,6 +197,8 @@ export async function getRoutingsForPlanItem(itemId: string) {
   }))
 }
 
+// ─── Business Logic ───────────────────────────────────────────────────────────
+
 export async function generatePlanNo(tenantId: string, planType: PlanType): Promise<string> {
   const now = new Date()
   const year = now.getFullYear()
@@ -214,15 +210,18 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
     const day = String(now.getDate()).padStart(2, "0")
     baseNo = `PP-${year}-${month}${day}`
   } else if (planType === "WEEKLY") {
+    // ISO 주차 계산
     const startOfYear = new Date(year, 0, 1)
     const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000))
     const weekNo = Math.ceil((dayOfYear + startOfYear.getDay() + 1) / 7)
     baseNo = `PP-${year}-W${String(weekNo).padStart(2, "0")}`
   } else {
+    // MONTHLY
     const month = String(now.getMonth() + 1).padStart(2, "0")
     baseNo = `PP-${year}-M${month}`
   }
 
+  // 중복 체크 후 suffix 추가
   const existing = await prisma.productionPlan.findMany({
     where: {
       tenantId,
@@ -235,6 +234,7 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
     return baseNo
   }
 
+  // 이미 baseNo가 존재하면 suffix 붙이기
   const existingNos = new Set(existing.map((p) => p.planNo))
   let suffix = 2
   while (existingNos.has(`${baseNo}-${suffix}`)) {
@@ -243,30 +243,10 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
   return `${baseNo}-${suffix}`
 }
 
-export async function createPlan(data: CreatePlanInput, _tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
-  const [site, items, boms, routings] = await Promise.all([
-    prisma.site.findFirst({ where: { id: data.siteId, tenantId }, select: { id: true } }),
-    prisma.item.findMany({
-      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
-      select: { id: true },
-    }),
-    prisma.bOM.findMany({
-      where: { id: { in: data.items.map((item) => item.bomId).filter(Boolean) as string[] }, tenantId },
-      select: { id: true },
-    }),
-    prisma.routing.findMany({
-      where: { id: { in: data.items.map((item) => item.routingId).filter(Boolean) as string[] }, tenantId },
-      select: { id: true },
-    }),
-  ])
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-  if (!site) throw new Error("Site not found in tenant scope")
-  if (items.length !== data.items.length) throw new Error("One or more items are outside tenant scope")
-  if (boms.length !== data.items.filter((item) => item.bomId).length) throw new Error("One or more BOMs are outside tenant scope")
-  if (routings.length !== data.items.filter((item) => item.routingId).length) throw new Error("One or more routings are outside tenant scope")
-
-  const { items: planItems, startDate, endDate, note, ...headerFields } = data
+export async function createPlan(data: CreatePlanInput, tenantId: string) {
+  const { items, startDate, endDate, note, ...headerFields } = data
 
   await prisma.productionPlan.create({
     data: {
@@ -276,7 +256,7 @@ export async function createPlan(data: CreatePlanInput, _tenantId?: string) {
       endDate: new Date(endDate),
       note: note ?? null,
       items: {
-        create: planItems.map((item) => ({
+        create: items.map((item) => ({
           itemId: item.itemId,
           bomId: item.bomId ?? null,
           routingId: item.routingId ?? null,
@@ -291,34 +271,35 @@ export async function createPlan(data: CreatePlanInput, _tenantId?: string) {
 }
 
 export async function updatePlan(id: string, data: CreatePlanInput) {
-  const { tenantId } = await requireTenantContext()
-  const existing = await prisma.productionPlan.findFirst({
-    where: { id, tenantId },
-    select: { id: true, status: true },
+  const existing = await prisma.productionPlan.findUnique({
+    where: { id },
+    select: { status: true },
   })
 
   if (!existing) {
-    throw new Error("Production plan not found in tenant scope")
+    throw new Error("생산계획을 찾을 수 없습니다.")
   }
 
   const blockedStatuses: PlanStatus[] = ["IN_PROGRESS", "COMPLETED", "CANCELLED"]
   if (blockedStatuses.includes(existing.status)) {
-    throw new Error("This production plan status cannot be edited")
+    throw new Error(
+      `'${existing.status}' 상태의 생산계획은 수정할 수 없습니다.`
+    )
   }
 
-  const { items: planItems, startDate, endDate, note, ...headerFields } = data
+  const { items, startDate, endDate, note, ...headerFields } = data
 
   await prisma.$transaction([
-    prisma.productionPlanItem.deleteMany({ where: { planId: id, plan: { tenantId } } }),
+    prisma.productionPlanItem.deleteMany({ where: { planId: id } }),
     prisma.productionPlan.update({
-      where: { id: existing.id },
+      where: { id },
       data: {
         ...headerFields,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         note: note ?? null,
         items: {
-          create: planItems.map((item) => ({
+          create: items.map((item) => ({
             itemId: item.itemId,
             bomId: item.bomId ?? null,
             routingId: item.routingId ?? null,
@@ -334,23 +315,24 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
 }
 
 export async function deletePlan(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const existing = await prisma.productionPlan.findFirst({
-    where: { id, tenantId },
-    select: { id: true, status: true },
+  const existing = await prisma.productionPlan.findUnique({
+    where: { id },
+    select: { status: true },
   })
 
   if (!existing) {
-    throw new Error("Production plan not found in tenant scope")
+    throw new Error("생산계획을 찾을 수 없습니다.")
   }
 
   if (existing.status !== "DRAFT") {
-    throw new Error("Only draft production plans can be deleted")
+    throw new Error(
+      `'${existing.status}' 상태의 생산계획은 삭제할 수 없습니다. DRAFT 상태만 삭제 가능합니다.`
+    )
   }
 
   await prisma.$transaction([
-    prisma.productionPlanItem.deleteMany({ where: { planId: id, plan: { tenantId } } }),
-    prisma.productionPlan.delete({ where: { id: existing.id } }),
+    prisma.productionPlanItem.deleteMany({ where: { planId: id } }),
+    prisma.productionPlan.delete({ where: { id } }),
   ])
 
   revalidatePath("/app/mes/production-plan")

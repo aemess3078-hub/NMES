@@ -1,12 +1,12 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { SalesOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
-export async function getSalesOrders(_tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
+// ─── Query Functions ──────────────────────────────────────────────────────────
+
+export async function getSalesOrders(tenantId: string) {
   return prisma.salesOrder.findMany({
     where: { tenantId },
     include: {
@@ -18,21 +18,21 @@ export async function getSalesOrders(_tenantId?: string) {
   })
 }
 
-export async function getCustomers(_tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
+export async function getCustomers(tenantId: string) {
   return prisma.businessPartner.findMany({
     where: { tenantId, partnerType: { in: ["CUSTOMER", "BOTH"] } },
     orderBy: { name: "asc" },
   })
 }
 
-export async function getItemsForSales(_tenantId?: string) {
-  const { tenantId } = await requireTenantContext()
+export async function getItemsForSales(tenantId: string) {
   return prisma.item.findMany({
     where: { tenantId, status: "ACTIVE", itemType: "FINISHED" },
     orderBy: { name: "asc" },
   })
 }
+
+// ─── Business Logic ───────────────────────────────────────────────────────────
 
 export async function generateSalesOrderNo(tenantId: string): Promise<string> {
   const year = new Date().getFullYear()
@@ -45,6 +45,8 @@ export async function generateSalesOrderNo(tenantId: string): Promise<string> {
   const seq = last ? (parseInt(last.orderNo.split("-")[2] ?? "0", 10) || 0) + 1 : 1
   return `${prefix}${String(seq).padStart(3, "0")}`
 }
+
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export type CreateSalesOrderItemInput = {
   itemId: string
@@ -66,35 +68,10 @@ export type CreateSalesOrderInput = {
 }
 
 export async function createSalesOrder(
-  _tenantId: string,
-  _siteId: string,
+  tenantId: string,
+  siteId: string,
   data: CreateSalesOrderInput
 ) {
-  const { tenantId, siteId } = await requireTenantContext()
-
-  if (!siteId) {
-    throw new Error("Tenant site context not found")
-  }
-
-  const [customer, items] = await Promise.all([
-    prisma.businessPartner.findFirst({
-      where: { id: data.customerId, tenantId },
-      select: { id: true },
-    }),
-    prisma.item.findMany({
-      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
-      select: { id: true },
-    }),
-  ])
-
-  if (!customer) {
-    throw new Error("Customer not found in tenant scope")
-  }
-
-  if (items.length !== data.items.length) {
-    throw new Error("One or more items are outside tenant scope")
-  }
-
   const orderNo = await generateSalesOrderNo(tenantId)
   const order = await prisma.salesOrder.create({
     data: {
@@ -135,38 +112,15 @@ export type UpdateSalesOrderInput = {
 }
 
 export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) {
-  const { tenantId } = await requireTenantContext()
-  const current = await prisma.salesOrder.findFirstOrThrow({
-    where: { id, tenantId },
-  })
+  const current = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
   const canEditItems = current.status === "DRAFT"
-
-  if (data.customerId) {
-    const customer = await prisma.businessPartner.findFirst({
-      where: { id: data.customerId, tenantId },
-      select: { id: true },
-    })
-    if (!customer) throw new Error("Customer not found in tenant scope")
-  }
-
-  if (data.items?.length) {
-    const items = await prisma.item.findMany({
-      where: { id: { in: data.items.map((item) => item.itemId) }, tenantId },
-      select: { id: true },
-    })
-    if (items.length !== data.items.length) {
-      throw new Error("One or more items are outside tenant scope")
-    }
-  }
 
   await prisma.$transaction(async (tx) => {
     if (canEditItems && data.items) {
-      await tx.salesOrderItem.deleteMany({
-        where: { salesOrderId: id, salesOrder: { tenantId } },
-      })
+      await tx.salesOrderItem.deleteMany({ where: { salesOrderId: id } })
     }
     await tx.salesOrder.update({
-      where: { id: current.id },
+      where: { id },
       data: {
         ...(data.customerId !== undefined && { customerId: data.customerId }),
         ...(data.orderDate !== undefined && { orderDate: data.orderDate }),
@@ -193,19 +147,16 @@ export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) 
 }
 
 export async function deleteSalesOrder(id: string) {
-  const { tenantId } = await requireTenantContext()
-  const order = await prisma.salesOrder.findFirstOrThrow({
-    where: { id, tenantId },
-  })
+  const order = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
   if (order.status !== "DRAFT") {
-    throw new Error("Only draft sales orders can be deleted")
+    throw new Error("DRAFT 상태인 수주만 삭제할 수 있습니다.")
   }
-  await prisma.salesOrderItem.deleteMany({
-    where: { salesOrderId: id, salesOrder: { tenantId } },
-  })
-  await prisma.salesOrder.delete({ where: { id: order.id } })
+  await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } })
+  await prisma.salesOrder.delete({ where: { id } })
   revalidatePath("/app/mes/sales-orders")
 }
+
+// ─── S2: 재고 조회 ─────────────────────────────────────────────────────────────
 
 export type ItemStockStatus = {
   salesOrderItemId: string
@@ -216,18 +167,17 @@ export type ItemStockStatus = {
   orderedQty: number
   shippedQty: number
   remainingQty: number
-  availableStock: number
-  shippableQty: number
-  shortageQty: number
+  availableStock: number   // 전체 창고 합산 가용재고
+  shippableQty: number     // min(remainingQty, availableStock)
+  shortageQty: number      // max(0, remainingQty - availableStock)
 }
 
 export async function checkInventoryForSalesOrder(
   salesOrderId: string,
-  _tenantId?: string
+  tenantId: string
 ): Promise<ItemStockStatus[]> {
-  const { tenantId } = await requireTenantContext()
-  const order = await prisma.salesOrder.findFirstOrThrow({
-    where: { id: salesOrderId, tenantId },
+  const order = await prisma.salesOrder.findUniqueOrThrow({
+    where: { id: salesOrderId },
     include: {
       items: { include: { item: { select: { id: true, code: true, name: true, uom: true } } } },
     },
@@ -268,6 +218,8 @@ export async function checkInventoryForSalesOrder(
   })
 }
 
+// ─── 수주 충족 현황 분석 ───────────────────────────────────────────────────────
+
 export type MaterialShortage = {
   itemId: string
   itemCode: string
@@ -297,10 +249,9 @@ export type FulfillmentRow = {
 }
 
 export async function getSalesOrderFulfillmentStatus(
-  _tenantId: string,
+  tenantId: string,
   includeNonConfirmed: boolean
 ): Promise<FulfillmentRow[]> {
-  const { tenantId } = await requireTenantContext()
   const statusFilter: SalesOrderStatus[] = [
     "CONFIRMED",
     "IN_PRODUCTION",
@@ -321,6 +272,7 @@ export async function getSalesOrderFulfillmentStatus(
     },
   })
 
+  // 품목별 수주 잔여량 집계
   type ItemAccumulator = {
     itemCode: string
     itemName: string
@@ -362,12 +314,15 @@ export async function getSalesOrderFulfillmentStatus(
   if (itemMap.size === 0) return []
 
   const itemIds = Array.from(itemMap.keys())
+
+  // BOM 조회
   const boms = await prisma.bOM.findMany({
     where: { tenantId, itemId: { in: itemIds }, isDefault: true },
     include: { bomItems: { include: { componentItem: true } } },
   })
   const bomMap = new Map(boms.map((b) => [b.itemId, b]))
 
+  // 재고 조회
   const balances = await prisma.inventoryBalance.findMany({
     where: { tenantId },
     select: { itemId: true, qtyAvailable: true },
@@ -387,11 +342,13 @@ export async function getSalesOrderFulfillmentStatus(
     let remaining = Math.max(0, totalOrderedQty - fgStock)
 
     const bom = bomMap.get(itemId)
+
     let fromSF = 0
     let fromRM = 0
     const materialShortages: MaterialShortage[] = []
 
     if (bom) {
+      // 반제품(SF) 처리
       const sfComponents = bom.bomItems.filter(
         (c) => c.componentItem.itemType === "SEMI_FINISHED"
       )
@@ -405,6 +362,7 @@ export async function getSalesOrderFulfillmentStatus(
         remaining -= use
       }
 
+      // 원자재(RM) 처리
       const rmComponents = bom.bomItems.filter(
         (c) => c.componentItem.itemType === "RAW_MATERIAL"
       )
@@ -420,6 +378,7 @@ export async function getSalesOrderFulfillmentStatus(
         remaining -= fromRM
       }
 
+      // 자재 부족 계산
       const totalNeedFromRM = fromRM + remaining
       if (totalNeedFromRM > 0) {
         const rmComponents2 = bom.bomItems.filter(
@@ -474,24 +433,18 @@ export async function getSalesOrderFulfillmentStatus(
   })
 }
 
+// ─── S4: 생산의뢰 생성 ─────────────────────────────────────────────────────────
+
 export async function requestProductionFromSalesOrder(
   salesOrderId: string,
   items: { salesOrderItemId: string; itemId: string; qty: number }[],
-  _tenantId: string,
-  _siteId: string
+  tenantId: string,
+  siteId: string
 ): Promise<{ ok: boolean; planNo?: string; error?: string }> {
-  const { tenantId, siteId } = await requireTenantContext()
-
-  if (!siteId) return { ok: false, error: "Tenant site context not found" }
-  if (items.length === 0) return { ok: false, error: "No production request items provided" }
+  if (items.length === 0) return { ok: false, error: "생산의뢰 품목이 없습니다." }
 
   try {
-    const salesOrder = await prisma.salesOrder.findFirst({
-      where: { id: salesOrderId, tenantId },
-      select: { id: true },
-    })
-    if (!salesOrder) return { ok: false, error: "Sales order not found in tenant scope" }
-
+    // planNo 생성
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
     const prefix = `PP-REQ-${today}`
     const count = await prisma.productionPlan.count({
@@ -509,7 +462,7 @@ export async function requestProductionFromSalesOrder(
           startDate: new Date(),
           endDate: new Date(),
           status: "DRAFT",
-          note: `Sales-order production request (${salesOrderId})`,
+          note: `수주 기반 생산의뢰 (salesOrderId: ${salesOrderId})`,
           items: {
             create: items.map((item) => ({
               itemId: item.itemId,
@@ -520,6 +473,7 @@ export async function requestProductionFromSalesOrder(
         },
       })
 
+      // 수주 상태를 IN_PRODUCTION으로 전환
       await tx.salesOrder.update({
         where: { id: salesOrderId },
         data: { status: "IN_PRODUCTION" },
@@ -530,6 +484,6 @@ export async function requestProductionFromSalesOrder(
     revalidatePath("/app/mes/production-plan")
     return { ok: true, planNo }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Unexpected error" }
+    return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
   }
 }

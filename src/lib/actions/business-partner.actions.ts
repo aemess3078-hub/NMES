@@ -1,6 +1,5 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, PartnerType, PartnerStatus } from "@prisma/client"
 
@@ -21,9 +20,7 @@ export type BusinessPartnerFormValues = {
 }
 
 export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promise<BusinessPartner[]> {
-  const { tenantId } = await requireTenantContext()
-
-  const where: Prisma.BusinessPartnerWhereInput = { tenantId }
+  const where: Prisma.BusinessPartnerWhereInput = {}
   if (type === "CUSTOMER") {
     where.partnerType = { in: [PartnerType.CUSTOMER, PartnerType.BOTH] }
   } else if (type === "SUPPLIER") {
@@ -36,9 +33,7 @@ export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promi
   })
 }
 
-export async function createBusinessPartner(data: BusinessPartnerFormValues): Promise<BusinessPartner> {
-  const { tenantId } = await requireTenantContext()
-
+export async function createBusinessPartner(tenantId: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
   const existing = await prisma.businessPartner.findFirst({
     where: { tenantId, code: data.code },
   })
@@ -56,10 +51,8 @@ export async function createBusinessPartner(data: BusinessPartnerFormValues): Pr
 }
 
 export async function updateBusinessPartner(id: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
-  const { tenantId } = await requireTenantContext()
-
   const existing = await prisma.businessPartner.findFirst({
-    where: { tenantId, code: data.code, NOT: { id } },
+    where: { code: data.code, NOT: { id } },
   })
   if (existing) throw new Error("DUPLICATE_CODE")
 
@@ -75,6 +68,5 @@ export async function updateBusinessPartner(id: string, data: BusinessPartnerFor
 }
 
 export async function deleteBusinessPartner(id: string): Promise<void> {
-  await requireTenantContext()
   await prisma.businessPartner.delete({ where: { id } })
 }

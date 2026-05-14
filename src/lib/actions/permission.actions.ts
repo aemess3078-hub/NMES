@@ -1,6 +1,5 @@
 "use server"
 
-import { requireTenantContext } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { UserRole, PermissionAction } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -15,8 +14,7 @@ export type PermissionRecord = {
 }
 
 // 1. 전체 권한 조회
-export async function getPermissions(_tenantId?: string): Promise<PermissionRecord[]> {
-  const { tenantId } = await requireTenantContext()
+export async function getPermissions(tenantId: string): Promise<PermissionRecord[]> {
   return prisma.rolePermission.findMany({
     where: { tenantId },
     orderBy: [{ resource: "asc" }, { role: "asc" }, { action: "asc" }],
@@ -30,8 +28,8 @@ export type PermissionMatrix = Record<
   Partial<Record<UserRole, Partial<Record<PermissionAction, { id: string; isAllowed: boolean }>>>>
 >
 
-export async function getPermissionMatrix(_tenantId?: string): Promise<PermissionMatrix> {
-  const permissions = await getPermissions()
+export async function getPermissionMatrix(tenantId: string): Promise<PermissionMatrix> {
+  const permissions = await getPermissions(tenantId)
   const matrix: PermissionMatrix = {}
 
   for (const perm of permissions) {
@@ -51,12 +49,7 @@ export async function getPermissionMatrix(_tenantId?: string): Promise<Permissio
 
 // 3. 단건 토글
 export async function updatePermission(id: string, isAllowed: boolean) {
-  const { tenantId } = await requireTenantContext()
-  const result = await prisma.rolePermission.updateMany({
-    where: { id, tenantId },
-    data: { isAllowed },
-  })
-  if (result.count === 0) throw new Error("Permission not found in tenant scope")
+  await prisma.rolePermission.update({ where: { id }, data: { isAllowed } })
   revalidatePath("/app/mes/users")
 }
 
@@ -64,13 +57,9 @@ export async function updatePermission(id: string, isAllowed: boolean) {
 export async function bulkUpdatePermissions(
   updates: { id: string; isAllowed: boolean }[]
 ) {
-  const { tenantId } = await requireTenantContext()
   await prisma.$transaction(
     updates.map(({ id, isAllowed }) =>
-      prisma.rolePermission.updateMany({
-        where: { id, tenantId },
-        data: { isAllowed },
-      })
+      prisma.rolePermission.update({ where: { id }, data: { isAllowed } })
     )
   )
   revalidatePath("/app/mes/users")

@@ -1,15 +1,11 @@
-import { getBusinessPartners, BusinessPartner } from "@/lib/actions/business-partner.actions"
+import { getBusinessPartners } from "@/lib/actions/business-partner.actions"
 import { PartnerDataTable } from "../business-partners/partner-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function CustomersPage() {
-  let partners: BusinessPartner[] = []
-  try {
-    partners = await getBusinessPartners("CUSTOMER")
-  } catch (err) {
-    console.error("[CustomersPage] getBusinessPartners 실패:", err)
-  }
+  const partners = await getBusinessPartners("CUSTOMER")
+  const tenantId = partners[0]?.tenantId ?? ""
 
   return (
     <div className="space-y-6">
@@ -23,7 +19,7 @@ export default async function CustomersPage() {
           </p>
         </div>
       </div>
-      <PartnerDataTable partners={partners} fixedType="CUSTOMER" entityName="고객사" />
+      <PartnerDataTable partners={partners} fixedType="CUSTOMER" entityName="고객사" tenantId={tenantId} />
     </div>
   )
 }
