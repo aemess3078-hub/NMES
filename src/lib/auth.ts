@@ -87,10 +87,48 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   const profileId = session.user.id;
 
-  const tenantUser = await prisma.tenantUser.findFirst({
+  let tenantUser = await prisma.tenantUser.findFirst({
     where: { profileId, tenantId, isActive: true },
     include: { profile: true },
   });
+
+  if (!tenantUser && session.user.email) {
+    const tenantUserByEmail = await prisma.tenantUser.findFirst({
+      where: {
+        tenantId,
+        isActive: true,
+        profile: { email: session.user.email },
+      },
+      include: { profile: true },
+    });
+
+    if (tenantUserByEmail && tenantUserByEmail.profileId !== profileId) {
+      const existingProfileForAuthId = await prisma.profile.findUnique({
+        where: { id: profileId },
+      });
+
+      if (!existingProfileForAuthId) {
+        await prisma.profile.update({
+          where: { id: tenantUserByEmail.profileId },
+          data: {
+            id: profileId,
+            email: session.user.email,
+            name:
+              session.user.user_metadata?.name ??
+              tenantUserByEmail.profile.name ??
+              session.user.email.split('@')[0],
+          },
+        });
+
+        tenantUser = await prisma.tenantUser.findFirst({
+          where: { profileId, tenantId, isActive: true },
+          include: { profile: true },
+        });
+      }
+    } else {
+      tenantUser = tenantUserByEmail;
+    }
+  }
 
   if (!tenantUser) return null;
 

@@ -86,6 +86,7 @@ export async function getSignupRequests(
   status?: SignupRequestStatus
 ): Promise<SignupRequestRow[]> {
   const tenantId = await getTenantId()
+  await requireRole("ADMIN")
 
   const rows = await prisma.signupRequest.findMany({
     where: {
@@ -157,22 +158,44 @@ export async function approveSignupRequest(
       authUserId = createData.user.id
     }
 
-    // 2. Profile 생성 (없을 경우)
-    await prisma.profile.upsert({
-      where: { id: authUserId },
-      create: {
-        id: authUserId,
-        email: request.email,
-        name: request.name,
-        department: request.department,
-        phone: request.phone,
-      },
-      update: {
-        name: request.name,
-        department: request.department,
-        phone: request.phone,
-      },
-    })
+    // 2. Profile 생성/동기화
+    // seed/demo 프로필이 같은 이메일로 먼저 만들어져 있으면 email unique 제약에 걸리므로
+    // 기존 프로필의 id를 Supabase Auth UUID로 승격시킨다. FK는 ON UPDATE CASCADE.
+    const existingProfileById = await prisma.profile.findUnique({ where: { id: authUserId } })
+    const existingProfileByEmail = await prisma.profile.findUnique({ where: { email: request.email } })
+
+    if (existingProfileById) {
+      await prisma.profile.update({
+        where: { id: authUserId },
+        data: {
+          email: request.email,
+          name: request.name,
+          department: request.department,
+          phone: request.phone,
+        },
+      })
+    } else if (existingProfileByEmail) {
+      await prisma.profile.update({
+        where: { id: existingProfileByEmail.id },
+        data: {
+          id: authUserId,
+          email: request.email,
+          name: request.name,
+          department: request.department,
+          phone: request.phone,
+        },
+      })
+    } else {
+      await prisma.profile.create({
+        data: {
+          id: authUserId,
+          email: request.email,
+          name: request.name,
+          department: request.department,
+          phone: request.phone,
+        },
+      })
+    }
 
     // 3. TenantUser 생성 (없을 경우)
     const existingTU = await prisma.tenantUser.findFirst({
@@ -264,5 +287,6 @@ export async function rejectSignupRequest(
 
 export async function getPendingSignupCount(): Promise<number> {
   const tenantId = await getTenantId()
+  await requireRole("ADMIN")
   return prisma.signupRequest.count({ where: { tenantId, status: "PENDING" } })
 }

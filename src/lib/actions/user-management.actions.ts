@@ -25,22 +25,23 @@ export type TenantUserRow = {
 
 export async function getTenantUsers(): Promise<TenantUserRow[]> {
   const tenantId = await getTenantId()
+  await requireRole("ADMIN")
 
   // 1. Supabase Auth 전체 유저 목록 (admin API)
   type AuthUser = { id: string; email?: string; created_at: string; user_metadata?: Record<string, string> }
   let authUsers: AuthUser[] = []
-  let authApiSucceeded = false
   try {
     const supabase = createAdminClient()
     const { data: authData, error } = await supabase.auth.admin.listUsers({ perPage: 1000 })
     if (error) {
       console.error("[getTenantUsers] auth.admin.listUsers 오류:", error.message, error.status)
+      throw new Error(`Supabase Auth 사용자 목록 조회 실패: ${error.message}`)
     } else if (authData?.users) {
       authUsers = authData.users as AuthUser[]
-      authApiSucceeded = true
     }
   } catch (e) {
     console.error("[getTenantUsers] auth.admin.listUsers 예외:", e)
+    throw e instanceof Error ? e : new Error("Supabase Auth 사용자 목록 조회 실패")
   }
 
   // 2. MES DB의 TenantUser 레코드
@@ -53,45 +54,29 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
 
   // profileId → TenantUser 매핑
   const tuByProfileId = new Map(tenantUsers.map((tu) => [tu.profileId, tu]))
+  const isDemoSeedEmail = (email: string) => email.endsWith("@demo-mes.internal")
 
   // 3. 병합: Supabase Auth 유저 기준으로 MES 정보 결합
-  const authUserIds = new Set(authUsers.map((u) => u.id))
-  const result: TenantUserRow[] = authUsers.map((authUser) => {
+  const result: TenantUserRow[] = authUsers.flatMap((authUser) => {
+    const email = authUser.email ?? ""
     const tu = tuByProfileId.get(authUser.id)
-    return {
+    const belongsToTenant = !!tu || authUser.user_metadata?.tenantId === tenantId
+
+    if (!email || isDemoSeedEmail(email) || !belongsToTenant) return []
+
+    return [{
       id: tu?.id ?? authUser.id,
       profileId: authUser.id,
-      email: authUser.email ?? "",
-      name: tu?.profile.name ?? authUser.user_metadata?.name ?? authUser.email?.split("@")[0] ?? "",
+      email,
+      name: tu?.profile.name ?? authUser.user_metadata?.name ?? email.split("@")[0] ?? "",
       department: tu?.profile.department ?? null,
       phone: tu?.profile.phone ?? null,
       role: tu?.role ?? null,
       isActive: tu?.isActive ?? true,
       createdAt: new Date(authUser.created_at),
       enrolled: !!tu,
-    }
+    }]
   })
-
-  // Supabase Auth API 실패 시에만 DB의 TenantUser 레코드를 fallback으로 표시
-  // (auth API 성공 시에는 seed/demo 계정이 포함되지 않도록 스킵)
-  if (!authApiSucceeded) {
-  for (const tu of tenantUsers) {
-    if (!authUserIds.has(tu.profileId)) {
-      result.push({
-        id: tu.id,
-        profileId: tu.profileId,
-        email: tu.profile.email,
-        name: tu.profile.name,
-        department: tu.profile.department ?? null,
-        phone: tu.profile.phone ?? null,
-        role: tu.role,
-        isActive: tu.isActive,
-        createdAt: tu.createdAt,
-        enrolled: true,
-      })
-    }
-  }
-  } // end: !authApiSucceeded
 
   // 등록된 유저 먼저, 그 다음 미등록 유저
   result.sort((a, b) => {

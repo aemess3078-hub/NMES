@@ -88,7 +88,6 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const [signupMode, setSignupMode] = useState(false)
 
   const supabase = createClient()
 
@@ -98,31 +97,21 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
     setError("")
 
     try {
-      if (!signupMode) {
-        // 로컬 개발 우회: test@test.com / 123456
-        if (email === "test@test.com" && password === "123456") {
-          document.cookie = "nmes-dev-bypass=true; path=/"
-          document.cookie = "nmes-mode=system; path=/"
-          window.location.href = "/app/mes/"
-          return
-        }
-
-        const { error: authError } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
-        if (authError) throw authError
+      // 로컬 개발 우회: test@test.com / 123456
+      if (email === "test@test.com" && password === "123456") {
+        document.cookie = "nmes-dev-bypass=true; path=/"
         document.cookie = "nmes-mode=system; path=/"
         window.location.href = "/app/mes/"
-      } else {
-        const { error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-        })
-        if (authError) throw authError
-        setError("가입 확인 이메일을 발송했습니다. 이메일을 확인해주세요.")
-        setSignupMode(false)
+        return
       }
+
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (authError) throw authError
+      document.cookie = "nmes-mode=system; path=/"
+      window.location.href = "/app/mes/"
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(
@@ -205,8 +194,6 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               처리 중...
             </>
-          ) : signupMode ? (
-            "계정 만들기"
           ) : (
             "로그인"
           )}
@@ -214,26 +201,12 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
       </form>
 
       <div className="mt-4 text-center space-y-2">
-        <button
-          type="button"
-          onClick={() => {
-            setSignupMode(!signupMode)
-            setError("")
-          }}
-          className="text-sm text-slate-400 hover:text-slate-600 transition-colors block w-full"
+        <a
+          href="/signup-request"
+          className="text-sm text-blue-400 hover:text-blue-600 transition-colors block"
         >
-          {signupMode
-            ? "이미 계정이 있으신가요? 로그인 →"
-            : "계정이 없으신가요? 회원가입 →"}
-        </button>
-        {!signupMode && (
-          <a
-            href="/signup-request"
-            className="text-sm text-blue-400 hover:text-blue-600 transition-colors block"
-          >
-            관리자 승인 방식으로 가입 신청 →
-          </a>
-        )}
+          관리자 승인 방식으로 가입 신청 →
+        </a>
       </div>
     </div>
   )

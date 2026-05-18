@@ -8,8 +8,10 @@ import { PermissionMatrixTable } from "./permission-matrix"
 import { UserManagementTable } from "./user-management-table"
 import { SignupRequestsTable } from "./signup-requests-table"
 import { cookies } from "next/headers"
+import { requireRole } from "@/lib/auth"
 
 export default async function UsersPage() {
+  const currentUser = await requireRole("ADMIN")
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
@@ -64,7 +66,7 @@ export default async function UsersPage() {
               사용자 목록을 불러오려면 관리자(ADMIN) 이상 권한이 필요합니다.
             </div>
           ) : (
-            <UserManagementTable users={usersData} currentUserId="" />
+            <UserManagementTable users={usersData} currentUserId={currentUser.id} />
           )}
         </TabsContent>
 
