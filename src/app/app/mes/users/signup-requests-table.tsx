@@ -231,6 +231,11 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
             <p className="text-[12px] text-muted-foreground">
               승인 시 이메일 발송 없이 계정이 즉시 생성됩니다. 임시 비밀번호를 사용자에게 직접 전달하세요.
             </p>
+            {error && (
+              <p className="text-[12px] text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveTarget(null)} disabled={isPending}>

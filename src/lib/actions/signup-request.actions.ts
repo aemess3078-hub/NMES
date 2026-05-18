@@ -133,11 +133,29 @@ export async function approveSignupRequest(
       email_confirm: true,
       user_metadata: { name: request.name, tenantId, role: grantedRole },
     })
-    if (createError) {
-      return { success: false, error: `Supabase 사용자 생성 실패: ${createError.message}` }
-    }
 
-    const authUserId = createData.user.id
+    let authUserId: string
+    if (createError) {
+      // 이미 Auth에 존재하는 이메일이면 기존 유저 ID를 조회
+      const alreadyExists =
+        createError.message.includes("already been registered") ||
+        createError.message.includes("already exists") ||
+        createError.status === 422
+      if (alreadyExists) {
+        const { data: listData, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 })
+        const existing = listData?.users.find((u) => u.email === request.email)
+        if (listError || !existing) {
+          console.error("[approveSignupRequest] 기존 유저 조회 실패:", listError?.message)
+          return { success: false, error: "이미 등록된 이메일이지만 계정을 찾을 수 없습니다." }
+        }
+        authUserId = existing.id
+      } else {
+        console.error("[approveSignupRequest] createUser 오류:", createError.message, createError.status)
+        return { success: false, error: `Supabase 사용자 생성 실패: ${createError.message}` }
+      }
+    } else {
+      authUserId = createData.user.id
+    }
 
     // 2. Profile 생성 (없을 경우)
     await prisma.profile.upsert({
@@ -195,6 +213,7 @@ export async function approveSignupRequest(
     revalidatePath("/app/mes/users")
     return { success: true, tempPassword }
   } catch (e) {
+    console.error("[approveSignupRequest] catch:", e)
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
   }
 }

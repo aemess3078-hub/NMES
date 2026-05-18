@@ -33,12 +33,14 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
   try {
     const supabase = createAdminClient()
     const { data: authData, error } = await supabase.auth.admin.listUsers({ perPage: 1000 })
-    if (!error && authData?.users) {
+    if (error) {
+      console.error("[getTenantUsers] auth.admin.listUsers 오류:", error.message, error.status)
+    } else if (authData?.users) {
       authUsers = authData.users as AuthUser[]
       authApiSucceeded = true
     }
-  } catch {
-    // Supabase admin API 실패 시 DB 유저만 표시
+  } catch (e) {
+    console.error("[getTenantUsers] auth.admin.listUsers 예외:", e)
   }
 
   // 2. MES DB의 TenantUser 레코드
