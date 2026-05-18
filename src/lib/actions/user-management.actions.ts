@@ -21,6 +21,10 @@ export type TenantUserRow = {
   enrolled: boolean    // MES TenantUser 등록 여부
 }
 
+function isDemoSeedEmail(email: string) {
+  return email.toLowerCase().endsWith("@demo-mes.internal")
+}
+
 // ─── 사용자 목록 조회 (Supabase Auth + MES DB 병합) ──────────────────────────
 
 export async function getTenantUsers(): Promise<TenantUserRow[]> {
@@ -53,8 +57,8 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
   })
 
   // profileId → TenantUser 매핑
-  const tuByProfileId = new Map(tenantUsers.map((tu) => [tu.profileId, tu]))
-  const isDemoSeedEmail = (email: string) => email.endsWith("@demo-mes.internal")
+  const realTenantUsers = tenantUsers.filter((tu) => !isDemoSeedEmail(tu.profile.email))
+  const tuByProfileId = new Map(realTenantUsers.map((tu) => [tu.profileId, tu]))
 
   // 3. 병합: Supabase Auth 유저 기준으로 MES 정보 결합
   const result: TenantUserRow[] = authUsers.flatMap((authUser) => {
@@ -165,6 +169,9 @@ export async function updateUserRole(
       include: { profile: true },
     })
     if (!tenantUser) return { success: false, error: "사용자를 찾을 수 없습니다." }
+    if (isDemoSeedEmail(tenantUser.profile.email)) {
+      return { success: false, error: "Seed/demo 계정은 운영 UI에서 관리할 수 없습니다." }
+    }
 
     if (tenantUser.profileId === actor.id && actor.role !== "OWNER") {
       return { success: false, error: "본인의 역할은 변경할 수 없습니다." }
@@ -218,6 +225,9 @@ export async function deactivateUser(tenantUserId: string): Promise<{ success: b
       include: { profile: true },
     })
     if (!tenantUser) return { success: false, error: "사용자를 찾을 수 없습니다." }
+    if (isDemoSeedEmail(tenantUser.profile.email)) {
+      return { success: false, error: "Seed/demo 계정은 운영 UI에서 관리할 수 없습니다." }
+    }
 
     if (tenantUser.profileId === actor.id) {
       return { success: false, error: "본인 계정은 비활성화할 수 없습니다." }
@@ -267,6 +277,9 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
       include: { profile: true },
     })
     if (!tenantUser) return { success: false, error: "사용자를 찾을 수 없습니다." }
+    if (isDemoSeedEmail(tenantUser.profile.email)) {
+      return { success: false, error: "Seed/demo 계정은 운영 UI에서 관리할 수 없습니다." }
+    }
 
     await prisma.tenantUser.update({ where: { id: tenantUserId }, data: { isActive: true } })
 

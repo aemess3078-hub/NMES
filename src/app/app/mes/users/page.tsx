@@ -26,6 +26,11 @@ export default async function UsersPage() {
   const usersData = users.status === "fulfilled" ? users.value : []
   const signupData = signupRequests.status === "fulfilled" ? signupRequests.value : []
   const pending = pendingCount.status === "fulfilled" ? pendingCount.value : 0
+  const usersError = users.status === "rejected"
+    ? users.reason instanceof Error
+      ? users.reason.message
+      : "사용자 목록을 불러오지 못했습니다."
+    : null
 
   return (
     <div className="p-6 space-y-6">
@@ -61,9 +66,9 @@ export default async function UsersPage() {
 
         {/* 사용자 목록 */}
         <TabsContent value="users" className="mt-4">
-          {usersData.length === 0 && users.status === "rejected" ? (
+          {usersError ? (
             <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
-              사용자 목록을 불러오려면 관리자(ADMIN) 이상 권한이 필요합니다.
+              {usersError}
             </div>
           ) : (
             <UserManagementTable users={usersData} currentUserId={currentUser.id} />
