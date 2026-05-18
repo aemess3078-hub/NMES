@@ -107,7 +107,7 @@ export async function getSignupRequests(
 export async function approveSignupRequest(
   requestId: string,
   grantedRole: UserRole
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; tempPassword?: string }> {
   try {
     const tenantId = await getTenantId()
     const actor = await requireRole("ADMIN")
@@ -117,17 +117,27 @@ export async function approveSignupRequest(
     })
     if (!request) return { success: false, error: "신청을 찾을 수 없거나 이미 처리되었습니다." }
 
-    // 1. Supabase Auth에 초대 이메일 발송 + 사용자 생성
+    // 1. Supabase Auth에 계정 생성 (이메일 인증 없이, 메일 발송 없음)
     const supabase = createAdminClient()
-    const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
-      request.email,
-      { data: { name: request.name, tenantId } }
-    )
-    if (inviteError) {
-      return { success: false, error: `Supabase 사용자 생성 실패: ${inviteError.message}` }
+
+    // 임시 패스워드 생성 (영문 대소문자 + 숫자 + 특수문자)
+    const tempPassword =
+      Math.random().toString(36).slice(2, 8) +
+      Math.random().toString(36).slice(2, 8).toUpperCase() +
+      Math.floor(Math.random() * 90 + 10).toString() +
+      "!"
+
+    const { data: createData, error: createError } = await supabase.auth.admin.createUser({
+      email: request.email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: { name: request.name, tenantId, role: grantedRole },
+    })
+    if (createError) {
+      return { success: false, error: `Supabase 사용자 생성 실패: ${createError.message}` }
     }
 
-    const authUserId = inviteData.user.id
+    const authUserId = createData.user.id
 
     // 2. Profile 생성 (없을 경우)
     await prisma.profile.upsert({
@@ -183,7 +193,7 @@ export async function approveSignupRequest(
     }
 
     revalidatePath("/app/mes/users")
-    return { success: true }
+    return { success: true, tempPassword }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
   }

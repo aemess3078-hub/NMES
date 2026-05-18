@@ -26,13 +26,17 @@ export type TenantUserRow = {
 export async function getTenantUsers(): Promise<TenantUserRow[]> {
   const tenantId = await getTenantId()
 
-  // 1. Supabase Auth 전체 유저 목록 (admin API) - 실패해도 DB 데이터는 유지
+  // 1. Supabase Auth 전체 유저 목록 (admin API)
   type AuthUser = { id: string; email?: string; created_at: string; user_metadata?: Record<string, string> }
   let authUsers: AuthUser[] = []
+  let authApiSucceeded = false
   try {
     const supabase = createAdminClient()
     const { data: authData, error } = await supabase.auth.admin.listUsers({ perPage: 1000 })
-    if (!error && authData?.users) authUsers = authData.users as AuthUser[]
+    if (!error && authData?.users) {
+      authUsers = authData.users as AuthUser[]
+      authApiSucceeded = true
+    }
   } catch {
     // Supabase admin API 실패 시 DB 유저만 표시
   }
@@ -66,7 +70,9 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
     }
   })
 
-  // Supabase Auth API 실패 시 DB의 TenantUser 레코드도 표시 (fallback)
+  // Supabase Auth API 실패 시에만 DB의 TenantUser 레코드를 fallback으로 표시
+  // (auth API 성공 시에는 seed/demo 계정이 포함되지 않도록 스킵)
+  if (!authApiSucceeded) {
   for (const tu of tenantUsers) {
     if (!authUserIds.has(tu.profileId)) {
       result.push({
@@ -83,6 +89,7 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
       })
     }
   }
+  } // end: !authApiSucceeded
 
   // 등록된 유저 먼저, 그 다음 미등록 유저
   result.sort((a, b) => {

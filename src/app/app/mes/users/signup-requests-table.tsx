@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { approveSignupRequest, rejectSignupRequest } from "@/lib/actions/signup-request.actions"
 import type { SignupRequestRow } from "@/lib/actions/signup-request.actions"
+import { Copy, Check } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
   const [rejectReason, setRejectReason] = useState("")
 
   const [error, setError] = useState<string | null>(null)
+  const [approvedPassword, setApprovedPassword] = useState<string | null>(null)
 
   function handleApprove() {
     if (!approveTarget) return
@@ -75,6 +77,7 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
       const result = await approveSignupRequest(approveTarget.id, grantedRole)
       if (result.success) {
         setApproveTarget(null)
+        setApprovedPassword(result.tempPassword ?? null)
         router.refresh()
       } else {
         setError(result.error ?? "오류가 발생했습니다.")
@@ -226,7 +229,7 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
               </Select>
             </div>
             <p className="text-[12px] text-muted-foreground">
-              승인 시 Supabase Auth 초대 이메일이 발송됩니다.
+              승인 시 이메일 발송 없이 계정이 즉시 생성됩니다. 임시 비밀번호를 사용자에게 직접 전달하세요.
             </p>
           </div>
           <DialogFooter>
@@ -239,6 +242,12 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 임시 비밀번호 표시 다이얼로그 (승인 후) */}
+      <TempPasswordDialog
+        password={approvedPassword}
+        onClose={() => setApprovedPassword(null)}
+      />
 
       {/* 거절 다이얼로그 */}
       <Dialog open={!!rejectTarget} onOpenChange={(v) => !v && setRejectTarget(null)}>
@@ -277,5 +286,58 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+// ─── 임시 비밀번호 표시 다이얼로그 ───────────────────────────────────────────
+
+function TempPasswordDialog({
+  password,
+  onClose,
+}: {
+  password: string | null
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  function handleCopy() {
+    if (!password) return
+    navigator.clipboard.writeText(password)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Dialog open={!!password} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>계정 생성 완료</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <p className="text-[14px] text-muted-foreground">
+            계정이 생성되었습니다. 아래 임시 비밀번호를 사용자에게 직접 전달하세요.
+          </p>
+          <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3">
+            <code className="flex-1 text-[15px] font-mono font-semibold tracking-wider">
+              {password}
+            </code>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 shrink-0"
+              onClick={handleCopy}
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+            </Button>
+          </div>
+          <p className="text-[12px] text-destructive">
+            이 창을 닫으면 비밀번호를 다시 확인할 수 없습니다.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>확인</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
