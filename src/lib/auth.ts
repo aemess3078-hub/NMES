@@ -106,6 +106,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       });
 
       if (!existingProfileForAuthId) {
+        // Auth UUID로 된 Profile이 없으면 기존 Profile ID를 마이그레이션
         await prisma.profile.update({
           where: { id: tenantUserByEmail.profileId },
           data: {
@@ -117,12 +118,31 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
               session.user.email.split('@')[0],
           },
         });
-
-        tenantUser = await prisma.tenantUser.findFirst({
-          where: { profileId, tenantId, isActive: true },
-          include: { profile: true },
+      } else {
+        // Auth UUID로 된 Profile이 이미 있으면 기존 부트스트랩 Profile 삭제 후 TenantUser를 새 Profile로 이전
+        await prisma.tenantUser.update({
+          where: { id: tenantUserByEmail.id },
+          data: { profileId },
+        });
+        await prisma.profile.delete({
+          where: { id: tenantUserByEmail.profileId },
+        }).catch(() => {});
+        await prisma.profile.update({
+          where: { id: profileId },
+          data: {
+            email: session.user.email,
+            name:
+              session.user.user_metadata?.name ??
+              existingProfileForAuthId.name ??
+              session.user.email.split('@')[0],
+          },
         });
       }
+
+      tenantUser = await prisma.tenantUser.findFirst({
+        where: { profileId, tenantId, isActive: true },
+        include: { profile: true },
+      });
     } else {
       tenantUser = tenantUserByEmail;
     }
