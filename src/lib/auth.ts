@@ -2,7 +2,6 @@
 
 import { cookies } from 'next/headers';
 import { createServerClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { prisma } from '@/lib/db/prisma';
 import { UserRole } from '@prisma/client';
 
@@ -38,17 +37,16 @@ export async function getCurrentUserId(): Promise<string> {
   if (!session?.user?.id) throw new Error('인증이 필요합니다.');
 
   const { id, email, user_metadata } = session.user;
-  const db = createAdminClient();
 
-  await db.from('profiles').upsert(
-    {
+  await prisma.profile.upsert({
+    where: { id },
+    create: {
       id,
       email: email ?? '',
-      name: user_metadata?.name ?? email?.split('@')[0] ?? null,
-      updated_at: new Date().toISOString(),
+      name: user_metadata?.name ?? email?.split('@')[0] ?? '',
     },
-    { onConflict: 'id', ignoreDuplicates: true }
-  );
+    update: {},
+  });
 
   return id;
 }

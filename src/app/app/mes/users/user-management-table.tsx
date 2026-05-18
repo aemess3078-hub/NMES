@@ -3,16 +3,9 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { UserRole } from "@prisma/client"
-import { Shield, UserCheck, UserX, ChevronDown, UserPlus } from "lucide-react"
+import { Shield, UserCheck, UserX, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,18 +15,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
-import {
   updateUserRole,
   deactivateUser,
   reactivateUser,
-  enrollSupabaseUser,
 } from "@/lib/actions/user-management.actions"
 import type { TenantUserRow } from "@/lib/actions/user-management.actions"
 
@@ -76,10 +60,6 @@ export function UserManagementTable({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
-  // 등록 다이얼로그 상태
-  const [enrollTarget, setEnrollTarget] = useState<TenantUserRow | null>(null)
-  const [enrollRole, setEnrollRole] = useState<UserRole>("OPERATOR")
-
   function handleRoleChange(tenantUserId: string, newRole: UserRole) {
     setError(null)
     startTransition(async () => {
@@ -117,20 +97,6 @@ export function UserManagementTable({
     })
   }
 
-  function handleEnroll() {
-    if (!enrollTarget) return
-    setError(null)
-    startTransition(async () => {
-      const result = await enrollSupabaseUser(enrollTarget.profileId, enrollRole)
-      if (result.success) {
-        setEnrollTarget(null)
-        router.refresh()
-      } else {
-        setError(result.error ?? "등록에 실패했습니다.")
-      }
-    })
-  }
-
   if (users.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
@@ -164,8 +130,6 @@ export function UserManagementTable({
                   className={`border-b last:border-0 transition-colors ${
                     !user.isActive
                       ? "opacity-50"
-                      : !user.enrolled
-                      ? "bg-amber-50/40"
                       : idx % 2 === 0
                       ? "bg-background"
                       : "bg-muted/[0.03]"
@@ -181,16 +145,10 @@ export function UserManagementTable({
                   </td>
                   <td className="px-5 py-3 text-[14px] text-muted-foreground">{user.email}</td>
                   <td className="px-5 py-3">
-                    {user.role ? (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[12px] font-medium border ${ROLE_COLORS[user.role]}`}>
-                        {isOwner && <Shield className="w-3 h-3" />}
-                        {ROLE_LABELS[user.role]}
-                      </span>
-                    ) : (
-                      <span className="text-[12px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-                        MES 미등록
-                      </span>
-                    )}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[12px] font-medium border ${ROLE_COLORS[user.role]}`}>
+                      {isOwner && <Shield className="w-3 h-3" />}
+                      {ROLE_LABELS[user.role]}
+                    </span>
                   </td>
                   <td className="px-5 py-3">
                     <Badge variant={user.isActive ? "default" : "secondary"} className="text-[12px]">
@@ -201,69 +159,51 @@ export function UserManagementTable({
                     {new Date(user.createdAt).toLocaleDateString("ko-KR")}
                   </td>
                   <td className="px-5 py-3">
-                    {!user.enrolled ? (
-                      /* MES 미등록 유저 → 등록 버튼 */
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[12px] border-amber-300 text-amber-700 hover:bg-amber-50"
-                        disabled={isPending}
-                        onClick={() => {
-                          setEnrollRole("OPERATOR")
-                          setEnrollTarget(user)
-                        }}
-                      >
-                        <UserPlus className="w-3 h-3 mr-1" />
-                        MES 등록
-                      </Button>
-                    ) : (
-                      /* 등록된 유저 → 역할/상태 관리 드롭다운 */
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-[12px]"
-                            disabled={isPending}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-[12px]"
+                          disabled={isPending}
+                        >
+                          관리 <ChevronDown className="w-3 h-3 ml-1" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuLabel className="text-[12px]">역할 변경</DropdownMenuLabel>
+                        {ROLE_OPTIONS.map((opt) => (
+                          <DropdownMenuItem
+                            key={opt.value}
+                            className={`text-[13px] ${user.role === opt.value ? "font-semibold text-primary" : ""}`}
+                            disabled={user.role === opt.value}
+                            onClick={() => handleRoleChange(user.id, opt.value)}
                           >
-                            관리 <ChevronDown className="w-3 h-3 ml-1" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                          <DropdownMenuLabel className="text-[12px]">역할 변경</DropdownMenuLabel>
-                          {ROLE_OPTIONS.map((opt) => (
-                            <DropdownMenuItem
-                              key={opt.value}
-                              className={`text-[13px] ${user.role === opt.value ? "font-semibold text-primary" : ""}`}
-                              disabled={user.role === opt.value}
-                              onClick={() => handleRoleChange(user.id, opt.value)}
-                            >
-                              {opt.label}
-                              {user.role === opt.value && " ✓"}
-                            </DropdownMenuItem>
-                          ))}
-                          <DropdownMenuSeparator />
-                          {user.isActive ? (
-                            <DropdownMenuItem
-                              className="text-[13px] text-destructive focus:text-destructive"
-                              disabled={isSelf || isOwner}
-                              onClick={() => handleDeactivate(user.id)}
-                            >
-                              <UserX className="w-3.5 h-3.5 mr-1.5" />
-                              비활성화
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              className="text-[13px] text-emerald-600 focus:text-emerald-600"
-                              onClick={() => handleReactivate(user.id)}
-                            >
-                              <UserCheck className="w-3.5 h-3.5 mr-1.5" />
-                              재활성화
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                            {opt.label}
+                            {user.role === opt.value && " ✓"}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        {user.isActive ? (
+                          <DropdownMenuItem
+                            className="text-[13px] text-destructive focus:text-destructive"
+                            disabled={isSelf || isOwner}
+                            onClick={() => handleDeactivate(user.id)}
+                          >
+                            <UserX className="w-3.5 h-3.5 mr-1.5" />
+                            비활성화
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            className="text-[13px] text-emerald-600 focus:text-emerald-600"
+                            onClick={() => handleReactivate(user.id)}
+                          >
+                            <UserCheck className="w-3.5 h-3.5 mr-1.5" />
+                            재활성화
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               )
@@ -278,46 +218,6 @@ export function UserManagementTable({
         </p>
       )}
 
-      {/* MES 등록 다이얼로그 */}
-      <Dialog open={!!enrollTarget} onOpenChange={(v) => !v && setEnrollTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>MES 사용자 등록</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="rounded-lg bg-muted/40 px-4 py-3 space-y-1">
-              <p className="text-[14px] font-medium">{enrollTarget?.name || enrollTarget?.email}</p>
-              <p className="text-[13px] text-muted-foreground">{enrollTarget?.email}</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">부여할 역할</Label>
-              <Select value={enrollRole} onValueChange={(v) => setEnrollRole(v as UserRole)}>
-                <SelectTrigger className="h-9 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value} className="text-[13px]">
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-[12px] text-muted-foreground">
-              이 계정은 이미 Supabase에 존재합니다. MES 역할만 부여합니다.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEnrollTarget(null)} disabled={isPending}>
-              취소
-            </Button>
-            <Button onClick={handleEnroll} disabled={isPending}>
-              {isPending ? "처리 중..." : "등록 확정"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   )
 }

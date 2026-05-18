@@ -76,7 +76,7 @@ export async function createSignupRequest(
     },
   })
 
-  return { success: true, message: "가입 신청이 완료되었습니다. 관리자 승인 후 이메일을 확인해주세요." }
+  return { success: true, message: "가입 신청이 완료되었습니다. 관리자 승인 후 안내받은 임시 비밀번호로 로그인하세요." }
 }
 
 // ─── 관리자: 신청 목록 조회 ────────────────────────────────────────────────────
