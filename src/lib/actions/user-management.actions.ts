@@ -93,20 +93,17 @@ export async function updateUserRole(
     const beforeRole = tenantUser.role
     await prisma.tenantUser.update({ where: { id: tenantUserId }, data: { role: newRole } })
 
-    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
-    if (actorProfileId) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actorProfileId,
-          entityType: "TenantUser",
-          entityId: tenantUserId,
-          action: "UPDATE",
-          beforeData: { role: beforeRole },
-          afterData: { role: newRole, email: tenantUser.profile.email },
-        },
-      })
-    }
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        entityType: "TenantUser",
+        entityId: tenantUserId,
+        action: "UPDATE",
+        beforeData: { role: beforeRole },
+        afterData: { role: newRole, email: tenantUser.profile.email },
+      },
+    })
 
     revalidatePath("/app/mes/users")
     return { success: true }
@@ -145,20 +142,17 @@ export async function deactivateUser(tenantUserId: string): Promise<{ success: b
 
     await prisma.tenantUser.update({ where: { id: tenantUserId }, data: { isActive: false } })
 
-    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
-    if (actorProfileId) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actorProfileId,
-          entityType: "TenantUser",
-          entityId: tenantUserId,
-          action: "UPDATE",
-          beforeData: { isActive: true },
-          afterData: { isActive: false, email: tenantUser.profile.email },
-        },
-      })
-    }
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        entityType: "TenantUser",
+        entityId: tenantUserId,
+        action: "UPDATE",
+        beforeData: { isActive: true },
+        afterData: { isActive: false, email: tenantUser.profile.email },
+      },
+    })
 
     revalidatePath("/app/mes/users")
     return { success: true }
@@ -185,20 +179,17 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
 
     await prisma.tenantUser.update({ where: { id: tenantUserId }, data: { isActive: true } })
 
-    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
-    if (actorProfileId) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actorProfileId,
-          entityType: "TenantUser",
-          entityId: tenantUserId,
-          action: "UPDATE",
-          beforeData: { isActive: false },
-          afterData: { isActive: true, email: tenantUser.profile.email },
-        },
-      })
-    }
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        entityType: "TenantUser",
+        entityId: tenantUserId,
+        action: "UPDATE",
+        beforeData: { isActive: false },
+        afterData: { isActive: true, email: tenantUser.profile.email },
+      },
+    })
 
     revalidatePath("/app/mes/users")
     return { success: true }

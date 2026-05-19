@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { UserRole, SignupRequestStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { hashPassword } from "@/lib/password"
+import { hashPassword, validatePassword } from "@/lib/password"
 import { maskSensitiveFields } from "@/lib/sanitize"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -38,29 +38,6 @@ export type SignupRequestRow = {
   rejectReason: string | null
   approvedBy: { id: string; name: string; email: string } | null
   rejectedBy: { id: string; name: string; email: string } | null
-}
-
-// ─── 비밀번호 강도 검증 ───────────────────────────────────────────────────────
-
-const PASSWORD_STRENGTH_RE =
-  /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/
-
-export function validatePassword(password: string): string | null {
-  if (password.length < 8) return "비밀번호는 8자 이상이어야 합니다."
-  if (!PASSWORD_STRENGTH_RE.test(password))
-    return "비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다."
-  return null
-}
-
-// ─── 임시 비밀번호 생성 (관리자 비밀번호 초기화 등에서 재사용 가능) ─────────────
-
-export function generateTempPassword(): string {
-  const lower = Math.random().toString(36).slice(2, 6)
-  const upper = Math.random().toString(36).slice(2, 6).toUpperCase()
-  const digits = Math.floor(Math.random() * 90 + 10).toString()
-  const special = "!@#$%"[Math.floor(Math.random() * 5)]
-  const raw = lower + upper + digits + special
-  return raw.split("").sort(() => Math.random() - 0.5).join("")
 }
 
 // ─── 공개: 가입 신청 제출 (인증 불필요) ───────────────────────────────────────
@@ -258,36 +235,33 @@ export async function approveSignupRequest(
     })
 
     // 4. SignupRequest 상태 업데이트
-    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
     await prisma.signupRequest.update({
       where: { id: requestId },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedById: actorProfileId },
+      data: { status: "APPROVED", approvedAt: new Date(), approvedById: actor.id },
     })
 
     // 5. AuditLog (비밀번호 정보 마스킹)
-    if (actorProfileId) {
-      const afterData = maskSensitiveFields({
-        email: request.email,
-        name: request.name,
-        loginId: request.loginId,
-        grantedRole,
-        profileId,
-        mustChangePw: false,
-      })
-      await prisma.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actorProfileId,
-          actorType: "USER",
-          actorLabel: actor.name,
-          entityType: "SignupRequest",
-          entityId: requestId,
-          action: "APPROVE",
-          afterData: afterData as object,
-          menuName: "가입신청관리",
-        },
-      })
-    }
+    const afterData = maskSensitiveFields({
+      email: request.email,
+      name: request.name,
+      loginId: request.loginId,
+      grantedRole,
+      profileId,
+      mustChangePw: false,
+    })
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorType: "USER",
+        actorLabel: actor.name,
+        entityType: "SignupRequest",
+        entityId: requestId,
+        action: "APPROVE",
+        afterData: afterData as object,
+        menuName: "가입신청관리",
+      },
+    })
 
     revalidatePath("/app/mes/users")
     return { success: true }
@@ -312,28 +286,24 @@ export async function rejectSignupRequest(
     })
     if (!request) return { success: false, error: "신청을 찾을 수 없거나 이미 처리되었습니다." }
 
-    const actorProfileId = actor.id === "dev-bypass-user" ? null : actor.id
-
     await prisma.signupRequest.update({
       where: { id: requestId },
-      data: { status: "REJECTED", rejectedAt: new Date(), rejectedById: actorProfileId, rejectReason },
+      data: { status: "REJECTED", rejectedAt: new Date(), rejectedById: actor.id, rejectReason },
     })
 
-    if (actorProfileId) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actorProfileId,
-          actorType: "USER",
-          actorLabel: actor.name,
-          entityType: "SignupRequest",
-          entityId: requestId,
-          action: "REJECT",
-          afterData: maskSensitiveFields({ email: request.email, rejectReason }) as object,
-          menuName: "가입신청관리",
-        },
-      })
-    }
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorType: "USER",
+        actorLabel: actor.name,
+        entityType: "SignupRequest",
+        entityId: requestId,
+        action: "REJECT",
+        afterData: maskSensitiveFields({ email: request.email, rejectReason }) as object,
+        menuName: "가입신청관리",
+      },
+    })
 
     revalidatePath("/app/mes/users")
     return { success: true }

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle, Eye, EyeOff } from "lucide-react"
-import { createSignupRequest, validatePassword } from "@/lib/actions/signup-request.actions"
+import { createSignupRequest } from "@/lib/actions/signup-request.actions"
+import { validatePassword } from "@/lib/password"
 
 export default function SignupRequestPage() {
   const [form, setForm] = useState({
