@@ -20,12 +20,9 @@ export default async function AppLayout({
     redirect('/login');
   }
 
-  // mustChangePw=true이면 비밀번호 변경 페이지로 강제 이동
-  // (change-password 페이지 자신은 제외하여 리다이렉트 루프 방지)
-  // — 실제 /auth/change-password 구현 후 주석 해제
-  // if (user.mustChangePw) {
-  //   redirect('/auth/change-password');
-  // }
+  if (user.mustChangePw) {
+    redirect('/auth/change-password');
+  }
 
   const [enabledFeatures, enabledMenuCodes] = await Promise.all([
     getEnabledFeatureCodes(user.tenantId),
