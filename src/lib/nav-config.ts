@@ -420,7 +420,6 @@ export const MES_NAV: NavItem[] = [
         icon: 'LayoutDashboard',
         href: '/app/mes/dashboard',
         displayOrder: 10,
-        comingSoon: true,
         children: [],
       },
       {
