@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import {
   PrismaClient,
   TenantStatus,
@@ -1905,6 +1906,35 @@ async function seedQuotations() {
   console.log("  Quotations seeded")
 }
 
+const SEED_CREDENTIALS = [
+  { profileId: IDS.profiles.admin,    loginId: 'admin',    password: 'Admin@1234' },
+  { profileId: IDS.profiles.manager,  loginId: 'manager',  password: 'Manager@1234' },
+  { profileId: IDS.profiles.operator, loginId: 'operator', password: 'Operator@1234' },
+] as const;
+
+async function seedUserCredentials() {
+  for (const cred of SEED_CREDENTIALS) {
+    const existing = await prisma.userCredential.findUnique({
+      where: { profileId: cred.profileId },
+    });
+    if (existing) continue;
+
+    const passwordHash = await bcrypt.hash(cred.password, 12);
+    await prisma.userCredential.create({
+      data: {
+        tenantId: IDS.tenant,
+        loginId: cred.loginId,
+        profileId: cred.profileId,
+        passwordHash,
+        mustChangePw: false,
+        isLocked: false,
+        failCount: 0,
+      },
+    });
+    console.log(`    ✓ loginId=${cred.loginId}`);
+  }
+}
+
 async function main() {
   console.log('▶ MES 기준정보 시드 시작...\n');
 
@@ -1919,6 +1949,9 @@ async function main() {
 
   console.log('  [4/11] TenantUsers');
   await seedTenantUsers();
+
+  console.log('  [4+] UserCredentials (demo)');
+  await seedUserCredentials();
 
   console.log('  [5/11] WorkCenters');
   await seedWorkCenters();
@@ -1991,6 +2024,7 @@ async function main() {
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
   console.log('  - Profile: 3 (admin / manager / operator)');
+  console.log('  - UserCredential: admin/Admin@1234  manager/Manager@1234  operator/Operator@1234');
   console.log('  - Site: 2 (본공장 / 물류창고)');
   console.log('  - TenantUser: 3');
   console.log('  - WorkCenter: 4');
