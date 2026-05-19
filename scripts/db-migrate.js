@@ -24,6 +24,7 @@ const MIGRATIONS = [
   '20260328090000_refactor_routing_item_separation',
   '20260328120951_add_inventory_transaction_note',
   '20260328150000_inventory_balance_to_warehouse',
+  '20260519000000_add_auth_tables',
 ];
 
 function run(cmd) {
