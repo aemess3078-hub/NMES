@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { UserRole, SignupRequestStatus } from "@prisma/client"
-import { CheckCircle, XCircle, Clock, ChevronDown } from "lucide-react"
+import { CheckCircle, XCircle, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -24,7 +24,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { approveSignupRequest, rejectSignupRequest } from "@/lib/actions/signup-request.actions"
 import type { SignupRequestRow } from "@/lib/actions/signup-request.actions"
-import { Copy, Check } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,14 +34,6 @@ const ROLE_OPTIONS: { label: string; value: UserRole }[] = [
   { label: "작업자", value: "OPERATOR" },
   { label: "조회자", value: "VIEWER" },
 ]
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  OWNER: "오너",
-  ADMIN: "관리자",
-  MANAGER: "매니저",
-  OPERATOR: "작업자",
-  VIEWER: "조회자",
-}
 
 const STATUS_CONFIG: Record<
   SignupRequestStatus,
@@ -68,7 +59,6 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
   const [rejectReason, setRejectReason] = useState("")
 
   const [error, setError] = useState<string | null>(null)
-  const [approvedPassword, setApprovedPassword] = useState<string | null>(null)
 
   function handleApprove() {
     if (!approveTarget) return
@@ -77,7 +67,6 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
       const result = await approveSignupRequest(approveTarget.id, grantedRole)
       if (result.success) {
         setApproveTarget(null)
-        setApprovedPassword(result.tempPassword ?? null)
         router.refresh()
       } else {
         setError(result.error ?? "오류가 발생했습니다.")
@@ -115,9 +104,9 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
           <thead>
             <tr className="border-b bg-muted/30">
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">이름</th>
+              <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">아이디</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">이메일</th>
-              <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">부서</th>
-              <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">요청 역할</th>
+              <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">부서 / 직급</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">상태</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">신청일</th>
               <th className="px-5 py-3"></th>
@@ -134,12 +123,15 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
                   } hover:bg-muted/10`}
                 >
                   <td className="px-5 py-3 text-[14px] font-medium">{req.name}</td>
+                  <td className="px-5 py-3 text-[14px] font-mono text-muted-foreground">
+                    {req.loginId ?? <span className="text-[12px] italic text-muted-foreground/50">없음</span>}
+                  </td>
                   <td className="px-5 py-3 text-[14px] text-muted-foreground">{req.email}</td>
-                  <td className="px-5 py-3 text-[14px] text-muted-foreground">{req.department ?? "—"}</td>
-                  <td className="px-5 py-3">
-                    <span className="text-[13px] text-muted-foreground">
-                      {ROLE_LABELS[req.requestedRole]}
-                    </span>
+                  <td className="px-5 py-3 text-[14px] text-muted-foreground">
+                    <span>{req.department ?? "—"}</span>
+                    {req.jobTitle && (
+                      <span className="ml-1 text-[12px] text-muted-foreground/70">/ {req.jobTitle}</span>
+                    )}
                   </td>
                   <td className="px-5 py-3">
                     <Badge variant={statusCfg.variant} className="flex items-center gap-1 w-fit text-[12px]">
@@ -158,7 +150,8 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
                           className="h-7 text-[12px]"
                           disabled={isPending}
                           onClick={() => {
-                            setGrantedRole(req.requestedRole)
+                            setGrantedRole("OPERATOR")
+                            setError(null)
                             setApproveTarget(req)
                           }}
                         >
@@ -171,6 +164,7 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
                           disabled={isPending}
                           onClick={() => {
                             setRejectReason("")
+                            setError(null)
                             setRejectTarget(req)
                           }}
                         >
@@ -203,16 +197,32 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
       )}
 
       {/* 승인 다이얼로그 */}
-      <Dialog open={!!approveTarget} onOpenChange={(v) => !v && setApproveTarget(null)}>
+      <Dialog
+        open={!!approveTarget}
+        onOpenChange={(v) => { if (!v) { setApproveTarget(null); setError(null) } }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>가입 신청 승인</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="rounded-lg bg-muted/40 px-4 py-3 space-y-1">
+            <div className="rounded-lg bg-muted/40 px-4 py-3 space-y-1.5">
               <p className="text-[14px] font-medium">{approveTarget?.name}</p>
               <p className="text-[13px] text-muted-foreground">{approveTarget?.email}</p>
+              {approveTarget?.loginId && (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className="text-[11px] text-muted-foreground">아이디</span>
+                  <span className="text-[13px] font-mono font-medium">{approveTarget.loginId}</span>
+                </div>
+              )}
             </div>
+
+            {!approveTarget?.loginId && (
+              <p className="text-[12px] text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                이 신청 건에 로그인 아이디 정보가 없습니다. 재신청을 요청하세요.
+              </p>
+            )}
+
             <div className="space-y-1.5">
               <Label className="text-[13px]">부여할 역할</Label>
               <Select value={grantedRole} onValueChange={(v) => setGrantedRole(v as UserRole)}>
@@ -228,9 +238,11 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
                 </SelectContent>
               </Select>
             </div>
+
             <p className="text-[12px] text-muted-foreground">
-              승인 시 이메일 발송 없이 계정이 즉시 생성됩니다. 임시 비밀번호를 사용자에게 직접 전달하세요.
+              승인 시 사용자가 신청한 아이디와 비밀번호로 로그인할 수 있게 됩니다.
             </p>
+
             {error && (
               <p className="text-[12px] text-destructive bg-destructive/10 rounded-lg px-3 py-2">
                 {error}
@@ -238,21 +250,18 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setApproveTarget(null)} disabled={isPending}>
+            <Button variant="outline" onClick={() => { setApproveTarget(null); setError(null) }} disabled={isPending}>
               취소
             </Button>
-            <Button onClick={handleApprove} disabled={isPending}>
+            <Button
+              onClick={handleApprove}
+              disabled={isPending || !approveTarget?.loginId}
+            >
               {isPending ? "처리 중..." : "승인 확정"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* 임시 비밀번호 표시 다이얼로그 (승인 후) */}
-      <TempPasswordDialog
-        password={approvedPassword}
-        onClose={() => setApprovedPassword(null)}
-      />
 
       {/* 거절 다이얼로그 */}
       <Dialog open={!!rejectTarget} onOpenChange={(v) => !v && setRejectTarget(null)}>
@@ -291,58 +300,5 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
         </DialogContent>
       </Dialog>
     </>
-  )
-}
-
-// ─── 임시 비밀번호 표시 다이얼로그 ───────────────────────────────────────────
-
-function TempPasswordDialog({
-  password,
-  onClose,
-}: {
-  password: string | null
-  onClose: () => void
-}) {
-  const [copied, setCopied] = useState(false)
-
-  function handleCopy() {
-    if (!password) return
-    navigator.clipboard.writeText(password)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <Dialog open={!!password} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>계정 생성 완료</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <p className="text-[14px] text-muted-foreground">
-            계정이 생성되었습니다. 아래 임시 비밀번호를 사용자에게 직접 전달하세요.
-          </p>
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3">
-            <code className="flex-1 text-[15px] font-mono font-semibold tracking-wider">
-              {password}
-            </code>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 w-7 p-0 shrink-0"
-              onClick={handleCopy}
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-            </Button>
-          </div>
-          <p className="text-[12px] text-destructive">
-            이 창을 닫으면 비밀번호를 다시 확인할 수 없습니다.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button onClick={onClose}>확인</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

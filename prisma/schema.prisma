@@ -299,6 +299,23 @@ enum EquipmentEventType {
   MAINTENANCE
 }
 
+enum LoginEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAIL
+  LOGOUT
+}
+
+enum LoginFailReason {
+  USER_NOT_FOUND
+  INVALID_PASSWORD
+  PENDING_APPROVAL
+  HOLD
+  REJECTED
+  INACTIVE
+  LOCKED
+  DELETED
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model Tenant {
@@ -347,6 +364,8 @@ model Tenant {
   equipmentProblemTypes EquipmentProblemType[]
   equipmentRepairs      EquipmentRepairRequest[]
   equipmentDailyChecks  EquipmentDailyCheck[]
+  userCredentials       UserCredential[]
+  loginHistories        LoginHistory[]
 }
 
 model Profile {
@@ -356,6 +375,8 @@ model Profile {
   avatarUrl  String?
   department String?
   phone      String?
+  employeeNo String?
+  jobTitle   String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -372,6 +393,8 @@ model Profile {
   repairRequested      EquipmentRepairRequest[] @relation("RepairRequester")
   repairAssigned       EquipmentRepairRequest[] @relation("RepairAssignee")
   dailyChecks          EquipmentDailyCheck[]    @relation("DailyCheckChecker")
+  userCredential       UserCredential?
+  loginHistories       LoginHistory[]
 }
 
 model Site {
@@ -428,10 +451,14 @@ model TenantUser {
 model SignupRequest {
   id            String              @id @default(cuid())
   tenantId      String
+  loginId       String?
   email         String
   name          String
   department    String?
+  employeeNo    String?
   phone         String?
+  jobTitle      String?
+  passwordHash  String?
   requestedRole UserRole            @default(OPERATOR)
   status        SignupRequestStatus @default(PENDING)
   createdAt     DateTime            @default(now())
@@ -448,6 +475,7 @@ model SignupRequest {
   @@index([tenantId])
   @@index([status])
   @@index([email])
+  @@index([tenantId, loginId])
 }
 
 model WorkCenter {
@@ -1173,6 +1201,9 @@ model AuditLog {
   action     AuditAction
   beforeData Json?
   afterData  Json?
+  ipAddress  String?
+  userAgent  String?
+  menuName   String?
   actedAt    DateTime       @default(now())
 
   tenant Tenant   @relation(fields: [tenantId], references: [id])
@@ -1909,4 +1940,45 @@ model EquipmentDailyCheck {
   @@unique([equipmentId, checkDate])
   @@index([tenantId])
   @@index([equipmentId, checkDate])
+}
+
+// ─── Custom Auth ─────────────────────────────────────────────────────────────
+
+model UserCredential {
+  id           String    @id @default(cuid())
+  tenantId     String
+  loginId      String
+  profileId    String    @unique
+  passwordHash String
+  mustChangePw Boolean   @default(true)
+  isLocked     Boolean   @default(false)
+  failCount    Int       @default(0)
+  lockedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  profile Profile @relation(fields: [profileId], references: [id])
+
+  @@unique([tenantId, loginId])
+  @@index([tenantId])
+}
+
+model LoginHistory {
+  id         String           @id @default(cuid())
+  tenantId   String
+  loginId    String
+  profileId  String?
+  eventType  LoginEventType
+  failReason LoginFailReason?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime         @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  profile Profile? @relation(fields: [profileId], references: [id])
+
+  @@index([tenantId])
+  @@index([profileId])
+  @@index([loginId, createdAt])
 }

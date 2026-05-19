@@ -1,163 +1,93 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { createServerClient } from '@/lib/supabase/server';
 import { prisma } from '@/lib/db/prisma';
 import { UserRole } from '@prisma/client';
+import { verifyAuthToken, NMES_SESSION_COOKIE } from '@/lib/jwt';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type CurrentUser = {
-  id: string          // Profile.id = Supabase auth UUID
+  id: string        // = profileId (하위호환)
+  profileId: string
+  loginId: string
   email: string
   name: string
   tenantId: string
   role: UserRole
   isActive: boolean
+  mustChangePw: boolean
 }
 
-// ─── tenantId ─────────────────────────────────────────────────────────────────
+// ─── Internal: JWT payload → CurrentUser ────────────────────────────────────
 
-/**
- * 쿠키에서 tenantId를 읽어 반환합니다.
- */
+async function buildCurrentUser(profileId: string, tenantId: string): Promise<CurrentUser | null> {
+  const [credential, tenantUser, profile] = await Promise.all([
+    prisma.userCredential.findUnique({
+      where: { profileId },
+      select: { isLocked: true, mustChangePw: true, loginId: true },
+    }),
+    prisma.tenantUser.findFirst({
+      where: { profileId, tenantId, isActive: true },
+      select: { role: true, isActive: true },
+    }),
+    prisma.profile.findUnique({
+      where: { id: profileId },
+      select: { email: true, name: true },
+    }),
+  ]);
+
+  if (!credential || credential.isLocked || !tenantUser || !profile) return null;
+
+  return {
+    id: profileId,
+    profileId,
+    loginId: credential.loginId,
+    email: profile.email,
+    name: profile.name,
+    tenantId,
+    role: tenantUser.role,
+    isActive: tenantUser.isActive,
+    mustChangePw: credential.mustChangePw,
+  };
+}
+
+// ─── getTenantId ──────────────────────────────────────────────────────────────
+
 export async function getTenantId(): Promise<string> {
   const store = await cookies();
-  return store.get('tenantId')?.value ?? 'tenant-demo-001';
-}
-
-// ─── Profile upsert ──────────────────────────────────────────────────────────
-
-/**
- * 현재 로그인 유저의 ID를 반환하고, profiles 테이블에 row가 없으면 자동 생성합니다.
- */
-export async function getCurrentUserId(): Promise<string> {
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user?.id) throw new Error('인증이 필요합니다.');
-
-  const { id, email, user_metadata } = session.user;
-
-  await prisma.profile.upsert({
-    where: { id },
-    create: {
-      id,
-      email: email ?? '',
-      name: user_metadata?.name ?? email?.split('@')[0] ?? '',
-    },
-    update: {},
-  });
-
-  return id;
+  const token = store.get(NMES_SESSION_COOKIE)?.value;
+  if (token) {
+    const payload = verifyAuthToken(token);
+    if (payload?.tenantId) return payload.tenantId;
+  }
+  return process.env.DEFAULT_TENANT_ID ?? 'tenant-demo-001';
 }
 
 // ─── getCurrentUser ───────────────────────────────────────────────────────────
 
-/**
- * 현재 로그인 사용자의 역할 정보를 반환합니다.
- * dev bypass 모드에서는 OWNER 권한의 가상 사용자를 반환합니다.
- */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   const store = await cookies();
-  const tenantId = store.get('tenantId')?.value ?? 'tenant-demo-001';
+  const token = store.get(NMES_SESSION_COOKIE)?.value;
+  if (!token) return null;
 
-  // dev bypass 모드 처리
-  const isDevBypass =
-    process.env.NODE_ENV === 'development' &&
-    process.env.NMES_ENABLE_DEV_BYPASS === 'true' &&
-    store.get('nmes-dev-bypass')?.value === 'true';
+  const payload = verifyAuthToken(token);
+  if (!payload) return null;
 
-  if (isDevBypass) {
-    return {
-      id: 'dev-bypass-user',
-      email: 'test@test.com',
-      name: '개발자(bypass)',
-      tenantId,
-      role: 'OWNER',
-      isActive: true,
-    };
-  }
+  return buildCurrentUser(payload.profileId, payload.tenantId);
+}
 
-  // 실제 Supabase 세션
-  const supabase = createServerClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user?.id) return null;
+// ─── getCurrentUserId ────────────────────────────────────────────────────────
 
-  const profileId = session.user.id;
+export async function getCurrentUserId(): Promise<string> {
+  const store = await cookies();
+  const token = store.get(NMES_SESSION_COOKIE)?.value;
+  if (!token) throw new Error('인증이 필요합니다.');
 
-  let tenantUser = await prisma.tenantUser.findFirst({
-    where: { profileId, tenantId, isActive: true },
-    include: { profile: true },
-  });
+  const payload = verifyAuthToken(token);
+  if (!payload) throw new Error('인증이 필요합니다.');
 
-  if (!tenantUser && session.user.email) {
-    const tenantUserByEmail = await prisma.tenantUser.findFirst({
-      where: {
-        tenantId,
-        isActive: true,
-        profile: { email: session.user.email },
-      },
-      include: { profile: true },
-    });
-
-    if (tenantUserByEmail && tenantUserByEmail.profileId !== profileId) {
-      const existingProfileForAuthId = await prisma.profile.findUnique({
-        where: { id: profileId },
-      });
-
-      if (!existingProfileForAuthId) {
-        // Auth UUID로 된 Profile이 없으면 기존 Profile ID를 마이그레이션
-        await prisma.profile.update({
-          where: { id: tenantUserByEmail.profileId },
-          data: {
-            id: profileId,
-            email: session.user.email,
-            name:
-              session.user.user_metadata?.name ??
-              tenantUserByEmail.profile.name ??
-              session.user.email.split('@')[0],
-          },
-        });
-      } else {
-        // Auth UUID로 된 Profile이 이미 있으면 기존 부트스트랩 Profile 삭제 후 TenantUser를 새 Profile로 이전
-        await prisma.tenantUser.update({
-          where: { id: tenantUserByEmail.id },
-          data: { profileId },
-        });
-        await prisma.profile.delete({
-          where: { id: tenantUserByEmail.profileId },
-        }).catch(() => {});
-        await prisma.profile.update({
-          where: { id: profileId },
-          data: {
-            email: session.user.email,
-            name:
-              session.user.user_metadata?.name ??
-              existingProfileForAuthId.name ??
-              session.user.email.split('@')[0],
-          },
-        });
-      }
-
-      tenantUser = await prisma.tenantUser.findFirst({
-        where: { profileId, tenantId, isActive: true },
-        include: { profile: true },
-      });
-    } else {
-      tenantUser = tenantUserByEmail;
-    }
-  }
-
-  if (!tenantUser) return null;
-
-  return {
-    id: profileId,
-    email: tenantUser.profile.email,
-    name: tenantUser.profile.name,
-    tenantId,
-    role: tenantUser.role,
-    isActive: tenantUser.isActive,
-  };
+  return payload.profileId;
 }
 
 // ─── requireRole ─────────────────────────────────────────────────────────────
@@ -170,10 +100,6 @@ const ROLE_HIERARCHY: Record<UserRole, number> = {
   VIEWER:   1,
 };
 
-/**
- * 요구 역할 중 하나라도 만족하지 않으면 에러를 throw합니다.
- * allowedRoles에 최소 역할을 넣으면 그 이상 역할이 모두 허용됩니다.
- */
 export async function requireRole(
   minRole: UserRole,
   user?: CurrentUser | null

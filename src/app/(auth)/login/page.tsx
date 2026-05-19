@@ -2,11 +2,10 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Loader2, Monitor, Factory } from "lucide-react"
+import { Loader2, Monitor, Factory, Eye, EyeOff } from "lucide-react"
 import { popLogin } from "@/lib/actions/pop.actions"
 import { PopNumberPad } from "@/app/pop/components/pop-number-pad"
 
@@ -31,16 +30,9 @@ export default function LoginPage() {
           <p className="text-slate-500 mt-2">스마트 제조 실행 시스템</p>
         </div>
 
-        {/* 모드에 따라 조건부 렌더링 */}
-        {mode === "select" && (
-          <ModeSelectCards onSelect={setMode} />
-        )}
-        {mode === "system" && (
-          <SystemLoginForm onBack={() => setMode("select")} />
-        )}
-        {mode === "worker" && (
-          <WorkerLoginForm onBack={() => setMode("select")} />
-        )}
+        {mode === "select" && <ModeSelectCards onSelect={setMode} />}
+        {mode === "system" && <SystemLoginForm onBack={() => setMode("select")} />}
+        {mode === "worker" && <WorkerLoginForm onBack={() => setMode("select")} />}
       </div>
     </div>
   )
@@ -48,14 +40,9 @@ export default function LoginPage() {
 
 // ─── 모드 선택 카드 ───────────────────────────────────────────────────────────
 
-function ModeSelectCards({
-  onSelect,
-}: {
-  onSelect: (mode: LoginMode) => void
-}) {
+function ModeSelectCards({ onSelect }: { onSelect: (mode: LoginMode) => void }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {/* 시스템모드 카드 */}
       <button
         onClick={() => onSelect("system")}
         className="p-8 bg-white rounded-2xl border-2 border-slate-200 hover:border-blue-400 hover:shadow-lg transition-all text-left group"
@@ -66,7 +53,6 @@ function ModeSelectCards({
         <p className="text-sm text-slate-400 mt-2">PC 환경에 최적화된 관리 화면</p>
       </button>
 
-      {/* 작업자모드 카드 */}
       <button
         onClick={() => onSelect("worker")}
         className="p-8 bg-white rounded-2xl border-2 border-slate-200 hover:border-emerald-400 hover:shadow-lg transition-all text-left group"
@@ -80,49 +66,50 @@ function ModeSelectCards({
   )
 }
 
-// ─── 시스템 로그인 폼 (이메일/비밀번호) ──────────────────────────────────────
+// ─── 시스템 로그인 폼 (아이디/비밀번호) ──────────────────────────────────────
 
 function SystemLoginForm({ onBack }: { onBack: () => void }) {
   const router = useRouter()
-  const [email, setEmail] = useState("")
+  const [loginId, setLoginId] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
+  const [infoMessage, setInfoMessage] = useState("")
   const [loading, setLoading] = useState(false)
-
-  const supabase = createClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setLoading(true)
     setError("")
+    setInfoMessage("")
 
     try {
-      // 로컬 개발 우회: test@test.com / 123456
-      if (email === "test@test.com" && password === "123456") {
-        document.cookie = "nmes-dev-bypass=true; path=/"
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loginId: loginId.trim(), password }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
         document.cookie = "nmes-mode=system; path=/"
-        window.location.href = "/app/mes/"
+        router.push("/app/mes/")
         return
       }
 
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (authError) throw authError
-      document.cookie = "nmes-mode=system; path=/"
-      window.location.href = "/app/mes/"
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(
-          err.message === "Invalid login credentials"
-            ? "이메일 또는 비밀번호가 올바르지 않습니다."
-            : err.message
-        )
-      }
+      setError(data.message ?? "로그인에 실패했습니다.")
+    } catch {
+      setError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.")
     } finally {
       setLoading(false)
     }
+  }
+
+  function handleForgotPassword() {
+    setInfoMessage("비밀번호 찾기 기능은 준비 중입니다. 관리자에게 문의하세요.")
+    setError("")
   }
 
   return (
@@ -144,16 +131,17 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <Label htmlFor="email" className="text-sm font-medium text-slate-700">
-            이메일
+          <Label htmlFor="loginId" className="text-sm font-medium text-slate-700">
+            아이디
           </Label>
           <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@company.com"
+            id="loginId"
+            type="text"
+            value={loginId}
+            onChange={(e) => setLoginId(e.target.value)}
+            placeholder="로그인 아이디 입력"
             required
+            autoComplete="username"
             className="h-11"
           />
         </div>
@@ -162,37 +150,48 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
           <Label htmlFor="password" className="text-sm font-medium text-slate-700">
             비밀번호
           </Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-            minLength={6}
-            className="h-11"
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              className="h-11 pr-11"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              tabIndex={-1}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         {error && (
-          <p
-            className={`text-sm py-1 ${
-              error.includes("발송") ? "text-emerald-600" : "text-red-500"
-            }`}
-          >
+          <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">
             {error}
+          </p>
+        )}
+        {infoMessage && (
+          <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+            {infoMessage}
           </p>
         )}
 
         <Button
           type="submit"
           className="w-full h-11 bg-slate-800 hover:bg-slate-700 text-white"
-          disabled={loading}
+          disabled={loading || !loginId.trim() || !password}
         >
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              처리 중...
+              로그인 중...
             </>
           ) : (
             "로그인"
@@ -200,13 +199,20 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
         </Button>
       </form>
 
-      <div className="mt-4 text-center space-y-2">
+      <div className="mt-5 flex flex-col items-center gap-2">
         <a
           href="/signup-request"
-          className="text-sm text-blue-400 hover:text-blue-600 transition-colors block"
+          className="text-sm text-blue-500 hover:text-blue-700 transition-colors"
         >
-          관리자 승인 방식으로 가입 신청 →
+          계정이 없으신가요? 가입 신청 →
         </a>
+        <button
+          type="button"
+          onClick={handleForgotPassword}
+          className="text-sm text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          비밀번호를 잊으셨나요?
+        </button>
       </div>
     </div>
   )
@@ -215,7 +221,6 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
 // ─── 작업자 로그인 폼 (PIN) ───────────────────────────────────────────────────
 
 function WorkerLoginForm({ onBack }: { onBack: () => void }) {
-  const router = useRouter()
   const [pin, setPin] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -225,7 +230,6 @@ function WorkerLoginForm({ onBack }: { onBack: () => void }) {
     setError("")
 
     try {
-      // 데모용 tenantId 고정. 실제 환경에서는 테넌트 선택 단계가 필요
       const result = await popLogin(completedPin, "demo-tenant")
 
       if (!result) {

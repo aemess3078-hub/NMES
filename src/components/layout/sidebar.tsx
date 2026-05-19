@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   ChevronRight,
@@ -64,7 +65,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
-import { createClient } from '@/lib/supabase/client';
 import type { NavItem } from '@/types';
 
 const ICON_MAP: Record<string, React.ElementType> = {
@@ -214,13 +214,18 @@ export function Sidebar({ navItems, userName, userEmail }: SidebarProps) {
   const open = _hasHydrated ? isSidebarOpen : true;
   const router = useRouter();
 
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const handleLogout = async () => {
-    // 개발 우회 쿠키 제거
-    document.cookie = 'nmes-dev-bypass=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    document.cookie = 'nmes-mode=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    window.location.href = '/login';
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // 로그아웃 API 실패해도 세션 정리를 위해 로그인 페이지로 이동
+    } finally {
+      window.location.href = '/login';
+    }
   };
 
   const hasNavItems = navItems && navItems.length > 0;
@@ -275,10 +280,11 @@ export function Sidebar({ navItems, userName, userEmail }: SidebarProps) {
         </div>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-1.5 rounded px-2 py-1 text-[14px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors mt-0.5"
+          disabled={isLoggingOut}
+          className="w-full flex items-center gap-1.5 rounded px-2 py-1 text-[14px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors mt-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <LogOut className="h-3 w-3 opacity-60" />
-          로그아웃
+          {isLoggingOut ? '로그아웃 중...' : '로그아웃'}
         </button>
       </div>
     </aside>

@@ -1,32 +1,25 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createMiddlewareSupabaseClient } from '@/lib/supabase/middleware';
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareSupabaseClient(req, res);
+const SESSION_COOKIE = 'nmes-session';
 
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  const isDevBypassEnabled = process.env.NMES_ENABLE_DEV_BYPASS === 'true';
-  const isDevBypass =
-    isDevelopment &&
-    isDevBypassEnabled &&
-    req.cookies.get('nmes-dev-bypass')?.value === 'true';
-
-  const { data: { session } } = await supabase.auth.getSession();
+export function middleware(req: NextRequest) {
+  const hasSession = !!req.cookies.get(SESSION_COOKIE)?.value;
 
   const isAuthPage = req.nextUrl.pathname.startsWith('/login');
   const isAppPage = req.nextUrl.pathname.startsWith('/app');
 
-  if (!session && !isDevBypass && isAppPage) {
+  // 세션 없이 앱 진입 시도 → 로그인으로
+  if (!hasSession && isAppPage) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  if ((session || isDevBypass) && isAuthPage) {
+  // 이미 세션이 있는데 로그인 페이지 접근 → 앱으로
+  if (hasSession && isAuthPage) {
     return NextResponse.redirect(new URL('/app', req.url));
   }
 
-  return res;
+  return NextResponse.next();
 }
 
 export const config = {
