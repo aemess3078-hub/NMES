@@ -49,7 +49,18 @@
       "Bash(npx shadcn@latest add tabs --yes)",
       "Bash(for dir:*)",
       "Bash(do echo:*)",
-      "Read(//c/Users/82102/Documents/New MES/src/app/app/mes/$dir/**)"
+      "Read(//c/Users/82102/Documents/New MES/src/app/app/mes/$dir/**)",
+      "Bash(ls \"C:/Users/82102/Documents/New MES/.claude/worktrees/sharp-jemison-48cbf4/.env*\" 2>/dev/null || ls \"C:/Users/82102/Documents/New MES/.env*\" 2>/dev/null)",
+      "Bash(Get-ChildItem -Path \"C:/Users/82102/Documents/New MES\" -Filter \"*.env*\" -Force -Recurse -Depth 1)",
+      "Bash(Select-Object FullName)",
+      "Bash(cp \"C:/Users/82102/Documents/New MES/.env\" \"C:/Users/82102/Documents/New MES/.claude/worktrees/sharp-jemison-48cbf4/.env\")",
+      "Bash(cp \"C:/Users/82102/Documents/New MES/.env.local\" \"C:/Users/82102/Documents/New MES/.claude/worktrees/sharp-jemison-48cbf4/.env.local\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --base main --head claude/sharp-jemison-48cbf4 --title 'feat: CnS Medical 스마트공장 핵심 기능 구현 \\(LMS 설비관리 + 모니터링 + 검사\\)' --body ' *)",
+      "Bash(find \"/c/Users/82102\" -name \"gh.exe\" 2>/dev/null | head -5; find \"/c/Program Files\" -name \"gh.exe\" 2>/dev/null | head -5)"
     ]
   }
 }
