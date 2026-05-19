@@ -1914,6 +1914,7 @@ const SEED_CREDENTIALS = [
 
 async function seedUserCredentials() {
   for (const cred of SEED_CREDENTIALS) {
+    const loginId = cred.loginId.trim().toLowerCase();
     const existing = await prisma.userCredential.findUnique({
       where: { profileId: cred.profileId },
     });
@@ -1923,7 +1924,7 @@ async function seedUserCredentials() {
     await prisma.userCredential.create({
       data: {
         tenantId: IDS.tenant,
-        loginId: cred.loginId,
+        loginId,
         profileId: cred.profileId,
         passwordHash,
         mustChangePw: false,
@@ -1931,7 +1932,7 @@ async function seedUserCredentials() {
         failCount: 0,
       },
     });
-    console.log(`    ✓ loginId=${cred.loginId}`);
+    console.log(`    ✓ loginId=${loginId}`);
   }
 }
 

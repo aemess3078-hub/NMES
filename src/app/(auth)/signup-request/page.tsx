@@ -63,7 +63,7 @@ export default function SignupRequestPage() {
     try {
       const res = await createSignupRequest({
         tenantId,
-        loginId: form.loginId.trim(),
+        loginId: form.loginId.trim().toLowerCase(),
         email: form.email.trim(),
         name: form.name.trim(),
         department: form.department.trim(),

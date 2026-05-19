@@ -7,6 +7,10 @@ import { revalidatePath } from "next/cache"
 import { hashPassword, validatePassword } from "@/lib/password"
 import { maskSensitiveFields } from "@/lib/sanitize"
 
+function normalizeLoginId(loginId: string): string {
+  return loginId.trim().toLowerCase()
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type CreateSignupRequestInput = {
@@ -59,11 +63,14 @@ export async function createSignupRequest(
   const pwError = validatePassword(password)
   if (pwError) return { success: false, message: pwError }
 
-  const cleanLoginId = loginId.trim()
+  const cleanLoginId = normalizeLoginId(loginId)
 
   // 1. UserCredential에 이미 같은 loginId가 있으면 신청 불가
-  const existingCredential = await prisma.userCredential.findUnique({
-    where: { tenantId_loginId: { tenantId, loginId: cleanLoginId } },
+  const existingCredential = await prisma.userCredential.findFirst({
+    where: {
+      tenantId,
+      loginId: { equals: cleanLoginId, mode: "insensitive" },
+    },
   })
   if (existingCredential) {
     return { success: false, message: "이미 사용 중인 아이디입니다." }
@@ -73,7 +80,7 @@ export async function createSignupRequest(
   const duplicatePending = await prisma.signupRequest.findFirst({
     where: {
       tenantId,
-      loginId: cleanLoginId,
+      loginId: { equals: cleanLoginId, mode: "insensitive" },
       status: { in: ["PENDING"] },
     },
   })
@@ -165,12 +172,17 @@ export async function approveSignupRequest(
       return { success: false, error: "이 신청 건에 로그인 아이디 또는 비밀번호 정보가 없습니다. 재신청을 요청하세요." }
     }
 
+    const normalizedLoginId = normalizeLoginId(request.loginId)
+
     // loginId 중복 검사 (UserCredential)
-    const duplicateCredential = await prisma.userCredential.findUnique({
-      where: { tenantId_loginId: { tenantId, loginId: request.loginId } },
+    const duplicateCredential = await prisma.userCredential.findFirst({
+      where: {
+        tenantId,
+        loginId: { equals: normalizedLoginId, mode: "insensitive" },
+      },
     })
     if (duplicateCredential) {
-      return { success: false, error: `이미 사용 중인 로그인 아이디입니다: ${request.loginId}` }
+      return { success: false, error: `이미 사용 중인 로그인 아이디입니다: ${normalizedLoginId}` }
     }
 
     // 1. Profile 생성 또는 연결
@@ -225,7 +237,7 @@ export async function approveSignupRequest(
     await prisma.userCredential.create({
       data: {
         tenantId,
-        loginId: request.loginId,
+        loginId: normalizedLoginId,
         profileId,
         passwordHash: request.passwordHash,
         mustChangePw: false,  // 사용자가 직접 설정한 비밀번호이므로 변경 강제 없음
@@ -244,7 +256,7 @@ export async function approveSignupRequest(
     const afterData = maskSensitiveFields({
       email: request.email,
       name: request.name,
-      loginId: request.loginId,
+      loginId: normalizedLoginId,
       grantedRole,
       profileId,
       mustChangePw: false,

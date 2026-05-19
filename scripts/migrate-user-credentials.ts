@@ -17,6 +17,10 @@ const prisma = new PrismaClient()
 const isDryRun = !process.argv.includes("--apply")
 const SALT_ROUNDS = 12
 
+function normalizeLoginId(loginId: string): string {
+  return loginId.trim().toLowerCase()
+}
+
 function generateTempPassword(): string {
   const lower = Math.random().toString(36).slice(2, 6)
   const upper = Math.random().toString(36).slice(2, 6).toUpperCase()
@@ -31,7 +35,8 @@ async function generateUniqueLoginId(
   tenantId: string,
   reserved: Set<string>,
 ): Promise<string> {
-  let candidate = base
+  const normalizedBase = normalizeLoginId(base)
+  let candidate = normalizedBase
   let n = 2
   while (
     reserved.has(`${tenantId}:${candidate}`) ||
@@ -39,7 +44,7 @@ async function generateUniqueLoginId(
       where: { tenantId_loginId: { tenantId, loginId: candidate } },
     }))
   ) {
-    candidate = `${base}${n}`
+    candidate = `${normalizedBase}${n}`
     n++
   }
   reserved.add(`${tenantId}:${candidate}`)
@@ -96,7 +101,7 @@ async function main() {
     const rawBase = profile.email
       ? profile.email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "")
       : `user${profile.id.slice(0, 8)}`
-    const base = rawBase || `user${profile.id.slice(0, 8)}`
+    const base = normalizeLoginId(rawBase || `user${profile.id.slice(0, 8)}`)
 
     const loginId = await generateUniqueLoginId(base, tenantId, reserved)
     const tempPassword = generateTempPassword()

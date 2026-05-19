@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { loginId, password } = body
-  if (!loginId || !password) {
+  const normalizedLoginId = loginId?.trim().toLowerCase()
+  if (!normalizedLoginId || !password) {
     return NextResponse.json(
       { success: false, message: 'loginId와 password는 필수 입력값입니다.' },
       { status: 400 },
@@ -32,20 +33,20 @@ export async function POST(req: NextRequest) {
 
   // UserCredential 조회 (Profile, TenantUser 포함)
   const credential = await prisma.userCredential.findUnique({
-    where: { tenantId_loginId: { tenantId, loginId } },
+    where: { tenantId_loginId: { tenantId, loginId: normalizedLoginId } },
     include: {
       profile: true,
     },
   })
 
   if (!credential) {
-    await createLoginHistoryLog({ tenantId, loginId, eventType: 'LOGIN_FAIL', failReason: 'USER_NOT_FOUND', ipAddress: ip, userAgent: ua })
+    await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, eventType: 'LOGIN_FAIL', failReason: 'USER_NOT_FOUND', ipAddress: ip, userAgent: ua })
     return NextResponse.json({ success: false, message: GENERIC_FAIL_MESSAGE }, { status: 401 })
   }
 
   // 잠금 여부 확인
   if (credential.isLocked) {
-    await createLoginHistoryLog({ tenantId, loginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'LOCKED', ipAddress: ip, userAgent: ua })
+    await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'LOCKED', ipAddress: ip, userAgent: ua })
     return NextResponse.json({ success: false, message: '계정이 잠겨 있습니다. 관리자에게 문의해 주세요.' }, { status: 403 })
   }
 
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
   })
 
   if (!tenantUser) {
-    await createLoginHistoryLog({ tenantId, loginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'INACTIVE', ipAddress: ip, userAgent: ua })
+    await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'INACTIVE', ipAddress: ip, userAgent: ua })
     return NextResponse.json({ success: false, message: '비활성화된 계정입니다. 관리자에게 문의해 주세요.' }, { status: 403 })
   }
 
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await createLoginHistoryLog({ tenantId, loginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'INVALID_PASSWORD', ipAddress: ip, userAgent: ua })
+    await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'INVALID_PASSWORD', ipAddress: ip, userAgent: ua })
 
     if (shouldLock) {
       return NextResponse.json({ success: false, message: `비밀번호를 ${FAIL_LOCK_THRESHOLD}회 잘못 입력하여 계정이 잠겼습니다. 관리자에게 문의해 주세요.` }, { status: 403 })
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
   const payload = {
     profileId: credential.profileId,
     tenantId,
-    loginId,
+    loginId: normalizedLoginId,
     email: credential.profile.email ?? null,
     name: credential.profile.name,
     role: tenantUser.role,
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
 
   const token = signAuthToken(payload)
 
-  await createLoginHistoryLog({ tenantId, loginId, profileId: credential.profileId, eventType: 'LOGIN_SUCCESS', ipAddress: ip, userAgent: ua })
+  await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_SUCCESS', ipAddress: ip, userAgent: ua })
 
   const res = NextResponse.json({
     success: true,
