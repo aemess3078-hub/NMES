@@ -1488,6 +1488,11 @@ async function seedFeatures() {
     { code: 'COSTING', name: '원가분석', description: 'BOM 기반 표준원가와 실적 기반 실제원가 비교', category: 'ANALYTICS', icon: 'Calculator', menuCodes: ['costing'], isCore: false, displayOrder: 90 },
     // PARTNER
     { code: 'PARTNER_MANAGEMENT', name: '고객사/거래처 관리', description: '고객사 및 거래처 마스터 관리', category: 'MASTER', icon: 'Handshake', menuCodes: ['customers', 'vendors'], isCore: false, displayOrder: 15 },
+    // LMS + 모니터링 + 검사
+    { code: 'EQUIPMENT_MANAGEMENT', name: '설비관리(LMS)', description: '설비 수리요청, 일상점검, 문제유형 관리', category: 'EQUIPMENT', icon: 'Wrench', menuCodes: ['equipment-repair', 'equipment-check', 'equipment-problems'], isCore: false, displayOrder: 125 },
+    { code: 'EQUIPMENT_MONITOR', name: '설비 현황 모니터링', description: '실시간 설비 가동 상태 모니터링', category: 'EQUIPMENT', icon: 'Activity', menuCodes: ['equipment-monitor'], isCore: false, displayOrder: 126 },
+    { code: 'INSPECTION_STAGES', name: '초·중·종 검사', description: '초물/중간/종물 단계별 품질검사', category: 'QUALITY', icon: 'ListChecks', menuCodes: ['inspection-stages'], isCore: false, displayOrder: 105 },
+    { code: 'DASHBOARD', name: '생산현황 대시보드', description: 'KPI 및 생산현황 종합 대시보드', category: 'ANALYTICS', icon: 'LayoutDashboard', menuCodes: ['dashboard'], isCore: false, displayOrder: 80 },
   ];
 
   for (const f of features) {
@@ -1546,6 +1551,8 @@ async function seedFeatures() {
       'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
       'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE', 'MRP',
       'COSTING', 'PARTNER_MANAGEMENT',
+      'EQUIPMENT_MANAGEMENT', 'EQUIPMENT_MONITOR', 'INSPECTION_STAGES', 'DASHBOARD',
+      'EQUIPMENT_CONNECTION', 'TAG_MANAGEMENT', 'QUOTATION', 'INVENTORY', 'LOT_TRACKING',
     ];
     for (const code of enableCodes) {
       const feat = await prisma.featureDefinition.findUnique({ where: { code } });
