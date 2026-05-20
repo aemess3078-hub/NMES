@@ -7,12 +7,18 @@ import { revalidatePath } from "next/cache"
 
 export type MaterialRequirement = {
   itemId: string
-  item: { id: string; code: string; name: string; uom: string }
+  item: { id: string; code: string; name: string; uom: string; isLotTracked: boolean }
   requiredQty: number
   issuedQty: number
   pendingQty: number
   currentStock: number        // 전체 창고 합산 가용재고
   reservationId: string | null
+}
+
+export type LotStockOption = {
+  lotId: string
+  lotNo: string
+  qtyAvailable: number
 }
 
 export type WorkOrderForIssue = {
@@ -65,7 +71,7 @@ export async function getWorkOrdersForIssue(
           bomItems: {
             include: {
               componentItem: {
-                select: { id: true, code: true, name: true, uom: true },
+                select: { id: true, code: true, name: true, uom: true, isLotTracked: true },
               },
             },
             orderBy: { seq: "asc" },
@@ -160,6 +166,41 @@ export async function getWarehousesWithStock(
     }
     return { ...wh, itemStocks }
   })
+}
+
+// ─── LOT별 재고 조회 (창고 + 품목 지정) ──────────────────────────────────────
+
+export async function getLotStockByWarehouse(
+  warehouseId: string,
+  itemIds: string[],
+  tenantId: string
+): Promise<Record<string, LotStockOption[]>> {
+  if (itemIds.length === 0) return {}
+
+  const balances = await prisma.inventoryBalance.findMany({
+    where: {
+      tenantId,
+      warehouseId,
+      itemId: { in: itemIds },
+      lotId: { not: null },
+    },
+    include: {
+      lot: { select: { id: true, lotNo: true } },
+    },
+    orderBy: { lot: { lotNo: "asc" } },
+  })
+
+  const result: Record<string, LotStockOption[]> = {}
+  for (const b of balances) {
+    if (!b.lot || Number(b.qtyAvailable) <= 0) continue
+    if (!result[b.itemId]) result[b.itemId] = []
+    result[b.itemId].push({
+      lotId: b.lot.id,
+      lotNo: b.lot.lotNo,
+      qtyAvailable: Number(b.qtyAvailable),
+    })
+  }
+  return result
 }
 
 // ─── txNo 생성 헬퍼 (트랜잭션 외부에서 호출) ─────────────────────────────────
