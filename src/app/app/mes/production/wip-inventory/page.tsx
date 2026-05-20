@@ -25,7 +25,7 @@ export default async function WipInventoryPage() {
           재공품재고
         </h1>
         <p className="mt-1 text-[15px] text-muted-foreground">
-          MES &gt; 재고관리 · 작업지시 공정별 진행 물량과 잔량을 조회합니다.
+          MES &gt; 재고관리 · 재공수량은 WipUnit 기준, 공정잔량은 지시수량-완료수량 기준으로 조회합니다.
         </p>
       </div>
 

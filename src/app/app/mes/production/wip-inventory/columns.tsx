@@ -199,7 +199,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
       id: "activeWipQty",
       accessorFn: (row) => row.activeWipQty,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="WIP수량" />
+        <DataTableColumnHeader column={column} title="재공수량" />
       ),
       cell: ({ row }) => (
         <div className="space-y-0.5 text-right">
