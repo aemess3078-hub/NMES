@@ -91,7 +91,14 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
         body: JSON.stringify({ loginId: loginId.trim(), password }),
       })
 
-      const data = await res.json()
+      let data: { success?: boolean; message?: string }
+      try {
+        data = await res.json()
+      } catch {
+        // 서버가 JSON이 아닌 응답(500 HTML 등)을 반환한 경우
+        setError("서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
+        return
+      }
 
       if (res.ok && data.success) {
         document.cookie = "nmes-mode=system; path=/"
@@ -101,6 +108,7 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
 
       setError(data.message ?? "로그인에 실패했습니다.")
     } catch {
+      // fetch 자체가 실패한 경우 (네트워크 단절 등)
       setError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.")
     } finally {
       setLoading(false)
