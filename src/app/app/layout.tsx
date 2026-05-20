@@ -6,6 +6,7 @@ import { MES_NAV } from '@/lib/nav-config';
 import { FeatureProvider } from '@/lib/contexts/feature-context';
 import { getEnabledFeatureCodes, getEnabledMenuCodes } from '@/lib/services/feature.service';
 import { AIChatButton } from '@/components/common/ai-chat';
+import type { NavItem } from '@/types/menu';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,14 +30,21 @@ export default async function AppLayout({
     getEnabledMenuCodes(user.tenantId),
   ]);
 
-  const filteredNav = MES_NAV.map((section) => ({
-    ...section,
-    children: (section.children ?? []).filter((item) => {
-      if (!item.href) return true;
-      const menuCode = item.href.split('/').pop() ?? '';
-      return enabledMenuCodes.includes(menuCode);
-    }),
-  })).filter((section) => (section.children ?? []).length > 0);
+  function filterNav(items: NavItem[], codes: string[]): NavItem[] {
+    return items.reduce<NavItem[]>((acc, item) => {
+      if (item.children.length > 0) {
+        const filtered = filterNav(item.children, codes)
+        if (filtered.length > 0) acc.push({ ...item, children: filtered })
+      } else if (item.comingSoon || !item.href) {
+        acc.push(item)
+      } else {
+        const menuCode = item.href.split('/').pop() ?? ''
+        if (codes.includes(menuCode)) acc.push(item)
+      }
+      return acc
+    }, [])
+  }
+  const filteredNav = filterNav(MES_NAV, enabledMenuCodes)
 
   return (
     <FeatureProvider enabledFeatures={enabledFeatures}>

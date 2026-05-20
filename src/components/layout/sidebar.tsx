@@ -182,7 +182,7 @@ function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
           <span className="w-3 flex-shrink-0" />
         )}
         <DynamicIcon name={item.icon} className="flex-shrink-0 opacity-60" />
-        <span className="truncate flex-1 text-[14px]">{item.label}</span>
+        <span className={cn("truncate flex-1", depth >= 2 ? "text-[13px]" : "text-[14px]")}>{item.label}</span>
         {isComingSoon && (
           <span className="flex-shrink-0 text-[10px] font-medium px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">
             준비중
