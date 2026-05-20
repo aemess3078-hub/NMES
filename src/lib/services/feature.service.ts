@@ -1,16 +1,21 @@
-import { cache } from "react"
+import { unstable_cache } from "next/cache"
 import { prisma } from "@/lib/db/prisma"
 
-// ── 내부 캐시 헬퍼: 동일 요청 내 중복 DB 조회 제거 ──────────────────────────
-// React cache()는 서버 컴포넌트 렌더 트리 내에서 인자가 같으면 결과를 재사용합니다.
-// layout.tsx에서 getEnabledFeatureCodes + getEnabledMenuCodes를 동시에 호출해도
-// TenantFeature 쿼리가 한 번만 실행됩니다.
-const _getEnabledTenantFeatures = cache(async (tenantId: string) => {
-  return prisma.tenantFeature.findMany({
-    where: { tenantId, isEnabled: true },
-    include: { feature: true },
-  })
-})
+// ── 내부 캐시 헬퍼: 요청 간 서버 레벨 캐시 ───────────────────────────────────
+// unstable_cache는 Next.js 서버 수준에서 결과를 유지합니다.
+// - tenantId가 캐시 키에 포함되어 테넌트 간 데이터 혼용이 없습니다.
+// - revalidate: 60 → 60초 TTL (데모 환경에서 권한은 변경이 없음)
+// - 페이지 이동 시마다 반복되던 TenantFeature DB 쿼리를 제거합니다.
+const _getEnabledTenantFeatures = unstable_cache(
+  async (tenantId: string) => {
+    return prisma.tenantFeature.findMany({
+      where: { tenantId, isEnabled: true },
+      include: { feature: true },
+    })
+  },
+  ["enabled-tenant-features"],
+  { revalidate: 60 }
+)
 
 // 1. 테넌트 활성 기능 코드 목록
 export async function getEnabledFeatureCodes(tenantId: string): Promise<string[]> {
