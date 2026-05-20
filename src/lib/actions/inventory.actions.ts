@@ -65,7 +65,8 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
     },
     include: {
       warehouse: { include: { site: true } },
-      item: true,
+      // item: true → 필요 필드만 select (code/name/itemType/uom만 사용됨)
+      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, status: true } },
       lot: { select: { id: true, lotNo: true } },
     },
     orderBy: [

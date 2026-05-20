@@ -15,7 +15,16 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // ── [PERF] 데모용 타이밍 로그 — 데모 완료 후 아래 블록 제거 필요 ────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────────
+
   const user = await getCurrentUser();
+
+  // ── [PERF] ──────────────────────────────────────────────────────────────────
+  const _tAuth = Date.now()
+  console.log(`[PERF] layout.getCurrentUser: ${_tAuth - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────────
 
   if (!user) {
     redirect('/login');
@@ -29,6 +38,11 @@ export default async function AppLayout({
     getEnabledFeatureCodes(user.tenantId),
     getEnabledMenuCodes(user.tenantId),
   ]);
+
+  // ── [PERF] ──────────────────────────────────────────────────────────────────
+  const _tFeatures = Date.now()
+  console.log(`[PERF] layout.features+menu: ${_tFeatures - _tAuth}ms | layout.total: ${_tFeatures - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────────
 
   function filterNav(items: NavItem[], codes: string[]): NavItem[] {
     return items.reduce<NavItem[]>((acc, item) => {
