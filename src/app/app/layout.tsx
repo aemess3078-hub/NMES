@@ -74,8 +74,8 @@ export default async function AppLayout({
             {children}
           </main>
         </div>
-        <AIChatButton />
       </div>
+      <AIChatButton />
     </FeatureProvider>
   );
 }
