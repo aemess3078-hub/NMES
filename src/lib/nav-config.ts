@@ -44,7 +44,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'Factory',
         displayOrder: 20,
         children: [
-          { id: 'nav-prod-equip-output', parentId: 'nav-production', label: '설비별생산현황', icon: 'BarChart2', href: '/app/mes/production/equipment-output', displayOrder: 1, comingSoon: true, children: [] },
+          { id: 'nav-prod-equip-output', parentId: 'nav-production', label: '설비별생산현황', icon: 'BarChart2', href: '/app/mes/production/equipment-output', displayOrder: 1, children: [] },
           { id: 'nav-prod-plan-output', parentId: 'nav-production', label: '생산계획별생산현황', icon: 'CalendarDays', href: '/app/mes/production-plan', displayOrder: 2, children: [] },
           { id: 'nav-work-orders', parentId: 'nav-production', label: '작업지시', icon: 'ClipboardList', href: '/app/mes/work-orders', displayOrder: 3, children: [] },
           { id: 'nav-production-results', parentId: 'nav-production', label: '작업일지', icon: 'FileText', href: '/app/mes/production-results', displayOrder: 4, children: [] },
