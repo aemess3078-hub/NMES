@@ -5,7 +5,6 @@ import { Header } from '@/components/layout/header';
 import { MES_NAV } from '@/lib/nav-config';
 import { FeatureProvider } from '@/lib/contexts/feature-context';
 import { getEnabledFeatureCodes, getEnabledMenuCodes } from '@/lib/services/feature.service';
-import { AIChatButton } from '@/components/common/ai-chat';
 import type { NavItem } from '@/types/menu';
 
 export const dynamic = 'force-dynamic';
@@ -75,7 +74,6 @@ export default async function AppLayout({
           </main>
         </div>
       </div>
-      <AIChatButton />
     </FeatureProvider>
   );
 }
