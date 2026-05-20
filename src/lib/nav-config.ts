@@ -62,7 +62,7 @@ export const MES_NAV: NavItem[] = [
         children: [
           { id: 'nav-inventory', parentId: 'nav-inventory-section', label: '재고현황', icon: 'Package', href: '/app/mes/inventory', displayOrder: 1, children: [] },
           { id: 'nav-inventory-txns', parentId: 'nav-inventory-section', label: '전체입출고내역', icon: 'ArrowLeftRight', href: '/app/mes/inventory-transactions', displayOrder: 2, children: [] },
-          { id: 'nav-wip-inventory', parentId: 'nav-inventory-section', label: '재공품재고', icon: 'RefreshCw', href: '/app/mes/production/wip-inventory', displayOrder: 3, comingSoon: true, children: [] },
+          { id: 'nav-wip-inventory', parentId: 'nav-inventory-section', label: '재공품재고', icon: 'RefreshCw', href: '/app/mes/production/wip-inventory', displayOrder: 3, children: [] },
         ],
       },
       // 4. 자재관리

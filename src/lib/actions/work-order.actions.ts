@@ -102,6 +102,140 @@ export async function getWorkOrders(): Promise<WorkOrderWithDetails[]> {
   }) as any
 }
 
+export type WipInventoryRow = Awaited<ReturnType<typeof getWipInventoryRows>>[number]
+
+export async function getWipInventoryRows(tenantId: string) {
+  const operations = await prisma.workOrderOperation.findMany({
+    where: {
+      workOrder: {
+        tenantId,
+        status: { in: ["RELEASED", "IN_PROGRESS", "COMPLETED"] },
+      },
+    },
+    select: {
+      id: true,
+      seq: true,
+      status: true,
+      plannedQty: true,
+      completedQty: true,
+      equipment: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      },
+      workOrder: {
+        select: {
+          id: true,
+          orderNo: true,
+          status: true,
+          plannedQty: true,
+          dueDate: true,
+          createdAt: true,
+          item: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              uom: true,
+            },
+          },
+        },
+      },
+      routingOperation: {
+        select: {
+          id: true,
+          seq: true,
+          operationCode: true,
+          name: true,
+          workCenter: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+        },
+      },
+      wipUnits: {
+        select: {
+          id: true,
+          qty: true,
+          status: true,
+          currentLocation: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+        },
+      },
+      productionResults: {
+        select: {
+          id: true,
+          goodQty: true,
+          defectQty: true,
+          reworkQty: true,
+          startedAt: true,
+          endedAt: true,
+        },
+        orderBy: { startedAt: "asc" },
+      },
+    },
+    orderBy: [
+      { workOrder: { dueDate: "asc" } },
+      { workOrder: { orderNo: "asc" } },
+      { seq: "asc" },
+    ],
+  })
+
+  return operations.map((operation) => {
+    const productionQty = Number(operation.completedQty)
+    const plannedQty = Number(operation.plannedQty)
+    const activeWipQty = operation.wipUnits
+      .filter((unit) => unit.status === "IN_PROCESS" || unit.status === "ON_HOLD")
+      .reduce((sum, unit) => sum + Number(unit.qty), 0)
+    const totalGoodQty = operation.productionResults.reduce(
+      (sum, result) => sum + Number(result.goodQty),
+      0
+    )
+    const totalDefectQty = operation.productionResults.reduce(
+      (sum, result) => sum + Number(result.defectQty),
+      0
+    )
+    const startedAt = operation.productionResults.find((result) => result.startedAt)?.startedAt ?? null
+
+    return {
+      id: operation.id,
+      seq: operation.seq,
+      status: operation.status,
+      plannedQty,
+      productionQty,
+      remainingQty: plannedQty - productionQty,
+      activeWipQty,
+      totalGoodQty,
+      totalDefectQty,
+      startedAt,
+      workOrder: {
+        id: operation.workOrder.id,
+        orderNo: operation.workOrder.orderNo,
+        status: operation.workOrder.status,
+        plannedQty: Number(operation.workOrder.plannedQty),
+        dueDate: operation.workOrder.dueDate,
+        createdAt: operation.workOrder.createdAt,
+        item: operation.workOrder.item,
+      },
+      routingOperation: operation.routingOperation,
+      equipment: operation.equipment,
+      wipLocations: operation.wipUnits
+        .map((unit) => unit.currentLocation)
+        .filter((location): location is NonNullable<typeof location> => location != null),
+    }
+  })
+}
+
 export async function getWorkOrderById(id: string): Promise<WorkOrderWithDetails | null> {
   return prisma.workOrder.findUnique({
     where: { id },
