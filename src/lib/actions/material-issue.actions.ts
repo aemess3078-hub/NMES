@@ -40,6 +40,7 @@ export type IssueMaterialInput = {
   warehouseId: string
   items: {
     itemId: string
+    lotId?: string | null      // LOT 관리 품목은 필수, 비관리 품목은 null/undefined
     issueQty: number
     requiredQty: number
     reservationId: string | null
@@ -181,6 +182,13 @@ export async function issueMaterialsForWorkOrder(
   if (activeItems.length === 0)
     return { ok: false, error: "출고 수량을 입력하세요." }
 
+  // LOT 관리 여부 일괄 조회 (트랜잭션 외부 — 읽기 전용)
+  const itemRecords = await prisma.item.findMany({
+    where: { id: { in: activeItems.map((i) => i.itemId) } },
+    select: { id: true, code: true, isLotTracked: true },
+  })
+  const itemMetaMap = new Map(itemRecords.map((r) => [r.id, r]))
+
   // txNo 사전 생성 (트랜잭션 외부)
   const txNos: string[] = []
   for (let i = 0; i < activeItems.length; i++) {
@@ -192,12 +200,51 @@ export async function issueMaterialsForWorkOrder(
       for (let i = 0; i < activeItems.length; i++) {
         const item = activeItems[i]
         const txNo = txNos[i]
+        const meta = itemMetaMap.get(item.itemId)
 
-        // 1. InventoryTransaction (ISSUE)
+        // ── LOT 결정 ──────────────────────────────────────────────────────────
+        let lotId: string | null = null
+        if (meta?.isLotTracked) {
+          if (!item.lotId) {
+            throw new Error(
+              `LOT 관리 품목(${meta.code})은 출고 시 LOT를 지정해야 합니다.`
+            )
+          }
+          lotId = item.lotId
+        }
+        // 비LOT 품목: lotId = null (partial unique index가 단일 row를 보장)
+
+        // ── 1. InventoryBalance 조회 (lotId 포함) ────────────────────────────
+        const balance = await tx.inventoryBalance.findFirst({
+          where: {
+            tenantId,
+            warehouseId: data.warehouseId,
+            itemId: item.itemId,
+            lotId,
+          },
+        })
+
+        if (!balance) {
+          const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
+          throw new Error(
+            `재고 없음: 해당 창고에 ${meta?.code ?? item.itemId}${lotInfo} 재고가 없습니다.`
+          )
+        }
+
+        const newQty = Number(balance.qtyOnHand) - item.issueQty
+        if (newQty < 0) {
+          const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
+          throw new Error(
+            `재고 부족: ${meta?.code ?? item.itemId}${lotInfo} — 현재 재고 ${Number(balance.qtyOnHand)}, 출고 요청 ${item.issueQty}`
+          )
+        }
+
+        // ── 2. InventoryTransaction 기록 (lotId 포함) ────────────────────────
         await tx.inventoryTransaction.create({
           data: {
             tenantId,
             itemId: item.itemId,
+            lotId,
             fromLocationId: data.warehouseId,
             txNo,
             txType: "ISSUE",
@@ -209,28 +256,7 @@ export async function issueMaterialsForWorkOrder(
           },
         })
 
-        // 2. InventoryBalance 감소
-        const balance = await tx.inventoryBalance.findFirst({
-          where: {
-            tenantId,
-            warehouseId: data.warehouseId,
-            itemId: item.itemId,
-          },
-        })
-
-        if (!balance) {
-          throw new Error(
-            `재고 없음: 해당 창고에 ${item.itemId} 재고가 없습니다.`
-          )
-        }
-
-        const newQty = Number(balance.qtyOnHand) - item.issueQty
-        if (newQty < 0) {
-          throw new Error(
-            `재고 부족: 현재 재고 ${Number(balance.qtyOnHand)}, 출고 요청 ${item.issueQty}`
-          )
-        }
-
+        // ── 3. InventoryBalance 차감 ─────────────────────────────────────────
         await tx.inventoryBalance.update({
           where: { id: balance.id },
           data: {
@@ -239,7 +265,7 @@ export async function issueMaterialsForWorkOrder(
           },
         })
 
-        // 3. MaterialReservation upsert
+        // ── 4. MaterialReservation 갱신 ──────────────────────────────────────
         if (item.reservationId) {
           const res = await tx.materialReservation.findUnique({
             where: { id: item.reservationId },
@@ -258,7 +284,6 @@ export async function issueMaterialsForWorkOrder(
             })
           }
         } else {
-          // 예약이 없으면 새로 생성
           const existing = await tx.materialReservation.findFirst({
             where: { workOrderId: data.workOrderId, itemId: item.itemId },
           })
