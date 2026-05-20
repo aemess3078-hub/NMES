@@ -1461,13 +1461,13 @@ async function seedFeatures() {
     // PRODUCTION
     { code: 'WORK_ORDER', name: '작업지시', description: '작업지시 생성 및 관리', category: 'PRODUCTION', icon: 'ClipboardList', menuCodes: ['work-orders'], isCore: false, displayOrder: 50 },
     { code: 'PRODUCTION_PLAN', name: '생산계획', description: '일간/주간/월간 생산계획', category: 'PRODUCTION', icon: 'CalendarDays', menuCodes: ['production-plan'], isCore: false, displayOrder: 60 },
-    { code: 'PRODUCTION_RESULT', name: '작업실적', description: '공정별 생산실적 입력', category: 'PRODUCTION', icon: 'BarChart2', menuCodes: ['production-results'], isCore: false, displayOrder: 70 },
+    { code: 'PRODUCTION_RESULT', name: '작업실적', description: '공정별 생산실적 입력', category: 'PRODUCTION', icon: 'BarChart2', menuCodes: ['production-results', 'equipment-output'], isCore: false, displayOrder: 70 },
     // MATERIAL
-    { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory', 'inventory-transactions'], isCore: false, displayOrder: 80 },
+    { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory', 'inventory-transactions', 'stock', 'wip-inventory'], isCore: false, displayOrder: 80 },
     { code: 'LOT_TRACKING', name: 'LOT/시리얼 추적', description: 'LOT/시리얼 단위 이력 추적 및 번호 규칙 설정', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot', 'lot-rules', 'traceability', 'lot-history'], isCore: false, displayOrder: 90 },
     // QUALITY
     { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection'], isCore: false, displayOrder: 100 },
-    { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects'], isCore: false, displayOrder: 110 },
+    { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects', 'ecn'], isCore: false, displayOrder: 110 },
     // EQUIPMENT
     { code: 'EQUIPMENT_CONNECTION', name: '설비연동', description: 'PLC/설비 데이터 연동', category: 'EQUIPMENT', icon: 'Wifi', menuCodes: ['gateways', 'equipment-connections'], isCore: false, displayOrder: 120 },
     { code: 'TAG_MANAGEMENT', name: '태그관리', description: '설비 데이터 태그 관리', category: 'EQUIPMENT', icon: 'Tag', menuCodes: ['tags'], isCore: false, displayOrder: 130 },
@@ -1476,10 +1476,10 @@ async function seedFeatures() {
     { code: 'PERMISSION', name: '권한관리', description: '역할별 권한 관리', category: 'SYSTEM', icon: 'Shield', menuCodes: ['users'], isCore: true, displayOrder: 150 },
     { code: 'FEATURE_MANAGEMENT', name: '기능관리', description: '테넌트 기능 ON/OFF 관리', category: 'SYSTEM', icon: 'Puzzle', menuCodes: ['features'], isCore: true, displayOrder: 160 },
     // SALES
-    { code: 'SALES_ORDER', name: '수주관리', description: '수주/출하 관리', category: 'SALES', icon: 'ClipboardList', menuCodes: ['sales-orders', 'shipments'], isCore: false, displayOrder: 151 },
+    { code: 'SALES_ORDER', name: '수주관리', description: '수주/출하 관리', category: 'SALES', icon: 'ClipboardList', menuCodes: ['sales-orders', 'shipments', 'order-status', 'delivery-status'], isCore: false, displayOrder: 151 },
     { code: 'SHIPMENT', name: '출하관리', description: '출하 관리', category: 'SALES', icon: 'Truck', menuCodes: ['shipments'], isCore: false, displayOrder: 152 },
     // PURCHASE
-    { code: 'PURCHASE_ORDER', name: '발주관리', description: '발주/입고 관리', category: 'PURCHASE', icon: 'FileInput', menuCodes: ['purchase-orders', 'material-receipt'], isCore: false, displayOrder: 161 },
+    { code: 'PURCHASE_ORDER', name: '발주관리', description: '발주/입고 관리', category: 'PURCHASE', icon: 'FileInput', menuCodes: ['purchase-orders', 'material-receipt', 'material-issue'], isCore: false, displayOrder: 161 },
     { code: 'ITEM_PRICE', name: '단가관리', description: '품목 단가 관리', category: 'PURCHASE', icon: 'CircleDollarSign', menuCodes: ['item-prices'], isCore: false, displayOrder: 162 },
     // MRP
     { code: 'MRP', name: 'MRP 소요량', description: '자재 소요량 계획 및 AI 발주 제안', category: 'PRODUCTION', icon: 'Calculator', menuCodes: ['mrp'], isCore: false, displayOrder: 141 },
@@ -1547,7 +1547,7 @@ async function seedFeatures() {
   const tenant = await prisma.tenant.findFirst();
   if (tenant) {
     const enableCodes = [
-      'ITEM', 'BOM', 'ROUTING', 'WORK_ORDER', 'PRODUCTION_PLAN',
+      'ITEM', 'BOM', 'ROUTING', 'EQUIPMENT', 'WORK_ORDER', 'PRODUCTION_PLAN',
       'PRODUCTION_RESULT', 'QUALITY_INSPECTION', 'DEFECT_MANAGEMENT',
       'COMMON_CODE', 'PERMISSION', 'FEATURE_MANAGEMENT',
       'SALES_ORDER', 'PURCHASE_ORDER', 'ITEM_PRICE', 'MRP',
