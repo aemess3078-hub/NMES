@@ -141,7 +141,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
               {remainingQty.toLocaleString()}
             </span>
             {rawRemainingQty < 0 ? (
-              <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700">
+              <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700 whitespace-nowrap">
                 수량 확인
               </Badge>
             ) : null}
@@ -173,7 +173,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
               />
             </div>
             {progress > 100 ? (
-              <p className="text-right text-[12px] text-red-600">초과</p>
+              <p className="text-right text-[12px] text-red-600 whitespace-nowrap">초과</p>
             ) : null}
           </div>
         )
@@ -187,7 +187,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
       cell: ({ row }) => {
         const config = STATUS_CONFIG[row.original.status]
         return (
-          <Badge variant="outline" className={`text-[12px] ${config.className}`}>
+          <Badge variant="outline" className={`text-[12px] whitespace-nowrap ${config.className}`}>
             {config.label}
           </Badge>
         )
@@ -223,7 +223,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
       ),
       cell: ({ row }) => (
         <div className="space-y-0.5">
-          <p className="text-[13px] font-medium text-foreground">
+          <p className="text-[13px] font-medium text-foreground whitespace-nowrap">
             {format(new Date(row.original.startedAt ?? row.original.workOrder.createdAt), "yyyy-MM-dd")}
           </p>
           <p className="text-[13px] text-muted-foreground">
@@ -248,14 +248,14 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         return (
           <div className="flex items-center gap-2">
             <span
-              className={`text-[13px] font-medium ${
+              className={`text-[13px] font-medium whitespace-nowrap ${
                 delayed ? "text-red-600" : "text-muted-foreground"
               }`}
             >
               {format(new Date(dueDate), "yyyy-MM-dd")}
             </span>
             {delayed ? (
-              <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700">
+              <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700 whitespace-nowrap">
                 지연
               </Badge>
             ) : null}

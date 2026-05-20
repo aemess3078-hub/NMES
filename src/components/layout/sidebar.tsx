@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   ChevronRight,
@@ -137,7 +138,6 @@ function DynamicIcon({ name, className }: { name?: string | null; className?: st
 // ----------------------------------------------------------------
 function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { expandedMenuIds, toggleMenuExpand } = useAppStore();
 
   const hasChildren = item.children.length > 0;
@@ -146,49 +146,50 @@ function NavItemNode({ item, depth }: { item: NavItem; depth: number }) {
   const isActive = item.href ? pathname === item.href : false;
   const isComingSoon = item.comingSoon === true;
 
-  const handleClick = () => {
-    if (isComingSoon) return;
-    if (isFolder) {
-      toggleMenuExpand(item.id);
-    } else if (item.href) {
-      router.push(item.href);
-    }
-  };
+  const itemInner = (
+    <div
+      className={cn(
+        'flex items-center gap-1.5 rounded px-2 py-1.5 transition-colors',
+        isComingSoon
+          ? 'cursor-not-allowed opacity-40'
+          : 'cursor-pointer',
+        isActive
+          ? 'bg-accent text-accent-foreground font-semibold'
+          : isComingSoon
+            ? 'text-muted-foreground font-medium'
+            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground font-medium',
+      )}
+      style={{ paddingLeft: `${8 + depth * 16}px` }}
+      onClick={isFolder ? () => toggleMenuExpand(item.id) : undefined}
+    >
+      {(isFolder || hasChildren) ? (
+        <span className="flex-shrink-0 text-muted-foreground/60">
+          {isExpanded
+            ? <ChevronDown className="h-3 w-3" />
+            : <ChevronRight className="h-3 w-3" />}
+        </span>
+      ) : (
+        <span className="w-3 flex-shrink-0" />
+      )}
+      <DynamicIcon name={item.icon} className="flex-shrink-0 opacity-60" />
+      <span className={cn("truncate flex-1", depth >= 2 ? "text-[13px]" : "text-[14px]")}>{item.label}</span>
+      {isComingSoon && (
+        <span className="flex-shrink-0 text-[10px] font-medium px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">
+          준비중
+        </span>
+      )}
+    </div>
+  );
 
   return (
     <div>
-      <div
-        className={cn(
-          'flex items-center gap-1.5 rounded px-2 py-1.5 transition-colors',
-          isComingSoon
-            ? 'cursor-not-allowed opacity-40'
-            : 'cursor-pointer',
-          isActive
-            ? 'bg-accent text-accent-foreground font-semibold'
-            : isComingSoon
-              ? 'text-muted-foreground font-medium'
-              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground font-medium',
-        )}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={handleClick}
-      >
-        {(isFolder || hasChildren) ? (
-          <span className="flex-shrink-0 text-muted-foreground/60">
-            {isExpanded
-              ? <ChevronDown className="h-3 w-3" />
-              : <ChevronRight className="h-3 w-3" />}
-          </span>
-        ) : (
-          <span className="w-3 flex-shrink-0" />
-        )}
-        <DynamicIcon name={item.icon} className="flex-shrink-0 opacity-60" />
-        <span className={cn("truncate flex-1", depth >= 2 ? "text-[13px]" : "text-[14px]")}>{item.label}</span>
-        {isComingSoon && (
-          <span className="flex-shrink-0 text-[10px] font-medium px-1 py-0.5 rounded bg-muted text-muted-foreground leading-none">
-            준비중
-          </span>
-        )}
-      </div>
+      {!isComingSoon && item.href && !isFolder ? (
+        <Link href={item.href} className="block">
+          {itemInner}
+        </Link>
+      ) : (
+        itemInner
+      )}
       {hasChildren && isExpanded && (
         <div>
           {item.children.map((child) => (

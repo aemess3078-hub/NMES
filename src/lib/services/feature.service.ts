@@ -1,11 +1,20 @@
+import { cache } from "react"
 import { prisma } from "@/lib/db/prisma"
 
-// 1. 테넌트 활성 기능 코드 목록
-export async function getEnabledFeatureCodes(tenantId: string): Promise<string[]> {
-  const tenantFeatures = await prisma.tenantFeature.findMany({
+// ── 내부 캐시 헬퍼: 동일 요청 내 중복 DB 조회 제거 ──────────────────────────
+// React cache()는 서버 컴포넌트 렌더 트리 내에서 인자가 같으면 결과를 재사용합니다.
+// layout.tsx에서 getEnabledFeatureCodes + getEnabledMenuCodes를 동시에 호출해도
+// TenantFeature 쿼리가 한 번만 실행됩니다.
+const _getEnabledTenantFeatures = cache(async (tenantId: string) => {
+  return prisma.tenantFeature.findMany({
     where: { tenantId, isEnabled: true },
     include: { feature: true },
   })
+})
+
+// 1. 테넌트 활성 기능 코드 목록
+export async function getEnabledFeatureCodes(tenantId: string): Promise<string[]> {
+  const tenantFeatures = await _getEnabledTenantFeatures(tenantId)
   return tenantFeatures.map((tf) => tf.feature.code)
 }
 
@@ -105,9 +114,6 @@ export async function isFeatureEnabled(tenantId: string, featureCode: string): P
 
 // 6. 활성 기능의 menuCodes만 필터링
 export async function getEnabledMenuCodes(tenantId: string): Promise<string[]> {
-  const tenantFeatures = await prisma.tenantFeature.findMany({
-    where: { tenantId, isEnabled: true },
-    include: { feature: true },
-  })
+  const tenantFeatures = await _getEnabledTenantFeatures(tenantId)
   return tenantFeatures.flatMap((tf) => tf.feature.menuCodes)
 }
