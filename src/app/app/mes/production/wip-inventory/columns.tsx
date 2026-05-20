@@ -63,7 +63,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         <DataTableColumnHeader column={column} title="품목명" />
       ),
       cell: ({ row }) => (
-        <span className="text-[14px] font-medium text-foreground">
+        <span className="block truncate max-w-[130px] text-[14px] font-medium text-foreground" title={row.original.workOrder.item.name}>
           {row.original.workOrder.item.name}
         </span>
       ),
@@ -75,8 +75,8 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         <DataTableColumnHeader column={column} title="현재공정" />
       ),
       cell: ({ row }) => (
-        <div className="space-y-0.5">
-          <p className="text-[14px] font-medium text-foreground">
+        <div className="space-y-0.5 max-w-[120px]">
+          <p className="truncate text-[14px] font-medium text-foreground" title={row.original.routingOperation.name}>
             <span className="mr-1 text-muted-foreground">{row.original.seq}.</span>
             {row.original.routingOperation.name}
           </p>
@@ -95,11 +95,11 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
       cell: ({ row }) => {
         const equipment = row.original.equipment
         return (
-          <div className="space-y-0.5">
-            <p className="text-[14px] text-foreground">
+          <div className="space-y-0.5 max-w-[120px]">
+            <p className="truncate text-[14px] text-foreground" title={row.original.routingOperation.workCenter.name}>
               {row.original.routingOperation.workCenter.name}
             </p>
-            <p className="text-[13px] text-muted-foreground">
+            <p className="truncate text-[13px] text-muted-foreground" title={equipment ? equipment.name : "설비 미지정"}>
               {equipment ? equipment.name : "설비 미지정"}
             </p>
           </div>
@@ -132,7 +132,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         const rawRemainingQty = row.original.remainingQty
         const remainingQty = getDisplayRemainingQty(row.original)
         return (
-          <div className="space-y-1 text-right min-w-[72px]">
+          <div className="space-y-1 text-right min-w-[60px]">
             <span
               className={`block text-[14px] font-medium tabular-nums ${
                 remainingQty > 0 ? "text-amber-700" : "text-emerald-700"
@@ -159,7 +159,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         const progress = getProgress(row.original)
         const displayProgress = Math.min(progress, 100)
         return (
-          <div className="w-[130px] shrink-0 space-y-1">
+          <div className="w-[110px] shrink-0 space-y-1">
             <div className="flex justify-between text-[13px]">
               <span className="text-muted-foreground">
                 {row.original.productionQty.toLocaleString()} / {row.original.plannedQty.toLocaleString()}
@@ -202,7 +202,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         <DataTableColumnHeader column={column} title="재공수량" />
       ),
       cell: ({ row }) => (
-        <div className="space-y-0.5 text-right min-w-[72px]">
+        <div className="space-y-0.5 text-right min-w-[60px]">
           <QuantityCell value={row.original.activeWipQty} />
           {row.original.wipLocations.length > 0 ? (
             <p className="text-[12px] text-muted-foreground">
@@ -222,7 +222,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
         <DataTableColumnHeader column={column} title="시작/지시일" />
       ),
       cell: ({ row }) => (
-        <div className="space-y-0.5 min-w-[90px]">
+        <div className="space-y-0.5 min-w-[80px]">
           <p className="text-[13px] font-medium text-foreground whitespace-nowrap">
             {format(new Date(row.original.startedAt ?? row.original.workOrder.createdAt), "yyyy-MM-dd")}
           </p>
@@ -246,7 +246,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
 
         const delayed = isDelayed(row.original)
         return (
-          <div className="flex items-center gap-2 min-w-[120px]">
+          <div className="flex flex-col gap-0.5 min-w-[80px]">
             <span
               className={`text-[13px] font-medium whitespace-nowrap ${
                 delayed ? "text-red-600" : "text-muted-foreground"
@@ -255,7 +255,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
               {format(new Date(dueDate), "yyyy-MM-dd")}
             </span>
             {delayed ? (
-              <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700 whitespace-nowrap">
+              <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700 whitespace-nowrap w-fit">
                 지연
               </Badge>
             ) : null}
@@ -268,7 +268,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
 
 function QuantityCell({ value }: { value: number }) {
   return (
-    <span className="block text-right text-[14px] tabular-nums min-w-[60px]">
+    <span className="block text-right text-[14px] tabular-nums min-w-[50px]">
       {value.toLocaleString()}
     </span>
   )
