@@ -18,6 +18,45 @@ export async function getSalesOrders(tenantId: string) {
   })
 }
 
+export type SalesOrderStatusRow = Awaited<ReturnType<typeof getSalesOrderStatusRows>>[number]
+
+export async function getSalesOrderStatusRows(tenantId: string) {
+  return prisma.salesOrder.findMany({
+    where: { tenantId },
+    select: {
+      id: true,
+      orderNo: true,
+      orderDate: true,
+      deliveryDate: true,
+      status: true,
+      customer: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+        },
+      },
+      items: {
+        select: {
+          id: true,
+          qty: true,
+          shippedQty: true,
+          item: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              uom: true,
+            },
+          },
+        },
+        orderBy: { item: { code: "asc" } },
+      },
+    },
+    orderBy: [{ deliveryDate: "asc" }, { orderNo: "desc" }],
+  })
+}
+
 export async function getCustomers(tenantId: string) {
   return prisma.businessPartner.findMany({
     where: { tenantId, partnerType: { in: ["CUSTOMER", "BOTH"] } },
