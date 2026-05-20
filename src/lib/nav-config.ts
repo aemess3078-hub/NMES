@@ -122,7 +122,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-sales-orders', parentId: 'nav-sales', label: '수주등록', icon: 'ClipboardList', href: '/app/mes/sales-orders', displayOrder: 1, children: [] },
           { id: 'nav-sales-status', parentId: 'nav-sales', label: '수주현황', icon: 'BarChart2', href: '/app/mes/sales/order-status', displayOrder: 2, children: [] },
           { id: 'nav-shipments', parentId: 'nav-sales', label: '납품정보등록', icon: 'Truck', href: '/app/mes/shipments', displayOrder: 3, children: [] },
-          { id: 'nav-delivery-status', parentId: 'nav-sales', label: '납품현황', icon: 'FileBarChart', href: '/app/mes/sales/delivery-status', displayOrder: 4, comingSoon: true, children: [] },
+          { id: 'nav-delivery-status', parentId: 'nav-sales', label: '납품현황', icon: 'FileBarChart', href: '/app/mes/sales/delivery-status', displayOrder: 4, children: [] },
         ],
       },
     ],

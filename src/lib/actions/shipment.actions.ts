@@ -21,6 +21,76 @@ export async function getShipments(tenantId: string) {
   })
 }
 
+export type DeliveryStatusRow = Awaited<ReturnType<typeof getDeliveryStatusRows>>[number]
+
+export async function getDeliveryStatusRows(tenantId: string) {
+  return prisma.shipmentOrder.findMany({
+    where: { tenantId },
+    select: {
+      id: true,
+      shipmentNo: true,
+      status: true,
+      plannedDate: true,
+      shippedDate: true,
+      deliveredDate: true,
+      salesOrder: {
+        select: {
+          id: true,
+          orderNo: true,
+          deliveryDate: true,
+          status: true,
+          customer: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+            },
+          },
+          items: {
+            select: {
+              id: true,
+              qty: true,
+              shippedQty: true,
+              item: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  uom: true,
+                },
+              },
+            },
+            orderBy: { item: { code: "asc" } },
+          },
+        },
+      },
+      items: {
+        select: {
+          id: true,
+          qty: true,
+          item: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              uom: true,
+            },
+          },
+          salesOrderItem: {
+            select: {
+              id: true,
+              qty: true,
+              shippedQty: true,
+            },
+          },
+        },
+        orderBy: { item: { code: "asc" } },
+      },
+    },
+    orderBy: [{ plannedDate: "desc" }, { shipmentNo: "desc" }],
+  })
+}
+
 export async function getShippableSalesOrders(tenantId: string) {
   return prisma.salesOrder.findMany({
     where: {
