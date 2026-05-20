@@ -91,28 +91,38 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
 
     // 3-3. InventoryBalance 갱신 (합격 수량만)
     if (data.acceptedQty > 0) {
-      await tx.inventoryBalance.upsert({
+      // LOT 비관리 입고 경로: lotId=null 기준으로 findFirst 후 update/create
+      // LOT 관리 품목 입고는 별도 LOT 지정 경로에서 처리
+      const existingBalance = await tx.inventoryBalance.findFirst({
         where: {
-          tenantId_itemId_warehouseId: {
-            tenantId,
-            itemId: purchaseOrderItem.itemId,
-            warehouseId: warehouse.id,
-          },
-        },
-        update: {
-          qtyOnHand: { increment: data.acceptedQty },
-          qtyAvailable: { increment: data.acceptedQty },
-        },
-        create: {
           tenantId,
-          siteId: warehouse.siteId,   // 창고의 siteId를 사용 (정합성 보장)
           itemId: purchaseOrderItem.itemId,
           warehouseId: warehouse.id,
-          qtyOnHand: data.acceptedQty,
-          qtyAvailable: data.acceptedQty,
-          qtyHold: 0,
+          lotId: null,
         },
       })
+      if (existingBalance) {
+        await tx.inventoryBalance.update({
+          where: { id: existingBalance.id },
+          data: {
+            qtyOnHand: { increment: data.acceptedQty },
+            qtyAvailable: { increment: data.acceptedQty },
+          },
+        })
+      } else {
+        await tx.inventoryBalance.create({
+          data: {
+            tenantId,
+            siteId: warehouse.siteId,
+            itemId: purchaseOrderItem.itemId,
+            warehouseId: warehouse.id,
+            lotId: null,
+            qtyOnHand: data.acceptedQty,
+            qtyAvailable: data.acceptedQty,
+            qtyHold: 0,
+          },
+        })
+      }
 
       // 3-4. InventoryTransaction 생성
       const txNo = await generateTxNo(tenantId)
