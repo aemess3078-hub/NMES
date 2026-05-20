@@ -109,7 +109,7 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
   const rows = Array.from(map.values())
 
   for (const row of rows) {
-    const denom = row.goodQty + row.defectQty
+    const denom = row.goodQty + row.defectQty + row.reworkQty
     row.defectRate = denom > 0 ? (row.defectQty / denom) * 100 : 0
   }
 

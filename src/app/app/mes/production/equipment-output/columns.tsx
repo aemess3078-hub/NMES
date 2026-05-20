@@ -136,7 +136,7 @@ export const columns: ColumnDef<EquipmentOutputRow>[] = [
   {
     id:          "latestAt",
     accessorKey: "latestAt",
-    header: ({ column }) => <DataTableColumnHeader column={column} title="최근실적일시" />,
+    header: ({ column }) => <DataTableColumnHeader column={column} title="최근실적일" />,
     cell: ({ row }) => {
       const d = row.original.latestAt
       if (!d) return <span className="text-[13px] text-muted-foreground">—</span>

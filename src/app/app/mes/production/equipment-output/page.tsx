@@ -9,9 +9,10 @@ export default async function EquipmentOutputPage() {
   const totalEquipment = rows.length
   const totalGood      = rows.reduce((s, r) => s + r.goodQty,   0)
   const totalDefect    = rows.reduce((s, r) => s + r.defectQty, 0)
+  const totalRework    = rows.reduce((s, r) => s + r.reworkQty, 0)
   const avgDefectRate  =
-    (totalGood + totalDefect) > 0
-      ? (totalDefect / (totalGood + totalDefect)) * 100
+    (totalGood + totalDefect + totalRework) > 0
+      ? (totalDefect / (totalGood + totalDefect + totalRework)) * 100
       : 0
 
   return (
