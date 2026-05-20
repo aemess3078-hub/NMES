@@ -329,6 +329,7 @@ export async function updateTag(id: string, data: UpdateTagInput) {
 
 export async function deleteTag(id: string) {
   await prisma.tagSnapshot.deleteMany({ where: { tagId: id } })
+  await prisma.tagCurrentValue.deleteMany({ where: { tagId: id } })
   await prisma.dataTag.delete({ where: { id } })
   revalidatePath("/app/mes/tags")
 }

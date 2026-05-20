@@ -1455,8 +1455,9 @@ model DataTag {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
-  connection EquipmentConnection @relation(fields: [connectionId], references: [id])
-  snapshots  TagSnapshot[]
+  connection   EquipmentConnection @relation(fields: [connectionId], references: [id])
+  snapshots    TagSnapshot[]
+  currentValue TagCurrentValue?
 
   @@unique([connectionId, tagCode])
   @@index([connectionId])
@@ -1472,6 +1473,17 @@ model TagSnapshot {
   tag DataTag @relation(fields: [tagId], references: [id])
 
   @@index([tagId, timestamp])
+}
+
+model TagCurrentValue {
+  id           String   @id @default(cuid())
+  tagId        String   @unique
+  value        String
+  numericValue Decimal? @db.Decimal(18, 6)
+  quality      String   @default("GOOD")
+  timestamp    DateTime
+
+  tag DataTag @relation(fields: [tagId], references: [id])
 }
 
 model EquipmentEvent {

@@ -26,6 +26,7 @@ const MIGRATIONS = [
   '20260328150000_inventory_balance_to_warehouse',
   '20260519000000_add_auth_tables',
   '20260520000000_fix_inventory_balance_lot_unique',
+  '20260520000001_add_tag_current_value',
 ];
 
 function run(cmd) {
