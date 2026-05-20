@@ -1,12 +1,71 @@
-export default function Page() {
+import {
+  getMaterialInventoryBalances,
+  getSitesForInventory,
+} from "@/lib/actions/inventory.actions"
+import { MaterialStockDataTable } from "./material-stock-data-table"
+
+export const dynamic = "force-dynamic"
+
+export default async function MaterialStockPage() {
+  const [balances, sites] = await Promise.all([
+    getMaterialInventoryBalances(),
+    getSitesForInventory(),
+  ])
+
+  const totalLines = balances.length
+  const totalOnHand = balances.reduce((sum, b) => sum + Number(b.qtyOnHand), 0)
+  const totalAvailable = balances.reduce((sum, b) => sum + Number(b.qtyAvailable), 0)
+  const distinctItems = new Set(balances.map((b) => b.itemId)).size
+
   return (
-    <div className="p-6 space-y-2">
-      <h1 className="text-[26px] font-semibold text-foreground">자재재고현황</h1>
-      <p className="text-[14px] text-muted-foreground">MES &gt; 자재관리</p>
-      <div className="mt-8 p-8 rounded-lg border border-dashed border-border bg-muted/20 text-center">
-        <p className="text-[15px] text-muted-foreground">자재별 현재 재고 수량 및 입출고 현황 조회 화면입니다.</p>
-        <span className="inline-block mt-3 px-3 py-1 rounded-full text-[13px] bg-muted text-muted-foreground">준비중</span>
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+          자재재고현황
+        </h1>
+        <p className="text-[15px] text-muted-foreground mt-1">
+          MES &gt; 자재관리 · 원자재·소모품의 LOT별 현재고를 조회합니다.
+        </p>
       </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard label="자재 품목 수" value={distinctItems.toLocaleString()} suffix="종" />
+        <SummaryCard label="재고 라인" value={totalLines.toLocaleString()} suffix="건" />
+        <SummaryCard label="총 현재고" value={totalOnHand.toLocaleString()} />
+        <SummaryCard label="총 가용수량" value={totalAvailable.toLocaleString()} accent />
+      </div>
+
+      <MaterialStockDataTable data={balances} sites={sites} />
+    </div>
+  )
+}
+
+function SummaryCard({
+  label,
+  value,
+  suffix,
+  accent,
+}: {
+  label: string
+  value: string
+  suffix?: string
+  accent?: boolean
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+      <p
+        className={`mt-1 text-[20px] font-semibold tabular-nums ${
+          accent ? "text-emerald-700" : "text-foreground"
+        }`}
+      >
+        {value}
+        {suffix ? (
+          <span className="ml-1 text-[14px] font-normal text-muted-foreground">
+            {suffix}
+          </span>
+        ) : null}
+      </p>
     </div>
   )
 }

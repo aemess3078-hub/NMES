@@ -76,7 +76,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-purchase-orders', parentId: 'nav-material', label: '자재발주현황', icon: 'ShoppingCart', href: '/app/mes/purchase-orders', displayOrder: 1, children: [] },
           { id: 'nav-material-receipt', parentId: 'nav-material', label: '자재입고현황', icon: 'PackagePlus', href: '/app/mes/material-receipt', displayOrder: 2, children: [] },
           { id: 'nav-material-issue', parentId: 'nav-material', label: '자재출고현황', icon: 'FileInput', href: '/app/mes/material-issue', displayOrder: 3, children: [] },
-          { id: 'nav-material-stock', parentId: 'nav-material', label: '자재재고현황', icon: 'Boxes', href: '/app/mes/material/stock', displayOrder: 4, comingSoon: true, children: [] },
+          { id: 'nav-material-stock', parentId: 'nav-material', label: '자재재고현황', icon: 'Boxes', href: '/app/mes/material/stock', displayOrder: 4, children: [] },
         ],
       },
       // 5. KPI

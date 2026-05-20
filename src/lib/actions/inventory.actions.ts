@@ -58,6 +58,23 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
   }) as any
 }
 
+export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
+  return prisma.inventoryBalance.findMany({
+    where: {
+      item: { itemType: { in: ["RAW_MATERIAL", "CONSUMABLE"] } },
+    },
+    include: {
+      warehouse: { include: { site: true } },
+      item: true,
+      lot: { select: { id: true, lotNo: true } },
+    },
+    orderBy: [
+      { warehouse: { name: "asc" } },
+      { item: { code: "asc" } },
+    ],
+  }) as any
+}
+
 export async function getWarehousesBySite(siteId: string) {
   return prisma.warehouse.findMany({
     where: { siteId },
