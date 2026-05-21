@@ -25,7 +25,7 @@ export type TraceabilityMaterialLot = {
   lotNo: string
   qty: number
   unit: string | null
-  issuedAt: Date
+  issuedAt: string
 }
 
 export type TraceabilityProcessHistory = {
@@ -33,8 +33,8 @@ export type TraceabilityProcessHistory = {
   seq: number
   processName: string
   status: string
-  startedAt: Date | null
-  completedAt: Date | null
+  startedAt: string | null
+  completedAt: string | null
   workerName: string | null
   goodQty: number
   defectQty: number
@@ -47,7 +47,8 @@ export type TraceabilityInspection = {
   stage: string
   result: string | null
   inspectedQty: number
-  inspectedAt: Date
+  defectQty: number
+  inspectedAt: string
   inspectorName: string | null
 }
 
@@ -55,14 +56,14 @@ export type TraceabilityPackaging = {
   warehouseName: string | null
   locationName: string | null
   receiptQty: number
-  receiptAt: Date
+  receiptAt: string
 } | null
 
 export type TraceabilityShipment = {
   shipmentNo: string
   status: string
-  plannedDate: Date
-  shippedDate: Date | null
+  plannedDate: string
+  shippedDate: string | null
   qty: number
 }
 
@@ -124,6 +125,7 @@ export async function getManufacturingTraceability(
                 },
               },
               inspector: { select: { name: true } },
+              defectRecords: { select: { qty: true } },
             },
           },
         },
@@ -170,7 +172,7 @@ export async function getManufacturingTraceability(
     lotNo: row.materialLotNo,
     qty: Number(row.qty),
     unit: row.unit,
-    issuedAt: row.issuedAt,
+    issuedAt: row.issuedAt.toISOString(),
   }))
 
   // 공정 진행 이력
@@ -193,8 +195,8 @@ export async function getManufacturingTraceability(
       seq: op.seq,
       processName: op.routingOperation.name,
       status: op.status,
-      startedAt,
-      completedAt,
+      startedAt: startedAt?.toISOString() ?? null,
+      completedAt: completedAt?.toISOString() ?? null,
       workerName: null,
       goodQty: totalGood,
       defectQty: totalDefect,
@@ -210,7 +212,8 @@ export async function getManufacturingTraceability(
       stage: qi.stage,
       result: qi.result,
       inspectedQty: Number(qi.inspectedQty),
-      inspectedAt: qi.inspectedAt,
+      defectQty: qi.defectRecords.reduce((sum, record) => sum + Number(record.qty), 0),
+      inspectedAt: qi.inspectedAt.toISOString(),
       inspectorName: qi.inspector?.name ?? null,
     })),
   )
@@ -222,7 +225,7 @@ export async function getManufacturingTraceability(
         warehouseName: latestReceipt.warehouse?.name ?? null,
         locationName: latestReceipt.location?.name ?? null,
         receiptQty: Number(latestReceipt.receiptQty),
-        receiptAt: latestReceipt.receiptAt,
+        receiptAt: latestReceipt.receiptAt.toISOString(),
       }
     : null
 
@@ -255,8 +258,8 @@ export async function getManufacturingTraceability(
     shipments = shipmentItems.map((si) => ({
       shipmentNo: si.shipmentOrder.shipmentNo,
       status: si.shipmentOrder.status,
-      plannedDate: si.shipmentOrder.plannedDate,
-      shippedDate: si.shipmentOrder.shippedDate,
+      plannedDate: si.shipmentOrder.plannedDate.toISOString(),
+      shippedDate: si.shipmentOrder.shippedDate?.toISOString() ?? null,
       qty: Number(si.qty),
     }))
   }

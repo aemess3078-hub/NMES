@@ -5,13 +5,13 @@ import {
   InspectionSpecStatus,
   InspectionInputType,
   InspectionResult,
+  InspectionStage,
   DefectCategory,
   DefectSeverity,
   DefectDisposition,
 } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { requireRole } from "@/lib/auth"
 
 export type DefectCodeRow = {
   id: string
@@ -28,8 +28,8 @@ export type InspectionSpecWithItems = {
   routingOperationId: string
   version: string
   status: InspectionSpecStatus
-  createdAt: Date
-  updatedAt: Date
+  createdAt: string
+  updatedAt: string
   item: { id: string; code: string; name: string }
   routingOperation: { id: string; name: string; seq: number; routingId: string }
   inspectionItems: InspectionItemRow[]
@@ -41,8 +41,8 @@ export type InspectionItemRow = {
   seq: number
   name: string
   inputType: InspectionInputType
-  lowerLimit: any | null
-  upperLimit: any | null
+  lowerLimit: number | null
+  upperLimit: number | null
 }
 
 export type QualityInspectionWithDetails = {
@@ -50,15 +50,21 @@ export type QualityInspectionWithDetails = {
   workOrderOperationId: string
   inspectionSpecId: string
   inspectorId: string
+  stage: InspectionStage
   result: InspectionResult | null
-  inspectedQty: any
-  inspectedAt: Date
+  inspectedQty: number
+  inspectedAt: string
   workOrderOperation: {
     id: string
     seq: number
     workOrderId: string
     routingOperationId: string
-    workOrder: { id: string; orderNo: string; item: { code: string; name: string } }
+    workOrder: {
+      id: string
+      orderNo: string
+      manufacturingNo: string | null
+      item: { code: string; name: string }
+    }
     routingOperation: { id: string; name: string; seq: number }
   }
   inspectionSpec: { id: string; version: string; item: { name: string } }
@@ -70,13 +76,11 @@ export type DefectRecordRow = {
   id: string
   qualityInspectionId: string
   defectCodeId: string
-  qty: any
+  qty: number
   severity: DefectSeverity
   disposition: DefectDisposition | null
   defectCode: { id: string; code: string; name: string; defectCategory: DefectCategory }
 }
-
-// ─── Input Types ──────────────────────────────────────────────────────────────
 
 export type CreateDefectCodeInput = {
   code: string
@@ -124,157 +128,96 @@ export type CreateQualityInspectionInput = {
   }[]
 }
 
-// ─── DefectCode CRUD ──────────────────────────────────────────────────────────
+type InspectionSpecRecord = Awaited<ReturnType<typeof getInspectionSpecRecord>>
+type QualityInspectionRecord = Awaited<ReturnType<typeof getQualityInspectionRecords>>[number]
 
-export async function getDefectCodes(tenantId: string): Promise<DefectCodeRow[]> {
-  return prisma.defectCode.findMany({
-    where: { tenantId },
-    orderBy: [{ defectCategory: "asc" }, { code: "asc" }],
-  })
+function serializeInspectionSpec(spec: NonNullable<InspectionSpecRecord>): InspectionSpecWithItems {
+  return {
+    id: spec.id,
+    tenantId: spec.tenantId,
+    itemId: spec.itemId,
+    routingOperationId: spec.routingOperationId,
+    version: spec.version,
+    status: spec.status,
+    createdAt: spec.createdAt.toISOString(),
+    updatedAt: spec.updatedAt.toISOString(),
+    item: spec.item,
+    routingOperation: spec.routingOperation,
+    inspectionItems: spec.inspectionItems.map((item) => ({
+      id: item.id,
+      inspectionSpecId: item.inspectionSpecId,
+      seq: item.seq,
+      name: item.name,
+      inputType: item.inputType,
+      lowerLimit: item.lowerLimit == null ? null : Number(item.lowerLimit),
+      upperLimit: item.upperLimit == null ? null : Number(item.upperLimit),
+    })),
+  }
 }
 
-export async function createDefectCode(data: CreateDefectCodeInput, tenantId: string) {
-  const existing = await prisma.defectCode.findFirst({
-    where: { tenantId, code: data.code },
-  })
-  if (existing) {
-    throw new Error(`불량코드 '${data.code}'는 이미 존재합니다.`)
+function serializeQualityInspection(inspection: QualityInspectionRecord): QualityInspectionWithDetails {
+  return {
+    id: inspection.id,
+    workOrderOperationId: inspection.workOrderOperationId,
+    inspectionSpecId: inspection.inspectionSpecId,
+    inspectorId: inspection.inspectorId,
+    stage: inspection.stage,
+    result: inspection.result,
+    inspectedQty: Number(inspection.inspectedQty),
+    inspectedAt: inspection.inspectedAt.toISOString(),
+    workOrderOperation: {
+      id: inspection.workOrderOperation.id,
+      seq: inspection.workOrderOperation.seq,
+      workOrderId: inspection.workOrderOperation.workOrderId,
+      routingOperationId: inspection.workOrderOperation.routingOperationId,
+      workOrder: {
+        id: inspection.workOrderOperation.workOrder.id,
+        orderNo: inspection.workOrderOperation.workOrder.orderNo,
+        manufacturingNo: inspection.workOrderOperation.workOrder.manufacturingNo,
+        item: inspection.workOrderOperation.workOrder.item,
+      },
+      routingOperation: inspection.workOrderOperation.routingOperation,
+    },
+    inspectionSpec: {
+      id: inspection.inspectionSpec.id,
+      version: inspection.inspectionSpec.version,
+      item: inspection.inspectionSpec.item,
+    },
+    inspector: inspection.inspector,
+    defectRecords: inspection.defectRecords.map((record) => ({
+      id: record.id,
+      qualityInspectionId: record.qualityInspectionId,
+      defectCodeId: record.defectCodeId,
+      qty: Number(record.qty),
+      severity: record.severity,
+      disposition: record.disposition,
+      defectCode: record.defectCode,
+    })),
   }
+}
 
-  await prisma.defectCode.create({
-    data: {
+function revalidateQualityViews() {
+  revalidatePath("/app/mes/inspection")
+  revalidatePath("/app/mes/manufacturing-traceability")
+}
+
+async function getInspectionSpecRecord(routingOperationId: string, tenantId: string) {
+  return prisma.inspectionSpec.findFirst({
+    where: {
       tenantId,
-      code: data.code,
-      name: data.name,
-      defectCategory: data.defectCategory,
+      routingOperationId,
+      status: "ACTIVE",
     },
-  })
-
-  revalidatePath("/app/mes/defects")
-}
-
-export async function updateDefectCode(id: string, data: UpdateDefectCodeInput) {
-  await prisma.defectCode.update({
-    where: { id },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.defectCategory !== undefined && { defectCategory: data.defectCategory }),
-    },
-  })
-  revalidatePath("/app/mes/defects")
-}
-
-export async function deleteDefectCode(id: string) {
-  const used = await prisma.defectRecord.count({ where: { defectCodeId: id } })
-  if (used > 0) {
-    throw new Error("이 불량코드는 검사 기록에서 사용 중이라 삭제할 수 없습니다.")
-  }
-  await prisma.defectCode.delete({ where: { id } })
-  revalidatePath("/app/mes/defects")
-}
-
-// ─── InspectionSpec CRUD ──────────────────────────────────────────────────────
-
-export async function getInspectionSpecs(tenantId: string): Promise<InspectionSpecWithItems[]> {
-  const specs = await prisma.inspectionSpec.findMany({
-    where: { tenantId },
     include: {
       item: { select: { id: true, code: true, name: true } },
       routingOperation: { select: { id: true, name: true, seq: true, routingId: true } },
       inspectionItems: { orderBy: { seq: "asc" } },
     },
-    orderBy: { createdAt: "desc" },
   })
-  return specs as any
 }
 
-export async function createInspectionSpec(
-  data: CreateInspectionSpecInput,
-  tenantId: string
-) {
-  const existing = await prisma.inspectionSpec.findFirst({
-    where: {
-      tenantId,
-      itemId: data.itemId,
-      routingOperationId: data.routingOperationId,
-      version: data.version,
-    },
-  })
-  if (existing) {
-    throw new Error("동일한 품목·공정·버전 조합의 검사기준이 이미 존재합니다.")
-  }
-
-  await prisma.inspectionSpec.create({
-    data: {
-      tenantId,
-      itemId: data.itemId,
-      routingOperationId: data.routingOperationId,
-      version: data.version,
-      status: data.status,
-    },
-  })
-
-  revalidatePath("/app/mes/measurement")
-}
-
-export async function updateInspectionSpec(id: string, data: UpdateInspectionSpecInput) {
-  await prisma.inspectionSpec.update({
-    where: { id },
-    data: {
-      ...(data.version !== undefined && { version: data.version }),
-      ...(data.status !== undefined && { status: data.status }),
-    },
-  })
-  revalidatePath("/app/mes/measurement")
-}
-
-export async function deleteInspectionSpec(id: string) {
-  const used = await prisma.qualityInspection.count({ where: { inspectionSpecId: id } })
-  if (used > 0) {
-    throw new Error("이 검사기준은 품질검사에서 사용 중이라 삭제할 수 없습니다.")
-  }
-  // Cascade delete items first
-  await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId: id } })
-  await prisma.inspectionSpec.delete({ where: { id } })
-  revalidatePath("/app/mes/measurement")
-}
-
-// ─── InspectionItem CRUD ──────────────────────────────────────────────────────
-
-export async function upsertInspectionItems(
-  inspectionSpecId: string,
-  items: UpsertInspectionItemInput[]
-) {
-  // Replace all items for this spec
-  await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId } })
-
-  if (items.length > 0) {
-    await prisma.inspectionItem.createMany({
-      data: items.map((item) => ({
-        inspectionSpecId,
-        seq: item.seq,
-        name: item.name,
-        inputType: item.inputType,
-        lowerLimit: item.lowerLimit ?? null,
-        upperLimit: item.upperLimit ?? null,
-      })),
-    })
-  }
-
-  revalidatePath("/app/mes/measurement")
-}
-
-export async function deleteInspectionItem(id: string) {
-  await prisma.inspectionItem.delete({ where: { id } })
-  revalidatePath("/app/mes/measurement")
-}
-
-// ─── QualityInspection CRUD ───────────────────────────────────────────────────
-
-export async function getQualityInspections(
-  tenantId: string
-): Promise<QualityInspectionWithDetails[]> {
-  const inspections = await prisma.qualityInspection.findMany({
+async function getQualityInspectionRecords(tenantId: string) {
+  return prisma.qualityInspection.findMany({
     where: {
       workOrderOperation: {
         workOrder: { tenantId },
@@ -307,13 +250,202 @@ export async function getQualityInspections(
     },
     orderBy: { inspectedAt: "desc" },
   })
-  return inspections as any
+}
+
+export async function getDefectCodes(tenantId: string): Promise<DefectCodeRow[]> {
+  return prisma.defectCode.findMany({
+    where: { tenantId },
+    orderBy: [{ defectCategory: "asc" }, { code: "asc" }],
+  })
+}
+
+export async function createDefectCode(data: CreateDefectCodeInput, tenantId: string) {
+  await requireRole("OPERATOR")
+  const existing = await prisma.defectCode.findFirst({
+    where: { tenantId, code: data.code },
+  })
+  if (existing) throw new Error(`Defect code '${data.code}' already exists.`)
+
+  await prisma.defectCode.create({
+    data: {
+      tenantId,
+      code: data.code,
+      name: data.name,
+      defectCategory: data.defectCategory,
+    },
+  })
+
+  revalidatePath("/app/mes/defects")
+}
+
+export async function updateDefectCode(id: string, data: UpdateDefectCodeInput) {
+  await requireRole("OPERATOR")
+  await prisma.defectCode.update({
+    where: { id },
+    data: {
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.defectCategory !== undefined && { defectCategory: data.defectCategory }),
+    },
+  })
+  revalidatePath("/app/mes/defects")
+}
+
+export async function deleteDefectCode(id: string) {
+  await requireRole("OPERATOR")
+  const used = await prisma.defectRecord.count({ where: { defectCodeId: id } })
+  if (used > 0) throw new Error("This defect code is used by inspection records.")
+
+  await prisma.defectCode.delete({ where: { id } })
+  revalidatePath("/app/mes/defects")
+}
+
+export async function getInspectionSpecs(tenantId: string): Promise<InspectionSpecWithItems[]> {
+  const specs = await prisma.inspectionSpec.findMany({
+    where: { tenantId },
+    include: {
+      item: { select: { id: true, code: true, name: true } },
+      routingOperation: { select: { id: true, name: true, seq: true, routingId: true } },
+      inspectionItems: { orderBy: { seq: "asc" } },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  return specs.map(serializeInspectionSpec)
+}
+
+export async function createInspectionSpec(
+  data: CreateInspectionSpecInput,
+  tenantId: string
+) {
+  await requireRole("OPERATOR")
+  const existing = await prisma.inspectionSpec.findFirst({
+    where: {
+      tenantId,
+      itemId: data.itemId,
+      routingOperationId: data.routingOperationId,
+      version: data.version,
+    },
+  })
+  if (existing) throw new Error("The same item/process/version inspection spec already exists.")
+
+  await prisma.inspectionSpec.create({
+    data: {
+      tenantId,
+      itemId: data.itemId,
+      routingOperationId: data.routingOperationId,
+      version: data.version,
+      status: data.status,
+    },
+  })
+
+  revalidatePath("/app/mes/measurement")
+}
+
+export async function updateInspectionSpec(id: string, data: UpdateInspectionSpecInput) {
+  await requireRole("OPERATOR")
+  await prisma.inspectionSpec.update({
+    where: { id },
+    data: {
+      ...(data.version !== undefined && { version: data.version }),
+      ...(data.status !== undefined && { status: data.status }),
+    },
+  })
+  revalidatePath("/app/mes/measurement")
+}
+
+export async function deleteInspectionSpec(id: string) {
+  await requireRole("OPERATOR")
+  const used = await prisma.qualityInspection.count({ where: { inspectionSpecId: id } })
+  if (used > 0) throw new Error("This inspection spec is used by inspection records.")
+
+  await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId: id } })
+  await prisma.inspectionSpec.delete({ where: { id } })
+  revalidatePath("/app/mes/measurement")
+}
+
+export async function upsertInspectionItems(
+  inspectionSpecId: string,
+  items: UpsertInspectionItemInput[]
+) {
+  await requireRole("OPERATOR")
+  await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId } })
+
+  if (items.length > 0) {
+    await prisma.inspectionItem.createMany({
+      data: items.map((item) => ({
+        inspectionSpecId,
+        seq: item.seq,
+        name: item.name,
+        inputType: item.inputType,
+        lowerLimit: item.lowerLimit ?? null,
+        upperLimit: item.upperLimit ?? null,
+      })),
+    })
+  }
+
+  revalidatePath("/app/mes/measurement")
+}
+
+export async function deleteInspectionItem(id: string) {
+  await requireRole("OPERATOR")
+  await prisma.inspectionItem.delete({ where: { id } })
+  revalidatePath("/app/mes/measurement")
+}
+
+export async function getQualityInspections(
+  tenantId: string
+): Promise<QualityInspectionWithDetails[]> {
+  const inspections = await getQualityInspectionRecords(tenantId)
+  return inspections.map(serializeQualityInspection)
 }
 
 export async function createQualityInspection(
   data: CreateQualityInspectionInput,
   tenantId: string
 ) {
+  await requireRole("OPERATOR")
+
+  const [operation, spec, inspector] = await Promise.all([
+    prisma.workOrderOperation.findFirst({
+      where: {
+        id: data.workOrderOperationId,
+        workOrder: { tenantId },
+      },
+      select: { routingOperationId: true },
+    }),
+    prisma.inspectionSpec.findFirst({
+      where: {
+        id: data.inspectionSpecId,
+        tenantId,
+        status: "ACTIVE",
+      },
+      select: { routingOperationId: true },
+    }),
+    prisma.profile.findFirst({
+      where: {
+        id: data.inspectorId,
+        tenantUsers: { some: { tenantId, isActive: true } },
+      },
+      select: { id: true },
+    }),
+  ])
+
+  if (!operation) throw new Error("Inspection target operation was not found.")
+  if (!spec) throw new Error("Active inspection spec was not found.")
+  if (!inspector) throw new Error("Inspector was not found.")
+  if (spec.routingOperationId !== operation.routingOperationId) {
+    throw new Error("Inspection spec does not match the selected operation.")
+  }
+
+  if (data.defectRecords.length > 0) {
+    const defectCodeIds = Array.from(new Set(data.defectRecords.map((record) => record.defectCodeId)))
+    const validDefectCodeCount = await prisma.defectCode.count({
+      where: { tenantId, id: { in: defectCodeIds } },
+    })
+    if (validDefectCodeCount !== defectCodeIds.length) {
+      throw new Error("One or more defect codes do not belong to this tenant.")
+    }
+  }
+
   const inspection = await prisma.qualityInspection.create({
     data: {
       workOrderOperationId: data.workOrderOperationId,
@@ -327,34 +459,34 @@ export async function createQualityInspection(
 
   if (data.defectRecords.length > 0) {
     await prisma.defectRecord.createMany({
-      data: data.defectRecords.map((dr) => ({
+      data: data.defectRecords.map((record) => ({
         qualityInspectionId: inspection.id,
-        defectCodeId: dr.defectCodeId,
-        qty: dr.qty,
-        severity: dr.severity,
-        disposition: dr.disposition ?? null,
+        defectCodeId: record.defectCodeId,
+        qty: record.qty,
+        severity: record.severity,
+        disposition: record.disposition ?? null,
       })),
     })
   }
 
-  revalidatePath("/app/mes/inspection")
+  revalidateQualityViews()
 }
 
 export async function updateInspectionResult(id: string, result: InspectionResult) {
+  await requireRole("OPERATOR")
   await prisma.qualityInspection.update({
     where: { id },
     data: { result },
   })
-  revalidatePath("/app/mes/inspection")
+  revalidateQualityViews()
 }
 
 export async function deleteQualityInspection(id: string) {
+  await requireRole("OPERATOR")
   await prisma.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
   await prisma.qualityInspection.delete({ where: { id } })
-  revalidatePath("/app/mes/inspection")
+  revalidateQualityViews()
 }
-
-// ─── Lookup helpers ───────────────────────────────────────────────────────────
 
 export async function getItemsForQuality() {
   return prisma.item.findMany({
@@ -387,6 +519,7 @@ export type WorkOrderOperationForInspection = {
   workOrder: {
     id: string
     orderNo: string
+    manufacturingNo: string | null
     item: { code: string; name: string }
   }
   routingOperation: { id: string; name: string; seq: number }
@@ -410,30 +543,34 @@ export async function getWorkOrderOperationsForInspection(
     },
     orderBy: { workOrder: { createdAt: "desc" } },
   })
-  return ops as any
+
+  return ops.map((op) => ({
+    id: op.id,
+    workOrderId: op.workOrderId,
+    routingOperationId: op.routingOperationId,
+    seq: op.seq,
+    status: op.status,
+    workOrder: {
+      id: op.workOrder.id,
+      orderNo: op.workOrder.orderNo,
+      manufacturingNo: op.workOrder.manufacturingNo,
+      item: op.workOrder.item,
+    },
+    routingOperation: op.routingOperation,
+  }))
 }
 
 export async function getInspectionSpecByOperation(
   routingOperationId: string,
   tenantId: string
 ): Promise<InspectionSpecWithItems | null> {
-  const spec = await prisma.inspectionSpec.findFirst({
-    where: {
-      tenantId,
-      routingOperationId,
-      status: "ACTIVE",
-    },
-    include: {
-      item: { select: { id: true, code: true, name: true } },
-      routingOperation: { select: { id: true, name: true, seq: true, routingId: true } },
-      inspectionItems: { orderBy: { seq: "asc" } },
-    },
-  })
-  return spec as any
+  const spec = await getInspectionSpecRecord(routingOperationId, tenantId)
+  return spec ? serializeInspectionSpec(spec) : null
 }
 
-export async function getProfilesForInspection() {
+export async function getProfilesForInspection(tenantId: string) {
   return prisma.profile.findMany({
+    where: { tenantUsers: { some: { tenantId, isActive: true } } },
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
   })

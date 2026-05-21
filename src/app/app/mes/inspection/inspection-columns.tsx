@@ -39,11 +39,17 @@ export function getInspectionColumns({
     {
       id: "orderNo",
       header: "작업지시번호",
-      cell: ({ row }) => (
-        <span className="font-mono text-[13px]">
-          {row.original.workOrderOperation.workOrder.orderNo}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const workOrder = row.original.workOrderOperation.workOrder
+        return (
+          <div>
+            <p className="font-mono text-[13px]">{workOrder.orderNo}</p>
+            {workOrder.manufacturingNo && (
+              <p className="font-mono text-[12px] text-blue-700">{workOrder.manufacturingNo}</p>
+            )}
+          </div>
+        )
+      },
     },
     {
       id: "itemName",

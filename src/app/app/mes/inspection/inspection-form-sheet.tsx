@@ -206,6 +206,7 @@ export function InspectionFormSheet({
                       {workOrderOperations.map((op) => (
                         <SelectItem key={op.id} value={op.id} className="text-[13px]">
                           {op.workOrder.orderNo} — [{op.workOrder.item.code}]{" "}
+                          {op.workOrder.manufacturingNo ? ` / ${op.workOrder.manufacturingNo}` : ""}{" "}
                           {op.workOrder.item.name} / {op.routingOperation.name}
                         </SelectItem>
                       ))}

@@ -26,6 +26,8 @@ import {
   SalesOrderStatus,
   ShipmentStatus,
   PurchaseOrderStatus,
+  InspectionSpecStatus,
+  InspectionInputType,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -902,6 +904,62 @@ async function seedRoutings() {
         standardTime: op.standardTime,
       },
       update: {},
+    });
+  }
+}
+
+async function seedInspectionSpecs() {
+  await prisma.inspectionSpec.upsert({
+    where: {
+      tenantId_itemId_routingOperationId_version: {
+        tenantId: IDS.tenant,
+        itemId: 'item-fg-assy-001',
+        routingOperationId: 'rop-med-30',
+        version: '1.0',
+      },
+    },
+    create: {
+      id: 'ispec-med-fg-ins-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-fg-assy-001',
+      routingOperationId: 'rop-med-30',
+      version: '1.0',
+      status: InspectionSpecStatus.ACTIVE,
+    },
+    update: {
+      status: InspectionSpecStatus.ACTIVE,
+    },
+  });
+
+  const inspectionItems = [
+    { id: 'iitem-med-fg-10', seq: 10, name: '외관 상태', inputType: InspectionInputType.TEXT, lowerLimit: null, upperLimit: null },
+    { id: 'iitem-med-fg-20', seq: 20, name: '주요 치수', inputType: InspectionInputType.NUMERIC, lowerLimit: 0, upperLimit: 100 },
+    { id: 'iitem-med-fg-30', seq: 30, name: '라벨 확인', inputType: InspectionInputType.BOOLEAN, lowerLimit: null, upperLimit: null },
+  ];
+
+  for (const item of inspectionItems) {
+    await prisma.inspectionItem.upsert({
+      where: {
+        inspectionSpecId_seq: {
+          inspectionSpecId: 'ispec-med-fg-ins-001',
+          seq: item.seq,
+        },
+      },
+      create: {
+        id: item.id,
+        inspectionSpecId: 'ispec-med-fg-ins-001',
+        seq: item.seq,
+        name: item.name,
+        inputType: item.inputType,
+        lowerLimit: item.lowerLimit,
+        upperLimit: item.upperLimit,
+      },
+      update: {
+        name: item.name,
+        inputType: item.inputType,
+        lowerLimit: item.lowerLimit,
+        upperLimit: item.upperLimit,
+      },
     });
   }
 }
@@ -2087,6 +2145,9 @@ async function main() {
 
   console.log('  [13/14] Routings + RoutingOperations');
   await seedRoutings();
+
+  console.log('  [13+] InspectionSpecs');
+  await seedInspectionSpecs();
 
   console.log('  [14/17] WorkOrders + WorkOrderOperations');
   await seedWorkOrders();

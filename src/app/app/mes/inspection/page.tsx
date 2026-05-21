@@ -16,7 +16,7 @@ export default async function InspectionPage() {
   const [inspections, workOrderOperations, profiles, defectCodes] = await Promise.all([
     getQualityInspections(tenantId),
     getWorkOrderOperationsForInspection(tenantId),
-    getProfilesForInspection(),
+    getProfilesForInspection(tenantId),
     getDefectCodes(tenantId),
   ])
 

@@ -35,14 +35,14 @@ const OPERATION_STATUS: Record<string, string> = {
 
 const INSPECTION_STAGE: Record<string, string> = {
   FIRST: "초물",
-  MIDDLE: "중간",
+  MID: "중간",
   FINAL: "종물",
 }
 
 const INSPECTION_RESULT: Record<string, { label: string; className: string }> = {
   PASS: { label: "합격", className: "bg-green-100 text-green-800" },
   FAIL: { label: "불합격", className: "bg-red-100 text-red-700" },
-  PENDING: { label: "대기", className: "bg-slate-100 text-slate-600" },
+  CONDITIONAL: { label: "조건부", className: "bg-amber-100 text-amber-800" },
 }
 
 const SHIPMENT_STATUS: Record<string, { label: string; className: string }> = {
@@ -349,6 +349,7 @@ export function ManufacturingTraceabilityClient({
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">단계</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">결과</th>
                     <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">검사수량</th>
+                    <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">불량수량</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">검사일시</th>
                     <th className="pb-2 text-left text-[13px] font-medium text-muted-foreground">검사자</th>
                   </tr>
@@ -374,6 +375,13 @@ export function ManufacturingTraceabilityClient({
                           )}
                         </td>
                         <td className="py-2.5 pr-4 text-right">{formatNumber(inspection.inspectedQty)}</td>
+                        <td className="py-2.5 pr-4 text-right">
+                          {inspection.defectQty > 0 ? (
+                            <span className="font-medium text-red-600">{formatNumber(inspection.defectQty)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">0</span>
+                          )}
+                        </td>
                         <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">{formatDateTime(inspection.inspectedAt)}</td>
                         <td className="py-2.5 text-[13px]">{inspection.inspectorName ?? "-"}</td>
                       </tr>
