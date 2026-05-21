@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { EquipmentType, EquipmentStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -70,6 +70,7 @@ export type CreateEquipmentInput = {
 }
 
 export async function createEquipment(data: CreateEquipmentInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const existing = await prisma.equipment.findUnique({
     where: { siteId_code: { siteId: data.siteId, code: data.code } },
@@ -100,6 +101,7 @@ export type UpdateEquipmentInput = {
 }
 
 export async function updateEquipment(id: string, data: UpdateEquipmentInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.equipment.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("설비를 찾을 수 없습니다.")
@@ -111,6 +113,7 @@ export async function updateEquipment(id: string, data: UpdateEquipmentInput) {
 // ─── 삭제 ─────────────────────────────────────────────────────────────────────
 
 export async function deleteEquipment(id: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.equipment.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("설비를 찾을 수 없습니다.")

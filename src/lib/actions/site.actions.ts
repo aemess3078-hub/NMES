@@ -1,6 +1,6 @@
 "use server"
 
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { SiteType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -70,6 +70,7 @@ export type CreateSiteInput = {
 }
 
 export async function createSite(data: CreateSiteInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   await prisma.site.create({
     data: {
@@ -83,6 +84,7 @@ export async function createSite(data: CreateSiteInput) {
 }
 
 export async function updateSite(id: string, data: CreateSiteInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.site.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -95,6 +97,7 @@ export async function updateSite(id: string, data: CreateSiteInput) {
 }
 
 export async function deleteSite(id: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.site.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")

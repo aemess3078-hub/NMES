@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { requireRole } from "@/lib/auth"
 import { SalesOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -130,6 +131,7 @@ export async function createSalesOrder(
   siteId: string,
   data: CreateSalesOrderInput
 ) {
+  await requireRole("OPERATOR")
   const orderNo = await generateSalesOrderNo(tenantId)
   const order = await prisma.salesOrder.create({
     data: {
@@ -170,6 +172,7 @@ export type UpdateSalesOrderInput = {
 }
 
 export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) {
+  await requireRole("OPERATOR")
   const current = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
   const canEditItems = current.status === "DRAFT"
 
@@ -205,6 +208,7 @@ export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) 
 }
 
 export async function deleteSalesOrder(id: string) {
+  await requireRole("OPERATOR")
   const order = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
   if (order.status !== "DRAFT") {
     throw new Error("DRAFT 상태인 수주만 삭제할 수 있습니다.")
@@ -499,6 +503,7 @@ export async function requestProductionFromSalesOrder(
   tenantId: string,
   siteId: string
 ): Promise<{ ok: boolean; planNo?: string; error?: string }> {
+  await requireRole("OPERATOR")
   if (items.length === 0) return { ok: false, error: "생산의뢰 품목이 없습니다." }
 
   try {

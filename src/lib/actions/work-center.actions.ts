@@ -1,6 +1,6 @@
 "use server"
 
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { WorkCenterKind } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -46,11 +46,13 @@ export type CreateWorkCenterInput = {
 }
 
 export async function createWorkCenter(data: CreateWorkCenterInput) {
+  await requireRole("OPERATOR")
   await prisma.workCenter.create({ data })
   revalidatePath("/app/mes/work-centers")
 }
 
 export async function updateWorkCenter(id: string, data: Omit<CreateWorkCenterInput, "siteId">) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.workCenter.findFirst({
     where: { id, site: { tenantId } },
@@ -62,6 +64,7 @@ export async function updateWorkCenter(id: string, data: Omit<CreateWorkCenterIn
 }
 
 export async function deleteWorkCenter(id: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.workCenter.findFirst({
     where: { id, site: { tenantId } },

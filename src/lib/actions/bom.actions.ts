@@ -1,6 +1,6 @@
 "use server"
 
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { BOMStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -114,6 +114,7 @@ export type CreateBomInput = {
 }
 
 export async function createBom(data: CreateBomInput, _tenantId?: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { bomItems, ...bomFields } = data
   await prisma.bOM.create({
@@ -134,6 +135,7 @@ export async function createBom(data: CreateBomInput, _tenantId?: string) {
 }
 
 export async function updateBom(id: string, data: CreateBomInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -164,6 +166,7 @@ export async function updateBom(id: string, data: CreateBomInput) {
 }
 
 export async function deleteBom(id: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")

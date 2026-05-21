@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { requireRole } from "@/lib/auth"
 import { PurchaseOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -126,6 +127,7 @@ export async function createPurchaseOrder(
   siteId: string,
   data: CreatePurchaseOrderInput
 ) {
+  await requireRole("OPERATOR")
   const orderNo = await generatePurchaseOrderNo(tenantId)
 
   const itemsWithStock = await Promise.all(
@@ -174,6 +176,7 @@ export type UpdatePurchaseOrderInput = {
 }
 
 export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderInput) {
+  await requireRole("OPERATOR")
   const current = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
   const canEditItems = current.status === "DRAFT"
 
@@ -209,6 +212,7 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
 }
 
 export async function deletePurchaseOrder(id: string) {
+  await requireRole("OPERATOR")
   const order = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
   if (order.status !== "DRAFT") {
     throw new Error("DRAFT 상태인 발주만 삭제할 수 있습니다.")

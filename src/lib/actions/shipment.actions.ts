@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ export async function createShipment(
   siteId: string,
   data: CreateShipmentInput
 ) {
+  await requireRole("OPERATOR")
   const shipmentNo = await generateShipmentNo(tenantId)
 
   await prisma.$transaction(async (tx) => {
@@ -255,6 +257,7 @@ export async function createShipment(
 }
 
 export async function confirmShipment(id: string) {
+  await requireRole("OPERATOR")
   await prisma.shipmentOrder.update({
     where: { id },
     data: { status: "SHIPPED", shippedDate: new Date() },
@@ -263,6 +266,7 @@ export async function confirmShipment(id: string) {
 }
 
 export async function deleteShipment(id: string) {
+  await requireRole("OPERATOR")
   const shipment = await prisma.shipmentOrder.findUniqueOrThrow({
     where: { id },
     include: { items: true },

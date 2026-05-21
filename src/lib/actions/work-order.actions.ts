@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { requireRole } from "@/lib/auth"
 import { WorkOrderStatus, OperationStatus, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -425,6 +426,7 @@ export async function generateManufacturingNo(tenantId: string): Promise<string>
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: string) {
+  await requireRole("OPERATOR")
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
 
   // 제조번호: 수동 입력 우선, 미입력 시 자동 생성 (MFG-YYYYMMDD-NNN)
@@ -454,6 +456,7 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
 }
 
 export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
+  await requireRole("OPERATOR")
   const existing = await prisma.workOrder.findUnique({
     where: { id },
     select: { status: true },
@@ -497,6 +500,7 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
 }
 
 export async function deleteWorkOrder(id: string) {
+  await requireRole("OPERATOR")
   const existing = await prisma.workOrder.findUnique({
     where: { id },
     select: { status: true },

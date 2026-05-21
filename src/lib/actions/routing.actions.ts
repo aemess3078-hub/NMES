@@ -1,6 +1,6 @@
 "use server"
 
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { RoutingStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -108,6 +108,7 @@ export type CreateRoutingInput = {
 }
 
 export async function createRouting(data: CreateRoutingInput, _tenantId?: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { operations, itemId, isDefault, ...routingFields } = data
 
@@ -137,6 +138,7 @@ export async function createRouting(data: CreateRoutingInput, _tenantId?: string
 }
 
 export async function updateRouting(id: string, data: CreateRoutingInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.routing.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -172,6 +174,7 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
 }
 
 export async function deleteRouting(id: string) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.routing.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
