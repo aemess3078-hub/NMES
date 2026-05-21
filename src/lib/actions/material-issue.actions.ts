@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -225,6 +226,7 @@ export async function issueMaterialsForWorkOrder(
   data: IssueMaterialInput,
   tenantId: string
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireRole("OPERATOR")
   const activeItems = data.items.filter((i) => i.issueQty > 0)
   if (activeItems.length === 0)
     return { ok: false, error: "출고 수량을 입력하세요." }

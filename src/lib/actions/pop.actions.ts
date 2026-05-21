@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { OperationStatus, WorkOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -222,6 +222,7 @@ export async function getOperationDetail(operationId: string) {
 export async function submitProductionResult(
   data: SubmitResultInput
 ): Promise<{ success: boolean; error?: string; isCompleted?: boolean }> {
+  await requireRole("OPERATOR")
   const { workOrderOperationId, goodQty, defectQty, reworkQty } = data
 
   if (goodQty < 0 || defectQty < 0 || reworkQty < 0) {
@@ -300,6 +301,7 @@ export async function submitProductionResult(
 export async function startOperation(
   operationId: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireRole("OPERATOR")
   try {
     const tenantId = await getTenantId()
 
@@ -357,6 +359,7 @@ export async function updateOperationStatus(
   operationId: string,
   status: OperationStatus
 ) {
+  await requireRole("OPERATOR")
   await prisma.$transaction(async (tx) => {
     await tx.workOrderOperation.update({
       where: { id: operationId },

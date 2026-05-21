@@ -1,6 +1,6 @@
 "use server"
 
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -59,6 +59,7 @@ async function generateTxNo(tenantId: string): Promise<string> {
 }
 
 export async function createReceivingInspection(data: CreateReceivingInspectionInput) {
+  await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   // ── 1. 창고 존재 및 테넌트 소속 확인 ──────────────────────────────────────

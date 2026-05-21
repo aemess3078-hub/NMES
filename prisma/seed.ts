@@ -863,6 +863,17 @@ async function seedRoutings() {
     update: {},
   });
 
+  await prisma.itemRouting.upsert({
+    where: { itemId_routingId: { itemId: 'item-fg-assy-001', routingId: 'rtg-medical-std-001' } },
+    create: {
+      tenantId: IDS.tenant,
+      itemId: 'item-fg-assy-001',
+      routingId: 'rtg-medical-std-001',
+      isDefault: false,
+    },
+    update: {},
+  });
+
   const medicalOps: Array<{
     id: string;
     seq: number;
@@ -896,6 +907,50 @@ async function seedRoutings() {
 }
 
 async function seedWorkOrders() {
+  // 의료기기 표준 검증 샘플: 가공공정 → 후처리공정 → 검사공정 → 포장공정 → 완제품입고
+  await prisma.workOrder.upsert({
+    where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'WO-MED-STD-001' } },
+    create: {
+      id: 'wo-med-std-001',
+      tenantId: IDS.tenant,
+      siteId: IDS.sites.factory,
+      itemId: 'item-fg-assy-001',
+      bomId: 'bom-fg-assy-001',
+      routingId: 'rtg-medical-std-001',
+      orderNo: 'WO-MED-STD-001',
+      manufacturingNo: 'MFG-MED-STD-001',
+      plannedQty: 10,
+      status: WorkOrderStatus.RELEASED,
+      dueDate: new Date('2026-05-31'),
+    },
+    update: {},
+  });
+
+  const medicalWorkOrderOps = [
+    { id: 'woo-med-std-10', seq: 10, routingOperationId: 'rop-med-10', equipmentId: 'eq-cnc-001' },
+    { id: 'woo-med-std-20', seq: 20, routingOperationId: 'rop-med-20', equipmentId: null },
+    { id: 'woo-med-std-30', seq: 30, routingOperationId: 'rop-med-30', equipmentId: 'eq-insp-001' },
+    { id: 'woo-med-std-40', seq: 40, routingOperationId: 'rop-med-40', equipmentId: null },
+    { id: 'woo-med-std-50', seq: 50, routingOperationId: 'rop-med-50', equipmentId: null },
+  ];
+
+  for (const op of medicalWorkOrderOps) {
+    await prisma.workOrderOperation.upsert({
+      where: { workOrderId_seq: { workOrderId: 'wo-med-std-001', seq: op.seq } },
+      create: {
+        id: op.id,
+        workOrderId: 'wo-med-std-001',
+        routingOperationId: op.routingOperationId,
+        seq: op.seq,
+        status: OperationStatus.PENDING,
+        plannedQty: 10,
+        completedQty: 0,
+        equipmentId: op.equipmentId,
+      },
+      update: {},
+    });
+  }
+
   // WorkOrder 1: RELEASED
   await prisma.workOrder.upsert({
     where: { tenantId_orderNo: { tenantId: IDS.tenant, orderNo: 'WO-2026-001' } },
