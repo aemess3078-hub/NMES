@@ -2170,25 +2170,33 @@ async function seedInventoryBalances() {
   ]
 
   for (const b of balances) {
-    await prisma.inventoryBalance.upsert({
+    const existingBalance = await prisma.inventoryBalance.findFirst({
       where: {
-        tenantId_itemId_warehouseId: {
-          tenantId: IDS.tenant,
-          itemId: b.itemId,
-          warehouseId: b.warehouseId,
-        },
-      },
-      update: {},
-      create: {
         tenantId: IDS.tenant,
-        siteId: IDS.sites.factory,
         itemId: b.itemId,
         warehouseId: b.warehouseId,
-        qtyOnHand: b.qtyOnHand,
-        qtyAvailable: b.qtyAvailable,
-        qtyHold: 0,
+        lotId: null,
       },
     })
+
+    if (existingBalance) {
+      await prisma.inventoryBalance.update({
+        where: { id: existingBalance.id },
+        data: {},
+      })
+    } else {
+      await prisma.inventoryBalance.create({
+        data: {
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          itemId: b.itemId,
+          warehouseId: b.warehouseId,
+          qtyOnHand: b.qtyOnHand,
+          qtyAvailable: b.qtyAvailable,
+          qtyHold: 0,
+        },
+      })
+    }
   }
 }
 
