@@ -87,7 +87,21 @@ export async function POST(req: NextRequest) {
   // JWT 페이로드의 mustChangePw 플래그를 갱신한 새 토큰으로 쿠키를 교체한다.
   // 이렇게 해야 변경 후 /app 진입 시 layout의 JWT 기반 검사가
   // /auth/change-password 로 되돌리지 않는다.
-  const refreshedPayload = { ...payload, mustChangePw: false }
+  //
+  // 주의: verifyAuthToken 이 돌려주는 객체에는 jsonwebtoken 표준 클레임
+  // (iat, exp) 이 함께 들어 있다. signAuthToken 은 options.expiresIn 을
+  // 사용하므로 payload 에 exp 가 있으면 서명이 실패한다. 그래서 페이로드를
+  // 그대로 spread 하지 않고 AuthTokenPayload 의 도메인 필드만 명시적으로
+  // 재구성한다.
+  const refreshedPayload = {
+    profileId: payload.profileId,
+    tenantId: payload.tenantId,
+    loginId: payload.loginId,
+    email: payload.email ?? null,
+    name: payload.name,
+    role: payload.role,
+    mustChangePw: false,
+  }
   let refreshedToken: string
   try {
     refreshedToken = signAuthToken(refreshedPayload)
