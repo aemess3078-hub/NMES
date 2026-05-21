@@ -32,20 +32,15 @@ async function getExtendedKPIs() {
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
+    // 동일 where 의 두 aggregate 를 한 번에 합쳐 RTT 1회 절감.
     (async () => {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      const [good, defect] = await Promise.all([
-        prisma.productionResult.aggregate({
-          where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
-          _sum: { goodQty: true },
-        }),
-        prisma.productionResult.aggregate({
-          where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
-          _sum: { defectQty: true },
-        }),
-      ])
-      const g = Number(good._sum?.goodQty ?? 0)
-      const d = Number(defect._sum?.defectQty ?? 0)
+      const result = await prisma.productionResult.aggregate({
+        where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
+        _sum: { goodQty: true, defectQty: true },
+      })
+      const g = Number(result._sum?.goodQty ?? 0)
+      const d = Number(result._sum?.defectQty ?? 0)
       return g + d > 0 ? ((d / (g + d)) * 100).toFixed(2) : "0.00"
     })(),
   ])

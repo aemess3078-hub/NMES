@@ -90,8 +90,7 @@ export async function getProductionKPIs() {
     todayResults,
     openRepairs,
     failedChecks,
-    totalEquipment,
-    runningEquipment,
+    equipmentByStatus,
   ] = await Promise.all([
     prisma.workOrder.count({ where: { tenantId, status: { in: ["RELEASED", "IN_PROGRESS"] } } }),
     prisma.productionResult.aggregate({
@@ -102,14 +101,27 @@ export async function getProductionKPIs() {
     prisma.equipmentDailyCheck.count({
       where: { tenantId, result: "FAIL", checkDate: { gte: today } },
     }),
-    prisma.equipment.count({ where: { tenantId } }),
-    prisma.equipment.count({ where: { tenantId, status: "ACTIVE" } }),
+    // status 별 설비 수를 groupBy 한 번으로 받아 total / ACTIVE 두 카운트를
+    // 동시에 계산한다 (기존 두 count 쿼리를 1쿼리로 통합).
+    prisma.equipment.groupBy({
+      by: ["status"],
+      where: { tenantId },
+      _count: { _all: true },
+    }),
   ])
 
   const goodQty = Number(todayResults._sum?.goodQty ?? 0)
   const defectQty = Number(todayResults._sum?.defectQty ?? 0)
   const totalQty = goodQty + defectQty
   const defectRate = totalQty > 0 ? ((defectQty / totalQty) * 100).toFixed(1) : "0.0"
+
+  let totalEquipment = 0
+  let runningEquipment = 0
+  for (const row of equipmentByStatus) {
+    const c = row._count?._all ?? 0
+    totalEquipment += c
+    if (row.status === "ACTIVE") runningEquipment += c
+  }
 
   return {
     activeWorkOrders,

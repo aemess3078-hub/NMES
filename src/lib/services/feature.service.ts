@@ -110,11 +110,17 @@ export async function disableFeature(
 }
 
 // 5. 단건 체크
+//
+// 이전 구현은 prisma.tenantFeature.findFirst 를 직접 호출하여 캐시를 거치지
+// 않았다. layout 에서 이미 _getEnabledTenantFeatures 가 unstable_cache 로
+// 60초 캐시되므로, 단건 체크도 동일 캐시를 공유해 페이지 진입마다 발생하던
+// DB 쿼리를 제거한다.
 export async function isFeatureEnabled(tenantId: string, featureCode: string): Promise<boolean> {
-  const tf = await prisma.tenantFeature.findFirst({
-    where: { tenantId, isEnabled: true, feature: { code: featureCode } },
-  })
-  return !!tf
+  const tenantFeatures = await _getEnabledTenantFeatures(tenantId)
+  for (const tf of tenantFeatures) {
+    if (tf.feature.code === featureCode) return true
+  }
+  return false
 }
 
 // 6. 활성 기능의 menuCodes만 필터링

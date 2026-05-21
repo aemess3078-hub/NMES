@@ -78,20 +78,31 @@ export async function POST(req: NextRequest) {
     const isPasswordValid = await verifyPassword(password, credential.passwordHash)
 
     if (!isPasswordValid) {
-      // ⚠️ 실패 경로는 보안 로직(failCount 증가, 잠금 처리)이므로 await 유지
+      // ⚠️ 실패 경로는 보안 로직(failCount 증가, 잠금 처리)이므로 응답 전에
+      // 반드시 완료되어야 한다. 다만 update 와 LOGIN_FAIL 기록은 서로 독립
+      // 쿼리이므로 Promise.all 로 병렬 처리해 RTT 1회를 절감한다.
       const newFailCount = credential.failCount + 1
       const shouldLock = newFailCount >= FAIL_LOCK_THRESHOLD
 
-      await prisma.userCredential.update({
-        where: { id: credential.id },
-        data: {
-          failCount: newFailCount,
-          isLocked: shouldLock,
-          lockedAt: shouldLock ? new Date() : undefined,
-        },
-      })
-
-      await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'INVALID_PASSWORD', ipAddress: ip, userAgent: ua })
+      await Promise.all([
+        prisma.userCredential.update({
+          where: { id: credential.id },
+          data: {
+            failCount: newFailCount,
+            isLocked: shouldLock,
+            lockedAt: shouldLock ? new Date() : undefined,
+          },
+        }),
+        createLoginHistoryLog({
+          tenantId,
+          loginId: normalizedLoginId,
+          profileId: credential.profileId,
+          eventType: 'LOGIN_FAIL',
+          failReason: 'INVALID_PASSWORD',
+          ipAddress: ip,
+          userAgent: ua,
+        }),
+      ])
 
       if (shouldLock) {
         return NextResponse.json({ success: false, message: `비밀번호를 ${FAIL_LOCK_THRESHOLD}회 잘못 입력하여 계정이 잠겼습니다. 관리자에게 문의해 주세요.` }, { status: 403 })
