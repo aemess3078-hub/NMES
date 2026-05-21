@@ -231,7 +231,8 @@ export const MES_NAV: NavItem[] = [
         children: [
           { id: 'nav-lot', parentId: 'nav-traceability-section', label: 'LOT/Serial 관리', icon: 'Tag', href: '/app/mes/lot', displayOrder: 1, children: [] },
           { id: 'nav-traceability', parentId: 'nav-traceability-section', label: 'LOT Traceability', icon: 'Network', href: '/app/mes/traceability', displayOrder: 2, children: [] },
-          { id: 'nav-costing', parentId: 'nav-traceability-section', label: '원가분석', icon: 'Calculator', href: '/app/mes/costing', displayOrder: 3, children: [] },
+          { id: 'nav-manufacturing-traceability', parentId: 'nav-traceability-section', label: '제조번호 추적성', icon: 'Fingerprint', href: '/app/mes/manufacturing-traceability', displayOrder: 3, children: [] },
+          { id: 'nav-costing', parentId: 'nav-traceability-section', label: '원가분석', icon: 'Calculator', href: '/app/mes/costing', displayOrder: 4, children: [] },
         ],
       },
     ],
