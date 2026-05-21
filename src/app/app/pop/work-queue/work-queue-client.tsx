@@ -1,12 +1,27 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Clock, Factory, PackageCheck, Search } from "lucide-react"
+import { useRouter } from "next/navigation"
+import {
+  ClipboardEdit,
+  Clock,
+  Factory,
+  Loader2,
+  PackageCheck,
+  Play,
+  Search,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { type PopWorkQueueRow } from "@/lib/actions/pop.actions"
+import {
+  startOperation,
+  submitProductionResult,
+  type PopWorkQueueRow,
+} from "@/lib/actions/pop.actions"
+
+// ─── Filter types ────────────────────────────────────────────────────────────
 
 type QueueFilter = "ALL" | "PENDING" | "IN_PROGRESS" | "AVAILABLE" | "BLOCKED"
 
@@ -25,6 +40,14 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   CANCELLED: { label: "취소", className: "border-red-200 bg-red-100 text-red-700" },
   SKIPPED: { label: "건너뜀", className: "border-zinc-200 bg-zinc-100 text-zinc-700" },
 }
+
+// ─── Form state type ──────────────────────────────────────────────────────────
+
+type FormState = { goodQty: string; defectQty: string; reworkQty: string }
+
+const EMPTY_FORM: FormState = { goodQty: "", defectQty: "", reworkQty: "" }
+
+// ─── Helper components ───────────────────────────────────────────────────────
 
 function displayProcessName(processName: string): string {
   return processName.includes("후처리") ? "후처리공정" : processName
@@ -85,9 +108,167 @@ function MaterialLotStatus({ row }: { row: PopWorkQueueRow }) {
   )
 }
 
+// ─── Result inline form ───────────────────────────────────────────────────────
+
+function ResultForm({
+  row,
+  form,
+  error,
+  isPending,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  row: PopWorkQueueRow
+  form: FormState
+  error: string
+  isPending: boolean
+  onChange: (field: keyof FormState, value: string) => void
+  onSubmit: () => void
+  onCancel: () => void
+}) {
+  const FIELDS: { field: keyof FormState; label: string; colorClass: string }[] = [
+    { field: "goodQty", label: "양품", colorClass: "text-emerald-700" },
+    { field: "defectQty", label: "불량", colorClass: "text-red-600" },
+    { field: "reworkQty", label: "재작업", colorClass: "text-amber-700" },
+  ]
+
+  return (
+    <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[15px] font-semibold text-slate-800">실적 입력</p>
+        <span className="text-[13px] text-slate-500">
+          잔여 {row.remainingQty.toLocaleString()}개
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {FIELDS.map(({ field, label, colorClass }) => (
+          <div key={field}>
+            <label className={`block text-[13px] font-medium mb-1 ${colorClass}`}>
+              {label}
+            </label>
+            <Input
+              type="number"
+              min="0"
+              value={form[field]}
+              onChange={(e) => onChange(field, e.target.value)}
+              className="h-11 text-[15px] text-center bg-white"
+              placeholder="0"
+              disabled={isPending}
+            />
+          </div>
+        ))}
+      </div>
+
+      {error && (
+        <p className="text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <Button
+          onClick={onSubmit}
+          disabled={isPending}
+          className="h-11 flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          {isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              저장 중
+            </>
+          ) : (
+            "등록"
+          )}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={onCancel}
+          disabled={isPending}
+          className="h-11 px-5"
+        >
+          취소
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
+  const router = useRouter()
   const [filter, setFilter] = useState<QueueFilter>("ALL")
   const [keyword, setKeyword] = useState("")
+
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [openFormId, setOpenFormId] = useState<string | null>(null)
+  const [formValues, setFormValues] = useState<Record<string, FormState>>({})
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
+
+  function getForm(id: string): FormState {
+    return formValues[id] ?? EMPTY_FORM
+  }
+
+  function setFormField(id: string, field: keyof FormState, value: string) {
+    setFormValues((prev) => ({ ...prev, [id]: { ...getForm(id), [field]: value } }))
+  }
+
+  function clearError(id: string) {
+    setActionErrors((prev) => ({ ...prev, [id]: "" }))
+  }
+
+  async function handleStart(operationId: string) {
+    setPendingId(operationId)
+    clearError(operationId)
+    const result = await startOperation(operationId)
+    if (result.success) {
+      router.refresh()
+    } else {
+      setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+    }
+    setPendingId(null)
+  }
+
+  async function handleSubmitResult(operationId: string, row: PopWorkQueueRow) {
+    const form = getForm(operationId)
+    const goodQty = Math.max(0, Number(form.goodQty) || 0)
+    const defectQty = Math.max(0, Number(form.defectQty) || 0)
+    const reworkQty = Math.max(0, Number(form.reworkQty) || 0)
+    const total = goodQty + defectQty + reworkQty
+
+    if (total === 0) {
+      setActionErrors((prev) => ({ ...prev, [operationId]: "수량을 1 이상 입력해 주세요." }))
+      return
+    }
+    if (row.remainingQty > 0 && total > row.remainingQty) {
+      setActionErrors((prev) => ({
+        ...prev,
+        [operationId]: `잔여 수량(${row.remainingQty.toLocaleString()})을 초과할 수 없습니다.`,
+      }))
+      return
+    }
+
+    setPendingId(operationId)
+    clearError(operationId)
+
+    const result = await submitProductionResult({
+      workOrderOperationId: operationId,
+      goodQty,
+      defectQty,
+      reworkQty,
+    })
+
+    if (result.success) {
+      setFormValues((prev) => ({ ...prev, [operationId]: EMPTY_FORM }))
+      if (result.isCompleted) setOpenFormId(null)
+      router.refresh()
+    } else {
+      setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+    }
+    setPendingId(null)
+  }
 
   const filteredRows = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase()
@@ -121,6 +302,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
 
   return (
     <div className="space-y-6">
+      {/* 헤더 */}
       <div className="flex flex-col gap-4 rounded-xl border bg-white p-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[15px] font-medium text-slate-500">POP</p>
@@ -147,6 +329,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
         </div>
       </div>
 
+      {/* 필터 */}
       <div className="rounded-xl border bg-white p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap gap-2">
@@ -175,6 +358,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
         </div>
       </div>
 
+      {/* 작업 카드 목록 */}
       {filteredRows.length === 0 ? (
         <div className="rounded-xl border border-dashed bg-slate-50 px-6 py-16 text-center">
           <Factory className="mx-auto mb-4 h-12 w-12 text-slate-300" />
@@ -188,14 +372,21 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
               row.plannedQty > 0
                 ? Math.min(100, Math.round((row.completedQty / row.plannedQty) * 100))
                 : 0
+            const isThisPending = pendingId === row.operationId
+            const isFormOpen = openFormId === row.operationId
 
             return (
               <article
                 key={row.operationId}
                 className={`rounded-xl border bg-white p-5 shadow-sm transition-colors ${
-                  row.canWork ? "border-emerald-200" : "border-slate-200"
+                  row.status === "IN_PROGRESS"
+                    ? "border-amber-200"
+                    : row.canWork
+                    ? "border-emerald-200"
+                    : "border-slate-200"
                 }`}
               >
+                {/* 상단 정보 */}
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0 space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -234,6 +425,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                   </div>
                 </div>
 
+                {/* 수량 진행 + 자재 */}
                 <div className="mt-5 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
                   <div className="rounded-lg border bg-white p-4">
                     <div className="mb-3 flex items-center gap-2">
@@ -262,7 +454,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                     </div>
                     <div className="mt-4 h-3 rounded-full bg-slate-100">
                       <div
-                        className="h-3 rounded-full bg-blue-500"
+                        className="h-3 rounded-full bg-blue-500 transition-all"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -281,6 +473,75 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                     )}
                   </div>
                 </div>
+
+                {/* ── 액션 영역 ── */}
+
+                {/* PENDING + 작업가능 → 작업시작 버튼 */}
+                {row.status === "PENDING" && row.canWork && (
+                  <div className="mt-4 space-y-2">
+                    {actionErrors[row.operationId] && (
+                      <p className="text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        {actionErrors[row.operationId]}
+                      </p>
+                    )}
+                    <Button
+                      onClick={() => handleStart(row.operationId)}
+                      disabled={isThisPending}
+                      className="h-11 bg-emerald-600 hover:bg-emerald-700 text-white text-[15px] px-6"
+                    >
+                      {isThisPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          처리 중
+                        </>
+                      ) : (
+                        <>
+                          <Play className="mr-2 h-4 w-4" />
+                          작업시작
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+
+                {/* IN_PROGRESS → 실적등록 버튼 + 인라인 폼 */}
+                {row.status === "IN_PROGRESS" && (
+                  <div className="mt-4">
+                    {!isFormOpen ? (
+                      <div className="space-y-2">
+                        {actionErrors[row.operationId] && (
+                          <p className="text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                            {actionErrors[row.operationId]}
+                          </p>
+                        )}
+                        <Button
+                          onClick={() => {
+                            setOpenFormId(row.operationId)
+                            clearError(row.operationId)
+                          }}
+                          variant="outline"
+                          className="h-11 border-blue-300 text-blue-700 hover:bg-blue-50 text-[15px] px-6"
+                        >
+                          <ClipboardEdit className="mr-2 h-4 w-4" />
+                          실적등록
+                        </Button>
+                      </div>
+                    ) : (
+                      <ResultForm
+                        row={row}
+                        form={getForm(row.operationId)}
+                        error={actionErrors[row.operationId] ?? ""}
+                        isPending={isThisPending}
+                        onChange={(field, value) => setFormField(row.operationId, field, value)}
+                        onSubmit={() => handleSubmitResult(row.operationId, row)}
+                        onCancel={() => {
+                          setOpenFormId(null)
+                          clearError(row.operationId)
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
               </article>
             )
           })}

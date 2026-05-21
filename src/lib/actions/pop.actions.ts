@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { OperationStatus, WorkOrderStatus } from "@prisma/client"
+import { revalidatePath } from "next/cache"
+import { getTenantId } from "@/lib/auth"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,31 +219,136 @@ export async function getOperationDetail(operationId: string) {
 
 // ─── 4. 실적 등록 ─────────────────────────────────────────────────────────────
 
-export async function submitProductionResult(data: SubmitResultInput) {
+export async function submitProductionResult(
+  data: SubmitResultInput
+): Promise<{ success: boolean; error?: string; isCompleted?: boolean }> {
   const { workOrderOperationId, goodQty, defectQty, reworkQty } = data
 
-  await prisma.$transaction(async (tx) => {
-    // 실적 생성
-    await tx.productionResult.create({
-      data: {
-        workOrderOperationId,
-        goodQty,
-        defectQty,
-        reworkQty,
-        startedAt: new Date(),
-        endedAt: new Date(),
+  if (goodQty < 0 || defectQty < 0 || reworkQty < 0) {
+    return { success: false, error: "수량은 0 이상이어야 합니다." }
+  }
+  const totalQty = goodQty + defectQty + reworkQty
+  if (totalQty === 0) {
+    return { success: false, error: "수량을 1 이상 입력해 주세요." }
+  }
+
+  try {
+    let isCompleted = false
+
+    await prisma.$transaction(async (tx) => {
+      const op = await tx.workOrderOperation.findUnique({
+        where: { id: workOrderOperationId },
+        select: { completedQty: true, plannedQty: true, workOrderId: true },
+      })
+      if (!op) throw new Error("공정을 찾을 수 없습니다.")
+
+      const currentCompleted = Number(op.completedQty)
+      const plannedQty = Number(op.plannedQty)
+      const remaining = Math.max(plannedQty - currentCompleted, 0)
+
+      if (remaining > 0 && totalQty > remaining) {
+        throw new Error(`잔여 수량(${remaining})을 초과할 수 없습니다.`)
+      }
+
+      const newCompletedQty = currentCompleted + totalQty
+      const shouldComplete = newCompletedQty >= plannedQty
+
+      await tx.productionResult.create({
+        data: {
+          workOrderOperationId,
+          goodQty,
+          defectQty,
+          reworkQty,
+          startedAt: new Date(),
+          endedAt: new Date(),
+        },
+      })
+
+      await tx.workOrderOperation.update({
+        where: { id: workOrderOperationId },
+        data: {
+          completedQty: newCompletedQty,
+          ...(shouldComplete ? { status: "COMPLETED" } : {}),
+        },
+      })
+
+      if (shouldComplete) {
+        isCompleted = true
+        const allOps = await tx.workOrderOperation.findMany({
+          where: { workOrderId: op.workOrderId },
+          select: { status: true },
+        })
+        const allCompleted = allOps.every((o) => o.status === "COMPLETED")
+        if (allCompleted) {
+          await tx.workOrder.update({
+            where: { id: op.workOrderId },
+            data: { status: "COMPLETED" },
+          })
+        }
+      }
+    })
+
+    revalidatePath("/app/pop/work-queue")
+    return { success: true, isCompleted }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+  }
+}
+
+// ─── 4-1. 작업 시작 ────────────────────────────────────────────────────────────
+
+export async function startOperation(
+  operationId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const tenantId = await getTenantId()
+
+    const op = await prisma.workOrderOperation.findFirst({
+      where: {
+        id: operationId,
+        status: "PENDING",
+        workOrder: { tenantId },
+      },
+      select: {
+        seq: true,
+        workOrderId: true,
+        workOrder: {
+          select: {
+            id: true,
+            operations: {
+              select: { seq: true, status: true },
+              orderBy: { seq: "asc" },
+            },
+          },
+        },
       },
     })
 
-    // completedQty 누적 갱신
-    const op = await tx.workOrderOperation.findUnique({
-      where: { id: workOrderOperationId },
+    if (!op) {
+      return { success: false, error: "공정을 찾을 수 없거나 이미 시작된 공정입니다." }
+    }
+
+    const prevOps = op.workOrder.operations.filter((o) => o.seq < op.seq)
+    if (prevOps.length > 0 && !prevOps.every((o) => o.status === "COMPLETED")) {
+      return { success: false, error: "이전 공정이 완료되지 않아 작업을 시작할 수 없습니다." }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.workOrderOperation.update({
+        where: { id: operationId },
+        data: { status: "IN_PROGRESS" },
+      })
+      await tx.workOrder.update({
+        where: { id: op.workOrderId },
+        data: { status: "IN_PROGRESS" },
+      })
     })
-    await tx.workOrderOperation.update({
-      where: { id: workOrderOperationId },
-      data: { completedQty: Number(op?.completedQty ?? 0) + goodQty },
-    })
-  })
+
+    revalidatePath("/app/pop/work-queue")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+  }
 }
 
 // ─── 5. 공정 상태 변경 + WorkOrder 상태 자동 갱신 ────────────────────────────
