@@ -17,9 +17,11 @@ export type InventoryBalanceWithDetails = {
   qtyAvailable: number
   qtyHold: number
   updatedAt: Date
+  lastReceiptAt: Date | null
+  lastIssueAt: Date | null
   warehouse: { id: string; code: string; name: string; siteId: string; site: { id: string; code: string; name: string } }
-  item: { id: string; code: string; name: string; itemType: string; uom: string }
-  lot: { id: string; lotNo: string } | null
+  item: { id: string; code: string; name: string; itemType: string; uom: string; spec: string | null; isLotTracked?: boolean; status?: string }
+  lot: { id: string; lotNo: string; manufactureDate: Date | null; expiryDate: Date | null } | null
 }
 
 export type InventoryTransactionWithDetails = {
@@ -36,10 +38,15 @@ export type InventoryTransactionWithDetails = {
   refId: string | null
   note: string | null
   txAt: Date
-  item: { id: string; code: string; name: string; itemType: string; uom: string }
+  item: { id: string; code: string; name: string; itemType: string; uom: string; spec: string | null }
   lot: { id: string; lotNo: string } | null
   fromLocation: { id: string; code: string; name: string } | null
   toLocation: { id: string; code: string; name: string } | null
+  workOrderLinks: {
+    id: string
+    manufacturingNo: string | null
+    workOrder: { id: string; orderNo: string; manufacturingNo: string | null } | null
+  }[]
 }
 
 // ─── 재고현황 조회 ─────────────────────────────────────────────────────────────
@@ -49,7 +56,7 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
     include: {
       warehouse: { include: { site: true } },
       item: true,
-      lot: { select: { id: true, lotNo: true } },
+      lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [
       { warehouse: { name: "asc" } },
@@ -61,6 +68,8 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
     qtyOnHand:    Number(b.qtyOnHand),
     qtyAvailable: Number(b.qtyAvailable),
     qtyHold:      Number(b.qtyHold),
+    lastReceiptAt: null,
+    lastIssueAt: null,
   }))
 }
 
@@ -72,20 +81,56 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
     include: {
       warehouse: { include: { site: true } },
       // item: true → 필요 필드만 select (code/name/itemType/uom만 사용됨)
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, status: true } },
-      lot: { select: { id: true, lotNo: true } },
+      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
+      lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [
       { warehouse: { name: "asc" } },
       { item: { code: "asc" } },
     ],
   })
-  return rows.map((b) => ({
-    ...b,
-    qtyOnHand:    Number(b.qtyOnHand),
-    qtyAvailable: Number(b.qtyAvailable),
-    qtyHold:      Number(b.qtyHold),
-  }))
+  const txRows = await prisma.inventoryTransaction.findMany({
+    where: {
+      itemId: { in: Array.from(new Set(rows.map((row) => row.itemId))) },
+      txType: { in: ["RECEIPT", "ISSUE"] },
+    },
+    select: {
+      itemId: true,
+      lotId: true,
+      fromLocationId: true,
+      toLocationId: true,
+      txType: true,
+      txAt: true,
+    },
+    orderBy: { txAt: "desc" },
+  })
+
+  const lastReceiptMap = new Map<string, Date>()
+  const lastIssueMap = new Map<string, Date>()
+
+  for (const tx of txRows) {
+    const warehouseId = tx.txType === "RECEIPT" ? tx.toLocationId : tx.fromLocationId
+    if (!warehouseId) continue
+    const key = `${tx.itemId}:${tx.lotId ?? "NO_LOT"}:${warehouseId}`
+    if (tx.txType === "RECEIPT" && !lastReceiptMap.has(key)) {
+      lastReceiptMap.set(key, tx.txAt)
+    }
+    if (tx.txType === "ISSUE" && !lastIssueMap.has(key)) {
+      lastIssueMap.set(key, tx.txAt)
+    }
+  }
+
+  return rows.map((b) => {
+    const key = `${b.itemId}:${b.lotId ?? "NO_LOT"}:${b.warehouseId}`
+    return {
+      ...b,
+      qtyOnHand:    Number(b.qtyOnHand),
+      qtyAvailable: Number(b.qtyAvailable),
+      qtyHold:      Number(b.qtyHold),
+      lastReceiptAt: lastReceiptMap.get(key) ?? null,
+      lastIssueAt: lastIssueMap.get(key) ?? null,
+    }
+  })
 }
 
 export async function getWarehousesBySite(siteId: string) {
@@ -101,10 +146,17 @@ export async function getWarehousesBySite(siteId: string) {
 export async function getInventoryTransactions(): Promise<InventoryTransactionWithDetails[]> {
   const rows = await prisma.inventoryTransaction.findMany({
     include: {
-      item: true,
+      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true } },
       lot: { select: { id: true, lotNo: true } },
       fromLocation: { select: { id: true, code: true, name: true } },
       toLocation: { select: { id: true, code: true, name: true } },
+      workOrderMaterialLots: {
+        select: {
+          id: true,
+          manufacturingNo: true,
+          workOrder: { select: { id: true, orderNo: true, manufacturingNo: true } },
+        },
+      },
     },
     orderBy: { txAt: "desc" },
     take: 200,
@@ -112,6 +164,7 @@ export async function getInventoryTransactions(): Promise<InventoryTransactionWi
   return rows.map((t) => ({
     ...t,
     qty: Number(t.qty),
+    workOrderLinks: t.workOrderMaterialLots,
   }))
 }
 

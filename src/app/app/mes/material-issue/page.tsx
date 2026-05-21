@@ -13,39 +13,30 @@ export default async function MaterialIssuePage() {
 
   const workOrders = await getWorkOrdersForIssue(tenantId)
 
-  // 필요 품목 ID 수집 → 창고별 재고 조회
-  const itemIdSet = new Set(workOrders.flatMap((wo) => wo.materials.map((m) => m.itemId)))
+  const itemIdSet = new Set(workOrders.flatMap((workOrder) => workOrder.materials.map((material) => material.itemId)))
   const itemIds = Array.from(itemIdSet)
   const warehouses = await getWarehousesWithStock(tenantId, itemIds)
 
-  const pendingCount = workOrders.filter((wo) => !wo.allIssued).length
-  const completedCount = workOrders.filter((wo) => wo.allIssued).length
+  const pendingCount = workOrders.filter((workOrder) => !workOrder.allIssued).length
+  const completedCount = workOrders.filter((workOrder) => workOrder.allIssued).length
+  const manufacturingNoCount = workOrders.filter((workOrder) => workOrder.manufacturingNo).length
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            자재출고 관리
+            원자재 출고 관리
           </h1>
-          <p className="text-[15px] text-muted-foreground mt-1">
-            작업지시별 BOM 자재를 창고에서 출고하여 생산에 투입합니다.
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            작업지시와 제조번호 기준으로 원자재 LOT를 출고하고 투입 이력을 연결합니다.
           </p>
         </div>
         {(pendingCount > 0 || completedCount > 0) && (
           <div className="flex gap-3">
-            {pendingCount > 0 && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-center">
-                <div className="font-semibold text-amber-800 text-[18px]">{pendingCount}</div>
-                <div className="text-[13px] text-amber-700">출고 대기</div>
-              </div>
-            )}
-            {completedCount > 0 && (
-              <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-center">
-                <div className="font-semibold text-green-700 text-[18px]">{completedCount}</div>
-                <div className="text-[13px] text-green-600">출고 완료</div>
-              </div>
-            )}
+            <SummaryBadge label="출고 대기" value={pendingCount} tone="amber" />
+            <SummaryBadge label="출고 완료" value={completedCount} tone="green" />
+            <SummaryBadge label="제조번호 보유" value={manufacturingNoCount} tone="blue" />
           </div>
         )}
       </div>
@@ -55,6 +46,29 @@ export default async function MaterialIssuePage() {
         warehouses={warehouses}
         tenantId={tenantId}
       />
+    </div>
+  )
+}
+
+function SummaryBadge({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: "amber" | "green" | "blue"
+}) {
+  const toneClass = {
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    green: "border-green-200 bg-green-50 text-green-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
+  }[tone]
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-center ${toneClass}`}>
+      <div className="text-[18px] font-semibold">{value}</div>
+      <div className="text-[13px]">{label}</div>
     </div>
   )
 }

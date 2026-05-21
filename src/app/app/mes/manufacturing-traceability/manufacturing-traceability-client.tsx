@@ -229,6 +229,7 @@ export function ManufacturingTraceabilityClient({
                   <tr className="border-b">
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">품목코드</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">품목명</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">규격</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">LOT 번호</th>
                     <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">수량</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">단위</th>
@@ -240,6 +241,7 @@ export function ManufacturingTraceabilityClient({
                     <tr key={`${lot.lotNo}-${index}`} className="border-b last:border-0 hover:bg-slate-50">
                       <td className="py-2.5 pr-4 font-mono text-[13px]">{lot.materialCode ?? "-"}</td>
                       <td className="py-2.5 pr-4">{lot.materialName ?? "-"}</td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">{lot.materialSpec ?? "-"}</td>
                       <td className="py-2.5 pr-4 font-mono text-[13px] text-blue-700">{lot.lotNo}</td>
                       <td className="py-2.5 pr-4 text-right">{formatNumber(lot.qty)}</td>
                       <td className="py-2.5 pr-4 text-muted-foreground">{lot.unit ?? "-"}</td>

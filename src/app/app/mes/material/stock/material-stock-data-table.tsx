@@ -6,6 +6,7 @@ import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import type { InventoryBalanceWithDetails } from "@/lib/actions/inventory.actions"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -30,41 +31,44 @@ export function MaterialStockDataTable({ data, sites }: MaterialStockDataTablePr
   const [keyword, setKeyword] = useState("")
   const [selectedSiteId, setSelectedSiteId] = useState<string>("all")
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>("all")
+  const [inStockOnly, setInStockOnly] = useState(true)
 
   const warehouseOptions = useMemo(() => {
     const seen = new Map<string, string>()
-    for (const b of data) {
-      if (selectedSiteId === "all" || b.warehouse.siteId === selectedSiteId) {
-        seen.set(b.warehouseId, b.warehouse.name)
+    for (const balance of data) {
+      if (selectedSiteId === "all" || balance.warehouse.siteId === selectedSiteId) {
+        seen.set(balance.warehouseId, balance.warehouse.name)
       }
     }
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
   }, [data, selectedSiteId])
 
   const filteredData = useMemo(() => {
-    const kw = keyword.trim().toLowerCase()
-    return data.filter((b) => {
-      if (selectedSiteId !== "all" && b.warehouse.siteId !== selectedSiteId) return false
-      if (selectedWarehouseId !== "all" && b.warehouseId !== selectedWarehouseId) return false
-      if (kw.length > 0) {
-        const hay = [
-          b.item.code,
-          b.item.name,
-          b.warehouse.name,
-          b.lot?.lotNo ?? "",
+    const normalizedKeyword = keyword.trim().toLowerCase()
+    return data.filter((balance) => {
+      if (selectedSiteId !== "all" && balance.warehouse.siteId !== selectedSiteId) return false
+      if (selectedWarehouseId !== "all" && balance.warehouseId !== selectedWarehouseId) return false
+      if (inStockOnly && Number(balance.qtyOnHand) <= 0) return false
+      if (normalizedKeyword.length > 0) {
+        const haystack = [
+          balance.item.code,
+          balance.item.name,
+          balance.item.spec ?? "",
+          balance.warehouse.name,
+          balance.lot?.lotNo ?? "",
         ]
           .join(" ")
           .toLowerCase()
-        if (!hay.includes(kw)) return false
+        if (!haystack.includes(normalizedKeyword)) return false
       }
       return true
     })
-  }, [data, keyword, selectedSiteId, selectedWarehouseId])
+  }, [data, keyword, selectedSiteId, selectedWarehouseId, inStockOnly])
 
   const filterableColumns = [
     {
       id: "itemType" as keyof InventoryBalanceWithDetails,
-      title: "자재유형",
+      title: "품목유형",
       options: [
         { label: "원자재", value: "RAW_MATERIAL" },
         { label: "소모품", value: "CONSUMABLE" },
@@ -79,14 +83,14 @@ export function MaterialStockDataTable({ data, sites }: MaterialStockDataTablePr
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="자재코드 / 자재명 / 창고 / LOT 검색"
+            placeholder="품목명 / 규격 / LOT 번호 / 창고 검색"
             value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            className="h-9 w-[280px] pl-9 text-[14px]"
+            onChange={(event) => setKeyword(event.target.value)}
+            className="h-9 w-[320px] pl-9 text-[14px]"
           />
         </div>
 
@@ -108,21 +112,29 @@ export function MaterialStockDataTable({ data, sites }: MaterialStockDataTablePr
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-[14px] text-muted-foreground">로케이션</span>
+          <span className="text-[14px] text-muted-foreground">창고</span>
           <Select value={selectedWarehouseId} onValueChange={setSelectedWarehouseId}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="전체" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">전체</SelectItem>
-              {warehouseOptions.map((wh) => (
-                <SelectItem key={wh.id} value={wh.id}>
-                  {wh.name}
+              {warehouseOptions.map((warehouse) => (
+                <SelectItem key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+
+        <label className="flex items-center gap-2 text-[14px] text-muted-foreground">
+          <Checkbox
+            checked={inStockOnly}
+            onCheckedChange={(checked) => setInStockOnly(checked === true)}
+          />
+          재고 있음만 보기
+        </label>
       </div>
 
       <DataTable

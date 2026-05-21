@@ -1,31 +1,31 @@
 "use client"
 
-import { ColumnDef } from "@tanstack/react-table"
-import { TransactionType } from "@prisma/client"
+import { type ColumnDef } from "@tanstack/react-table"
+import { type TransactionType } from "@prisma/client"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
-import { InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions"
+import { type InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions"
 
 const txTypeLabels: Record<TransactionType, string> = {
   RECEIPT: "입고",
   ISSUE: "출고",
   TRANSFER: "이동",
-  ADJUST: "재고조정",
+  ADJUST: "조정",
   RETURN: "반품",
   SCRAP: "폐기",
 }
 
 const txTypeBadgeClass: Record<TransactionType, string> = {
-  RECEIPT: "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
-  ISSUE: "bg-red-100 text-red-800 border-red-200 hover:bg-red-100",
-  TRANSFER: "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100",
-  ADJUST: "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100",
-  RETURN: "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100",
-  SCRAP: "bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-100",
+  RECEIPT: "border-green-200 bg-green-100 text-green-800 hover:bg-green-100",
+  ISSUE: "border-red-200 bg-red-100 text-red-800 hover:bg-red-100",
+  TRANSFER: "border-amber-200 bg-amber-100 text-amber-800 hover:bg-amber-100",
+  ADJUST: "border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100",
+  RETURN: "border-purple-200 bg-purple-100 text-purple-800 hover:bg-purple-100",
+  SCRAP: "border-gray-200 bg-gray-100 text-gray-800 hover:bg-gray-100",
 }
 
-function formatDateTime(date: Date): string {
+function formatDateTime(date: Date | string): string {
   return new Date(date)
     .toLocaleString("ko-KR", {
       year: "numeric",
@@ -46,29 +46,19 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
       id: "txAt",
       accessorFn: (row) => row.txAt,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="일시" />
+        <DataTableColumnHeader column={column} title="거래일시" />
       ),
       cell: ({ row }) => (
-        <span className="text-[13px] text-muted-foreground whitespace-nowrap">
+        <span className="whitespace-nowrap text-[13px] text-muted-foreground">
           {formatDateTime(row.original.txAt)}
         </span>
-      ),
-    },
-    {
-      id: "txNo",
-      accessorKey: "txNo",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="전표번호" />
-      ),
-      cell: ({ row }) => (
-        <span className="font-mono text-[13px] font-medium">{row.getValue("txNo")}</span>
       ),
     },
     {
       id: "txType",
       accessorKey: "txType",
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="유형" />
+        <DataTableColumnHeader column={column} title="거래유형" />
       ),
       cell: ({ row }) => {
         const txType = row.getValue("txType") as TransactionType
@@ -82,52 +72,37 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
         filterValues.includes(row.getValue(id)),
     },
     {
-      id: "fromLocation",
-      accessorFn: (row) => row.fromLocation?.name ?? null,
-      header: "출발 로케이션",
-      cell: ({ row }) => (
-        <span className="text-[14px] text-muted-foreground">
-          {row.original.fromLocation?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "toLocation",
-      accessorFn: (row) => row.toLocation?.name ?? null,
-      header: "도착 로케이션",
-      cell: ({ row }) => (
-        <span className="text-[14px] text-muted-foreground">
-          {row.original.toLocation?.name ?? "—"}
-        </span>
-      ),
-    },
-    {
-      id: "itemCode",
-      accessorFn: (row) => row.item.code,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목코드" />
-      ),
-      cell: ({ row }) => (
-        <span className="font-mono text-[14px] font-medium">{row.getValue("itemCode")}</span>
-      ),
-    },
-    {
       id: "itemName",
       accessorFn: (row) => row.item.name,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="품목명" />
       ),
       cell: ({ row }) => (
-        <span className="text-[14px]">{row.getValue("itemName")}</span>
+        <div className="text-[14px]">
+          <div className="font-medium">{row.original.item.name}</div>
+          <div className="font-mono text-[13px] text-muted-foreground">{row.original.item.code}</div>
+        </div>
+      ),
+    },
+    {
+      id: "spec",
+      accessorFn: (row) => row.item.spec ?? "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="규격" />
+      ),
+      cell: ({ row }) => (
+        <span className="text-[14px] text-muted-foreground">{row.getValue("spec") || "-"}</span>
       ),
     },
     {
       id: "lotNo",
-      accessorFn: (row) => row.lot?.lotNo ?? null,
-      header: "LOT",
+      accessorFn: (row) => row.lot?.lotNo ?? "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="LOT 번호" />
+      ),
       cell: ({ row }) => (
-        <span className="text-[13px] text-muted-foreground font-mono">
-          {row.getValue("lotNo") ?? "—"}
+        <span className="font-mono text-[13px] text-muted-foreground">
+          {row.original.lot?.lotNo ?? "-"}
         </span>
       ),
     },
@@ -144,23 +119,67 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
         const isNegative = txType === "ISSUE" || txType === "SCRAP"
         return (
           <span
-            className={`text-[14px] text-right block font-medium ${
+            className={`block text-right text-[14px] font-semibold tabular-nums ${
               isPositive ? "text-green-700" : isNegative ? "text-red-600" : ""
             }`}
           >
             {isPositive ? "+" : isNegative ? "-" : ""}
-            {qty.toLocaleString()}
+            {qty.toLocaleString()} {row.original.item.uom}
           </span>
         )
       },
     },
     {
-      id: "refType",
-      accessorKey: "refType",
-      header: "참조유형",
+      id: "warehouse",
+      accessorFn: (row) => row.fromLocation?.name ?? row.toLocation?.name ?? "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="창고/위치" />
+      ),
+      cell: ({ row }) => (
+        <div className="text-[13px] text-muted-foreground">
+          <div>출고: {row.original.fromLocation?.name ?? "-"}</div>
+          <div>입고: {row.original.toLocation?.name ?? "-"}</div>
+        </div>
+      ),
+    },
+    {
+      id: "workOrderNo",
+      accessorFn: (row) => row.workOrderLinks[0]?.workOrder?.orderNo ?? "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="작업지시번호" />
+      ),
+      cell: ({ row }) => (
+        <span className="font-mono text-[13px] text-muted-foreground">
+          {row.original.workOrderLinks[0]?.workOrder?.orderNo ?? "-"}
+        </span>
+      ),
+    },
+    {
+      id: "manufacturingNo",
+      accessorFn: (row) =>
+        row.workOrderLinks[0]?.manufacturingNo ??
+        row.workOrderLinks[0]?.workOrder?.manufacturingNo ??
+        "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="제조번호" />
+      ),
+      cell: ({ row }) => {
+        const link = row.original.workOrderLinks[0]
+        const manufacturingNo = link?.manufacturingNo ?? link?.workOrder?.manufacturingNo
+        return (
+          <span className="font-mono text-[13px] text-blue-700">
+            {manufacturingNo ?? "-"}
+          </span>
+        )
+      },
+    },
+    {
+      id: "note",
+      accessorKey: "note",
+      header: "비고",
       cell: ({ row }) => (
         <span className="text-[13px] text-muted-foreground">
-          {row.getValue("refType") ?? "—"}
+          {row.original.note ?? row.original.refType ?? "-"}
         </span>
       ),
     },

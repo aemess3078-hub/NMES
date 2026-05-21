@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache"
 
 export type MaterialRequirement = {
   itemId: string
-  item: { id: string; code: string; name: string; uom: string; isLotTracked: boolean }
+  item: { id: string; code: string; name: string; uom: string; spec: string | null; isLotTracked: boolean }
   requiredQty: number
   issuedQty: number
   pendingQty: number
@@ -19,6 +19,7 @@ export type LotStockOption = {
   lotId: string
   lotNo: string
   qtyAvailable: number
+  unit: string
 }
 
 export type WorkOrderForIssue = {
@@ -27,6 +28,7 @@ export type WorkOrderForIssue = {
   status: string
   plannedQty: number
   dueDate: Date | null
+  manufacturingNo: string | null
   item: { id: string; code: string; name: string }
   site: { id: string; name: string }
   materials: MaterialRequirement[]
@@ -72,7 +74,7 @@ export async function getWorkOrdersForIssue(
           bomItems: {
             include: {
               componentItem: {
-                select: { id: true, code: true, name: true, uom: true, isLotTracked: true },
+                select: { id: true, code: true, name: true, uom: true, spec: true, isLotTracked: true },
               },
             },
             orderBy: { seq: "asc" },
@@ -131,6 +133,7 @@ export async function getWorkOrdersForIssue(
       status: wo.status,
       plannedQty,
       dueDate: wo.dueDate,
+      manufacturingNo: wo.manufacturingNo,
       item: wo.item,
       site: wo.site,
       materials,
@@ -187,6 +190,7 @@ export async function getLotStockByWarehouse(
     },
     include: {
       lot: { select: { id: true, lotNo: true } },
+      item: { select: { uom: true } },
     },
     orderBy: { lot: { lotNo: "asc" } },
   })
@@ -199,6 +203,7 @@ export async function getLotStockByWarehouse(
       lotId: b.lot.id,
       lotNo: b.lot.lotNo,
       qtyAvailable: Number(b.qtyAvailable),
+      unit: b.item.uom,
     })
   }
   return result
@@ -396,7 +401,9 @@ export async function issueMaterialsForWorkOrder(
 
     revalidatePath("/app/mes/material-issue")
     revalidatePath("/app/mes/inventory")
+    revalidatePath("/app/mes/material/stock")
     revalidatePath("/app/mes/inventory-transactions")
+    revalidatePath("/app/mes/manufacturing-traceability")
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }

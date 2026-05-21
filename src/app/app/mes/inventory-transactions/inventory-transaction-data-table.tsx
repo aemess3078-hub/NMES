@@ -1,14 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { useMemo, useState } from "react"
+import { Plus, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { TransactionFormSheet } from "./transaction-form-sheet"
-import { InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions"
+import { type InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions"
 
 interface InventoryTransactionDataTableProps {
   data: InventoryTransactionWithDetails[]
@@ -23,20 +23,48 @@ export function InventoryTransactionDataTable({
   locations,
   tenantId,
 }: InventoryTransactionDataTableProps) {
-  const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
+  const [keyword, setKeyword] = useState("")
 
   const columns = getColumns()
+
+  const filteredData = useMemo(() => {
+    const normalizedKeyword = keyword.trim().toLowerCase()
+    if (!normalizedKeyword) return data
+
+    return data.filter((transaction) => {
+      const workOrder = transaction.workOrderLinks[0]?.workOrder
+      const manufacturingNo =
+        transaction.workOrderLinks[0]?.manufacturingNo ??
+        workOrder?.manufacturingNo ??
+        ""
+      const haystack = [
+        transaction.txNo,
+        transaction.item.code,
+        transaction.item.name,
+        transaction.item.spec ?? "",
+        transaction.lot?.lotNo ?? "",
+        transaction.fromLocation?.name ?? "",
+        transaction.toLocation?.name ?? "",
+        workOrder?.orderNo ?? "",
+        manufacturingNo,
+        transaction.note ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+      return haystack.includes(normalizedKeyword)
+    })
+  }, [data, keyword])
 
   const filterableColumns = [
     {
       id: "txType" as keyof InventoryTransactionWithDetails,
-      title: "유형",
+      title: "거래유형",
       options: [
         { label: "입고", value: "RECEIPT" },
         { label: "출고", value: "ISSUE" },
         { label: "이동", value: "TRANSFER" },
-        { label: "재고조정", value: "ADJUST" },
+        { label: "조정", value: "ADJUST" },
         { label: "반품", value: "RETURN" },
         { label: "폐기", value: "SCRAP" },
       ],
@@ -45,7 +73,16 @@ export function InventoryTransactionDataTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="품목명 / 규격 / LOT / 작업지시 / 제조번호 검색"
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            className="h-9 w-[360px] pl-9 text-[14px]"
+          />
+        </div>
         <Button onClick={() => setFormOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           트랜잭션 등록
@@ -54,11 +91,7 @@ export function InventoryTransactionDataTable({
 
       <DataTable
         columns={columns}
-        data={data}
-        searchableColumns={[
-          { id: "itemName" as keyof InventoryTransactionWithDetails, title: "품목명" },
-          { id: "txNo" as keyof InventoryTransactionWithDetails, title: "전표번호" },
-        ]}
+        data={filteredData}
         filterableColumns={filterableColumns}
       />
 

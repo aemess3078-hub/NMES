@@ -17,7 +17,9 @@ export default async function InventoryTransactionsPage() {
   if (!enabled) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">이 기능은 활성화되어 있지 않습니다.</p>
+        <p className="text-[15px] text-muted-foreground">
+          재고 기능이 활성화되어 있지 않습니다.
+        </p>
       </div>
     )
   }
@@ -33,13 +35,14 @@ export default async function InventoryTransactionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            입출고 관리
+            원자재 입출고 이력
           </h1>
-          <p className="text-[15px] text-muted-foreground mt-1">
-            재고 입고, 출고, 이동, 조정 등의 트랜잭션 이력을 관리합니다.
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            InventoryTransaction 기준으로 LOT 입고, 출고, 조정 이력과 제조번호 연결 상태를 확인합니다.
           </p>
         </div>
       </div>
+
       <InventoryTransactionDataTable
         data={transactions}
         sites={sites}
