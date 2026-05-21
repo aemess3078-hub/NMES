@@ -19,7 +19,7 @@ export type MaterialReceiptOrderRow = {
     id: string
     qty: number | string
     receivedQty: number | string
-    item: { id: string; code: string; name: string; uom: string }
+    item: { id: string; code: string; name: string; uom: string; isLotTracked: boolean }
   }>
 }
 

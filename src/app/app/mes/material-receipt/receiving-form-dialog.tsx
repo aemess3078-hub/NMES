@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
@@ -38,9 +39,11 @@ interface ReceivingFormDialogProps {
 
 type ItemInspection = {
   purchaseOrderItemId: string
+  itemId: string
   itemCode: string
   itemName: string
   uom: string
+  isLotTracked: boolean
   orderedQty: number
   receivedQty: number
   pendingQty: number
@@ -50,6 +53,7 @@ type ItemInspection = {
   thisRejectedQty: string
   result: ReceivingInspectionResult
   note: string
+  lotNo: string   // 비워두면 isLotTracked 시 자동생성, 비LOT 품목은 미할당
 }
 
 const RESULT_OPTIONS: { label: string; value: ReceivingInspectionResult }[] = [
@@ -92,9 +96,11 @@ export function ReceivingFormDialog({
       const pendingQty = Math.max(0, orderedQty - receivedQty)
       return {
         purchaseOrderItemId: oi.id,
+        itemId: oi.item.id,
         itemCode: oi.item.code,
         itemName: oi.item.name,
         uom: oi.item.uom,
+        isLotTracked: oi.item.isLotTracked ?? false,
         orderedQty,
         receivedQty,
         pendingQty,
@@ -103,6 +109,7 @@ export function ReceivingFormDialog({
         thisRejectedQty: "0",
         result: "PASS",
         note: "",
+        lotNo: "",
       }
     })
   )
@@ -116,9 +123,7 @@ export function ReceivingFormDialog({
       return
     }
     setHighlightedIndex(idx)
-    // 해당 품목 행으로 스크롤
     itemRefs.current[idx]?.scrollIntoView({ behavior: "smooth", block: "center" })
-    // 3초 후 하이라이트 해제
     setTimeout(() => setHighlightedIndex(null), 3000)
   }
 
@@ -151,6 +156,7 @@ export function ReceivingFormDialog({
           rejectedQty: parseFloat(ins.thisRejectedQty) || 0,
           result: ins.result,
           note: ins.note || undefined,
+          lotNo: ins.lotNo.trim() || undefined,
         })
       }
       onClose()
@@ -219,24 +225,57 @@ export function ReceivingFormDialog({
               }`}
             >
               {/* 품목 헤더 */}
-              <div>
-                <p className="text-[15px] font-medium">
-                  [{ins.itemCode}] {ins.itemName}
-                </p>
-                <div className="flex gap-4 mt-1">
-                  <span className="text-[13px] text-muted-foreground">
-                    발주 <span className="font-medium text-foreground">{ins.orderedQty.toLocaleString()}</span> {ins.uom}
-                  </span>
-                  <span className="text-[13px] text-muted-foreground">
-                    기입고 <span className="font-medium text-foreground">{ins.receivedQty.toLocaleString()}</span> {ins.uom}
-                  </span>
-                  <span className="text-[13px] text-muted-foreground">
-                    잔여 <span className={`font-medium ${ins.pendingQty > 0 ? "text-amber-600" : "text-green-600"}`}>
-                      {ins.pendingQty.toLocaleString()}
-                    </span> {ins.uom}
-                  </span>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[15px] font-medium">
+                      [{ins.itemCode}] {ins.itemName}
+                    </p>
+                    {ins.isLotTracked && (
+                      <Badge variant="outline" className="text-[11px] border-blue-300 text-blue-700 bg-blue-50 px-1.5 py-0">
+                        LOT 관리
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex gap-4 mt-1">
+                    <span className="text-[13px] text-muted-foreground">
+                      발주 <span className="font-medium text-foreground">{ins.orderedQty.toLocaleString()}</span> {ins.uom}
+                    </span>
+                    <span className="text-[13px] text-muted-foreground">
+                      기입고 <span className="font-medium text-foreground">{ins.receivedQty.toLocaleString()}</span> {ins.uom}
+                    </span>
+                    <span className="text-[13px] text-muted-foreground">
+                      잔여 <span className={`font-medium ${ins.pendingQty > 0 ? "text-amber-600" : "text-green-600"}`}>
+                        {ins.pendingQty.toLocaleString()}
+                      </span> {ins.uom}
+                    </span>
+                  </div>
                 </div>
               </div>
+
+              {/* LOT 번호 입력 — LOT 관리 품목만 표시 */}
+              {ins.isLotTracked && (
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">
+                    LOT 번호
+                    <span className="ml-1 text-[11px] text-blue-600 font-normal">
+                      (미입력 시 자동 발행)
+                    </span>
+                  </Label>
+                  <Input
+                    type="text"
+                    value={ins.lotNo}
+                    onChange={(e) => updateInspection(index, { lotNo: e.target.value })}
+                    placeholder="비워두면 LOT-YYYYMMDD-NNN 형식으로 자동 발행됩니다"
+                    className="h-8 text-[13px] font-mono"
+                  />
+                  {!ins.lotNo && (
+                    <p className="text-[12px] text-muted-foreground">
+                      미입력 시 LOT-YYYYMMDD-NNN 형식으로 자동 발행됩니다.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* 수량 입력 */}
               <div className="grid grid-cols-3 gap-3">

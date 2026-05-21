@@ -30,7 +30,7 @@ export type PurchaseOrderRow = {
     qty: number | string
     unitPrice: number | string
     receivedQty: number | string
-    item: { id: string; code: string; name: string }
+    item: { id: string; code: string; name: string; isLotTracked?: boolean }
     receivingInspections: { id: string }[]
   }[]
 }

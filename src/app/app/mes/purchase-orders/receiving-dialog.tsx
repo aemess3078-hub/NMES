@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { PurchaseOrderRow } from "./columns"
@@ -39,6 +40,7 @@ type ItemInspection = {
   purchaseOrderItemId: string
   itemName: string
   itemCode: string
+  isLotTracked: boolean
   orderedQty: number
   receivedQty: number
   pendingQty: number
@@ -48,6 +50,7 @@ type ItemInspection = {
   thisRejectedQty: string
   result: ReceivingInspectionResult
   note: string
+  lotNo: string  // 비워두면 isLotTracked 시 자동생성
 }
 
 const RESULT_OPTIONS: { label: string; value: ReceivingInspectionResult }[] = [
@@ -90,6 +93,7 @@ export function ReceivingDialog({
         purchaseOrderItemId: item.id,
         itemName: item.item.name,
         itemCode: item.item.code,
+        isLotTracked: item.item.isLotTracked ?? false,
         orderedQty,
         receivedQty,
         pendingQty,
@@ -98,6 +102,7 @@ export function ReceivingDialog({
         thisRejectedQty: "0",
         result: "PASS",
         note: "",
+        lotNo: "",
       }
     })
   )
@@ -125,6 +130,7 @@ export function ReceivingDialog({
           rejectedQty: parseFloat(ins.thisRejectedQty) || 0,
           result: ins.result,
           note: ins.note || undefined,
+          lotNo: ins.lotNo.trim() || undefined,
         })
       }
       onClose()
@@ -173,16 +179,47 @@ export function ReceivingDialog({
           {inspections.map((ins, index) => (
             <div key={ins.purchaseOrderItemId} className="rounded-lg border p-4 space-y-4">
               {/* 품목 헤더 */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-start gap-2">
                 <div>
-                  <p className="text-[15px] font-medium">
-                    [{ins.itemCode}] {ins.itemName}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[15px] font-medium">
+                      [{ins.itemCode}] {ins.itemName}
+                    </p>
+                    {ins.isLotTracked && (
+                      <Badge variant="outline" className="text-[11px] border-blue-300 text-blue-700 bg-blue-50 px-1.5 py-0">
+                        LOT 관리
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-[13px] text-muted-foreground mt-0.5">
                     발주 {ins.orderedQty.toLocaleString()} / 기입고 {ins.receivedQty.toLocaleString()} / 미입고 {ins.pendingQty.toLocaleString()}
                   </p>
                 </div>
               </div>
+
+              {/* LOT 번호 입력 — LOT 관리 품목만 표시 */}
+              {ins.isLotTracked && (
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">
+                    LOT 번호
+                    <span className="ml-1 text-[11px] text-blue-600 font-normal">
+                      (미입력 시 자동 발행)
+                    </span>
+                  </Label>
+                  <Input
+                    type="text"
+                    value={ins.lotNo}
+                    onChange={(e) => updateInspection(index, { lotNo: e.target.value })}
+                    placeholder="비워두면 LOT-YYYYMMDD-NNN 형식으로 자동 발행됩니다"
+                    className="h-8 text-[13px] font-mono"
+                  />
+                  {!ins.lotNo && (
+                    <p className="text-[12px] text-muted-foreground">
+                      미입력 시 LOT-YYYYMMDD-NNN 형식으로 자동 발행됩니다.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* 입력 폼 */}
               <div className="grid grid-cols-3 gap-3">
