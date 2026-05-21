@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { getTenantId, requireRole, requireRoleFresh } from "@/lib/auth"
 import { UserRole } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -64,7 +64,7 @@ export async function updateUserRole(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireRoleFresh("ADMIN")
 
     const tenantUser = await prisma.tenantUser.findFirst({
       where: { id: tenantUserId, tenantId },
@@ -117,7 +117,7 @@ export async function updateUserRole(
 export async function deactivateUser(tenantUserId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireRoleFresh("ADMIN")
 
     const tenantUser = await prisma.tenantUser.findFirst({
       where: { id: tenantUserId, tenantId },
@@ -166,7 +166,7 @@ export async function deactivateUser(tenantUserId: string): Promise<{ success: b
 export async function reactivateUser(tenantUserId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireRoleFresh("ADMIN")
 
     const tenantUser = await prisma.tenantUser.findFirst({
       where: { id: tenantUserId, tenantId },

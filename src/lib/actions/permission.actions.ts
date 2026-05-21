@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { UserRole, PermissionAction } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { requireRoleFresh } from "@/lib/auth"
 
 export type PermissionRecord = {
   id: string
@@ -51,7 +51,7 @@ export async function getPermissionMatrix(tenantId: string): Promise<PermissionM
 // 3. 단건 토글
 export async function updatePermission(id: string, isAllowed: boolean) {
   // 서버 권한 검증: ADMIN 이상만 가능
-  await requireRole("ADMIN")
+  await requireRoleFresh("ADMIN")
 
   // 오너 권한은 수정 불가
   const perm = await prisma.rolePermission.findUnique({ where: { id } })
@@ -66,7 +66,7 @@ export async function updatePermission(id: string, isAllowed: boolean) {
 export async function bulkUpdatePermissions(
   updates: { id: string; isAllowed: boolean }[]
 ) {
-  await requireRole("ADMIN")
+  await requireRoleFresh("ADMIN")
 
   await prisma.$transaction(
     updates.map(({ id, isAllowed }) =>

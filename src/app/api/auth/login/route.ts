@@ -32,11 +32,27 @@ export async function POST(req: NextRequest) {
   const tenantId = DEFAULT_TENANT_ID
 
   try {
-    // UserCredential 조회 (Profile, TenantUser 포함)
+    // UserCredential + Profile + 활성 TenantUser를 한 번에 조회 (RTT 1회로 통합)
     const credential = await prisma.userCredential.findUnique({
       where: { tenantId_loginId: { tenantId, loginId: normalizedLoginId } },
-      include: {
-        profile: true,
+      select: {
+        id: true,
+        profileId: true,
+        passwordHash: true,
+        isLocked: true,
+        failCount: true,
+        mustChangePw: true,
+        profile: {
+          select: {
+            email: true,
+            name: true,
+            tenantUsers: {
+              where: { tenantId, isActive: true },
+              select: { role: true, isActive: true },
+              take: 1,
+            },
+          },
+        },
       },
     })
 
@@ -51,11 +67,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: '계정이 잠겨 있습니다. 관리자에게 문의해 주세요.' }, { status: 403 })
     }
 
-    // TenantUser 조회 및 활성 확인
-    const tenantUser = await prisma.tenantUser.findFirst({
-      where: { profileId: credential.profileId, tenantId, isActive: true },
-    })
-
+    // 활성 TenantUser 확인
+    const tenantUser = credential.profile.tenantUsers[0]
     if (!tenantUser) {
       await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_FAIL', failReason: 'INACTIVE', ipAddress: ip, userAgent: ua })
       return NextResponse.json({ success: false, message: '비활성화된 계정입니다. 관리자에게 문의해 주세요.' }, { status: 403 })
@@ -65,6 +78,7 @@ export async function POST(req: NextRequest) {
     const isPasswordValid = await verifyPassword(password, credential.passwordHash)
 
     if (!isPasswordValid) {
+      // ⚠️ 실패 경로는 보안 로직(failCount 증가, 잠금 처리)이므로 await 유지
       const newFailCount = credential.failCount + 1
       const shouldLock = newFailCount >= FAIL_LOCK_THRESHOLD
 
@@ -86,11 +100,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: GENERIC_FAIL_MESSAGE }, { status: 401 })
     }
 
-    // 로그인 성공 — failCount 초기화
-    await prisma.userCredential.update({
-      where: { id: credential.id },
-      data: { failCount: 0, isLocked: false, lockedAt: null },
-    })
+    // ─── 로그인 성공 ─────────────────────────────────────────────────────────
+    // failCount 리셋과 LOGIN_SUCCESS 기록은 응답 지연을 만들 필요가 없어
+    // fire-and-forget으로 보낸다. 에러는 서버 로그로만 흘린다.
+
+    if (credential.failCount !== 0 || credential.isLocked) {
+      void prisma.userCredential
+        .update({
+          where: { id: credential.id },
+          data: { failCount: 0, isLocked: false, lockedAt: null },
+        })
+        .catch((err) => console.error('[/api/auth/login] failCount 리셋 실패:', err))
+    }
+
+    void createLoginHistoryLog({
+      tenantId,
+      loginId: normalizedLoginId,
+      profileId: credential.profileId,
+      eventType: 'LOGIN_SUCCESS',
+      ipAddress: ip,
+      userAgent: ua,
+    }).catch((err) => console.error('[/api/auth/login] LOGIN_SUCCESS 기록 실패:', err))
 
     const payload = {
       profileId: credential.profileId,
@@ -112,8 +142,6 @@ export async function POST(req: NextRequest) {
         { status: 500 },
       )
     }
-
-    await createLoginHistoryLog({ tenantId, loginId: normalizedLoginId, profileId: credential.profileId, eventType: 'LOGIN_SUCCESS', ipAddress: ip, userAgent: ua })
 
     const res = NextResponse.json({
       success: true,

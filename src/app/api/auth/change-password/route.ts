@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 import { verifyPassword, hashPassword } from '@/lib/password'
-import { verifyAuthToken, NMES_SESSION_COOKIE } from '@/lib/jwt'
+import {
+  verifyAuthToken,
+  signAuthToken,
+  NMES_SESSION_COOKIE,
+  SESSION_COOKIE_OPTIONS,
+} from '@/lib/jwt'
 
 const PASSWORD_MIN_LENGTH = 8
 // 영문 + 숫자 + 특수문자 조합
@@ -79,5 +84,22 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  return NextResponse.json({ success: true, message: '비밀번호가 변경되었습니다.' })
+  // JWT 페이로드의 mustChangePw 플래그를 갱신한 새 토큰으로 쿠키를 교체한다.
+  // 이렇게 해야 변경 후 /app 진입 시 layout의 JWT 기반 검사가
+  // /auth/change-password 로 되돌리지 않는다.
+  const refreshedPayload = { ...payload, mustChangePw: false }
+  let refreshedToken: string
+  try {
+    refreshedToken = signAuthToken(refreshedPayload)
+  } catch (err) {
+    console.error('[/api/auth/change-password] JWT 재서명 실패:', err)
+    return NextResponse.json(
+      { success: true, message: '비밀번호가 변경되었습니다. 다시 로그인해 주세요.' },
+      { status: 200 },
+    )
+  }
+
+  const res = NextResponse.json({ success: true, message: '비밀번호가 변경되었습니다.' })
+  res.cookies.set(NMES_SESSION_COOKIE, refreshedToken, SESSION_COOKIE_OPTIONS)
+  return res
 }

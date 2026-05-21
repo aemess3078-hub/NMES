@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { getTenantId, requireRole, requireRoleFresh } from "@/lib/auth"
 import { UserRole, SignupRequestStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { hashPassword, validatePassword } from "@/lib/password"
@@ -160,7 +160,7 @@ export async function approveSignupRequest(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireRoleFresh("ADMIN")
 
     const request = await prisma.signupRequest.findFirst({
       where: { id: requestId, tenantId, status: "PENDING" },
@@ -291,7 +291,7 @@ export async function rejectSignupRequest(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireRoleFresh("ADMIN")
 
     const request = await prisma.signupRequest.findFirst({
       where: { id: requestId, tenantId, status: "PENDING" },
