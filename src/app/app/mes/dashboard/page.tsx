@@ -17,10 +17,17 @@ import Link from "next/link"
 export const dynamic = "force-dynamic"
 
 async function getExtendedKPIs() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const tenantId = await getTenantId()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  const _t1 = Date.now()
+  console.log(`[PERF] dashboard.getTenantId ${_t1 - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
   const [kpis, inspectionsToday, openRepairs, defectRate30d] = await Promise.all([
     getProductionKPIs(),
     prisma.qualityInspection.count({
@@ -49,12 +56,22 @@ async function getExtendedKPIs() {
       return g + d > 0 ? ((d / (g + d)) * 100).toFixed(2) : "0.00"
     })(),
   ])
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] dashboard.parallelQueries(kpis+inspect+repairs+defect30d) ${Date.now() - _t1}ms`)
+  console.log(`[PERF] dashboard.getExtendedKPIs.total ${Date.now() - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   return { kpis, inspectionsToday, openRepairs, defectRate30d }
 }
 
 export default async function DashboardPage() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _pt0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const { kpis, inspectionsToday, openRepairs, defectRate30d } = await getExtendedKPIs()
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] dashboard.page.total ${Date.now() - _pt0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   const PRIORITY_COLOR: Record<string, string> = {
     CRITICAL: "text-red-600",

@@ -10,10 +10,20 @@ const IN_PROGRESS_STATUSES: ShipmentStatus[] = ["PLANNED", "PICKED"]
 const COMPLETE_STATUSES: ShipmentStatus[] = ["SHIPPED", "DELIVERED"]
 
 export default async function DeliveryStatusPage() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _pt0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  const _t1 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const deliveries = await getDeliveryStatusRows(tenantId)
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] deliveryStatus.getDeliveryStatusRows ${Date.now() - _t1}ms  rows=${deliveries.length}`)
+  console.log(`[PERF] deliveryStatus.page.total ${Date.now() - _pt0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
   const today = startOfLocalDay(new Date())
 
   const totalDeliveries = deliveries.length

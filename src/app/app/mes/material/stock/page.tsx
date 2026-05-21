@@ -7,10 +7,17 @@ import { MaterialStockDataTable } from "./material-stock-data-table"
 export const dynamic = "force-dynamic"
 
 export default async function MaterialStockPage() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _pt0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const [balances, sites] = await Promise.all([
     getMaterialInventoryBalances(),
     getSitesForInventory(),
   ])
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] materialStock.parallelQueries(balances+sites) ${Date.now() - _pt0}ms  balanceRows=${balances.length}`)
+  console.log(`[PERF] materialStock.page.total ${Date.now() - _pt0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   const totalLines = balances.length
   const totalOnHand = balances.reduce((sum, b) => sum + Number(b.qtyOnHand), 0)

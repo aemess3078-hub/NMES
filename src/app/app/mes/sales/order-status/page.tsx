@@ -14,10 +14,20 @@ const OPEN_STATUSES: SalesOrderStatus[] = [
 ]
 
 export default async function SalesOrderStatusPage() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _pt0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  const _t1 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const orders = await getSalesOrderStatusRows(tenantId)
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] salesOrderStatus.getSalesOrderStatusRows ${Date.now() - _t1}ms  rows=${orders.length}`)
+  console.log(`[PERF] salesOrderStatus.page.total ${Date.now() - _pt0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
   const today = startOfLocalDay(new Date())
 
   const totalOrders = orders.length

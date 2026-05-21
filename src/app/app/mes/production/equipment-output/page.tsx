@@ -4,7 +4,14 @@ import { EquipmentOutputDataTable } from "./equipment-output-data-table"
 export const dynamic = "force-dynamic"
 
 export default async function EquipmentOutputPage() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _pt0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const rows = await getEquipmentOutputStats()
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] equipmentOutput.getEquipmentOutputStats ${Date.now() - _pt0}ms  rows=${rows.length}`)
+  console.log(`[PERF] equipmentOutput.page.total ${Date.now() - _pt0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   const totalEquipment = rows.length
   const totalGood      = rows.reduce((s, r) => s + r.goodQty,   0)

@@ -22,6 +22,9 @@ export type CurrentUser = {
 // ─── Internal: JWT payload → CurrentUser ────────────────────────────────────
 
 async function buildCurrentUser(profileId: string, tenantId: string): Promise<CurrentUser | null> {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const [credential, tenantUser, profile] = await Promise.all([
     prisma.userCredential.findUnique({
       where: { profileId },
@@ -36,6 +39,9 @@ async function buildCurrentUser(profileId: string, tenantId: string): Promise<Cu
       select: { email: true, name: true },
     }),
   ]);
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] auth.buildCurrentUser.dbQueries ${Date.now() - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   if (!credential || credential.isLocked || !tenantUser || !profile) return null;
 
@@ -67,6 +73,9 @@ export async function getTenantId(): Promise<string> {
 // ─── getCurrentUser ───────────────────────────────────────────────────────────
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const store = await cookies();
   const token = store.get(NMES_SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -74,7 +83,11 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const payload = verifyAuthToken(token);
   if (!payload) return null;
 
-  return buildCurrentUser(payload.profileId, payload.tenantId);
+  const result = await buildCurrentUser(payload.profileId, payload.tenantId);
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] auth.getCurrentUser.total ${Date.now() - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
+  return result;
 }
 
 // ─── getCurrentUserId ────────────────────────────────────────────────────────

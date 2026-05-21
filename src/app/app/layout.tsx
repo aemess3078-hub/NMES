@@ -14,16 +14,16 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // ── [PERF] 데모용 타이밍 로그 — 데모 완료 후 아래 블록 제거 필요 ────────────
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
   const _t0 = Date.now()
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
 
   const user = await getCurrentUser();
 
-  // ── [PERF] ──────────────────────────────────────────────────────────────────
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   const _tAuth = Date.now()
-  console.log(`[PERF] layout.getCurrentUser: ${_tAuth - _t0}ms`)
-  // ─────────────────────────────────────────────────────────────────────────────
+  console.log(`[PERF] layout.getCurrentUser ${_tAuth - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   if (!user) {
     redirect('/login');
@@ -38,10 +38,11 @@ export default async function AppLayout({
     getEnabledMenuCodes(user.tenantId),
   ]);
 
-  // ── [PERF] ──────────────────────────────────────────────────────────────────
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   const _tFeatures = Date.now()
-  console.log(`[PERF] layout.features+menu: ${_tFeatures - _tAuth}ms | layout.total: ${_tFeatures - _t0}ms`)
-  // ─────────────────────────────────────────────────────────────────────────────
+  console.log(`[PERF] layout.features+menu ${_tFeatures - _tAuth}ms`)
+  console.log(`[PERF] layout.total ${_tFeatures - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   function filterNav(items: NavItem[], codes: string[]): NavItem[] {
     return items.reduce<NavItem[]>((acc, item) => {

@@ -6,10 +6,20 @@ import { WipInventoryDataTable } from "./wip-inventory-data-table"
 export const dynamic = "force-dynamic"
 
 export default async function WipInventoryPage() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _pt0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  const _t1 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const rows = await getWipInventoryRows(tenantId)
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] wipInventory.getWipInventoryRows ${Date.now() - _t1}ms  rows=${rows.length}`)
+  console.log(`[PERF] wipInventory.page.total ${Date.now() - _pt0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   const totalOrders = new Set(rows.map((row) => row.workOrder.id)).size
   const inProgressCount = rows.filter((row) => isInProgress(row)).length

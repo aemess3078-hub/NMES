@@ -8,10 +8,17 @@ import { prisma } from "@/lib/db/prisma"
 // - 페이지 이동 시마다 반복되던 TenantFeature DB 쿼리를 제거합니다.
 const _getEnabledTenantFeatures = unstable_cache(
   async (tenantId: string) => {
-    return prisma.tenantFeature.findMany({
+    // ── [PERF-TEMP] 성능 계측 임시 코드 (캐시 MISS 시에만 실행) — 측정 완료 후 제거 ──
+    const _t0 = Date.now()
+    // ─────────────────────────────────────────────────────────────────────────
+    const result = await prisma.tenantFeature.findMany({
       where: { tenantId, isEnabled: true },
       include: { feature: true },
     })
+    // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+    console.log(`[PERF] feature.getEnabledTenantFeatures.db(cacheMiss) ${Date.now() - _t0}ms  rows=${result.length}`)
+    // ─────────────────────────────────────────────────────────────────────────
+    return result
   },
   ["enabled-tenant-features"],
   { revalidate: 60 }
@@ -19,7 +26,13 @@ const _getEnabledTenantFeatures = unstable_cache(
 
 // 1. 테넌트 활성 기능 코드 목록
 export async function getEnabledFeatureCodes(tenantId: string): Promise<string[]> {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const tenantFeatures = await _getEnabledTenantFeatures(tenantId)
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] feature.getEnabledFeatureCodes.total ${Date.now() - _t0}ms  (캐시 HIT이면 ~0ms)`)
+  // ─────────────────────────────────────────────────────────────────────────
   return tenantFeatures.map((tf) => tf.feature.code)
 }
 
@@ -119,6 +132,12 @@ export async function isFeatureEnabled(tenantId: string, featureCode: string): P
 
 // 6. 활성 기능의 menuCodes만 필터링
 export async function getEnabledMenuCodes(tenantId: string): Promise<string[]> {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const tenantFeatures = await _getEnabledTenantFeatures(tenantId)
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] feature.getEnabledMenuCodes.total ${Date.now() - _t0}ms  (캐시 HIT이면 ~0ms)`)
+  // ─────────────────────────────────────────────────────────────────────────
   return tenantFeatures.flatMap((tf) => tf.feature.menuCodes)
 }

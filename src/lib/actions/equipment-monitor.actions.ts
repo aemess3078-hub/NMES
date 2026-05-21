@@ -81,6 +81,9 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
 }
 
 export async function getProductionKPIs() {
+  // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
+  const _t0 = Date.now()
+  // ─────────────────────────────────────────────────────────────────────────
   const tenantId = await getTenantId()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -105,6 +108,9 @@ export async function getProductionKPIs() {
     prisma.equipment.count({ where: { tenantId } }),
     prisma.equipment.count({ where: { tenantId, status: "ACTIVE" } }),
   ])
+  // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
+  console.log(`[PERF] equipmentMonitor.getProductionKPIs.total ${Date.now() - _t0}ms`)
+  // ─────────────────────────────────────────────────────────────────────────
 
   const goodQty = Number(todayResults._sum?.goodQty ?? 0)
   const defectQty = Number(todayResults._sum?.defectQty ?? 0)
