@@ -12,7 +12,7 @@ interface CnsLogoProps {
  * width는 이미지 원본 비율에 따라 자동 결정됨.
  */
 export function CnsLogo({ size = "sm", className }: CnsLogoProps) {
-  const h = size === "lg" ? 52 : 28
+  const h = size === "lg" ? 78 : 56
 
   return (
     <Image
