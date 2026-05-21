@@ -7,17 +7,16 @@ import {
   BarChart2,
   ArrowRight,
 } from 'lucide-react';
+import { CnsLogo } from '@/components/cns-logo';
 
 export default async function AppHomePage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
       {/* 페이지 제목 */}
       <div className="mb-10">
-        <h1 className="text-[28px] font-bold tracking-tight text-foreground mb-2">
-          Cloud MES
-        </h1>
+        <CnsLogo size="lg" className="text-foreground mb-3" />
         <p className="text-[15px] text-muted-foreground">
-          제조 실행 시스템에 오신 것을 환영합니다.
+          스마트공장 제조실행시스템에 오신 것을 환영합니다.
         </p>
       </div>
 

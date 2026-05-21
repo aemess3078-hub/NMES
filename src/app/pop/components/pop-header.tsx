@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
+import { CnsLogo } from "@/components/cns-logo"
 
 type Props = {
   workerName?: string
@@ -21,7 +22,7 @@ export function PopHeader({ workerName = "작업자", onLogout }: Props) {
 
   return (
     <header className="bg-slate-800 text-white px-6 py-3 flex items-center justify-between">
-      <div className="font-bold text-lg">Cloud MES</div>
+      <CnsLogo size="sm" className="text-white" />
       <div className="text-center">
         <div className="text-xl font-mono tabular-nums">
           {now ? format(now, "HH:mm:ss") : "--:--:--"}

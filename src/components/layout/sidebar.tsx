@@ -67,6 +67,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import type { NavItem } from '@/types';
+import { CnsLogo } from '@/components/cns-logo';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   // Legacy builder icons
@@ -243,12 +244,7 @@ export function Sidebar({ navItems, userName, userEmail }: SidebarProps) {
         className="flex items-center gap-2 px-3 py-3 hover:bg-sidebar-accent rounded mx-1 mt-1 cursor-pointer transition-colors"
         onClick={() => router.push('/app')}
       >
-        <div className="w-5 h-5 rounded bg-foreground/90 flex items-center justify-center text-background text-[10px] font-bold flex-shrink-0">
-          M
-        </div>
-        <span className="text-[14px] font-semibold text-sidebar-foreground truncate">
-          Cloud MES
-        </span>
+        <CnsLogo size="sm" className="text-sidebar-foreground" />
       </div>
 
       {/* 메뉴 */}

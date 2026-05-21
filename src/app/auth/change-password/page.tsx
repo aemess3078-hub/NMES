@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff, Loader2, LockKeyhole } from "lucide-react"
+import { CnsLogo } from "@/components/cns-logo"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -112,12 +113,9 @@ export default function ChangePasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-xl bg-slate-800 text-xl font-bold text-white">
-            M
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800">Cloud MES</h1>
-          <p className="mt-2 text-sm text-slate-500">계정 보안을 위해 비밀번호를 변경하세요</p>
+        <div className="mb-8 flex flex-col items-center">
+          <CnsLogo size="lg" className="text-slate-900 mb-3" />
+          <p className="text-sm text-slate-500">계정 보안을 위해 비밀번호를 변경하세요</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">

@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Cloud MES - 커스터마이징 제조실행시스템',
-  description: '드래그앤드롭으로 만드는 맞춤형 MES',
+  title: 'CNS Medical MES',
+  description: '씨앤에스메디칼 스마트공장 제조실행시스템',
 };
 
 export default function RootLayout({

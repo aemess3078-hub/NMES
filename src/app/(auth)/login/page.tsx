@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, Monitor, Factory, Eye, EyeOff } from "lucide-react"
 import { popLogin } from "@/lib/actions/pop.actions"
 import { PopNumberPad } from "@/app/pop/components/pop-number-pad"
+import { CnsLogo } from "@/components/cns-logo"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,12 +23,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         {/* 상단 로고 */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-slate-800 text-white text-xl font-bold mb-4">
-            M
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800">Cloud MES</h1>
-          <p className="text-slate-500 mt-2">스마트 제조 실행 시스템</p>
+        <div className="flex flex-col items-center mb-8">
+          <CnsLogo size="lg" className="text-slate-900 mb-4" />
+          <p className="text-slate-500 text-[15px]">스마트공장 제조실행시스템</p>
         </div>
 
         {mode === "select" && <ModeSelectCards onSelect={setMode} />}
