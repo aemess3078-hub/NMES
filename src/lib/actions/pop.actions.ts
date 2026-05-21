@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { OperationStatus } from "@prisma/client"
+import { OperationStatus, WorkOrderStatus } from "@prisma/client"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,6 +18,26 @@ export type SubmitResultInput = {
   goodQty: number
   defectQty: number
   reworkQty: number
+}
+
+export type PopWorkQueueRow = {
+  operationId: string
+  workOrderId: string
+  orderNo: string
+  manufacturingNo: string | null
+  itemCode: string
+  itemName: string
+  processName: string
+  seq: number
+  status: OperationStatus
+  plannedQty: number
+  completedQty: number
+  remainingQty: number
+  dueDate: string | null
+  materialLotCount: number
+  materialLotQty: number
+  canWork: boolean
+  availabilityLabel: "작업가능" | "이전 공정 대기" | "진행중"
 }
 
 // ─── 1. PIN 로그인 (데모용 간이 구현) ─────────────────────────────────────────
@@ -81,6 +101,103 @@ export async function getTodayWorkOrders() {
       },
     },
     orderBy: { dueDate: "asc" },
+  })
+}
+
+export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueueRow[]> {
+  const operations = await prisma.workOrderOperation.findMany({
+    where: {
+      status: { in: ["PENDING", "IN_PROGRESS"] },
+      workOrder: {
+        tenantId,
+        status: { notIn: [WorkOrderStatus.COMPLETED, WorkOrderStatus.CANCELLED] },
+      },
+    },
+    select: {
+      id: true,
+      seq: true,
+      status: true,
+      plannedQty: true,
+      completedQty: true,
+      routingOperation: {
+        select: {
+          name: true,
+        },
+      },
+      workOrder: {
+        select: {
+          id: true,
+          orderNo: true,
+          manufacturingNo: true,
+          dueDate: true,
+          item: {
+            select: {
+              code: true,
+              name: true,
+            },
+          },
+          operations: {
+            select: {
+              seq: true,
+              status: true,
+            },
+            orderBy: { seq: "asc" },
+          },
+          materialLots: {
+            select: {
+              id: true,
+              qty: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { workOrder: { dueDate: "asc" } },
+      { workOrder: { orderNo: "asc" } },
+      { seq: "asc" },
+    ],
+  })
+
+  return operations.map((operation) => {
+    const previousOperations = operation.workOrder.operations.filter(
+      (candidate) => candidate.seq < operation.seq
+    )
+    const previousCompleted = previousOperations.every(
+      (candidate) => candidate.status === "COMPLETED"
+    )
+    const canWork = operation.status === "IN_PROGRESS" || previousCompleted
+    const materialLotQty = operation.workOrder.materialLots.reduce(
+      (sum, lot) => sum + Number(lot.qty),
+      0
+    )
+    const plannedQty = Number(operation.plannedQty)
+    const completedQty = Number(operation.completedQty)
+
+    return {
+      operationId: operation.id,
+      workOrderId: operation.workOrder.id,
+      orderNo: operation.workOrder.orderNo,
+      manufacturingNo: operation.workOrder.manufacturingNo,
+      itemCode: operation.workOrder.item.code,
+      itemName: operation.workOrder.item.name,
+      processName: operation.routingOperation.name,
+      seq: operation.seq,
+      status: operation.status,
+      plannedQty,
+      completedQty,
+      remainingQty: Math.max(plannedQty - completedQty, 0),
+      dueDate: operation.workOrder.dueDate?.toISOString() ?? null,
+      materialLotCount: operation.workOrder.materialLots.length,
+      materialLotQty,
+      canWork,
+      availabilityLabel:
+        operation.status === "IN_PROGRESS"
+          ? "진행중"
+          : canWork
+            ? "작업가능"
+            : "이전 공정 대기",
+    }
   })
 }
 

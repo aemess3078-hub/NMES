@@ -47,9 +47,10 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-prod-equip-output', parentId: 'nav-production', label: '설비별생산현황', icon: 'BarChart2', href: '/app/mes/production/equipment-output', displayOrder: 1, children: [] },
           { id: 'nav-prod-plan-output', parentId: 'nav-production', label: '생산계획별생산현황', icon: 'CalendarDays', href: '/app/mes/production-plan', displayOrder: 2, children: [] },
           { id: 'nav-work-orders', parentId: 'nav-production', label: '작업지시', icon: 'ClipboardList', href: '/app/mes/work-orders', displayOrder: 3, children: [] },
-          { id: 'nav-production-results', parentId: 'nav-production', label: '작업일지', icon: 'FileText', href: '/app/mes/production-results', displayOrder: 4, children: [] },
-          { id: 'nav-outsource-orders', parentId: 'nav-production', label: '외주발주등록', icon: 'Truck', href: '/app/mes/production/outsource-orders', displayOrder: 5, comingSoon: true, children: [] },
-          { id: 'nav-outsource-receiving', parentId: 'nav-production', label: '외주입고등록', icon: 'PackagePlus', href: '/app/mes/production/outsource-receiving', displayOrder: 6, comingSoon: true, children: [] },
+          { id: 'nav-pop-work-queue', parentId: 'nav-production', label: 'POP 작업대기', icon: 'Tablet', href: '/app/pop/work-queue', displayOrder: 4, children: [] },
+          { id: 'nav-production-results', parentId: 'nav-production', label: '작업일지', icon: 'FileText', href: '/app/mes/production-results', displayOrder: 5, children: [] },
+          { id: 'nav-outsource-orders', parentId: 'nav-production', label: '외주발주등록', icon: 'Truck', href: '/app/mes/production/outsource-orders', displayOrder: 6, comingSoon: true, children: [] },
+          { id: 'nav-outsource-receiving', parentId: 'nav-production', label: '외주입고등록', icon: 'PackagePlus', href: '/app/mes/production/outsource-receiving', displayOrder: 7, comingSoon: true, children: [] },
         ],
       },
       // 3. 재고관리
