@@ -55,6 +55,12 @@ export async function getInspectionsByStage(stage?: InspectionStage): Promise<In
       ...r.workOrderOperation,
       plannedQty:   Number(r.workOrderOperation.plannedQty),
       completedQty: Number(r.workOrderOperation.completedQty),
+      // workOrder.plannedQty (Decimal) 누출 방지 — 필요 필드만 명시 재구성
+      workOrder: {
+        id:      r.workOrderOperation.workOrder.id,
+        orderNo: r.workOrderOperation.workOrder.orderNo,
+        item:    r.workOrderOperation.workOrder.item,
+      },
     },
   }))
 }
@@ -112,6 +118,12 @@ export async function getWorkOrdersForInspection() {
     ...op,
     plannedQty:       Number(op.plannedQty),
     completedQty:     Number(op.completedQty),
+    // workOrder.plannedQty (Decimal) 누출 방지 — 필요 필드만 명시 재구성
+    workOrder: {
+      id:      op.workOrder.id,
+      orderNo: op.workOrder.orderNo,
+      item:    op.workOrder.item,
+    },
     inspectionSpecs:  specMap.has(op.routingOperationId) ? [specMap.get(op.routingOperationId)!] : [],
   }))
 }
