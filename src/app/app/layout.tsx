@@ -6,8 +6,13 @@ import { MES_NAV } from '@/lib/nav-config';
 import { FeatureProvider } from '@/lib/contexts/feature-context';
 import { getEnabledFeatureCodes, getEnabledMenuCodes } from '@/lib/services/feature.service';
 import type { NavItem } from '@/types/menu';
+import type { UserRole } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
+
+const ROLE_HIERARCHY: Record<UserRole, number> = {
+  OWNER: 5, ADMIN: 4, MANAGER: 3, OPERATOR: 2, VIEWER: 1,
+};
 
 export default async function AppLayout({
   children,
@@ -44,8 +49,12 @@ export default async function AppLayout({
   console.log(`[PERF] layout.total ${_tFeatures - _t0}ms`)
   // ─────────────────────────────────────────────────────────────────────────
 
+  const userRole = user.role
   function filterNav(items: NavItem[], codes: string[]): NavItem[] {
     return items.reduce<NavItem[]>((acc, item) => {
+      if (item.minRole && ROLE_HIERARCHY[userRole] < ROLE_HIERARCHY[item.minRole]) {
+        return acc
+      }
       if (item.children.length > 0) {
         const filtered = filterNav(item.children, codes)
         if (filtered.length > 0) acc.push({ ...item, children: filtered })

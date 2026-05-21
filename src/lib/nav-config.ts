@@ -24,7 +24,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-defects', parentId: 'nav-master', label: '불량관리', icon: 'AlertTriangle', href: '/app/mes/defects', displayOrder: 3, children: [] },
           { id: 'nav-routing', parentId: 'nav-master', label: '라우팅관리', icon: 'Workflow', href: '/app/mes/routing', displayOrder: 4, children: [] },
           { id: 'nav-work-centers', parentId: 'nav-master', label: '공정관리', icon: 'GitBranch', href: '/app/mes/work-centers', displayOrder: 5, children: [] },
-          { id: 'nav-users', parentId: 'nav-master', label: '사용자관리', icon: 'Users', href: '/app/mes/users', displayOrder: 6, children: [] },
+          { id: 'nav-users', parentId: 'nav-master', label: '사용자관리', icon: 'Users', href: '/app/mes/users', displayOrder: 6, minRole: 'ADMIN', children: [] },
           { id: 'nav-sites', parentId: 'nav-master', label: '사업장관리', icon: 'Building2', href: '/app/mes/sites', displayOrder: 7, children: [] },
           { id: 'nav-locations', parentId: 'nav-master', label: '로케이션관리', icon: 'MapPin', href: '/app/mes/locations', displayOrder: 8, children: [] },
           { id: 'nav-vendors', parentId: 'nav-master', label: '외주처관리', icon: 'Handshake', href: '/app/mes/vendors', displayOrder: 9, children: [] },

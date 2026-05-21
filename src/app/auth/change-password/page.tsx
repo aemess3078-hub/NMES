@@ -111,7 +111,7 @@ export default function ChangePasswordPage() {
     !confirmPassword
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+    <div className="flex min-h-screen overflow-y-auto items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center">
           <CnsLogo size="lg" className="text-slate-900 mb-3" />
