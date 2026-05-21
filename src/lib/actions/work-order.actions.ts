@@ -37,6 +37,11 @@ export type WorkOrderWithDetails = {
     completedQty: number
     routingOperation: { id: string; name: string; seq: number }
     equipment: { id: string; code: string; name: string } | null
+    productionResults: {
+      id: string
+      startedAt: string | null
+      endedAt: string | null
+    }[]
   }[]
   materialLots: {
     id: string
@@ -80,6 +85,10 @@ const workOrderInclude = {
       equipment: {
         select: { id: true, code: true, name: true },
       },
+      productionResults: {
+        select: { id: true, startedAt: true, endedAt: true },
+        orderBy: { startedAt: "asc" },
+      },
     },
     orderBy: { seq: "asc" },
   },
@@ -106,6 +115,11 @@ function serializeWorkOrder(workOrder: WorkOrderPayload): WorkOrderWithDetails {
       ...operation,
       plannedQty: Number(operation.plannedQty),
       completedQty: Number(operation.completedQty),
+      productionResults: operation.productionResults.map((result) => ({
+        ...result,
+        startedAt: result.startedAt?.toISOString() ?? null,
+        endedAt: result.endedAt?.toISOString() ?? null,
+      })),
     })),
     materialLots: workOrder.materialLots.map((lot) => ({
       ...lot,

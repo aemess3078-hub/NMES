@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 import { type OperationStatus, type WorkOrderStatus } from "@prisma/client"
-import { ExternalLink } from "lucide-react"
+import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -94,6 +94,31 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
           onCheckedChange={(value) => row.toggleSelected(!!value)}
           aria-label="행 선택"
         />
+      ),
+      enableSorting: false,
+      enableHiding: false,
+    },
+    {
+      id: "expand",
+      header: "",
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label={row.getIsExpanded() ? "상세 닫기" : "상세 열기"}
+          onClick={(event) => {
+            event.stopPropagation()
+            row.toggleExpanded()
+          }}
+        >
+          {row.getIsExpanded() ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+        </Button>
       ),
       enableSorting: false,
       enableHiding: false,

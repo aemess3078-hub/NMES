@@ -4,10 +4,12 @@ import * as React from "react"
 import {
   ColumnDef,
   ColumnFiltersState,
+  ExpandedState,
   SortingState,
   VisibilityState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -36,6 +38,7 @@ interface DataTableProps<TData, TValue> {
   filterableColumns?: DataTableFilterableColumn<TData>[]
   pageSize?: number
   onRowClick?: (row: TData) => void
+  renderExpandedRow?: (row: TData) => React.ReactNode
 }
 
 export function DataTable<TData, TValue>({
@@ -45,8 +48,10 @@ export function DataTable<TData, TValue>({
   filterableColumns = [],
   pageSize = 20,
   onRowClick,
+  renderExpandedRow,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({})
+  const [expanded, setExpanded] = React.useState<ExpandedState>({})
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({})
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -62,13 +67,17 @@ export function DataTable<TData, TValue>({
       columnVisibility,
       rowSelection,
       columnFilters,
+      expanded,
     },
     enableRowSelection: true,
+    getRowCanExpand: () => Boolean(renderExpandedRow),
     onRowSelectionChange: setRowSelection,
+    onExpandedChange: setExpanded,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -105,21 +114,29 @@ export function DataTable<TData, TValue>({
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  onClick={() => onRowClick?.(row.original)}
-                  className={onRowClick ? "cursor-pointer" : undefined}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
+                <React.Fragment key={row.id}>
+                  <TableRow
+                    data-state={row.getIsSelected() && "selected"}
+                    onClick={() => onRowClick?.(row.original)}
+                    className={onRowClick ? "cursor-pointer" : undefined}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {row.getIsExpanded() && renderExpandedRow && (
+                    <TableRow>
+                      <TableCell colSpan={row.getVisibleCells().length} className="bg-slate-50/70 p-0">
+                        {renderExpandedRow(row.original)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               ))
             ) : (
               <TableRow>
