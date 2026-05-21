@@ -331,3 +331,29 @@ export async function getPendingSignupCount(): Promise<number> {
   await requireRole("ADMIN")
   return prisma.signupRequest.count({ where: { tenantId, status: "PENDING" } })
 }
+
+// ─── 가입 신청 이력 삭제 (APPROVED / REJECTED 만 허용) ───────────────────────
+
+export async function deleteSignupRequest(
+  requestId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const tenantId = await getTenantId()
+    await requireRole("ADMIN")
+
+    const request = await prisma.signupRequest.findFirst({
+      where: { id: requestId, tenantId },
+    })
+    if (!request) return { success: false, error: "신청 이력을 찾을 수 없습니다." }
+    if (request.status === "PENDING") {
+      return { success: false, error: "대기 중인 신청은 삭제할 수 없습니다. 먼저 승인 또는 거절 처리하세요." }
+    }
+
+    await prisma.signupRequest.delete({ where: { id: requestId } })
+
+    revalidatePath("/app/mes/users")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+  }
+}

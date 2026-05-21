@@ -10,6 +10,7 @@ import {
   deleteEquipment,
   type EquipmentWithDetails,
 } from "@/lib/actions/equipment.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,6 +28,7 @@ interface Props {
 
 export function EquipmentDataTable({ data, sites, workCenters }: Props) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [keyword,    setKeyword]    = useState("")
   const [siteId,     setSiteId]     = useState("all")
   const [sheetOpen,  setSheetOpen]  = useState(false)
@@ -64,7 +66,8 @@ export function EquipmentDataTable({ data, sites, workCenters }: Props) {
     }
   }
 
-  const columns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
+  const allColumns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   // ── 필터 옵션 ────────────────────────────────────────────────────────────────
   const filterableColumns = [
@@ -121,13 +124,15 @@ export function EquipmentDataTable({ data, sites, workCenters }: Props) {
           </div>
         </div>
 
-        <Button
-          size="sm"
-          onClick={() => { setEditTarget(null); setSheetOpen(true) }}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          설비 등록
-        </Button>
+        {canMutate && (
+          <Button
+            size="sm"
+            onClick={() => { setEditTarget(null); setSheetOpen(true) }}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            설비 등록
+          </Button>
+        )}
       </div>
 
       <DataTable

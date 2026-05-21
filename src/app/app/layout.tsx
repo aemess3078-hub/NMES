@@ -3,7 +3,8 @@ import { getCurrentUser } from '@/lib/auth';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MES_NAV } from '@/lib/nav-config';
-import { FeatureProvider } from '@/lib/contexts/feature-context';
+import { FeatureProvider } from '@/lib/contexts/feature-context'
+import { UserRoleProvider } from '@/lib/contexts/user-role-context';
 import { getEnabledFeatureCodes, getEnabledMenuCodes } from '@/lib/services/feature.service';
 import type { NavItem } from '@/types/menu';
 import type { UserRole } from '@prisma/client';
@@ -71,19 +72,21 @@ export default async function AppLayout({
 
   return (
     <FeatureProvider enabledFeatures={enabledFeatures}>
-      <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar
-          navItems={filteredNav}
-          userName={user.name}
-          userEmail={user.email}
-        />
-        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-          <Header />
-          <main className="flex-1 overflow-y-auto p-6">
-            {children}
-          </main>
+      <UserRoleProvider role={userRole}>
+        <div className="flex h-screen overflow-hidden bg-background">
+          <Sidebar
+            navItems={filteredNav}
+            userName={user.name}
+            userEmail={user.email}
+          />
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+            <Header />
+            <main className="flex-1 overflow-y-auto p-6">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </UserRoleProvider>
     </FeatureProvider>
   );
 }

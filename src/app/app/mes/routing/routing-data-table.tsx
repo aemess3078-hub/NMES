@@ -10,6 +10,7 @@ import { getColumns } from "./columns"
 import { RoutingFormSheet } from "./routing-form-sheet"
 import { RoutingDetailPanel } from "./routing-detail-panel"
 import { deleteRouting, RoutingWithDetails } from "@/lib/actions/routing.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 interface WorkCenter {
   id: string
@@ -38,6 +39,7 @@ export function RoutingDataTable({
   tenantId,
 }: RoutingDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingRouting, setEditingRouting] = useState<RoutingWithDetails | null>(null)
@@ -63,26 +65,29 @@ export function RoutingDataTable({
     setDetailRouting((prev) => (prev?.id === routing.id ? null : routing))
   }
 
-  const columns = getColumns({
+  const allColumns = getColumns({
     onView: handleView,
     onEdit: handleEdit,
     onDelete: handleDelete,
   })
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditingRouting(null)
-            setFormMode("create")
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          라우팅 등록
-        </Button>
-      </div>
+      {canMutate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              setEditingRouting(null)
+              setFormMode("create")
+              setFormOpen(true)
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            라우팅 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

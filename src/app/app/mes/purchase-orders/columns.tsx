@@ -49,7 +49,8 @@ const STATUS_CONFIG: Record<
 
 export function getColumns(
   onEdit: (row: PurchaseOrderRow) => void,
-  onDelete: (id: string) => void
+  onDelete: (id: string) => void,
+  canMutate = true
 ): ColumnDef<PurchaseOrderRow>[] {
   return [
     {
@@ -187,26 +188,28 @@ export function getColumns(
                 </Button>
               </Link>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit(row.original)}>
-                  <Pencil className="mr-2 h-4 w-4" /> 수정
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => onDelete(row.original.id)}
-                  disabled={row.original.status !== "DRAFT"}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" /> 삭제
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canMutate && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEdit(row.original)}>
+                    <Pencil className="mr-2 h-4 w-4" /> 수정
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(row.original.id)}
+                    disabled={row.original.status !== "DRAFT"}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> 삭제
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         )
       },

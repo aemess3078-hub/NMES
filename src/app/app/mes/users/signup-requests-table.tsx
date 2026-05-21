@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { UserRole, SignupRequestStatus } from "@prisma/client"
-import { CheckCircle, XCircle, Clock } from "lucide-react"
+import { CheckCircle, XCircle, Clock, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { approveSignupRequest, rejectSignupRequest } from "@/lib/actions/signup-request.actions"
+import { approveSignupRequest, rejectSignupRequest, deleteSignupRequest } from "@/lib/actions/signup-request.actions"
 import type { SignupRequestRow } from "@/lib/actions/signup-request.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +59,19 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
   const [rejectReason, setRejectReason] = useState("")
 
   const [error, setError] = useState<string | null>(null)
+
+  function handleDelete(requestId: string, name: string) {
+    if (!confirm(`"${name}" 신청 이력을 삭제하시겠습니까?`)) return
+    setError(null)
+    startTransition(async () => {
+      const result = await deleteSignupRequest(requestId)
+      if (result.success) {
+        router.refresh()
+      } else {
+        setError(result.error ?? "삭제에 실패했습니다.")
+      }
+    })
+  }
 
   function handleApprove() {
     if (!approveTarget) return
@@ -173,14 +186,38 @@ export function SignupRequestsTable({ requests }: { requests: SignupRequestRow[]
                       </div>
                     )}
                     {req.status === "APPROVED" && (
-                      <span className="text-[12px] text-muted-foreground">
-                        승인: {req.approvedBy?.name ?? "—"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] text-muted-foreground">
+                          승인: {req.approvedBy?.name ?? "—"}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-destructive"
+                          disabled={isPending}
+                          onClick={() => handleDelete(req.id, req.name)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     )}
-                    {req.status === "REJECTED" && req.rejectReason && (
-                      <span className="text-[12px] text-muted-foreground truncate max-w-[160px] block" title={req.rejectReason}>
-                        사유: {req.rejectReason}
-                      </span>
+                    {req.status === "REJECTED" && (
+                      <div className="flex items-center gap-2">
+                        {req.rejectReason && (
+                          <span className="text-[12px] text-muted-foreground truncate max-w-[120px] block" title={req.rejectReason}>
+                            사유: {req.rejectReason}
+                          </span>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-destructive"
+                          disabled={isPending}
+                          onClick={() => handleDelete(req.id, req.name)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     )}
                   </td>
                 </tr>

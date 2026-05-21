@@ -6,6 +6,7 @@ import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { WorkCenterFormSheet } from "./work-center-form-sheet"
 import { WorkCenterWithDetails, deleteWorkCenter } from "@/lib/actions/work-center.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 
@@ -16,6 +17,7 @@ type Props = {
 
 export function WorkCenterDataTable({ data, sites }: Props) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<WorkCenterWithDetails | null>(null)
 
@@ -34,19 +36,22 @@ export function WorkCenterDataTable({ data, sites }: Props) {
     }
   }
 
-  const columns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
+  const allColumns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => { setEditTarget(null); setSheetOpen(true) }}
-          size="sm"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          공정 등록
-        </Button>
-      </div>
+      {canMutate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => { setEditTarget(null); setSheetOpen(true) }}
+            size="sm"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            공정 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

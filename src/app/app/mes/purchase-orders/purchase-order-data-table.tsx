@@ -31,6 +31,7 @@ import { PurchaseOrderStatus } from "@prisma/client"
 import { getColumns, PurchaseOrderRow } from "./columns"
 import { PurchaseOrderFormSheet } from "./purchase-order-form-sheet"
 import { deletePurchaseOrder } from "@/lib/actions/purchase-order.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ export function PurchaseOrderDataTable({
   items,
 }: PurchaseOrderDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
 
   // ─── Sheet 상태 ──────────────────────────────────────────────────────────────
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -107,8 +109,8 @@ export function PurchaseOrderDataTable({
   // ─── 테이블 ──────────────────────────────────────────────────────────────────
 
   const columns = useMemo(
-    () => getColumns(handleEdit, handleDelete),
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    () => getColumns(handleEdit, handleDelete, canMutate),
+    [canMutate] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   const table = useReactTable({
@@ -148,19 +150,21 @@ export function PurchaseOrderDataTable({
           </SelectContent>
         </Select>
 
-        <div className="ml-auto">
-          <Button
-            size="sm"
-            onClick={() => {
-              setSelectedOrder(null)
-              setSheetMode("create")
-              setSheetOpen(true)
-            }}
-          >
-            <Plus className="h-4 w-4 mr-1.5" />
-            신규 발주
-          </Button>
-        </div>
+        {canMutate && (
+          <div className="ml-auto">
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedOrder(null)
+                setSheetMode("create")
+                setSheetOpen(true)
+              }}
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              신규 발주
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* 테이블 */}

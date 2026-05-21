@@ -10,6 +10,7 @@ import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { WorkOrderFormSheet } from "./work-order-form-sheet"
 import { deleteWorkOrder, type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 interface WorkOrderDataTableProps {
   data: WorkOrderWithDetails[]
@@ -170,6 +171,7 @@ export function WorkOrderDataTable({
   tenantId,
 }: WorkOrderDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingWorkOrder, setEditingWorkOrder] = useState<WorkOrderWithDetails | null>(null)
@@ -200,10 +202,11 @@ export function WorkOrderDataTable({
     }
   }
 
-  const columns = getColumns({
+  const allColumns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
   })
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const filterableColumns = [
     {
@@ -221,18 +224,20 @@ export function WorkOrderDataTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditingWorkOrder(null)
-            setFormMode("create")
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          작업지시 등록
-        </Button>
-      </div>
+      {canMutate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              setEditingWorkOrder(null)
+              setFormMode("create")
+              setFormOpen(true)
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            작업지시 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

@@ -10,6 +10,7 @@ import { getColumns } from "./columns"
 import { ItemFormSheet } from "./item-form-sheet"
 import { deleteItem, ItemWithCategory } from "@/lib/actions/item.actions"
 import { ItemFormValues } from "./item-form-schema"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 interface Category {
   id: string
@@ -25,6 +26,7 @@ interface ItemDataTableProps {
 
 export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingItem, setEditingItem] = useState<ItemWithCategory | null>(null)
@@ -45,10 +47,11 @@ export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProp
     }
   }
 
-  const columns = getColumns({
+  const allColumns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
   })
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const defaultValues: Partial<ItemFormValues> | undefined = editingItem
     ? {
@@ -66,18 +69,20 @@ export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProp
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditingItem(null)
-            setFormMode("create")
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          품목 등록
-        </Button>
-      </div>
+      {canMutate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              setEditingItem(null)
+              setFormMode("create")
+              setFormOpen(true)
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            품목 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

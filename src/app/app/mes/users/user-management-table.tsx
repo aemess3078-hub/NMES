@@ -112,7 +112,9 @@ export function UserManagementTable({
           <thead>
             <tr className="border-b bg-muted/30">
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">이름</th>
+              <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">아이디</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">이메일</th>
+              <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">부서 / 직급</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">역할</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">상태</th>
               <th className="text-left px-5 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">등록일</th>
@@ -143,7 +145,16 @@ export function UserManagementTable({
                       )}
                     </div>
                   </td>
+                  <td className="px-5 py-3 text-[14px] font-mono text-muted-foreground">
+                    {user.loginId ?? <span className="text-[12px] italic text-muted-foreground/40">없음</span>}
+                  </td>
                   <td className="px-5 py-3 text-[14px] text-muted-foreground">{user.email}</td>
+                  <td className="px-5 py-3 text-[14px] text-muted-foreground">
+                    <span>{user.department ?? "—"}</span>
+                    {user.jobTitle && (
+                      <span className="ml-1 text-[12px] text-muted-foreground/70">/ {user.jobTitle}</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[12px] font-medium border ${ROLE_COLORS[user.role]}`}>
                       {isOwner && <Shield className="w-3 h-3" />}
@@ -191,7 +202,7 @@ export function UserManagementTable({
                             onClick={() => handleDeactivate(user.id)}
                           >
                             <UserX className="w-3.5 h-3.5 mr-1.5" />
-                            비활성화
+                            탈퇴처리
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem

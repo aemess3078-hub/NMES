@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { MoreHorizontal, Pencil, Trash2, Plus, MapPin, List } from "lucide-react"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 const SITE_TYPE_LABELS: Record<SiteType, string> = {
   FACTORY: "공장",
@@ -43,6 +44,7 @@ type Props = {
 
 export function SiteDataTable({ data }: Props) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<SiteRow | null>(null)
   const [locDialogOpen, setLocDialogOpen] = useState(false)
@@ -145,15 +147,19 @@ export function SiteDataTable({ data }: Props) {
             <DropdownMenuItem onClick={() => handleViewLocations(row.original)}>
               <List className="h-4 w-4 mr-2" /> 로케이션 보기
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleEdit(row.original)}>
-              <Pencil className="h-4 w-4 mr-2" /> 수정
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => handleDelete(row.original)}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="h-4 w-4 mr-2" /> 삭제
-            </DropdownMenuItem>
+            {canMutate && (
+              <DropdownMenuItem onClick={() => handleEdit(row.original)}>
+                <Pencil className="h-4 w-4 mr-2" /> 수정
+              </DropdownMenuItem>
+            )}
+            {canMutate && (
+              <DropdownMenuItem
+                onClick={() => handleDelete(row.original)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> 삭제
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ),
@@ -162,18 +168,20 @@ export function SiteDataTable({ data }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditTarget(null)
-            setSheetOpen(true)
-          }}
-          size="sm"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          사이트 등록
-        </Button>
-      </div>
+      {canMutate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              setEditTarget(null)
+              setSheetOpen(true)
+            }}
+            size="sm"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            사이트 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

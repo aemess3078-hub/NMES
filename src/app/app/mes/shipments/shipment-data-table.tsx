@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getColumns, ShipmentRow } from "./columns"
 import { ShipmentFormSheet } from "./shipment-form-sheet"
 import { confirmShipment, deleteShipment } from "@/lib/actions/shipment.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 type SalesOrderOption = {
   id: string
@@ -52,6 +53,7 @@ export function ShipmentDataTable({
   warehouses,
 }: ShipmentDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [preselectedOrderId, setPreselectedOrderId] = useState<string | undefined>()
 
@@ -88,7 +90,8 @@ export function ShipmentDataTable({
     }
   }
 
-  const columns = getColumns(handleConfirm, handleDelete)
+  const allColumns = getColumns(handleConfirm, handleDelete)
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const filterableColumns = [
     {
@@ -197,12 +200,14 @@ export function ShipmentDataTable({
 
         {/* ── 출하 목록 탭 ── */}
         <TabsContent value="list" className="mt-4 space-y-4">
-          <div className="flex justify-end">
-            <Button onClick={() => openFormWithOrder(undefined)}>
-              <Plus className="mr-2 h-4 w-4" />
-              출하 등록
-            </Button>
-          </div>
+          {canMutate && (
+            <div className="flex justify-end">
+              <Button onClick={() => openFormWithOrder(undefined)}>
+                <Plus className="mr-2 h-4 w-4" />
+                출하 등록
+              </Button>
+            </div>
+          )}
           <DataTable
             columns={columns}
             data={data}

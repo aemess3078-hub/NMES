@@ -13,6 +13,7 @@ import { SalesOrderProcessDialog } from "./sales-order-process-dialog"
 import { SalesOrderDetailSheet } from "./sales-order-detail-sheet"
 import { SalesOrderFulfillmentPanel } from "./sales-order-fulfillment-panel"
 import { deleteSalesOrder } from "@/lib/actions/sales-order.actions"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 type CustomerOption = { id: string; name: string; code: string }
 type ItemOption = { id: string; code: string; name: string }
@@ -33,6 +34,7 @@ export function SalesOrderDataTable({
   items,
 }: SalesOrderDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
 
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
@@ -80,7 +82,8 @@ export function SalesOrderDataTable({
     }
   }
 
-  const columns = getColumns(handleEdit, handleDelete, handleProcess, handleViewDetail)
+  const allColumns = getColumns(handleEdit, handleDelete, handleProcess, handleViewDetail)
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const filterableColumns = [
     {
@@ -107,18 +110,20 @@ export function SalesOrderDataTable({
         </TabsList>
 
         <TabsContent value="orders" className="mt-4 space-y-4">
-          <div className="flex justify-end">
-            <Button
-              onClick={() => {
-                setEditingOrder(null)
-                setFormMode("create")
-                setFormOpen(true)
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              수주 등록
-            </Button>
-          </div>
+          {canMutate && (
+            <div className="flex justify-end">
+              <Button
+                onClick={() => {
+                  setEditingOrder(null)
+                  setFormMode("create")
+                  setFormOpen(true)
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                수주 등록
+              </Button>
+            </div>
+          )}
 
           <DataTable
             columns={columns}

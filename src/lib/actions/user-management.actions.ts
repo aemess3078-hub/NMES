@@ -13,7 +13,9 @@ export type TenantUserRow = {
   email: string
   name: string
   department: string | null
+  jobTitle: string | null
   phone: string | null
+  loginId: string | null
   role: UserRole
   isActive: boolean
   createdAt: Date
@@ -33,7 +35,14 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
   const tenantUsers = await prisma.tenantUser.findMany({
     where: { tenantId },
     include: {
-      profile: { select: { id: true, email: true, name: true, department: true, phone: true, createdAt: true } },
+      profile: {
+        select: {
+          id: true, email: true, name: true,
+          department: true, phone: true, jobTitle: true,
+          createdAt: true,
+          userCredential: { select: { loginId: true } },
+        },
+      },
     },
     orderBy: { createdAt: "asc" },
   })
@@ -47,7 +56,9 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
       email: tu.profile.email,
       name: tu.profile.name || tu.profile.email.split("@")[0] || "",
       department: tu.profile.department ?? null,
+      jobTitle: tu.profile.jobTitle ?? null,
       phone: tu.profile.phone ?? null,
+      loginId: tu.profile.userCredential?.loginId ?? null,
       role: tu.role,
       isActive: tu.isActive,
       createdAt: tu.createdAt,

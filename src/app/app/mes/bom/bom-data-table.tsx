@@ -12,6 +12,7 @@ import { BomDetailPanel } from "./bom-detail-panel"
 import { deleteBom, BOMWithDetails } from "@/lib/actions/bom.actions"
 import { BOMFormValues } from "./bom-form-schema"
 import { BOMStatus } from "@prisma/client"
+import { useUserRole } from "@/lib/contexts/user-role-context"
 
 interface ParentItem {
   id: string
@@ -42,6 +43,7 @@ export function BomDataTable({
   tenantId,
 }: BomDataTableProps) {
   const router = useRouter()
+  const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingBom, setEditingBom] = useState<BOMWithDetails | null>(null)
@@ -67,12 +69,13 @@ export function BomDataTable({
     }
   }
 
-  const columns = getColumns({
+  const allColumns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
     onSelect: handleSelect,
     selectedId: selectedBom?.id,
   })
+  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const defaultValues: Partial<BOMFormValues> | undefined = editingBom
     ? {
@@ -91,18 +94,20 @@ export function BomDataTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditingBom(null)
-            setFormMode("create")
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          BOM 등록
-        </Button>
-      </div>
+      {canMutate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              setEditingBom(null)
+              setFormMode("create")
+              setFormOpen(true)
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            BOM 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}
