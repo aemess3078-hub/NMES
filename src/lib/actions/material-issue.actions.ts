@@ -43,9 +43,10 @@ export type WarehouseStockOption = {
 export type IssueMaterialInput = {
   workOrderId: string
   siteId: string
-  warehouseId: string
+  warehouseId?: string
   items: {
     itemId: string
+    warehouseId?: string
     lotId?: string | null      // LOT 관리 품목은 필수, 비관리 품목은 null/undefined
     issueQty: number
     requiredQty: number
@@ -242,6 +243,12 @@ export async function issueMaterialsForWorkOrder(
         const item = activeItems[i]
         const txNo = txNos[i]
         const meta = itemMetaMap.get(item.itemId)
+        const warehouseId = item.warehouseId ?? data.warehouseId
+        if (!warehouseId) {
+          throw new Error(
+            `출고 창고 미선택: ${meta?.code ?? item.itemId} 품목의 출고 창고를 선택하세요.`
+          )
+        }
 
         // ── LOT 결정 ──────────────────────────────────────────────────────────
         let lotId: string | null = null
@@ -259,7 +266,7 @@ export async function issueMaterialsForWorkOrder(
         const balance = await tx.inventoryBalance.findFirst({
           where: {
             tenantId,
-            warehouseId: data.warehouseId,
+            warehouseId,
             itemId: item.itemId,
             lotId,
           },
@@ -286,7 +293,7 @@ export async function issueMaterialsForWorkOrder(
             tenantId,
             itemId: item.itemId,
             lotId,
-            fromLocationId: data.warehouseId,
+            fromLocationId: warehouseId,
             txNo,
             txType: "ISSUE",
             qty: item.issueQty,
