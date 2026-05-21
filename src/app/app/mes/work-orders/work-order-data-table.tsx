@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { WorkOrderFormSheet } from "./work-order-form-sheet"
-import { deleteWorkOrder, WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
+import { deleteWorkOrder, type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
 
 interface WorkOrderDataTableProps {
   data: WorkOrderWithDetails[]
@@ -95,6 +95,7 @@ export function WorkOrderDataTable({
         data={data}
         searchableColumns={[
           { id: "orderNo" as keyof WorkOrderWithDetails, title: "작업지시번호" },
+          { id: "manufacturingNo" as keyof WorkOrderWithDetails, title: "제조번호" },
           { id: "itemName" as keyof WorkOrderWithDetails, title: "품목명" },
         ]}
         filterableColumns={filterableColumns}

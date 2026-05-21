@@ -4,9 +4,17 @@ import { ManufacturingTraceabilityClient } from "./manufacturing-traceability-cl
 
 export const dynamic = "force-dynamic"
 
-export default async function ManufacturingTraceabilityPage() {
+interface ManufacturingTraceabilityPageProps {
+  searchParams?: Promise<{ manufacturingNo?: string }>
+}
+
+export default async function ManufacturingTraceabilityPage({
+  searchParams,
+}: ManufacturingTraceabilityPageProps) {
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const params = searchParams ? await searchParams : {}
+  const initialManufacturingNo = params.manufacturingNo?.trim() || undefined
 
   const enabled = await isFeatureEnabled(tenantId, "LOT_TRACKING")
   if (!enabled) {
@@ -30,7 +38,10 @@ export default async function ManufacturingTraceabilityPage() {
         </p>
       </div>
 
-      <ManufacturingTraceabilityClient tenantId={tenantId} />
+      <ManufacturingTraceabilityClient
+        tenantId={tenantId}
+        initialManufacturingNo={initialManufacturingNo}
+      />
     </div>
   )
 }

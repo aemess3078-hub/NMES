@@ -1,6 +1,6 @@
 "use client"
 
-import { type ComponentType, type ReactNode, useState } from "react"
+import { type ComponentType, type ReactNode, useEffect, useState } from "react"
 import {
   Search,
   ClipboardList,
@@ -108,15 +108,53 @@ function Section({
 
 interface ManufacturingTraceabilityClientProps {
   tenantId: string
+  initialManufacturingNo?: string
 }
 
 export function ManufacturingTraceabilityClient({
   tenantId,
+  initialManufacturingNo,
 }: ManufacturingTraceabilityClientProps) {
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(initialManufacturingNo ?? "")
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [result, setResult] = useState<ManufacturingTraceability | null>(null)
+
+  useEffect(() => {
+    const manufacturingNo = initialManufacturingNo?.trim()
+    if (!manufacturingNo) return
+    const nextManufacturingNo = manufacturingNo
+
+    let cancelled = false
+    setQuery(nextManufacturingNo)
+    setLoading(true)
+    setMessage(null)
+    setResult(null)
+
+    async function fetchTraceability() {
+      try {
+        const data = await getManufacturingTraceability(nextManufacturingNo, tenantId)
+        if (cancelled) return
+
+        if (!data?.workOrder) {
+          setMessage("해당 제조번호의 작업지시를 찾을 수 없습니다.")
+          return
+        }
+        setResult(data)
+      } catch (error) {
+        console.error(error)
+        if (!cancelled) setMessage("조회 중 오류가 발생했습니다.")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void fetchTraceability()
+
+    return () => {
+      cancelled = true
+    }
+  }, [initialManufacturingNo, tenantId])
 
   const handleSearch = async () => {
     const manufacturingNo = query.trim()

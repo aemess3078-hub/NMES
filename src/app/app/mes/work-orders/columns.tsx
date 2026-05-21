@@ -1,13 +1,16 @@
 "use client"
 
-import { ColumnDef } from "@tanstack/react-table"
-import { WorkOrderStatus } from "@prisma/client"
+import Link from "next/link"
+import { type ColumnDef } from "@tanstack/react-table"
+import { type OperationStatus, type WorkOrderStatus } from "@prisma/client"
+import { ExternalLink } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
-import { WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
+import { type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
 
 const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   DRAFT: "초안",
@@ -17,9 +20,58 @@ const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   CANCELLED: "취소",
 }
 
+const operationStatusPriority: Record<OperationStatus, number> = {
+  IN_PROGRESS: 0,
+  PENDING: 1,
+  COMPLETED: 2,
+  SKIPPED: 3,
+}
+
 type GetColumnsProps = {
   onEdit: (workOrder: WorkOrderWithDetails) => void
   onDelete: (workOrder: WorkOrderWithDetails) => void
+}
+
+function displayProcessName(processName: string): string {
+  return processName.includes("후처리") ? "후처리공정" : processName
+}
+
+function getCurrentOperation(workOrder: WorkOrderWithDetails) {
+  if (workOrder.operations.length === 0) return null
+
+  return [...workOrder.operations].sort((a, b) => {
+    const priorityDiff = operationStatusPriority[a.status] - operationStatusPriority[b.status]
+    return priorityDiff !== 0 ? priorityDiff : a.seq - b.seq
+  })[0]
+}
+
+function getCompletedQty(workOrder: WorkOrderWithDetails): number {
+  if (workOrder.operations.length === 0) return 0
+
+  const finalOperation = [...workOrder.operations].sort((a, b) => b.seq - a.seq)[0]
+  return Number(finalOperation?.completedQty ?? 0)
+}
+
+function getMaterialIssueStatus(workOrder: WorkOrderWithDetails): {
+  label: string
+  className: string
+  detail: string
+} {
+  const issueCount = workOrder.materialLots.length
+  if (issueCount > 0) {
+    const totalQty = workOrder.materialLots.reduce((sum, lot) => sum + Number(lot.qty), 0)
+    return {
+      label: "투입됨",
+      className: "border-green-200 bg-green-50 text-green-700",
+      detail: `${issueCount}개 LOT / ${totalQty.toLocaleString()}`,
+    }
+  }
+
+  return {
+    label: "미투입",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+    detail: "원자재 LOT 이력 없음",
+  }
 }
 
 export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<WorkOrderWithDetails>[] {
@@ -52,9 +104,14 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
         <DataTableColumnHeader column={column} title="작업지시번호" />
       ),
       cell: ({ row }) => (
-        <span className="font-mono font-medium text-[14px]">
-          {row.getValue("orderNo")}
-        </span>
+        <div>
+          <span className="font-mono text-[14px] font-semibold">
+            {row.original.orderNo}
+          </span>
+          <div className="mt-0.5 text-[13px] text-muted-foreground">
+            {row.original.site.name}
+          </div>
+        </div>
       ),
     },
     {
@@ -68,19 +125,9 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
           return <span className="text-[14px] text-muted-foreground">-</span>
         }
         return (
-          <span className="font-mono text-[14px]">{value}</span>
+          <span className="font-mono text-[13px] text-blue-700">{value}</span>
         )
       },
-    },
-    {
-      id: "itemCode",
-      accessorFn: (row) => row.item.code,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목코드" />
-      ),
-      cell: ({ row }) => (
-        <span className="font-medium text-[14px]">{row.getValue("itemCode")}</span>
-      ),
     },
     {
       id: "itemName",
@@ -89,7 +136,10 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
         <DataTableColumnHeader column={column} title="품목명" />
       ),
       cell: ({ row }) => (
-        <span className="text-[14px]">{row.getValue("itemName")}</span>
+        <div className="text-[14px]">
+          <div className="font-medium">{row.original.item.name}</div>
+          <div className="font-mono text-[13px] text-muted-foreground">{row.original.item.code}</div>
+        </div>
       ),
     },
     {
@@ -99,22 +149,63 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
         <DataTableColumnHeader column={column} title="계획수량" />
       ),
       cell: ({ row }) => (
-        <span className="text-[14px] text-right block">
+        <span className="block text-right text-[14px] tabular-nums">
           {(row.getValue("plannedQty") as number).toLocaleString()}
         </span>
       ),
     },
     {
-      id: "siteName",
-      accessorFn: (row) => row.site.name,
+      id: "completedQty",
+      accessorFn: (row) => getCompletedQty(row),
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="공장" />
+        <DataTableColumnHeader column={column} title="완료수량" />
       ),
       cell: ({ row }) => (
-        <span className="text-[14px]">{row.getValue("siteName")}</span>
+        <span className="block text-right text-[14px] font-medium tabular-nums">
+          {(row.getValue("completedQty") as number).toLocaleString()}
+        </span>
       ),
-      filterFn: (row, id, filterValues: string[]) =>
-        filterValues.includes(row.original.siteId),
+    },
+    {
+      id: "currentOperation",
+      accessorFn: (row) => {
+        const operation = getCurrentOperation(row)
+        return operation ? displayProcessName(operation.routingOperation.name) : ""
+      },
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="현재 공정" />
+      ),
+      cell: ({ row }) => {
+        const operation = getCurrentOperation(row.original)
+        if (!operation) {
+          return <span className="text-[13px] text-muted-foreground">공정 미생성</span>
+        }
+
+        return (
+          <div className="text-[13px]">
+            <div className="font-medium">{operation.seq}. {displayProcessName(operation.routingOperation.name)}</div>
+            <div className="text-muted-foreground">{operation.status}</div>
+          </div>
+        )
+      },
+    },
+    {
+      id: "materialIssueStatus",
+      accessorFn: (row) => row.materialLots.length,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="원자재 투입상태" />
+      ),
+      cell: ({ row }) => {
+        const status = getMaterialIssueStatus(row.original)
+        return (
+          <div>
+            <Badge variant="outline" className={`text-[13px] ${status.className}`}>
+              {status.label}
+            </Badge>
+            <div className="mt-1 text-[12px] text-muted-foreground">{status.detail}</div>
+          </div>
+        )
+      },
     },
     {
       id: "dueDate",
@@ -133,21 +224,11 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
         const isPast = date < today
         const formatted = date.toISOString().split("T")[0]
         return (
-          <span className={`text-[14px] ${isPast ? "text-red-600 font-medium" : ""}`}>
+          <span className={`text-[14px] ${isPast ? "font-medium text-red-600" : ""}`}>
             {formatted}
           </span>
         )
       },
-    },
-    {
-      id: "operationCount",
-      accessorFn: (row) => row.operations.length,
-      header: "공정 수",
-      cell: ({ row }) => (
-        <span className="text-[14px] text-muted-foreground">
-          {row.getValue("operationCount")}건
-        </span>
-      ),
     },
     {
       accessorKey: "status",
@@ -172,14 +253,14 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
         }
         if (status === "IN_PROGRESS") {
           return (
-            <Badge className="text-[13px] bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">
+            <Badge className="border-amber-200 bg-amber-100 text-[13px] text-amber-800 hover:bg-amber-100">
               {workOrderStatusLabels[status]}
             </Badge>
           )
         }
         if (status === "COMPLETED") {
           return (
-            <Badge className="text-[13px] bg-green-100 text-green-800 border-green-200 hover:bg-green-100">
+            <Badge className="border-green-200 bg-green-100 text-[13px] text-green-800 hover:bg-green-100">
               {workOrderStatusLabels[status]}
             </Badge>
           )
@@ -192,6 +273,27 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
       },
       filterFn: (row, id, filterValues: string[]) =>
         filterValues.includes(row.getValue(id)),
+    },
+    {
+      id: "traceability",
+      header: "추적성",
+      cell: ({ row }) => {
+        const manufacturingNo = row.original.manufacturingNo
+        if (!manufacturingNo) {
+          return <span className="text-[13px] text-muted-foreground">-</span>
+        }
+
+        return (
+          <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-[13px]">
+            <Link href={`/app/mes/manufacturing-traceability?manufacturingNo=${encodeURIComponent(manufacturingNo)}`}>
+              조회
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        )
+      },
+      enableSorting: false,
+      enableHiding: false,
     },
     {
       id: "actions",

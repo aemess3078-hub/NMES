@@ -13,7 +13,9 @@ export default async function WorkOrdersPage() {
   if (!enabled) {
     return (
       <div className="p-6">
-        <p className="text-muted-foreground">이 기능은 활성화되어 있지 않습니다.</p>
+        <p className="text-[15px] text-muted-foreground">
+          작업지시 기능이 활성화되어 있지 않습니다.
+        </p>
       </div>
     )
   }
@@ -30,10 +32,10 @@ export default async function WorkOrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            작업지시 관리
+            작업지시 / 제조번호 관리
           </h1>
-          <p className="text-[15px] text-muted-foreground mt-1">
-            작업지시를 등록하고 공정별 진행 상태를 관리합니다.
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            작업지시 생성부터 제조번호 발행, 원자재 LOT 투입, 공정 진행 상태를 확인합니다.
           </p>
         </div>
       </div>

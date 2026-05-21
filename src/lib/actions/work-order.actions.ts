@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { WorkOrderStatus, OperationStatus } from "@prisma/client"
+import { WorkOrderStatus, OperationStatus, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -15,12 +15,12 @@ export type WorkOrderWithDetails = {
   routingId: string
   orderNo: string
   manufacturingNo: string | null
-  plannedQty: any // Decimal
+  plannedQty: number
   status: WorkOrderStatus
-  dueDate: Date | null
+  dueDate: string | null
   productionPlanItemId: string | null
-  createdAt: Date
-  updatedAt: Date
+  createdAt: string
+  updatedAt: string
   item: { id: string; code: string; name: string; itemType: string }
   bom: { id: string; version: string; item: { name: string } }
   routing: { id: string; code: string; name: string; version: string }
@@ -33,11 +33,86 @@ export type WorkOrderWithDetails = {
     equipmentId: string | null
     seq: number
     status: OperationStatus
-    plannedQty: any
-    completedQty: any
+    plannedQty: number
+    completedQty: number
     routingOperation: { id: string; name: string; seq: number }
     equipment: { id: string; code: string; name: string } | null
   }[]
+  materialLots: {
+    id: string
+    manufacturingNo: string | null
+    materialLotNo: string
+    qty: number
+    unit: string | null
+    issuedAt: string
+    materialItem: { id: string; code: string; name: string; spec: string | null; uom: string }
+  }[]
+}
+
+const workOrderInclude = {
+  item: {
+    select: { id: true, code: true, name: true, itemType: true },
+  },
+  bom: {
+    select: {
+      id: true,
+      version: true,
+      item: { select: { name: true } },
+    },
+  },
+  routing: {
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      version: true,
+    },
+  },
+  site: {
+    select: { id: true, code: true, name: true },
+  },
+  productionPlanItem: true,
+  operations: {
+    include: {
+      routingOperation: {
+        select: { id: true, name: true, seq: true },
+      },
+      equipment: {
+        select: { id: true, code: true, name: true },
+      },
+    },
+    orderBy: { seq: "asc" },
+  },
+  materialLots: {
+    include: {
+      materialItem: {
+        select: { id: true, code: true, name: true, spec: true, uom: true },
+      },
+    },
+    orderBy: { issuedAt: "asc" },
+  },
+} satisfies Prisma.WorkOrderInclude
+
+type WorkOrderPayload = Prisma.WorkOrderGetPayload<{ include: typeof workOrderInclude }>
+
+function serializeWorkOrder(workOrder: WorkOrderPayload): WorkOrderWithDetails {
+  return {
+    ...workOrder,
+    plannedQty: Number(workOrder.plannedQty),
+    dueDate: workOrder.dueDate?.toISOString() ?? null,
+    createdAt: workOrder.createdAt.toISOString(),
+    updatedAt: workOrder.updatedAt.toISOString(),
+    operations: workOrder.operations.map((operation) => ({
+      ...operation,
+      plannedQty: Number(operation.plannedQty),
+      completedQty: Number(operation.completedQty),
+    })),
+    materialLots: workOrder.materialLots.map((lot) => ({
+      ...lot,
+      qty: Number(lot.qty),
+      issuedAt: lot.issuedAt.toISOString(),
+    })),
+  }
 }
 
 export type WorkOrderOperationInput = {
@@ -64,44 +139,12 @@ export type CreateWorkOrderInput = {
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
 export async function getWorkOrders(): Promise<WorkOrderWithDetails[]> {
-  return prisma.workOrder.findMany({
-    include: {
-      item: {
-        select: { id: true, code: true, name: true, itemType: true },
-      },
-      bom: {
-        select: {
-          id: true,
-          version: true,
-          item: { select: { name: true } },
-        },
-      },
-      routing: {
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          version: true,
-        },
-      },
-      site: {
-        select: { id: true, code: true, name: true },
-      },
-      productionPlanItem: true,
-      operations: {
-        include: {
-          routingOperation: {
-            select: { id: true, name: true, seq: true },
-          },
-          equipment: {
-            select: { id: true, code: true, name: true },
-          },
-        },
-        orderBy: { seq: "asc" },
-      },
-    },
+  const workOrders = await prisma.workOrder.findMany({
+    include: workOrderInclude,
     orderBy: [{ createdAt: "desc" }],
-  }) as any
+  })
+
+  return workOrders.map(serializeWorkOrder)
 }
 
 export type WipInventoryRow = Awaited<ReturnType<typeof getWipInventoryRows>>[number]
@@ -239,44 +282,12 @@ export async function getWipInventoryRows(tenantId: string) {
 }
 
 export async function getWorkOrderById(id: string): Promise<WorkOrderWithDetails | null> {
-  return prisma.workOrder.findUnique({
+  const workOrder = await prisma.workOrder.findUnique({
     where: { id },
-    include: {
-      item: {
-        select: { id: true, code: true, name: true, itemType: true },
-      },
-      bom: {
-        select: {
-          id: true,
-          version: true,
-          item: { select: { name: true } },
-        },
-      },
-      routing: {
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          version: true,
-        },
-      },
-      site: {
-        select: { id: true, code: true, name: true },
-      },
-      productionPlanItem: true,
-      operations: {
-        include: {
-          routingOperation: {
-            select: { id: true, name: true, seq: true },
-          },
-          equipment: {
-            select: { id: true, code: true, name: true },
-          },
-        },
-        orderBy: { seq: "asc" },
-      },
-    },
-  }) as any
+    include: workOrderInclude,
+  })
+
+  return workOrder ? serializeWorkOrder(workOrder) : null
 }
 
 export async function getSites() {
