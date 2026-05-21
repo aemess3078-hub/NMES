@@ -227,9 +227,15 @@ export async function issueMaterialsForWorkOrder(
   // LOT 관리 여부 일괄 조회 (트랜잭션 외부 — 읽기 전용)
   const itemRecords = await prisma.item.findMany({
     where: { id: { in: activeItems.map((i) => i.itemId) } },
-    select: { id: true, code: true, isLotTracked: true },
+    select: { id: true, code: true, uom: true, isLotTracked: true },
   })
   const itemMetaMap = new Map(itemRecords.map((r) => [r.id, r]))
+
+  // 작업지시의 제조번호 조회 (의료기기 추적성 연결용)
+  const workOrder = await prisma.workOrder.findUnique({
+    where: { id: data.workOrderId },
+    select: { manufacturingNo: true },
+  })
 
   // txNo 사전 생성 (트랜잭션 외부)
   const txNos: string[] = []
@@ -288,7 +294,7 @@ export async function issueMaterialsForWorkOrder(
         }
 
         // ── 2. InventoryTransaction 기록 (lotId 포함) ────────────────────────
-        await tx.inventoryTransaction.create({
+        const inventoryTx = await tx.inventoryTransaction.create({
           data: {
             tenantId,
             itemId: item.itemId,
@@ -303,6 +309,30 @@ export async function issueMaterialsForWorkOrder(
             txAt: new Date(),
           },
         })
+
+        // ── 2-1. WorkOrderMaterialLot (의료기기 추적성: 제조번호↔원자재 LOT)
+        //        LOT 관리 품목 + LOT 지정된 경우에만 기록
+        if (lotId) {
+          const lotRecord = await tx.lot.findUnique({
+            where: { id: lotId },
+            select: { lotNo: true },
+          })
+          if (lotRecord) {
+            await tx.workOrderMaterialLot.create({
+              data: {
+                tenantId,
+                workOrderId: data.workOrderId,
+                manufacturingNo: workOrder?.manufacturingNo ?? null,
+                materialItemId: item.itemId,
+                materialLotNo: lotRecord.lotNo,
+                qty: item.issueQty,
+                unit: meta?.uom ?? null,
+                issuedAt: new Date(),
+                inventoryTransactionId: inventoryTx.id,
+              },
+            })
+          }
+        }
 
         // ── 3. InventoryBalance 차감 ─────────────────────────────────────────
         await tx.inventoryBalance.update({

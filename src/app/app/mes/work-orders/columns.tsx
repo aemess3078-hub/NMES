@@ -58,6 +58,21 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
       ),
     },
     {
+      accessorKey: "manufacturingNo",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="제조번호" />
+      ),
+      cell: ({ row }) => {
+        const value = row.original.manufacturingNo
+        if (!value) {
+          return <span className="text-[14px] text-muted-foreground">-</span>
+        }
+        return (
+          <span className="font-mono text-[14px]">{value}</span>
+        )
+      },
+    },
+    {
       id: "itemCode",
       accessorFn: (row) => row.item.code,
       header: ({ column }) => (

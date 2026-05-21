@@ -14,6 +14,7 @@ export type WorkOrderWithDetails = {
   bomId: string
   routingId: string
   orderNo: string
+  manufacturingNo: string | null
   plannedQty: any // Decimal
   status: WorkOrderStatus
   dueDate: Date | null
@@ -52,6 +53,7 @@ export type CreateWorkOrderInput = {
   bomId: string
   routingId: string
   orderNo: string
+  manufacturingNo?: string | null
   plannedQty: number
   status: WorkOrderStatus
   dueDate?: string | null
@@ -365,15 +367,52 @@ export async function generateOrderNo(tenantId: string): Promise<string> {
   return `${prefix}${String(nextSeq).padStart(3, "0")}`
 }
 
+// 제조번호 자동 생성: MFG-YYYYMMDD-NNN (수동 입력이 없을 때만 사용)
+export async function generateManufacturingNo(tenantId: string): Promise<string> {
+  const now = new Date()
+  const ymd =
+    now.getFullYear().toString() +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0")
+  const prefix = `MFG-${ymd}-`
+
+  const latest = await prisma.workOrder.findFirst({
+    where: {
+      tenantId,
+      manufacturingNo: { startsWith: prefix },
+    },
+    orderBy: { manufacturingNo: "desc" },
+    select: { manufacturingNo: true },
+  })
+
+  let nextSeq = 1
+  if (latest?.manufacturingNo) {
+    const parts = latest.manufacturingNo.split("-")
+    const lastSeq = parseInt(parts[parts.length - 1], 10)
+    if (!isNaN(lastSeq)) {
+      nextSeq = lastSeq + 1
+    }
+  }
+
+  return `${prefix}${String(nextSeq).padStart(3, "0")}`
+}
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: string) {
-  const { operations, dueDate, ...headerFields } = data
+  const { operations, dueDate, manufacturingNo, ...headerFields } = data
+
+  // 제조번호: 수동 입력 우선, 미입력 시 자동 생성 (MFG-YYYYMMDD-NNN)
+  const trimmed = manufacturingNo?.trim()
+  const finalManufacturingNo = trimmed && trimmed.length > 0
+    ? trimmed
+    : await generateManufacturingNo(tenantId)
 
   await prisma.workOrder.create({
     data: {
       ...headerFields,
       tenantId,
+      manufacturingNo: finalManufacturingNo,
       dueDate: dueDate ? new Date(dueDate) : null,
       operations: {
         create: operations.map((op) => ({
@@ -406,7 +445,8 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     )
   }
 
-  const { operations, dueDate, ...headerFields } = data
+  const { operations, dueDate, manufacturingNo, ...headerFields } = data
+  const trimmed = manufacturingNo?.trim()
 
   await prisma.$transaction([
     prisma.workOrderOperation.deleteMany({ where: { workOrderId: id } }),
@@ -414,6 +454,7 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
       where: { id },
       data: {
         ...headerFields,
+        manufacturingNo: trimmed && trimmed.length > 0 ? trimmed : null,
         dueDate: dueDate ? new Date(dueDate) : null,
         operations: {
           create: operations.map((op) => ({

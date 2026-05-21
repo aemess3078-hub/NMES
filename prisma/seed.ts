@@ -51,6 +51,8 @@ const IDS = {
     assembly: 'wc-assembly-001',
     inspection: 'wc-inspection-001',
     packaging: 'wc-packaging-001',
+    postProcess: 'wc-post-process-001',
+    finishedStore: 'wc-finished-store-001',
   },
 
   itemCategories: {
@@ -227,10 +229,12 @@ async function seedWorkCenters() {
     name: string;
     kind: WorkCenterKind;
   }> = [
-    { id: IDS.workCenters.machining,  code: 'WC-MACH', name: '기계가공',   kind: WorkCenterKind.MACHINING  },
-    { id: IDS.workCenters.assembly,   code: 'WC-ASSY', name: '조립',       kind: WorkCenterKind.ASSEMBLY   },
-    { id: IDS.workCenters.inspection, code: 'WC-INSP', name: '검사',       kind: WorkCenterKind.INSPECTION },
-    { id: IDS.workCenters.packaging,  code: 'WC-PACK', name: '포장',       kind: WorkCenterKind.PACKAGING  },
+    { id: IDS.workCenters.machining,     code: 'WC-MACH',  name: '가공공정',     kind: WorkCenterKind.MACHINING  },
+    { id: IDS.workCenters.assembly,      code: 'WC-ASSY',  name: '조립',         kind: WorkCenterKind.ASSEMBLY   },
+    { id: IDS.workCenters.inspection,    code: 'WC-INSP',  name: '검사공정',     kind: WorkCenterKind.INSPECTION },
+    { id: IDS.workCenters.packaging,     code: 'WC-PACK',  name: '포장공정',     kind: WorkCenterKind.PACKAGING  },
+    { id: IDS.workCenters.postProcess,   code: 'WC-POST',  name: '후처리공정',   kind: WorkCenterKind.ASSEMBLY   },
+    { id: IDS.workCenters.finishedStore, code: 'WC-STORE', name: '완제품입고',   kind: WorkCenterKind.STORAGE    },
   ];
 
   for (const wc of centers) {
@@ -843,6 +847,52 @@ async function seedRoutings() {
     },
     update: {},
   });
+
+  // ── 의료기기 표준 라우팅: 가공 → 후처리 → 검사 → 포장 → 완제품입고 ──────────
+  // 후처리공정은 세분화하지 않고 하나로 통일
+  await prisma.routing.upsert({
+    where: { tenantId_code: { tenantId: IDS.tenant, code: 'RTG-MEDICAL-STD' } },
+    create: {
+      id: 'rtg-medical-std-001',
+      tenantId: IDS.tenant,
+      code: 'RTG-MEDICAL-STD',
+      name: '의료기기 표준 라우팅',
+      version: '1.0',
+      status: RoutingStatus.ACTIVE,
+    },
+    update: {},
+  });
+
+  const medicalOps: Array<{
+    id: string;
+    seq: number;
+    code: string;
+    name: string;
+    workCenterId: string;
+    standardTime: number;
+  }> = [
+    { id: 'rop-med-10', seq: 10, code: 'OP-MED-MCH',  name: '가공공정',     workCenterId: IDS.workCenters.machining,     standardTime: 30.0 },
+    { id: 'rop-med-20', seq: 20, code: 'OP-MED-POST', name: '후처리공정',   workCenterId: IDS.workCenters.postProcess,   standardTime: 40.0 },
+    { id: 'rop-med-30', seq: 30, code: 'OP-MED-INS',  name: '검사공정',     workCenterId: IDS.workCenters.inspection,    standardTime: 15.0 },
+    { id: 'rop-med-40', seq: 40, code: 'OP-MED-PKG',  name: '포장공정',     workCenterId: IDS.workCenters.packaging,     standardTime: 10.0 },
+    { id: 'rop-med-50', seq: 50, code: 'OP-MED-STR',  name: '완제품입고',   workCenterId: IDS.workCenters.finishedStore, standardTime: 5.0  },
+  ];
+
+  for (const op of medicalOps) {
+    await prisma.routingOperation.upsert({
+      where: { routingId_seq: { routingId: 'rtg-medical-std-001', seq: op.seq } },
+      create: {
+        id: op.id,
+        routingId: 'rtg-medical-std-001',
+        seq: op.seq,
+        operationCode: op.code,
+        name: op.name,
+        workCenterId: op.workCenterId,
+        standardTime: op.standardTime,
+      },
+      update: {},
+    });
+  }
 }
 
 async function seedWorkOrders() {

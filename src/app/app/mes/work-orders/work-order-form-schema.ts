@@ -14,6 +14,7 @@ export const workOrderFormSchema = z.object({
   bomId: z.string().min(1, "BOM을 선택하세요"),
   routingId: z.string().min(1, "라우팅을 선택하세요"),
   orderNo: z.string().min(1, "작업지시번호를 입력하세요"),
+  manufacturingNo: z.string().optional().nullable(),
   plannedQty: z.number().positive("계획수량은 양수여야 합니다"),
   status: z.nativeEnum(WorkOrderStatus).default(WorkOrderStatus.DRAFT),
   dueDate: z.string().optional().nullable(),

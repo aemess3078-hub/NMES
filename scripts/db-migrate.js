@@ -27,6 +27,7 @@ const MIGRATIONS = [
   '20260519000000_add_auth_tables',
   '20260520000000_fix_inventory_balance_lot_unique',
   '20260520000001_add_tag_current_value',
+  '20260521000000_medical_traceability',
 ];
 
 function run(cmd) {

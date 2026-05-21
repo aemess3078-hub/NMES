@@ -69,6 +69,7 @@ const DEFAULT_FORM_VALUES: WorkOrderFormValues = {
   bomId: "",
   routingId: "",
   orderNo: "",
+  manufacturingNo: "",
   plannedQty: 1,
   status: WorkOrderStatus.DRAFT,
   dueDate: null,
@@ -148,6 +149,7 @@ export function WorkOrderFormSheet({
         bomId: workOrder.bomId,
         routingId: workOrder.routingId,
         orderNo: workOrder.orderNo,
+        manufacturingNo: workOrder.manufacturingNo ?? "",
         plannedQty: Number(workOrder.plannedQty),
         status: workOrder.status,
         dueDate: workOrder.dueDate
@@ -278,6 +280,13 @@ export function WorkOrderFormSheet({
                 }))}
               />
             </div>
+
+            <FormTextField
+              control={form.control}
+              name="manufacturingNo"
+              label="제조번호 (의료기기)"
+              placeholder="비워두면 자동 생성 (MFG-YYYYMMDD-NNN)"
+            />
 
             {/* 품목 (전체 너비) */}
             <FormField
