@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache"
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
 export async function getShipments(tenantId: string) {
-  return prisma.shipmentOrder.findMany({
+  const rows = await prisma.shipmentOrder.findMany({
     where: { tenantId },
     include: {
       salesOrder: { include: { customer: true } },
@@ -19,12 +19,30 @@ export async function getShipments(tenantId: string) {
     },
     orderBy: { createdAt: "desc" },
   })
+  return rows.map((o) => ({
+    ...o,
+    salesOrder: {
+      ...o.salesOrder,
+      totalAmount: o.salesOrder.totalAmount !== null ? Number(o.salesOrder.totalAmount) : null,
+    },
+    items: o.items.map((item) => ({
+      ...item,
+      qty: Number(item.qty),
+      salesOrderItem: {
+        ...item.salesOrderItem,
+        qty:         Number(item.salesOrderItem.qty),
+        unitPrice:   item.salesOrderItem.unitPrice   !== null ? Number(item.salesOrderItem.unitPrice)   : null,
+        producedQty: Number(item.salesOrderItem.producedQty),
+        shippedQty:  Number(item.salesOrderItem.shippedQty),
+      },
+    })),
+  }))
 }
 
 export type DeliveryStatusRow = Awaited<ReturnType<typeof getDeliveryStatusRows>>[number]
 
 export async function getDeliveryStatusRows(tenantId: string) {
-  return prisma.shipmentOrder.findMany({
+  const rows = await prisma.shipmentOrder.findMany({
     where: { tenantId },
     select: {
       id: true,
@@ -89,10 +107,30 @@ export async function getDeliveryStatusRows(tenantId: string) {
     },
     orderBy: [{ plannedDate: "desc" }, { shipmentNo: "desc" }],
   })
+  return rows.map((o) => ({
+    ...o,
+    salesOrder: {
+      ...o.salesOrder,
+      items: o.salesOrder.items.map((i) => ({
+        ...i,
+        qty:        Number(i.qty),
+        shippedQty: Number(i.shippedQty),
+      })),
+    },
+    items: o.items.map((item) => ({
+      ...item,
+      qty: Number(item.qty),
+      salesOrderItem: {
+        ...item.salesOrderItem,
+        qty:        Number(item.salesOrderItem.qty),
+        shippedQty: Number(item.salesOrderItem.shippedQty),
+      },
+    })),
+  }))
 }
 
 export async function getShippableSalesOrders(tenantId: string) {
-  return prisma.salesOrder.findMany({
+  const rows = await prisma.salesOrder.findMany({
     where: {
       tenantId,
       status: { in: ["CONFIRMED", "IN_PRODUCTION", "PARTIAL_SHIPPED"] },
@@ -115,6 +153,14 @@ export async function getShippableSalesOrders(tenantId: string) {
     },
     orderBy: { deliveryDate: "asc" },
   })
+  return rows.map((o) => ({
+    ...o,
+    items: o.items.map((i) => ({
+      ...i,
+      qty:        Number(i.qty),
+      shippedQty: Number(i.shippedQty),
+    })),
+  }))
 }
 
 export async function getWarehouses(tenantId: string) {

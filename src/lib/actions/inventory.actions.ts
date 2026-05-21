@@ -13,9 +13,9 @@ export type InventoryBalanceWithDetails = {
   warehouseId: string
   itemId: string
   lotId: string | null
-  qtyOnHand: any      // Decimal
-  qtyAvailable: any   // Decimal
-  qtyHold: any        // Decimal
+  qtyOnHand: number
+  qtyAvailable: number
+  qtyHold: number
   updatedAt: Date
   warehouse: { id: string; code: string; name: string; siteId: string; site: { id: string; code: string; name: string } }
   item: { id: string; code: string; name: string; itemType: string; uom: string }
@@ -31,7 +31,7 @@ export type InventoryTransactionWithDetails = {
   toLocationId: string | null
   txNo: string
   txType: TransactionType
-  qty: any  // Decimal
+  qty: number
   refType: string | null
   refId: string | null
   note: string | null
@@ -45,7 +45,7 @@ export type InventoryTransactionWithDetails = {
 // ─── 재고현황 조회 ─────────────────────────────────────────────────────────────
 
 export async function getInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
-  return prisma.inventoryBalance.findMany({
+  const rows = await prisma.inventoryBalance.findMany({
     include: {
       warehouse: { include: { site: true } },
       item: true,
@@ -55,11 +55,17 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
       { warehouse: { name: "asc" } },
       { item: { code: "asc" } },
     ],
-  }) as any
+  })
+  return rows.map((b) => ({
+    ...b,
+    qtyOnHand:    Number(b.qtyOnHand),
+    qtyAvailable: Number(b.qtyAvailable),
+    qtyHold:      Number(b.qtyHold),
+  }))
 }
 
 export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
-  return prisma.inventoryBalance.findMany({
+  const rows = await prisma.inventoryBalance.findMany({
     where: {
       item: { itemType: { in: ["RAW_MATERIAL", "CONSUMABLE"] } },
     },
@@ -73,7 +79,13 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
       { warehouse: { name: "asc" } },
       { item: { code: "asc" } },
     ],
-  }) as any
+  })
+  return rows.map((b) => ({
+    ...b,
+    qtyOnHand:    Number(b.qtyOnHand),
+    qtyAvailable: Number(b.qtyAvailable),
+    qtyHold:      Number(b.qtyHold),
+  }))
 }
 
 export async function getWarehousesBySite(siteId: string) {
@@ -87,7 +99,7 @@ export async function getWarehousesBySite(siteId: string) {
 // ─── 트랜잭션 이력 조회 (최신 200건) ──────────────────────────────────────────
 
 export async function getInventoryTransactions(): Promise<InventoryTransactionWithDetails[]> {
-  return prisma.inventoryTransaction.findMany({
+  const rows = await prisma.inventoryTransaction.findMany({
     include: {
       item: true,
       lot: { select: { id: true, lotNo: true } },
@@ -96,7 +108,11 @@ export async function getInventoryTransactions(): Promise<InventoryTransactionWi
     },
     orderBy: { txAt: "desc" },
     take: 200,
-  }) as any
+  })
+  return rows.map((t) => ({
+    ...t,
+    qty: Number(t.qty),
+  }))
 }
 
 // ─── 창고 목록 (트랜잭션 로케이션 선택용) ────────────────────────────────────

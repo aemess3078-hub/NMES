@@ -12,7 +12,7 @@ export type InspectionStageRow = {
   inspectorId: string
   stage: InspectionStage
   result: InspectionResult | null
-  inspectedQty: any
+  inspectedQty: number
   inspectedAt: Date
   workOrderOperation: {
     id: string
@@ -22,15 +22,15 @@ export type InspectionStageRow = {
       item: { id: string; code: string; name: string }
     }
     routingOperation: { id: string; name: string; seq: number }
-    plannedQty: any
-    completedQty: any
+    plannedQty: number
+    completedQty: number
   }
   inspector: { id: string; name: string }
 }
 
 export async function getInspectionsByStage(stage?: InspectionStage): Promise<InspectionStageRow[]> {
   const tenantId = await getTenantId()
-  return prisma.qualityInspection.findMany({
+  const rows = await prisma.qualityInspection.findMany({
     where: {
       workOrderOperation: { workOrder: { tenantId } },
       ...(stage && { stage }),
@@ -47,7 +47,16 @@ export async function getInspectionsByStage(stage?: InspectionStage): Promise<In
       inspector: { select: { id: true, name: true } },
     },
     orderBy: { inspectedAt: "desc" },
-  }) as any
+  })
+  return rows.map((r) => ({
+    ...r,
+    inspectedQty: Number(r.inspectedQty),
+    workOrderOperation: {
+      ...r.workOrderOperation,
+      plannedQty:   Number(r.workOrderOperation.plannedQty),
+      completedQty: Number(r.workOrderOperation.completedQty),
+    },
+  }))
 }
 
 export async function createStagedInspection(data: {
@@ -101,7 +110,9 @@ export async function getWorkOrdersForInspection() {
 
   return ops.map((op) => ({
     ...op,
-    inspectionSpecs: specMap.has(op.routingOperationId) ? [specMap.get(op.routingOperationId)!] : [],
+    plannedQty:       Number(op.plannedQty),
+    completedQty:     Number(op.completedQty),
+    inspectionSpecs:  specMap.has(op.routingOperationId) ? [specMap.get(op.routingOperationId)!] : [],
   }))
 }
 

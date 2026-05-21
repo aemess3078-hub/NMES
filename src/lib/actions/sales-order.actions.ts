@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache"
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
 export async function getSalesOrders(tenantId: string) {
-  return prisma.salesOrder.findMany({
+  const rows = await prisma.salesOrder.findMany({
     where: { tenantId },
     include: {
       customer: true,
@@ -16,12 +16,23 @@ export async function getSalesOrders(tenantId: string) {
     },
     orderBy: { createdAt: "desc" },
   })
+  return rows.map((o) => ({
+    ...o,
+    totalAmount: o.totalAmount !== null ? Number(o.totalAmount) : null,
+    items: o.items.map((i) => ({
+      ...i,
+      qty:         Number(i.qty),
+      unitPrice:   i.unitPrice   !== null ? Number(i.unitPrice)   : null,
+      producedQty: Number(i.producedQty),
+      shippedQty:  Number(i.shippedQty),
+    })),
+  }))
 }
 
 export type SalesOrderStatusRow = Awaited<ReturnType<typeof getSalesOrderStatusRows>>[number]
 
 export async function getSalesOrderStatusRows(tenantId: string) {
-  return prisma.salesOrder.findMany({
+  const rows = await prisma.salesOrder.findMany({
     where: { tenantId },
     select: {
       id: true,
@@ -55,6 +66,14 @@ export async function getSalesOrderStatusRows(tenantId: string) {
     },
     orderBy: [{ deliveryDate: "asc" }, { orderNo: "desc" }],
   })
+  return rows.map((o) => ({
+    ...o,
+    items: o.items.map((i) => ({
+      ...i,
+      qty:       Number(i.qty),
+      shippedQty: Number(i.shippedQty),
+    })),
+  }))
 }
 
 export async function getCustomers(tenantId: string) {

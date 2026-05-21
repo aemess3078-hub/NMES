@@ -52,10 +52,10 @@ export type DataTagRow = {
   unit: string | null
   category: TagCategory
   plcAddress: string
-  scaleFactor: any | null
-  offset: any | null
+  scaleFactor: number | null
+  offset: number | null
   samplingMs: number
-  deadband: any | null
+  deadband: number | null
   isActive: boolean
   createdAt: Date
   updatedAt: Date
@@ -276,7 +276,12 @@ export async function getTags(tenantId: string): Promise<DataTagRow[]> {
     },
     orderBy: [{ connection: { equipment: { code: "asc" } } }, { tagCode: "asc" }],
   })
-  return rows as any
+  return rows.map((tag) => ({
+    ...tag,
+    scaleFactor: tag.scaleFactor !== null ? Number(tag.scaleFactor) : null,
+    offset:      tag.offset      !== null ? Number(tag.offset)      : null,
+    deadband:    tag.deadband    !== null ? Number(tag.deadband)    : null,
+  }))
 }
 
 export async function createTag(data: CreateTagInput) {

@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache"
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
 export async function getPurchaseOrders(tenantId: string) {
-  return prisma.purchaseOrder.findMany({
+  const rows = await prisma.purchaseOrder.findMany({
     where: { tenantId },
     include: {
       supplier: true,
@@ -20,6 +20,23 @@ export async function getPurchaseOrders(tenantId: string) {
     },
     orderBy: { createdAt: "desc" },
   })
+  return rows.map((o) => ({
+    ...o,
+    totalAmount: o.totalAmount !== null ? Number(o.totalAmount) : null,
+    items: o.items.map((item) => ({
+      ...item,
+      qty:          Number(item.qty),
+      unitPrice:    Number(item.unitPrice),
+      receivedQty:  Number(item.receivedQty),
+      stockAtOrder: Number(item.stockAtOrder),
+      receivingInspections: item.receivingInspections.map((ri) => ({
+        ...ri,
+        receivedQty:  Number(ri.receivedQty),
+        acceptedQty:  Number(ri.acceptedQty),
+        rejectedQty:  Number(ri.rejectedQty),
+      })),
+    })),
+  }))
 }
 
 export async function getSuppliers(tenantId: string) {
