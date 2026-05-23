@@ -24,10 +24,10 @@ export default async function EquipmentRepairPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          설비 수리요청 관리
+          설비점검/수리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
-          설비 이상 발생 시 수리를 요청하고 진행 상태를 추적합니다.
+          수리 요청부터 완료까지 설비 점검·수리 이력을 한 화면에서 관리합니다.
         </p>
       </div>
 

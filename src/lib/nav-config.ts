@@ -153,12 +153,10 @@ export const MES_NAV: NavItem[] = [
         children: [
           { id: 'nav-lms-errors', parentId: 'nav-lms-equipment', label: '에러보기', icon: 'AlertTriangle', href: '/app/lms/equipment/errors', displayOrder: 1, comingSoon: true, children: [] },
           { id: 'nav-lms-params', parentId: 'nav-lms-equipment', label: '파라미터보기', icon: 'Settings', href: '/app/lms/equipment/parameters', displayOrder: 2, comingSoon: true, children: [] },
-          { id: 'nav-lms-repair-req', parentId: 'nav-lms-equipment', label: '설비수리요청', icon: 'Wrench', href: '/app/mes/equipment-repair', displayOrder: 3, children: [] },
-          { id: 'nav-lms-repair-list', parentId: 'nav-lms-equipment', label: '설비수리요청LIST', icon: 'ClipboardList', href: '/app/lms/equipment/repair-list', displayOrder: 4, comingSoon: true, children: [] },
-          { id: 'nav-lms-repair-done', parentId: 'nav-lms-equipment', label: '설비수리완료LIST', icon: 'FileCheck', href: '/app/lms/equipment/repair-completed', displayOrder: 5, comingSoon: true, children: [] },
-          { id: 'nav-lms-problem-types', parentId: 'nav-lms-equipment', label: '설비문제유형등록', icon: 'AlertTriangle', href: '/app/mes/equipment-problems', displayOrder: 6, children: [] },
-          { id: 'nav-lms-daily-check', parentId: 'nav-lms-equipment', label: '설비일상점검등록', icon: 'ClipboardCheck', href: '/app/mes/equipment-check', displayOrder: 7, children: [] },
-          { id: 'nav-lms-check-status', parentId: 'nav-lms-equipment', label: '설비일상점검현황', icon: 'BarChart2', href: '/app/lms/equipment/check-status', displayOrder: 8, comingSoon: true, children: [] },
+          { id: 'nav-lms-repair-req', parentId: 'nav-lms-equipment', label: '설비점검/수리', icon: 'Wrench', href: '/app/mes/equipment-repair', displayOrder: 3, children: [] },
+          { id: 'nav-lms-problem-types', parentId: 'nav-lms-equipment', label: '설비문제유형등록', icon: 'AlertTriangle', href: '/app/mes/equipment-problems', displayOrder: 4, children: [] },
+          { id: 'nav-lms-daily-check', parentId: 'nav-lms-equipment', label: '설비일상점검등록', icon: 'ClipboardCheck', href: '/app/mes/equipment-check', displayOrder: 5, children: [] },
+          { id: 'nav-lms-check-status', parentId: 'nav-lms-equipment', label: '설비일상점검현황', icon: 'BarChart2', href: '/app/mes/equipment-check-status', displayOrder: 6, children: [] },
         ],
       },
       // 3. 설비 통계분석

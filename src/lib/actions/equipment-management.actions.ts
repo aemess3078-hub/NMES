@@ -290,6 +290,86 @@ export async function getProfilesForLMS() {
   return users.map((u) => ({ id: u.profileId, name: u.profile.name }))
 }
 
+// ─── Daily Check Status (read-only, serializable) ────────────────────────────
+
+export type DailyCheckStatusRow = {
+  id: string
+  checkDate: string         // YYYY-MM-DD
+  equipmentCode: string
+  equipmentName: string
+  siteName: string
+  checkerName: string
+  result: CheckResult
+  note: string | null
+}
+
+export type DailyCheckStatusSummary = {
+  total: number
+  passCount: number
+  failCount: number
+  naCount: number
+}
+
+export type DailyCheckStatusData = {
+  summary: DailyCheckStatusSummary
+  rows: DailyCheckStatusRow[]
+}
+
+export async function getDailyCheckStatusData(filter: {
+  from: string  // YYYY-MM-DD
+  to: string
+  equipmentId?: string
+  result?: CheckResult
+}): Promise<DailyCheckStatusData> {
+  const tenantId = await getTenantId()
+  const from = new Date(filter.from)
+  const to = new Date(filter.to)
+
+  const checks = await prisma.equipmentDailyCheck.findMany({
+    where: {
+      tenantId,
+      checkDate: { gte: from, lte: to },
+      ...(filter.equipmentId ? { equipmentId: filter.equipmentId } : {}),
+      ...(filter.result ? { result: filter.result } : {}),
+    },
+    select: {
+      id: true,
+      checkDate: true,
+      result: true,
+      note: true,
+      equipment: { select: { code: true, name: true } },
+      site: { select: { name: true } },
+      checker: { select: { name: true } },
+    },
+    orderBy: { checkDate: "desc" },
+  })
+
+  const rows: DailyCheckStatusRow[] = checks.map((c) => {
+    const d = c.checkDate
+    const checkDate = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+    return {
+      id: c.id,
+      checkDate,
+      equipmentCode: c.equipment.code,
+      equipmentName: c.equipment.name,
+      siteName: c.site.name,
+      checkerName: c.checker.name,
+      result: c.result,
+      note: c.note,
+    }
+  })
+
+  return {
+    summary: {
+      total: rows.length,
+      passCount: rows.filter((r) => r.result === "PASS").length,
+      failCount: rows.filter((r) => r.result === "FAIL").length,
+      naCount: rows.filter((r) => r.result === "NA").length,
+    },
+    rows,
+  }
+}
+
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
 export async function getRepairStats() {
