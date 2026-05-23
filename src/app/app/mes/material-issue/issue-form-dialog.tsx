@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
-  getLotStockByWarehouse,
+  getLotStockByItems,
   issueMaterialsForWorkOrder,
   type LotStockOption,
   type WarehouseStockOption,
@@ -59,11 +59,24 @@ export function IssueFormDialog({
 
   if (!workOrder) return null
 
-  const loadLotStock = async (itemId: string, selectedWarehouseId: string) => {
-    if (!selectedWarehouseId) return
+  const getLotSelectValue = (lotStock: LotStockOption) => `${lotStock.lotId}:${lotStock.warehouseId}`
+
+  const getSelectedLot = (itemId: string) => {
+    const selectedValue = lotMap[itemId]
+    if (!selectedValue) return null
+    return lotStockMap[itemId]?.find((lotStock) => getLotSelectValue(lotStock) === selectedValue) ?? null
+  }
+
+  const getDefaultWarehouseId = (itemId: string) => {
+    const stockWarehouse = warehouses.find((warehouse) => (warehouse.itemStocks[itemId] ?? 0) > 0)
+    const rawWarehouse = warehouses.find((warehouse) => warehouse.code === "WH-RAW")
+    return stockWarehouse?.id ?? rawWarehouse?.id ?? warehouses[0]?.id ?? ""
+  }
+
+  const loadLotStock = async (itemId: string) => {
     setLotLoadingMap((prev) => ({ ...prev, [itemId]: true }))
     try {
-      const data = await getLotStockByWarehouse(selectedWarehouseId, [itemId], tenantId)
+      const data = await getLotStockByItems([itemId], tenantId)
       setLotStockMap((prev) => ({ ...prev, [itemId]: data[itemId] ?? [] }))
     } catch {
       setLotStockMap((prev) => ({ ...prev, [itemId]: [] }))
@@ -73,18 +86,7 @@ export function IssueFormDialog({
   }
 
   const handleWarehouseChange = (itemId: string, nextWarehouseId: string) => {
-    const material = pendingMaterials.find((item) => item.itemId === itemId)
     setWarehouseMap((prev) => ({ ...prev, [itemId]: nextWarehouseId }))
-    setLotMap((prev) => {
-      const next = { ...prev }
-      delete next[itemId]
-      return next
-    })
-    setLotStockMap((prev) => ({ ...prev, [itemId]: [] }))
-
-    if (material?.item.isLotTracked) {
-      void loadLotStock(itemId, nextWarehouseId)
-    }
   }
 
   function handleScan(parsed: ParsedBarcode) {
@@ -110,12 +112,10 @@ export function IssueFormDialog({
       const defaultWarehouses: Record<string, string> = {}
       for (const material of pendingMaterials) {
         defaults[material.itemId] = String(material.pendingQty)
-        const stockWarehouse = warehouses.find((warehouse) => (warehouse.itemStocks[material.itemId] ?? 0) > 0)
-        if (stockWarehouse) {
-          defaultWarehouses[material.itemId] = stockWarehouse.id
-          if (material.item.isLotTracked) {
-            void loadLotStock(material.itemId, stockWarehouse.id)
-          }
+        if (material.item.isLotTracked) {
+          void loadLotStock(material.itemId)
+        } else {
+          defaultWarehouses[material.itemId] = getDefaultWarehouseId(material.itemId)
         }
       }
       setQtyMap(defaults)
@@ -127,12 +127,10 @@ export function IssueFormDialog({
   function getEffectiveStock(
     material: (typeof pendingMaterials)[number],
     selectedWarehouseId: string,
-    selectedLotId: string | null,
+    selectedLot: LotStockOption | null,
   ): number {
-    if (material.item.isLotTracked && selectedLotId) {
-      return (
-        lotStockMap[material.itemId]?.find((lotStock) => lotStock.lotId === selectedLotId)?.qtyAvailable ?? 0
-      )
+    if (material.item.isLotTracked) {
+      return selectedLot?.qtyAvailable ?? 0
     }
     const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === selectedWarehouseId)
     return selectedWarehouse?.itemStocks[material.itemId] ?? 0
@@ -140,7 +138,10 @@ export function IssueFormDialog({
 
   const handleSubmit = () => {
     const missingWarehouses = pendingMaterials.filter(
-      (material) => Number(qtyMap[material.itemId] ?? 0) > 0 && !warehouseMap[material.itemId],
+      (material) =>
+        !material.item.isLotTracked &&
+        Number(qtyMap[material.itemId] ?? 0) > 0 &&
+        !warehouseMap[material.itemId],
     )
     if (missingWarehouses.length > 0) {
       alert(`다음 원자재의 출고 창고를 선택해 주세요.\n${missingWarehouses.map((material) => material.item.name).join("\n")}`)
@@ -158,9 +159,12 @@ export function IssueFormDialog({
     try {
       const items = pendingMaterials.map((material) => {
         const issueQty = Number(qtyMap[material.itemId] ?? 0)
-        const selectedWarehouseId = warehouseMap[material.itemId] ?? ""
-        const selectedLotId = material.item.isLotTracked ? (lotMap[material.itemId] ?? null) : null
-        const stock = getEffectiveStock(material, selectedWarehouseId, selectedLotId)
+        const selectedLot = material.item.isLotTracked ? getSelectedLot(material.itemId) : null
+        const selectedWarehouseId = material.item.isLotTracked
+          ? (selectedLot?.warehouseId ?? "")
+          : (warehouseMap[material.itemId] ?? "")
+        const selectedLotId = selectedLot?.lotId ?? null
+        const stock = getEffectiveStock(material, selectedWarehouseId, selectedLot)
 
         if (issueQty > stock) {
           throw new Error(`${material.item.name}: 출고 수량(${issueQty})이 재고(${stock})를 초과합니다.`)
@@ -199,24 +203,24 @@ export function IssueFormDialog({
 
   const hasOverStock = pendingMaterials.some((material) => {
     const selectedWarehouseId = warehouseMap[material.itemId] ?? ""
-    const selectedLotId = material.item.isLotTracked ? (lotMap[material.itemId] ?? null) : null
-    return getEffectiveStock(material, selectedWarehouseId, selectedLotId) < Number(qtyMap[material.itemId] ?? 0)
+    const selectedLot = material.item.isLotTracked ? getSelectedLot(material.itemId) : null
+    if (material.item.isLotTracked && !selectedLot) return false
+    return getEffectiveStock(material, selectedWarehouseId, selectedLot) < Number(qtyMap[material.itemId] ?? 0)
   })
 
   const selectedLotSummaries = pendingMaterials
     .map((material) => {
-      const selectedLotId = lotMap[material.itemId]
-      if (!selectedLotId) return null
-      const lotStock = lotStockMap[material.itemId]?.find((lot) => lot.lotId === selectedLotId)
+      const lotStock = getSelectedLot(material.itemId)
       if (!lotStock) return null
       return {
         itemName: material.item.name,
         lotNo: lotStock.lotNo,
+        warehouseName: `[${lotStock.warehouseCode}] ${lotStock.warehouseName}`,
         qty: Number(qtyMap[material.itemId] ?? 0),
         unit: lotStock.unit,
       }
     })
-    .filter((summary): summary is { itemName: string; lotNo: string; qty: number; unit: string } => summary != null)
+    .filter((summary): summary is { itemName: string; lotNo: string; warehouseName: string; qty: number; unit: string } => summary != null)
 
   return (
     <Dialog open={open} onOpenChange={handleOpen}>
@@ -274,19 +278,19 @@ export function IssueFormDialog({
                 </div>
 
                 {pendingMaterials.map((material) => {
-                  const selectedWarehouseId = warehouseMap[material.itemId] ?? ""
-                  const selectedLotId = material.item.isLotTracked ? (lotMap[material.itemId] ?? null) : null
-                  const stock = getEffectiveStock(material, selectedWarehouseId, selectedLotId)
+                  const selectedLot = material.item.isLotTracked ? getSelectedLot(material.itemId) : null
+                  const selectedWarehouseId = material.item.isLotTracked
+                    ? (selectedLot?.warehouseId ?? "")
+                    : (warehouseMap[material.itemId] ?? "")
+                  const selectedLotId = selectedLot?.lotId ?? null
+                  const stock = getEffectiveStock(material, selectedWarehouseId, selectedLot)
                   const issueQty = Number(qtyMap[material.itemId] ?? 0)
-                  const isOverStock = issueQty > stock
+                  const isOverStock = material.item.isLotTracked && !selectedLot ? false : issueQty > stock
                   const isHighlighted = highlightedItemId === material.itemId
                   const lotOptions = lotStockMap[material.itemId] ?? []
                   const lotLoading = lotLoadingMap[material.itemId] ?? false
-                  const warehouseMissing = issueQty > 0 && !selectedWarehouseId
+                  const warehouseMissing = !material.item.isLotTracked && issueQty > 0 && !selectedWarehouseId
                   const lotMissing = material.item.isLotTracked && issueQty > 0 && !selectedLotId
-                  const selectedLot = selectedLotId
-                    ? lotOptions.find((lot) => lot.lotId === selectedLotId)
-                    : null
 
                   return (
                     <div
@@ -317,9 +321,11 @@ export function IssueFormDialog({
                         </div>
 
                         {material.item.isLotTracked && (
-                          <div className="mt-2">
-                            {selectedWarehouseId ? (
-                              <Select
+                          <div className="mt-2 space-y-1">
+                            <p className="text-[13px] text-muted-foreground">
+                              LOT를 선택하면 해당 LOT가 보관된 창고에서 자동 출고됩니다.
+                            </p>
+                            <Select
                                 value={lotMap[material.itemId] ?? ""}
                                 onValueChange={(value) =>
                                   setLotMap((prev) => ({ ...prev, [material.itemId]: value }))
@@ -332,8 +338,8 @@ export function IssueFormDialog({
                                 <SelectContent>
                                   {lotOptions.length > 0 ? (
                                     lotOptions.map((lotStock) => (
-                                      <SelectItem key={lotStock.lotId} value={lotStock.lotId} className="text-[13px]">
-                                        {lotStock.lotNo} / 잔량 {lotStock.qtyAvailable.toLocaleString()} {lotStock.unit}
+                                      <SelectItem key={getLotSelectValue(lotStock)} value={getLotSelectValue(lotStock)} className="text-[13px]">
+                                        {lotStock.lotNo} / [{lotStock.warehouseCode}] {lotStock.warehouseName} / 가용 {lotStock.qtyAvailable.toLocaleString()} {lotStock.unit}
                                       </SelectItem>
                                     ))
                                   ) : (
@@ -343,11 +349,6 @@ export function IssueFormDialog({
                                   )}
                                 </SelectContent>
                               </Select>
-                            ) : (
-                              <p className="text-[12px] text-amber-600">
-                                창고를 선택하면 LOT를 지정할 수 있습니다.
-                              </p>
-                            )}
                             {lotMissing && (
                               <p className="mt-0.5 flex items-center gap-1 text-[12px] text-amber-600">
                                 <AlertCircle className="h-3 w-3" />
@@ -359,25 +360,43 @@ export function IssueFormDialog({
                       </div>
 
                       <div className="px-3 py-2.5">
-                        <Select
-                          value={selectedWarehouseId}
-                          onValueChange={(value) => handleWarehouseChange(material.itemId, value)}
-                        >
-                          <SelectTrigger className={`h-8 text-[13px] ${warehouseMissing ? "border-amber-400 ring-amber-200" : ""}`}>
-                            <SelectValue placeholder="창고 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {warehouses.map((warehouse) => (
-                              <SelectItem key={warehouse.id} value={warehouse.id} className="text-[13px]">
-                                [{warehouse.code}] {warehouse.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {warehouseMissing && (
-                          <p className="mt-1 text-[12px] text-amber-600">
-                            출고창고를 선택해 주세요.
-                          </p>
+                        {material.item.isLotTracked ? (
+                          <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-[13px]">
+                            {selectedLot ? (
+                              <>
+                                <div className="font-medium">[{selectedLot.warehouseCode}] {selectedLot.warehouseName}</div>
+                                <div className="mt-0.5 text-muted-foreground">LOT 선택으로 자동 지정</div>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">LOT 선택 필요</span>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <p className="mb-1 text-[13px] text-muted-foreground">
+                              기본 출고창고가 자동 선택되며 필요 시 변경할 수 있습니다.
+                            </p>
+                            <Select
+                              value={selectedWarehouseId}
+                              onValueChange={(value) => handleWarehouseChange(material.itemId, value)}
+                            >
+                              <SelectTrigger className={`h-8 text-[13px] ${warehouseMissing ? "border-amber-400 ring-amber-200" : ""}`}>
+                                <SelectValue placeholder="창고 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {warehouses.map((warehouse) => (
+                                  <SelectItem key={warehouse.id} value={warehouse.id} className="text-[13px]">
+                                    [{warehouse.code}] {warehouse.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {warehouseMissing && (
+                              <p className="mt-1 text-[12px] text-amber-600">
+                                출고창고를 선택해 주세요.
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
 
@@ -434,7 +453,7 @@ export function IssueFormDialog({
               <div className="mt-2 grid gap-1 text-[13px] text-blue-900 md:grid-cols-2">
                 {selectedLotSummaries.map((summary) => (
                   <div key={`${summary.itemName}-${summary.lotNo}`}>
-                    {summary.itemName} / <span className="font-mono">{summary.lotNo}</span> / {summary.qty.toLocaleString()} {summary.unit}
+                    {summary.itemName} / <span className="font-mono">{summary.lotNo}</span> / {summary.warehouseName} / {summary.qty.toLocaleString()} {summary.unit}
                   </div>
                 ))}
               </div>

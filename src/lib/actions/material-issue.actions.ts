@@ -19,6 +19,9 @@ export type MaterialRequirement = {
 export type LotStockOption = {
   lotId: string
   lotNo: string
+  warehouseId: string
+  warehouseCode: string
+  warehouseName: string
   qtyAvailable: number
   unit: string
 }
@@ -173,10 +176,9 @@ export async function getWarehousesWithStock(
   })
 }
 
-// ─── LOT별 재고 조회 (창고 + 품목 지정) ──────────────────────────────────────
+// ─── LOT별 재고 조회 (품목 기준, 보관 창고 포함) ───────────────────────────
 
-export async function getLotStockByWarehouse(
-  warehouseId: string,
+export async function getLotStockByItems(
   itemIds: string[],
   tenantId: string
 ): Promise<Record<string, LotStockOption[]>> {
@@ -185,15 +187,16 @@ export async function getLotStockByWarehouse(
   const balances = await prisma.inventoryBalance.findMany({
     where: {
       tenantId,
-      warehouseId,
       itemId: { in: itemIds },
       lotId: { not: null },
+      qtyAvailable: { gt: 0 },
     },
     include: {
       lot: { select: { id: true, lotNo: true } },
       item: { select: { uom: true } },
+      warehouse: { select: { id: true, code: true, name: true } },
     },
-    orderBy: { lot: { lotNo: "asc" } },
+    orderBy: [{ lot: { lotNo: "asc" } }, { warehouse: { name: "asc" } }],
   })
 
   const result: Record<string, LotStockOption[]> = {}
@@ -203,6 +206,9 @@ export async function getLotStockByWarehouse(
     result[b.itemId].push({
       lotId: b.lot.id,
       lotNo: b.lot.lotNo,
+      warehouseId: b.warehouse.id,
+      warehouseCode: b.warehouse.code,
+      warehouseName: b.warehouse.name,
       qtyAvailable: Number(b.qtyAvailable),
       unit: b.item.uom,
     })
@@ -256,8 +262,8 @@ export async function issueMaterialsForWorkOrder(
         const item = activeItems[i]
         const txNo = txNos[i]
         const meta = itemMetaMap.get(item.itemId)
-        const warehouseId = item.warehouseId ?? data.warehouseId
-        if (!warehouseId) {
+        let warehouseId = item.warehouseId ?? data.warehouseId
+        if (!meta?.isLotTracked && !warehouseId) {
           throw new Error(
             `출고 창고 미선택: ${meta?.code ?? item.itemId} 품목의 출고 창고를 선택하세요.`
           )
@@ -265,6 +271,9 @@ export async function issueMaterialsForWorkOrder(
 
         // ── LOT 결정 ──────────────────────────────────────────────────────────
         let lotId: string | null = null
+        let balance:
+          | Awaited<ReturnType<typeof tx.inventoryBalance.findFirst>>
+          | null = null
         if (meta?.isLotTracked) {
           if (!item.lotId) {
             throw new Error(
@@ -272,18 +281,34 @@ export async function issueMaterialsForWorkOrder(
             )
           }
           lotId = item.lotId
+          const lotBalances = await tx.inventoryBalance.findMany({
+            where: {
+              tenantId,
+              itemId: item.itemId,
+              lotId,
+            },
+            orderBy: { qtyAvailable: "desc" },
+          })
+          balance =
+            lotBalances.find((candidate) => candidate.warehouseId === warehouseId) ??
+            lotBalances.find((candidate) => Number(candidate.qtyOnHand) >= item.issueQty) ??
+            lotBalances[0] ??
+            null
+          warehouseId = balance?.warehouseId
         }
         // 비LOT 품목: lotId = null (partial unique index가 단일 row를 보장)
 
         // ── 1. InventoryBalance 조회 (lotId 포함) ────────────────────────────
-        const balance = await tx.inventoryBalance.findFirst({
-          where: {
-            tenantId,
-            warehouseId,
-            itemId: item.itemId,
-            lotId,
-          },
-        })
+        if (!meta?.isLotTracked) {
+          balance = await tx.inventoryBalance.findFirst({
+            where: {
+              tenantId,
+              warehouseId,
+              itemId: item.itemId,
+              lotId: null,
+            },
+          })
+        }
 
         if (!balance) {
           const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
@@ -292,6 +317,7 @@ export async function issueMaterialsForWorkOrder(
           )
         }
 
+        const resolvedWarehouseId = balance.warehouseId
         const newQty = Number(balance.qtyOnHand) - item.issueQty
         if (newQty < 0) {
           const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
@@ -306,7 +332,7 @@ export async function issueMaterialsForWorkOrder(
             tenantId,
             itemId: item.itemId,
             lotId,
-            fromLocationId: warehouseId,
+            fromLocationId: resolvedWarehouseId,
             txNo,
             txType: "ISSUE",
             qty: item.issueQty,
