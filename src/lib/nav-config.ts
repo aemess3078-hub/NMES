@@ -86,7 +86,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'TrendingUp',
         displayOrder: 50,
         children: [
-          { id: 'nav-kpi-dashboard', parentId: 'nav-kpi', label: 'KPI 대시보드', icon: 'LayoutDashboard', href: '/app/mes/kpi', displayOrder: 1, comingSoon: true, children: [] },
+          { id: 'nav-kpi-dashboard', parentId: 'nav-kpi', label: 'KPI 대시보드', icon: 'LayoutDashboard', href: '/app/mes/kpi', displayOrder: 1, children: [] },
         ],
       },
       // 6. 품질관리
