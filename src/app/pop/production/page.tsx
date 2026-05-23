@@ -81,7 +81,7 @@ export default async function ProductionResultsPage() {
                       </div>
                     </div>
                     <div className="text-sm text-slate-400">
-                      {format(new Date(r.startedAt), "HH:mm", { locale: ko })}
+                      {r.startedAt ? format(new Date(r.startedAt), "HH:mm", { locale: ko }) : ""}
                     </div>
                   </div>
 
