@@ -4,6 +4,10 @@ import { prisma } from "@/lib/db/prisma"
 import { OperationStatus, WorkOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
+import {
+  advanceWipUnitOnOperationComplete,
+  transitionWipUnitOnStart,
+} from "@/lib/actions/wip-traceability.helpers"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -239,7 +243,18 @@ export async function submitProductionResult(
     await prisma.$transaction(async (tx) => {
       const op = await tx.workOrderOperation.findUnique({
         where: { id: workOrderOperationId },
-        select: { completedQty: true, plannedQty: true, workOrderId: true },
+        select: {
+          completedQty: true,
+          plannedQty: true,
+          workOrderId: true,
+          seq: true,
+          routingOperation: {
+            select: { workCenterId: true },
+          },
+          workOrder: {
+            select: { tenantId: true, siteId: true },
+          },
+        },
       })
       if (!op) throw new Error("공정을 찾을 수 없습니다.")
 
@@ -254,7 +269,7 @@ export async function submitProductionResult(
       const newCompletedQty = currentCompleted + totalQty
       const shouldComplete = newCompletedQty >= plannedQty
 
-      await tx.productionResult.create({
+      const createdResult = await tx.productionResult.create({
         data: {
           workOrderOperationId,
           goodQty,
@@ -277,7 +292,15 @@ export async function submitProductionResult(
         isCompleted = true
         const allOps = await tx.workOrderOperation.findMany({
           where: { workOrderId: op.workOrderId },
-          select: { status: true },
+          select: {
+            id: true,
+            seq: true,
+            status: true,
+            routingOperation: {
+              select: { workCenterId: true },
+            },
+          },
+          orderBy: { seq: "asc" },
         })
         const allCompleted = allOps.every((o) => o.status === "COMPLETED")
         if (allCompleted) {
@@ -286,6 +309,25 @@ export async function submitProductionResult(
             data: { status: "COMPLETED" },
           })
         }
+
+        const nextOp = allOps.find((o) => o.seq > op.seq)
+
+        await advanceWipUnitOnOperationComplete(tx, {
+          tenantId: op.workOrder.tenantId,
+          siteId: op.workOrder.siteId,
+          workOrderId: op.workOrderId,
+          completedOperationId: workOrderOperationId,
+          completedWorkCenterId: op.routingOperation.workCenterId,
+          nextOperation: nextOp
+            ? {
+                id: nextOp.id,
+                routingOperation: {
+                  workCenterId: nextOp.routingOperation.workCenterId,
+                },
+              }
+            : null,
+          productionResultId: createdResult.id,
+        })
       }
     })
 
@@ -314,9 +356,13 @@ export async function startOperation(
       select: {
         seq: true,
         workOrderId: true,
+        routingOperation: {
+          select: { workCenterId: true },
+        },
         workOrder: {
           select: {
             id: true,
+            siteId: true,
             operations: {
               select: { seq: true, status: true },
               orderBy: { seq: "asc" },
@@ -343,6 +389,14 @@ export async function startOperation(
       await tx.workOrder.update({
         where: { id: op.workOrderId },
         data: { status: "IN_PROGRESS" },
+      })
+
+      await transitionWipUnitOnStart(tx, {
+        tenantId,
+        siteId: op.workOrder.siteId,
+        workOrderId: op.workOrderId,
+        operationId,
+        workCenterId: op.routingOperation.workCenterId,
       })
     })
 
