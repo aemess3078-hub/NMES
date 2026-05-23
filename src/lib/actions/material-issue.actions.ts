@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
+import type { WipUnit } from "@prisma/client"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,11 +245,36 @@ export async function issueMaterialsForWorkOrder(
   })
   const itemMetaMap = new Map(itemRecords.map((r) => [r.id, r]))
 
-  // 작업지시의 제조번호 조회 (의료기기 추적성 연결용)
+  // 작업지시 정보 조회 (제조번호 + WipUnit 생성용 컨텍스트)
   const workOrder = await prisma.workOrder.findUnique({
     where: { id: data.workOrderId },
-    select: { manufacturingNo: true },
+    select: {
+      id: true,
+      tenantId: true,
+      siteId: true,
+      itemId: true,
+      plannedQty: true,
+      manufacturingNo: true,
+      operations: {
+        select: {
+          id: true,
+          seq: true,
+          status: true,
+          routingOperation: {
+            select: { workCenterId: true },
+          },
+        },
+        orderBy: { seq: "asc" },
+      },
+    },
   })
+
+  const firstOperation = workOrder?.operations[0] ?? null
+  if (workOrder && !firstOperation) {
+    console.warn(
+      `[material-issue] WorkOrder ${data.workOrderId} has no operations; skipping WipUnit creation.`
+    )
+  }
 
   // txNo 사전 생성 (트랜잭션 외부)
   const txNos: string[] = []
@@ -258,6 +284,53 @@ export async function issueMaterialsForWorkOrder(
 
   try {
     await prisma.$transaction(async (tx) => {
+      // ── 0. WipUnit 중복/차단 검증 (자재 루프 진입 전) ─────────────────────
+      //  - 같은 작업지시의 원본 WipUnit (parent/sourceProductionResult 없음)
+      //    중 비-terminal 상태가 있으면 재사용한다.
+      //    재사용 대상: WAITING/IN_PROCESS/ON_HOLD/OUTSOURCED/IN_TRANSIT/RECEIVED/REWORK
+      //  - terminal(COMPLETED/SCRAPPED) 원본만 있으면 잘못된 추가출고로
+      //    판단하여 즉시 에러 (트랜잭션 전체 롤백)
+      //  - 두 조회 모두 비면 신규 생성을 허용한다.
+      let wipUnit: WipUnit | null = null
+      if (workOrder) {
+        wipUnit = await tx.wipUnit.findFirst({
+          where: {
+            workOrderId: data.workOrderId,
+            parentWipUnitId: null,
+            sourceProductionResultId: null,
+            status: {
+              in: [
+                "WAITING",
+                "IN_PROCESS",
+                "ON_HOLD",
+                "OUTSOURCED",
+                "IN_TRANSIT",
+                "RECEIVED",
+                "REWORK",
+              ],
+            },
+          },
+        })
+        if (!wipUnit) {
+          const blockedOriginal = await tx.wipUnit.findFirst({
+            where: {
+              workOrderId: data.workOrderId,
+              parentWipUnitId: null,
+              sourceProductionResultId: null,
+              status: { in: ["COMPLETED", "SCRAPPED"] },
+            },
+            select: { id: true, status: true },
+          })
+          if (blockedOriginal) {
+            throw new Error(
+              "이미 완료 또는 폐기된 작업지시에는 추가 자재출고로 WIP를 생성할 수 없습니다."
+            )
+          }
+        }
+      }
+
+      let firstTxId: string | null = null
+
       for (let i = 0; i < activeItems.length; i++) {
         const item = activeItems[i]
         const txNo = txNos[i]
@@ -343,15 +416,52 @@ export async function issueMaterialsForWorkOrder(
           },
         })
 
+        if (!firstTxId) firstTxId = inventoryTx.id
+
+        // ── 2-0. WipUnit 지연 생성 + WipMovement CREATED 1회 기록 ────────────
+        //        - active WipUnit이 없고 첫 공정이 존재할 때만 생성
+        //        - 첫 InventoryTransaction.id를 sourceId로 사용
+        //        - 한 번 생성되면 wipUnit이 채워져 이후 루프에서 재진입하지 않음
+        if (!wipUnit && firstOperation && workOrder) {
+          wipUnit = await tx.wipUnit.create({
+            data: {
+              tenantId,
+              siteId: workOrder.siteId,
+              workOrderId: data.workOrderId,
+              workOrderOperationId: firstOperation.id,
+              itemId: workOrder.itemId,
+              manufacturingNo: workOrder.manufacturingNo,
+              currentWorkCenterId: firstOperation.routingOperation.workCenterId,
+              qty: workOrder.plannedQty,
+              status: "WAITING",
+            },
+          })
+          await tx.wipMovement.create({
+            data: {
+              tenantId,
+              siteId: workOrder.siteId,
+              wipUnitId: wipUnit.id,
+              movementType: "CREATED",
+              toOperationId: firstOperation.id,
+              toWorkCenterId: firstOperation.routingOperation.workCenterId,
+              qty: workOrder.plannedQty,
+              sourceType: "MATERIAL_ISSUE",
+              sourceId: firstTxId,
+              note: "자재출고로 WIP 생성",
+            },
+          })
+        }
+
         // ── 2-1. WorkOrderMaterialLot (의료기기 추적성: 제조번호↔원자재 LOT)
         //        LOT 관리 품목 + LOT 지정된 경우에만 기록
+        //        WipUnit이 존재하면 같은 트랜잭션에서 WipUnitMaterialLot 연결
         if (lotId) {
           const lotRecord = await tx.lot.findUnique({
             where: { id: lotId },
             select: { lotNo: true },
           })
           if (lotRecord) {
-            await tx.workOrderMaterialLot.create({
+            const createdMaterialLot = await tx.workOrderMaterialLot.create({
               data: {
                 tenantId,
                 workOrderId: data.workOrderId,
@@ -364,6 +474,21 @@ export async function issueMaterialsForWorkOrder(
                 inventoryTransactionId: inventoryTx.id,
               },
             })
+
+            if (wipUnit) {
+              await tx.wipUnitMaterialLot.create({
+                data: {
+                  tenantId,
+                  wipUnitId: wipUnit.id,
+                  workOrderMaterialLotId: createdMaterialLot.id,
+                  materialItemId: item.itemId,
+                  materialLotId: lotId,
+                  materialLotNo: lotRecord.lotNo,
+                  qty: item.issueQty,
+                  unit: meta?.uom ?? null,
+                },
+              })
+            }
           }
         }
 
@@ -432,6 +557,7 @@ export async function issueMaterialsForWorkOrder(
     revalidatePath("/app/mes/material/stock")
     revalidatePath("/app/mes/inventory-transactions")
     revalidatePath("/app/mes/manufacturing-traceability")
+    revalidatePath("/app/mes/production/wip-inventory")
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }

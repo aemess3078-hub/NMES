@@ -255,7 +255,12 @@ export async function getWipInventoryRows(tenantId: string) {
     const productionQty = Number(operation.completedQty)
     const plannedQty = Number(operation.plannedQty)
     const activeWipQty = operation.wipUnits
-      .filter((unit) => unit.status === "IN_PROCESS" || unit.status === "ON_HOLD")
+      .filter(
+        (unit) =>
+          unit.status === "WAITING" ||
+          unit.status === "IN_PROCESS" ||
+          unit.status === "ON_HOLD"
+      )
       .reduce((sum, unit) => sum + Number(unit.qty), 0)
     const totalGoodQty = operation.productionResults.reduce(
       (sum, result) => sum + Number(result.goodQty),
