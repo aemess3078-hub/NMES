@@ -140,10 +140,32 @@ enum TransactionType {
 }
 
 enum WipUnitStatus {
+  WAITING
   IN_PROCESS
   ON_HOLD
+  OUTSOURCED
+  IN_TRANSIT
+  RECEIVED
   COMPLETED
   SCRAPPED
+  REWORK
+}
+
+enum WipMovementType {
+  CREATED
+  STARTED
+  MOVED
+  HOLD
+  RELEASED
+  SPLIT
+  MERGE
+  DEFECT
+  REWORK
+  SCRAP
+  OUTSOURCED
+  RETURNED
+  COMPLETED
+  ADJUSTED
 }
 
 enum InspectionResult {
@@ -344,6 +366,9 @@ model Tenant {
   approvalRequests      ApprovalRequest[]
   equipments            Equipment[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
+  wipUnits              WipUnit[]
+  wipMovements          WipMovement[]
+  wipUnitMaterialLots   WipUnitMaterialLot[]
   boms                  BOM[]
   routings              Routing[]
   itemRoutings          ItemRouting[]
@@ -352,14 +377,14 @@ model Tenant {
   rolePermissions       RolePermission[]
   tenantFeatures        TenantFeature[]
   gateways              EdgeGateway[]
-  salesOrders           SalesOrder[]    @relation("TenantSalesOrders")
-  shipmentOrders        ShipmentOrder[] @relation("TenantShipmentOrders")
-  purchaseOrders        PurchaseOrder[] @relation("TenantPurchaseOrders")
-  itemPrices            ItemPrice[]     @relation("TenantItemPrices")
-  aiUsageLogs           AIUsageLog[]    @relation("TenantAIUsageLogs")
-  quotations            Quotation[]     @relation("TenantQuotations")
-  itemCosts             ItemCost[]      @relation("TenantItemCosts")
-  engineeringChanges    EngineeringChange[] @relation("TenantECNs")
+  salesOrders           SalesOrder[]             @relation("TenantSalesOrders")
+  shipmentOrders        ShipmentOrder[]          @relation("TenantShipmentOrders")
+  purchaseOrders        PurchaseOrder[]          @relation("TenantPurchaseOrders")
+  itemPrices            ItemPrice[]              @relation("TenantItemPrices")
+  aiUsageLogs           AIUsageLog[]             @relation("TenantAIUsageLogs")
+  quotations            Quotation[]              @relation("TenantQuotations")
+  itemCosts             ItemCost[]               @relation("TenantItemCosts")
+  engineeringChanges    EngineeringChange[]      @relation("TenantECNs")
   signupRequests        SignupRequest[]
   equipmentProblemTypes EquipmentProblemType[]
   equipmentRepairs      EquipmentRepairRequest[]
@@ -383,13 +408,13 @@ model Profile {
   tenantUsers          TenantUser[]
   qualityInspections   QualityInspection[]
   auditLogs            AuditLog[]
-  approvalRequests     ApprovalRequest[]   @relation("Requester")
-  approvals            ApprovalRequest[]   @relation("Approver")
-  receivingInspections ReceivingInspection[] @relation("ReceivingInspector")
-  ecnRequested         EngineeringChange[] @relation("ECNRequester")
-  ecnApproved          EngineeringChange[] @relation("ECNApprover")
-  signupsApproved      SignupRequest[]      @relation("SignupApprover")
-  signupsRejected      SignupRequest[]      @relation("SignupRejector")
+  approvalRequests     ApprovalRequest[]        @relation("Requester")
+  approvals            ApprovalRequest[]        @relation("Approver")
+  receivingInspections ReceivingInspection[]    @relation("ReceivingInspector")
+  ecnRequested         EngineeringChange[]      @relation("ECNRequester")
+  ecnApproved          EngineeringChange[]      @relation("ECNApprover")
+  signupsApproved      SignupRequest[]          @relation("SignupApprover")
+  signupsRejected      SignupRequest[]          @relation("SignupRejector")
   repairRequested      EquipmentRepairRequest[] @relation("RepairRequester")
   repairAssigned       EquipmentRepairRequest[] @relation("RepairAssignee")
   dailyChecks          EquipmentDailyCheck[]    @relation("DailyCheckChecker")
@@ -406,7 +431,7 @@ model Site {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  tenant                Tenant                   @relation(fields: [tenantId], references: [id])
   tenantUsers           TenantUser[]
   workCenters           WorkCenter[]
   warehouses            Warehouse[]
@@ -414,12 +439,14 @@ model Site {
   inventoryBalances     InventoryBalance[]
   equipments            Equipment[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
+  wipUnits              WipUnit[]
+  wipMovements          WipMovement[]
   productionPlans       ProductionPlan[]
   gateways              EdgeGateway[]
-  salesOrders           SalesOrder[]    @relation("SiteSalesOrders")
-  shipmentOrders        ShipmentOrder[] @relation("SiteShipmentOrders")
-  purchaseOrders        PurchaseOrder[] @relation("SitePurchaseOrders")
-  quotations            Quotation[]     @relation("SiteQuotations")
+  salesOrders           SalesOrder[]             @relation("SiteSalesOrders")
+  shipmentOrders        ShipmentOrder[]          @relation("SiteShipmentOrders")
+  purchaseOrders        PurchaseOrder[]          @relation("SitePurchaseOrders")
+  quotations            Quotation[]              @relation("SiteQuotations")
   equipmentRepairs      EquipmentRepairRequest[]
   equipmentDailyChecks  EquipmentDailyCheck[]
 
@@ -490,6 +517,9 @@ model WorkCenter {
   site              Site               @relation(fields: [siteId], references: [id])
   equipments        Equipment[]
   routingOperations RoutingOperation[]
+  currentWipUnits   WipUnit[]          @relation("WipUnitCurrentWorkCenter")
+  wipMovementsFrom  WipMovement[]      @relation("WipMovementFromWorkCenter")
+  wipMovementsTo    WipMovement[]      @relation("WipMovementToWorkCenter")
 
   @@unique([siteId, code])
   @@index([siteId])
@@ -503,11 +533,14 @@ model BusinessPartner {
   partnerType PartnerType
   status      PartnerStatus @default(ACTIVE)
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  salesOrders    SalesOrder[]    @relation("CustomerSalesOrders")
-  purchaseOrders PurchaseOrder[] @relation("SupplierPurchaseOrders")
-  itemPrices     ItemPrice[]     @relation("PartnerPrices")
-  quotations     Quotation[]     @relation("CustomerQuotations")
+  tenant                  Tenant          @relation(fields: [tenantId], references: [id])
+  salesOrders             SalesOrder[]    @relation("CustomerSalesOrders")
+  purchaseOrders          PurchaseOrder[] @relation("SupplierPurchaseOrders")
+  itemPrices              ItemPrice[]     @relation("PartnerPrices")
+  quotations              Quotation[]     @relation("CustomerQuotations")
+  outsourcedWipUnits      WipUnit[]       @relation("WipUnitOutsourcingPartner")
+  wipMovementsFromPartner WipMovement[]   @relation("WipMovementFromPartner")
+  wipMovementsToPartner   WipMovement[]   @relation("WipMovementToPartner")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -549,28 +582,29 @@ model Item {
   tenant   Tenant        @relation(fields: [tenantId], references: [id])
   category ItemCategory? @relation(fields: [categoryId], references: [id])
 
-  substitutes            ItemSubstitute[]       @relation("PrimaryItem")
-  substituteOf           ItemSubstitute[]       @relation("SubstituteItem")
-  boms                   BOM[]
-  bomItems               BOMItem[]
-  itemRoutings           ItemRouting[]
-  lots                   Lot[]
-  inspectionSpecs        InspectionSpec[]
-  inventoryBalances      InventoryBalance[]
-  inventoryTxns          InventoryTransaction[]
-  workOrders             WorkOrder[]
-  materialReservations   MaterialReservation[]
-  materialConsumptions   MaterialConsumption[]
-  wipUnits               WipUnit[]
-  finishedGoodsReceipts  FinishedGoodsReceipt[]
-  productionPlanItems    ProductionPlanItem[]
-  salesOrderItems        SalesOrderItem[]    @relation("ItemSalesOrderItems")
-  shipmentItems          ShipmentItem[]      @relation("ItemShipmentItems")
-  purchaseOrderItems     PurchaseOrderItem[] @relation("ItemPurchaseOrderItems")
-  itemPrices             ItemPrice[]         @relation("ItemPrices")
-  quotationItems         QuotationItem[]     @relation("ItemQuotationItems")
-  itemCosts              ItemCost[]          @relation("ItemCosts")
-  engineeringChanges     EngineeringChange[] @relation("ItemECNs")
+  substitutes             ItemSubstitute[]       @relation("PrimaryItem")
+  substituteOf            ItemSubstitute[]       @relation("SubstituteItem")
+  boms                    BOM[]
+  bomItems                BOMItem[]
+  itemRoutings            ItemRouting[]
+  lots                    Lot[]
+  inspectionSpecs         InspectionSpec[]
+  inventoryBalances       InventoryBalance[]
+  inventoryTxns           InventoryTransaction[]
+  workOrders              WorkOrder[]
+  materialReservations    MaterialReservation[]
+  materialConsumptions    MaterialConsumption[]
+  wipUnits                WipUnit[]
+  wipUnitMaterialLots     WipUnitMaterialLot[]   @relation("WipUnitMaterialItem")
+  finishedGoodsReceipts   FinishedGoodsReceipt[]
+  productionPlanItems     ProductionPlanItem[]
+  salesOrderItems         SalesOrderItem[]       @relation("ItemSalesOrderItems")
+  shipmentItems           ShipmentItem[]         @relation("ItemShipmentItems")
+  purchaseOrderItems      PurchaseOrderItem[]    @relation("ItemPurchaseOrderItems")
+  itemPrices              ItemPrice[]            @relation("ItemPrices")
+  quotationItems          QuotationItem[]        @relation("ItemQuotationItems")
+  itemCosts               ItemCost[]             @relation("ItemCosts")
+  engineeringChanges      EngineeringChange[]    @relation("ItemECNs")
   materialLotConsumptions WorkOrderMaterialLot[] @relation("MaterialLotItem")
 
   @@unique([tenantId, code])
@@ -601,12 +635,12 @@ model BOM {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id])
-  item       Item        @relation(fields: [itemId], references: [id])
-  bomItems   BOMItem[]
-  workOrders WorkOrder[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  item                Item                 @relation(fields: [itemId], references: [id])
+  bomItems            BOMItem[]
+  workOrders          WorkOrder[]
   productionPlanItems ProductionPlanItem[]
-  itemCosts  ItemCost[]  @relation("BOMItemCosts")
+  itemCosts           ItemCost[]           @relation("BOMItemCosts")
 
   @@unique([tenantId, itemId, version])
   @@index([tenantId])
@@ -639,10 +673,10 @@ model Routing {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  tenant     Tenant             @relation(fields: [tenantId], references: [id])
-  items      ItemRouting[]
-  operations RoutingOperation[]
-  workOrders WorkOrder[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  items               ItemRouting[]
+  operations          RoutingOperation[]
+  workOrders          WorkOrder[]
   productionPlanItems ProductionPlanItem[]
 
   @@unique([tenantId, code])
@@ -744,6 +778,9 @@ model Warehouse {
   inventoryBalances     InventoryBalance[]
   inventoryTxnsFrom     InventoryTransaction[] @relation("TxFromWarehouse")
   inventoryTxnsTo       InventoryTransaction[] @relation("TxToWarehouse")
+  currentWipUnits       WipUnit[]              @relation("WipUnitCurrentWarehouse")
+  wipMovementsFrom      WipMovement[]          @relation("WipMovementFromWarehouse")
+  wipMovementsTo        WipMovement[]          @relation("WipMovementToWarehouse")
 
   @@unique([siteId, code])
   @@index([tenantId])
@@ -761,6 +798,8 @@ model Location {
 
   wipUnits              WipUnit[]
   finishedGoodsReceipts FinishedGoodsReceipt[]
+  wipMovementsFrom      WipMovement[]          @relation("WipMovementFromLocation")
+  wipMovementsTo        WipMovement[]          @relation("WipMovementToLocation")
 
   @@unique([warehouseId, code])
   @@index([warehouseId])
@@ -780,7 +819,7 @@ model NumberingRule {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
-  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  tenant    Tenant              @relation(fields: [tenantId], references: [id])
   sequences NumberingSequence[]
 
   @@unique([tenantId, type])
@@ -788,12 +827,12 @@ model NumberingRule {
 }
 
 model NumberingSequence {
-  id        String        @id @default(cuid())
+  id        String @id @default(cuid())
   ruleId    String
   periodKey String
-  current   Int           @default(0)
+  current   Int    @default(0)
 
-  rule      NumberingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rule NumberingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@unique([ruleId, periodKey])
 }
@@ -879,19 +918,19 @@ model DocumentLink {
 }
 
 model WorkOrder {
-  id               String          @id @default(cuid())
-  tenantId         String
-  siteId           String
-  itemId           String
-  bomId            String
-  routingId        String
-  orderNo          String
-  manufacturingNo  String?
-  plannedQty       Decimal         @db.Decimal(18, 6)
-  status           WorkOrderStatus @default(DRAFT)
-  dueDate          DateTime?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  tenantId        String
+  siteId          String
+  itemId          String
+  bomId           String
+  routingId       String
+  orderNo         String
+  manufacturingNo String?
+  plannedQty      Decimal         @db.Decimal(18, 6)
+  status          WorkOrderStatus @default(DRAFT)
+  dueDate         DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
   site    Site    @relation(fields: [siteId], references: [id])
@@ -907,6 +946,7 @@ model WorkOrder {
   finishedGoodsReceipts FinishedGoodsReceipt[]
   itemCosts             ItemCost[]             @relation("WorkOrderItemCosts")
   materialLots          WorkOrderMaterialLot[]
+  wipUnits              WipUnit[]
 
   @@unique([tenantId, orderNo])
   @@index([tenantId])
@@ -938,6 +978,7 @@ model WorkOrderMaterialLot {
   workOrder            WorkOrder             @relation(fields: [workOrderId], references: [id])
   materialItem         Item                  @relation("MaterialLotItem", fields: [materialItemId], references: [id])
   inventoryTransaction InventoryTransaction? @relation("MaterialLotInventoryTx", fields: [inventoryTransactionId], references: [id])
+  wipUnitMaterialLots  WipUnitMaterialLot[]
 
   @@index([tenantId])
   @@index([workOrderId])
@@ -965,6 +1006,8 @@ model WorkOrderOperation {
   wipUnits             WipUnit[]
   productionResults    ProductionResult[]
   qualityInspections   QualityInspection[]
+  wipMovementsFrom     WipMovement[]         @relation("WipMovementFromOperation")
+  wipMovementsTo       WipMovement[]         @relation("WipMovementToOperation")
 
   @@unique([workOrderId, seq])
   @@index([workOrderId])
@@ -1007,6 +1050,7 @@ model Lot {
   inventoryTxns         InventoryTransaction[]
   materialConsumptions  MaterialConsumption[]
   wipUnits              WipUnit[]
+  wipUnitMaterialLots   WipUnitMaterialLot[]   @relation("WipUnitMaterialLot")
   finishedGoodsReceipts FinishedGoodsReceipt[]
   parentGenealogyLinks  LotGenealogy[]         @relation("ParentLot")
   childGenealogyLinks   LotGenealogy[]         @relation("ChildLot")
@@ -1035,13 +1079,13 @@ model InventoryBalance {
   lot       Lot?      @relation(fields: [lotId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
 
+  @@unique([tenantId, itemId, warehouseId, lotId])
   @@index([tenantId])
   @@index([siteId])
   @@index([itemId])
   @@index([warehouseId])
   @@index([tenantId, siteId, itemId])
   @@index([tenantId, warehouseId])
-  @@unique([tenantId, itemId, warehouseId, lotId])
   @@index([tenantId, itemId, lotId, warehouseId])
 }
 
@@ -1060,11 +1104,11 @@ model InventoryTransaction {
   note           String?
   txAt           DateTime        @default(now())
 
-  tenant       Tenant     @relation(fields: [tenantId], references: [id])
-  item         Item       @relation(fields: [itemId], references: [id])
-  lot          Lot?       @relation(fields: [lotId], references: [id])
-  fromLocation Warehouse? @relation("TxFromWarehouse", fields: [fromLocationId], references: [id])
-  toLocation   Warehouse? @relation("TxToWarehouse", fields: [toLocationId], references: [id])
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  item                  Item                   @relation(fields: [itemId], references: [id])
+  lot                   Lot?                   @relation(fields: [lotId], references: [id])
+  fromLocation          Warehouse?             @relation("TxFromWarehouse", fields: [fromLocationId], references: [id])
+  toLocation            Warehouse?             @relation("TxToWarehouse", fields: [toLocationId], references: [id])
   workOrderMaterialLots WorkOrderMaterialLot[] @relation("MaterialLotInventoryTx")
 
   @@unique([tenantId, txNo])
@@ -1098,27 +1142,130 @@ model MaterialConsumption {
 }
 
 model WipUnit {
-  id                   String        @id @default(cuid())
-  workOrderOperationId String
-  itemId               String
-  lotId                String?
-  currentLocationId    String?
-  qty                  Decimal       @db.Decimal(18, 6)
-  status               WipUnitStatus @default(IN_PROCESS)
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  id                       String        @id @default(cuid())
+  tenantId                 String
+  siteId                   String?
+  workOrderId              String?
+  workOrderOperationId     String
+  itemId                   String
+  lotId                    String?
+  manufacturingNo          String?
+  currentWorkCenterId      String?
+  currentWarehouseId       String?
+  currentLocationId        String?
+  outsourcingPartnerId     String?
+  sourceProductionResultId String?
+  parentWipUnitId          String?
+  qty                      Decimal       @db.Decimal(18, 6)
+  status                   WipUnitStatus @default(IN_PROCESS)
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
 
-  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
-  item               Item               @relation(fields: [itemId], references: [id])
-  lot                Lot?               @relation(fields: [lotId], references: [id])
-  currentLocation    Location?          @relation(fields: [currentLocationId], references: [id])
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id])
+  site                   Site?                @relation(fields: [siteId], references: [id])
+  workOrder              WorkOrder?           @relation(fields: [workOrderId], references: [id])
+  workOrderOperation     WorkOrderOperation   @relation(fields: [workOrderOperationId], references: [id])
+  item                   Item                 @relation(fields: [itemId], references: [id])
+  lot                    Lot?                 @relation(fields: [lotId], references: [id])
+  currentLocation        Location?            @relation(fields: [currentLocationId], references: [id])
+  currentWorkCenter      WorkCenter?          @relation("WipUnitCurrentWorkCenter", fields: [currentWorkCenterId], references: [id])
+  currentWarehouse       Warehouse?           @relation("WipUnitCurrentWarehouse", fields: [currentWarehouseId], references: [id])
+  outsourcingPartner     BusinessPartner?     @relation("WipUnitOutsourcingPartner", fields: [outsourcingPartnerId], references: [id])
+  sourceProductionResult ProductionResult?    @relation("WipUnitSourceProductionResult", fields: [sourceProductionResultId], references: [id])
+  parentWipUnit          WipUnit?             @relation("WipUnitLineage", fields: [parentWipUnitId], references: [id])
+  childWipUnits          WipUnit[]            @relation("WipUnitLineage")
+  movements              WipMovement[]        @relation("WipUnitMovements")
+  relatedMovements       WipMovement[]        @relation("WipMovementRelatedWipUnit")
+  materialLots           WipUnitMaterialLot[]
 
+  @@index([tenantId, workOrderId])
+  @@index([tenantId, manufacturingNo])
+  @@index([tenantId, workOrderOperationId])
+  @@index([tenantId, status])
+  @@index([tenantId, currentLocationId])
+  @@index([tenantId, currentWorkCenterId])
+  @@index([tenantId, currentWarehouseId])
+  @@index([tenantId, outsourcingPartnerId])
+  @@index([tenantId, lotId])
   @@index([workOrderOperationId])
   @@index([itemId])
   @@index([lotId])
   @@index([currentLocationId])
   @@index([status])
   @@index([currentLocationId, status])
+}
+
+model WipMovement {
+  id               String          @id @default(cuid())
+  tenantId         String
+  siteId           String?
+  wipUnitId        String
+  movementType     WipMovementType
+  fromOperationId  String?
+  toOperationId    String?
+  fromWorkCenterId String?
+  toWorkCenterId   String?
+  fromWarehouseId  String?
+  toWarehouseId    String?
+  fromLocationId   String?
+  toLocationId     String?
+  fromPartnerId    String?
+  toPartnerId      String?
+  relatedWipUnitId String?
+  qty              Decimal         @db.Decimal(18, 6)
+  sourceType       String?
+  sourceId         String?
+  note             String?
+  createdById      String?
+  createdAt        DateTime        @default(now())
+
+  tenant         Tenant              @relation(fields: [tenantId], references: [id])
+  site           Site?               @relation(fields: [siteId], references: [id])
+  wipUnit        WipUnit             @relation("WipUnitMovements", fields: [wipUnitId], references: [id])
+  fromOperation  WorkOrderOperation? @relation("WipMovementFromOperation", fields: [fromOperationId], references: [id])
+  toOperation    WorkOrderOperation? @relation("WipMovementToOperation", fields: [toOperationId], references: [id])
+  fromWorkCenter WorkCenter?         @relation("WipMovementFromWorkCenter", fields: [fromWorkCenterId], references: [id])
+  toWorkCenter   WorkCenter?         @relation("WipMovementToWorkCenter", fields: [toWorkCenterId], references: [id])
+  fromWarehouse  Warehouse?          @relation("WipMovementFromWarehouse", fields: [fromWarehouseId], references: [id])
+  toWarehouse    Warehouse?          @relation("WipMovementToWarehouse", fields: [toWarehouseId], references: [id])
+  fromLocation   Location?           @relation("WipMovementFromLocation", fields: [fromLocationId], references: [id])
+  toLocation     Location?           @relation("WipMovementToLocation", fields: [toLocationId], references: [id])
+  fromPartner    BusinessPartner?    @relation("WipMovementFromPartner", fields: [fromPartnerId], references: [id])
+  toPartner      BusinessPartner?    @relation("WipMovementToPartner", fields: [toPartnerId], references: [id])
+  relatedWipUnit WipUnit?            @relation("WipMovementRelatedWipUnit", fields: [relatedWipUnitId], references: [id])
+
+  @@index([tenantId, wipUnitId])
+  @@index([tenantId, movementType])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, sourceType, sourceId])
+  @@index([tenantId, fromOperationId])
+  @@index([tenantId, toOperationId])
+  @@index([tenantId, relatedWipUnitId])
+}
+
+model WipUnitMaterialLot {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  wipUnitId              String
+  workOrderMaterialLotId String?
+  materialItemId         String
+  materialLotId          String?
+  materialLotNo          String?
+  qty                    Decimal  @db.Decimal(18, 6)
+  unit                   String?
+  linkedAt               DateTime @default(now())
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  wipUnit              WipUnit               @relation(fields: [wipUnitId], references: [id])
+  workOrderMaterialLot WorkOrderMaterialLot? @relation(fields: [workOrderMaterialLotId], references: [id])
+  materialItem         Item                  @relation("WipUnitMaterialItem", fields: [materialItemId], references: [id])
+  materialLot          Lot?                  @relation("WipUnitMaterialLot", fields: [materialLotId], references: [id])
+
+  @@index([tenantId, wipUnitId])
+  @@index([tenantId, workOrderMaterialLotId])
+  @@index([tenantId, materialItemId])
+  @@index([tenantId, materialLotId])
+  @@index([tenantId, materialLotNo])
 }
 
 model ProductionResult {
@@ -1131,6 +1278,7 @@ model ProductionResult {
   endedAt              DateTime?
 
   workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
+  sourceWipUnits     WipUnit[]          @relation("WipUnitSourceProductionResult")
 
   @@index([workOrderOperationId])
 }
@@ -1297,13 +1445,13 @@ model ProductionPlan {
 }
 
 model ProductionPlanItem {
-  id          String  @id @default(cuid())
-  planId      String
-  itemId      String
-  bomId       String?
-  routingId   String?
-  plannedQty  Decimal @db.Decimal(18, 6)
-  note        String?
+  id         String  @id @default(cuid())
+  planId     String
+  itemId     String
+  bomId      String?
+  routingId  String?
+  plannedQty Decimal @db.Decimal(18, 6)
+  note       String?
 
   salesOrderItemId String?
 
@@ -1386,8 +1534,8 @@ model FeatureDefinition {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  dependencies   FeatureDependency[] @relation("Feature")
-  dependedBy     FeatureDependency[] @relation("DependsOn")
+  dependencies   FeatureDependency[]  @relation("Feature")
+  dependedBy     FeatureDependency[]  @relation("DependsOn")
   requirements   FeatureRequirement[]
   tenantFeatures TenantFeature[]
 }
@@ -1405,7 +1553,7 @@ model FeatureDependency {
 }
 
 model FeatureRequirement {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   featureId   String
   type        String
   target      String
@@ -1445,8 +1593,8 @@ model EdgeGateway {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  tenant      Tenant        @relation(fields: [tenantId], references: [id])
-  site        Site          @relation(fields: [siteId], references: [id])
+  tenant      Tenant                @relation(fields: [tenantId], references: [id])
+  site        Site                  @relation(fields: [siteId], references: [id])
   connections EquipmentConnection[]
 
   @@index([tenantId])
@@ -1568,9 +1716,9 @@ model SalesOrder {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  tenant    Tenant          @relation("TenantSalesOrders", fields: [tenantId], references: [id])
-  site      Site            @relation("SiteSalesOrders", fields: [siteId], references: [id])
-  customer  BusinessPartner @relation("CustomerSalesOrders", fields: [customerId], references: [id])
+  tenant    Tenant           @relation("TenantSalesOrders", fields: [tenantId], references: [id])
+  site      Site             @relation("SiteSalesOrders", fields: [siteId], references: [id])
+  customer  BusinessPartner  @relation("CustomerSalesOrders", fields: [customerId], references: [id])
   items     SalesOrderItem[]
   shipments ShipmentOrder[]
 
@@ -1592,8 +1740,8 @@ model SalesOrderItem {
   shippedQty   Decimal   @default(0) @db.Decimal(18, 6)
   note         String?
 
-  salesOrder          SalesOrder          @relation(fields: [salesOrderId], references: [id])
-  item                Item                @relation("ItemSalesOrderItems", fields: [itemId], references: [id])
+  salesOrder          SalesOrder           @relation(fields: [salesOrderId], references: [id])
+  item                Item                 @relation("ItemSalesOrderItems", fields: [itemId], references: [id])
   productionPlanItems ProductionPlanItem[]
   shipmentItems       ShipmentItem[]
 
@@ -1617,10 +1765,10 @@ model ShipmentOrder {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  tenant     Tenant      @relation("TenantShipmentOrders", fields: [tenantId], references: [id])
-  site       Site        @relation("SiteShipmentOrders", fields: [siteId], references: [id])
-  salesOrder SalesOrder  @relation(fields: [salesOrderId], references: [id])
-  warehouse  Warehouse?  @relation("WarehouseShipments", fields: [warehouseId], references: [id])
+  tenant     Tenant         @relation("TenantShipmentOrders", fields: [tenantId], references: [id])
+  site       Site           @relation("SiteShipmentOrders", fields: [siteId], references: [id])
+  salesOrder SalesOrder     @relation(fields: [salesOrderId], references: [id])
+  warehouse  Warehouse?     @relation("WarehouseShipments", fields: [warehouseId], references: [id])
   items      ShipmentItem[]
 
   @@unique([tenantId, shipmentNo])
@@ -1677,9 +1825,9 @@ model PurchaseOrder {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  tenant   Tenant          @relation("TenantPurchaseOrders", fields: [tenantId], references: [id])
-  site     Site            @relation("SitePurchaseOrders", fields: [siteId], references: [id])
-  supplier BusinessPartner @relation("SupplierPurchaseOrders", fields: [supplierId], references: [id])
+  tenant   Tenant              @relation("TenantPurchaseOrders", fields: [tenantId], references: [id])
+  site     Site                @relation("SitePurchaseOrders", fields: [siteId], references: [id])
+  supplier BusinessPartner     @relation("SupplierPurchaseOrders", fields: [supplierId], references: [id])
   items    PurchaseOrderItem[]
 
   @@unique([tenantId, orderNo])
@@ -1698,8 +1846,8 @@ model PurchaseOrderItem {
   stockAtOrder    Decimal @default(0) @db.Decimal(18, 6)
   note            String?
 
-  purchaseOrder        PurchaseOrder        @relation(fields: [purchaseOrderId], references: [id])
-  item                 Item                 @relation("ItemPurchaseOrderItems", fields: [itemId], references: [id])
+  purchaseOrder        PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id])
+  item                 Item                  @relation("ItemPurchaseOrderItems", fields: [itemId], references: [id])
   receivingInspections ReceivingInspection[]
 
   @@unique([purchaseOrderId, itemId])
@@ -1850,27 +1998,27 @@ model ItemCost {
 // ─── Phase 2d-10: 변경관리 (ECN/ECO) ─────────────────────────────────────────
 
 model EngineeringChange {
-  id             String    @id @default(cuid())
-  tenantId       String
-  ecnNo          String
-  title          String
-  reason         String
-  changeType     String
-  targetItemId   String
-  status         ECNStatus @default(DRAFT)
-  requestedBy    String
-  approvedBy     String?
-  requestedAt    DateTime  @default(now())
-  approvedAt     DateTime?
-  implementedAt  DateTime?
-  note           String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  tenantId      String
+  ecnNo         String
+  title         String
+  reason        String
+  changeType    String
+  targetItemId  String
+  status        ECNStatus @default(DRAFT)
+  requestedBy   String
+  approvedBy    String?
+  requestedAt   DateTime  @default(now())
+  approvedAt    DateTime?
+  implementedAt DateTime?
+  note          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  tenant    Tenant   @relation("TenantECNs", fields: [tenantId], references: [id])
-  item      Item     @relation("ItemECNs", fields: [targetItemId], references: [id])
-  requester Profile  @relation("ECNRequester", fields: [requestedBy], references: [id])
-  approver  Profile? @relation("ECNApprover", fields: [approvedBy], references: [id])
+  tenant    Tenant                    @relation("TenantECNs", fields: [tenantId], references: [id])
+  item      Item                      @relation("ItemECNs", fields: [targetItemId], references: [id])
+  requester Profile                   @relation("ECNRequester", fields: [requestedBy], references: [id])
+  approver  Profile?                  @relation("ECNApprover", fields: [approvedBy], references: [id])
   details   EngineeringChangeDetail[]
 
   @@unique([tenantId, ecnNo])
@@ -1879,7 +2027,7 @@ model EngineeringChange {
 }
 
 model EngineeringChangeDetail {
-  id                  String @id @default(cuid())
+  id                  String  @id @default(cuid())
   engineeringChangeId String
   changeTarget        String
   actionType          String
@@ -1925,7 +2073,7 @@ model EquipmentProblemType {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant         Tenant                 @relation(fields: [tenantId], references: [id])
+  tenant         Tenant                   @relation(fields: [tenantId], references: [id])
   repairRequests EquipmentRepairRequest[]
 
   @@unique([tenantId, code])
@@ -1951,12 +2099,12 @@ model EquipmentRepairRequest {
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id])
-  site        Site                 @relation(fields: [siteId], references: [id])
-  equipment   Equipment            @relation(fields: [equipmentId], references: [id])
+  tenant      Tenant                @relation(fields: [tenantId], references: [id])
+  site        Site                  @relation(fields: [siteId], references: [id])
+  equipment   Equipment             @relation(fields: [equipmentId], references: [id])
   problemType EquipmentProblemType? @relation(fields: [problemTypeId], references: [id])
-  requester   Profile              @relation("RepairRequester", fields: [requestedBy], references: [id])
-  assignee    Profile?             @relation("RepairAssignee", fields: [assignedTo], references: [id])
+  requester   Profile               @relation("RepairRequester", fields: [requestedBy], references: [id])
+  assignee    Profile?              @relation("RepairAssignee", fields: [assignedTo], references: [id])
 
   @@unique([tenantId, requestNo])
   @@index([tenantId])
