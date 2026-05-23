@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -24,7 +24,6 @@ import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
-import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,8 +75,6 @@ export function ReceivingFormDialog({
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null)
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [warehouseId, setWarehouseId] = useState<string>("")
 
@@ -113,19 +110,6 @@ export function ReceivingFormDialog({
       }
     })
   )
-
-  function handleScan(parsed: ParsedBarcode) {
-    const idx = inspections.findIndex(
-      (ins) => ins.itemCode === parsed.itemCode
-    )
-    if (idx === -1) {
-      alert(`품목 코드 "${parsed.itemCode}"가 이 발주에 없습니다.`)
-      return
-    }
-    setHighlightedIndex(idx)
-    itemRefs.current[idx]?.scrollIntoView({ behavior: "smooth", block: "center" })
-    setTimeout(() => setHighlightedIndex(null), 3000)
-  }
 
   function updateInspection(index: number, patch: Partial<ItemInspection>) {
     setInspections((prev) =>
@@ -204,25 +188,11 @@ export function ReceivingFormDialog({
           )}
         </div>
 
-        {/* 바코드 스캔 */}
-        <div className="space-y-1">
-          <p className="text-[13px] font-medium text-muted-foreground">바코드 스캔</p>
-          <BarcodeScanInput
-            onScan={handleScan}
-            placeholder="품목 바코드를 스캔하면 해당 행으로 이동합니다"
-          />
-        </div>
-
         <div className="space-y-5 py-2">
           {inspections.map((ins, index) => (
             <div
               key={ins.purchaseOrderItemId}
-              ref={(el) => { itemRefs.current[index] = el }}
-              className={`rounded-lg border p-4 space-y-4 transition-colors duration-300 ${
-                highlightedIndex === index
-                  ? "border-green-400 bg-green-50"
-                  : "bg-card"
-              }`}
+              className="rounded-lg border bg-card p-4 space-y-4"
             >
               {/* 품목 헤더 */}
               <div className="flex items-start justify-between gap-2">
