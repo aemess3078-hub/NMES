@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { cn } from "@/lib/utils"
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -118,7 +119,7 @@ export function DataTable<TData, TValue>({
                   <TableRow
                     data-state={row.getIsSelected() && "selected"}
                     onClick={() => onRowClick?.(row.original)}
-                    className={onRowClick ? "cursor-pointer" : undefined}
+                    className={cn("group/row", onRowClick ? "cursor-pointer" : undefined)}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>

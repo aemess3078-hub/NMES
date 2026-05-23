@@ -338,6 +338,7 @@ export async function createInspectionSpec(
   })
 
   revalidatePath("/app/mes/measurement")
+  revalidatePath("/app/mes/master/inspection-standards")
 }
 
 export async function updateInspectionSpec(id: string, data: UpdateInspectionSpecInput) {
@@ -350,6 +351,7 @@ export async function updateInspectionSpec(id: string, data: UpdateInspectionSpe
     },
   })
   revalidatePath("/app/mes/measurement")
+  revalidatePath("/app/mes/master/inspection-standards")
 }
 
 export async function deleteInspectionSpec(id: string) {
@@ -360,6 +362,7 @@ export async function deleteInspectionSpec(id: string) {
   await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId: id } })
   await prisma.inspectionSpec.delete({ where: { id } })
   revalidatePath("/app/mes/measurement")
+  revalidatePath("/app/mes/master/inspection-standards")
 }
 
 export async function upsertInspectionItems(
@@ -383,12 +386,14 @@ export async function upsertInspectionItems(
   }
 
   revalidatePath("/app/mes/measurement")
+  revalidatePath("/app/mes/master/inspection-standards")
 }
 
 export async function deleteInspectionItem(id: string) {
   await requireRole("OPERATOR")
   await prisma.inspectionItem.delete({ where: { id } })
   revalidatePath("/app/mes/measurement")
+  revalidatePath("/app/mes/master/inspection-standards")
 }
 
 export async function getQualityInspections(
