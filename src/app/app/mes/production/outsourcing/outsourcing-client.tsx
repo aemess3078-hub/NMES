@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useMemo } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import {
   Truck,
@@ -10,6 +10,7 @@ import {
   Clock,
   ExternalLink,
   Info,
+  TrendingUp,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -65,6 +66,12 @@ const RESULT_LABEL: Record<string, string> = {
   CONDITIONAL: "조건부합격",
 }
 
+const KRW_FORMATTER = new Intl.NumberFormat("ko-KR", {
+  style: "currency",
+  currency: "KRW",
+  maximumFractionDigits: 0,
+})
+
 // ─── Column definitions ───────────────────────────────────────────────────────
 
 const orderColumns: ColumnDef<OutsourcingOrderRow>[] = [
@@ -81,33 +88,61 @@ const orderColumns: ColumnDef<OutsourcingOrderRow>[] = [
     cell: ({ row }) => <span className="text-[14px]">{row.original.supplierName}</span>,
   },
   {
+    accessorKey: "itemSummary",
+    header: "대표 품목",
+    cell: ({ row }) => (
+      <div className="min-w-[150px]">
+        <p className="text-[14px] font-medium">{row.original.itemSummary}</p>
+        {row.original.firstItemCode && (
+          <p className="text-[13px] text-muted-foreground font-mono">
+            {row.original.firstItemCode}
+          </p>
+        )}
+      </div>
+    ),
+  },
+  {
     accessorKey: "orderDate",
-    header: "발주일",
+    header: "발주/납기",
     cell: ({ row }) => (
-      <span className="text-[13px] text-muted-foreground">
-        {new Date(row.original.orderDate).toLocaleDateString("ko-KR")}
-      </span>
+      <div className="min-w-[120px] space-y-0.5">
+        <p className="text-[13px] text-muted-foreground">
+          발주 {new Date(row.original.orderDate).toLocaleDateString("ko-KR")}
+        </p>
+        <p
+          className={`text-[13px] ${
+            row.original.isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"
+          }`}
+        >
+          납기 {new Date(row.original.expectedDate).toLocaleDateString("ko-KR")}
+          {row.original.isOverdue && " 지연"}
+        </p>
+      </div>
     ),
   },
   {
-    accessorKey: "expectedDate",
-    header: "납기일",
+    accessorKey: "totalQty",
+    header: "수량",
     cell: ({ row }) => (
-      <span
-        className={`text-[13px] ${
-          row.original.isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"
-        }`}
-      >
-        {new Date(row.original.expectedDate).toLocaleDateString("ko-KR")}
-        {row.original.isOverdue && " ⚠"}
-      </span>
+      <div className="text-right">
+        <p className="text-[14px] font-medium">
+          {row.original.totalQty.toLocaleString("ko-KR")}
+        </p>
+        <p className="text-[13px] text-muted-foreground">
+          {row.original.itemCount}개 품목
+        </p>
+      </div>
     ),
   },
   {
-    accessorKey: "itemCount",
-    header: "품목 수",
+    accessorKey: "totalAmount",
+    header: "총 금액",
     cell: ({ row }) => (
-      <span className="text-[14px]">{row.original.itemCount}</span>
+      <span className="block min-w-[100px] text-right text-[14px] font-medium">
+        {row.original.totalAmount !== null
+          ? KRW_FORMATTER.format(row.original.totalAmount)
+          : "-"}
+      </span>
     ),
   },
   {
@@ -133,13 +168,18 @@ const orderColumns: ColumnDef<OutsourcingOrderRow>[] = [
   },
   {
     accessorKey: "status",
-    header: "상태",
+    header: "상태/비고",
     cell: ({ row }) => {
       const s = row.original.status
       return (
-        <Badge className={`text-[12px] ${STATUS_STYLE[s]}`}>
-          {STATUS_LABEL[s]}
-        </Badge>
+        <div className="min-w-[120px] space-y-1">
+          <Badge className={`text-[13px] ${STATUS_STYLE[s]}`}>
+            {STATUS_LABEL[s]}
+          </Badge>
+          <p className="line-clamp-2 text-[13px] text-muted-foreground">
+            {row.original.note || (row.original.isOverdue ? "납기 지연" : "특이사항 없음")}
+          </p>
+        </div>
       )
     },
     filterFn: (row, _id, filterValues: string[]) =>
@@ -252,6 +292,200 @@ function SummaryCard({
         <p className="text-[13px] text-muted-foreground">{label}</p>
         <p className="text-[22px] font-semibold">{value}</p>
       </div>
+    </div>
+  )
+}
+
+// ─── Progress tab ─────────────────────────────────────────────────────────────
+
+type SupplierProgress = {
+  supplierId: string
+  supplierName: string
+  total: number
+  pending: number
+  partialReceived: number
+  completed: number
+  overdue: number
+  totalQty: number
+  receivedQty: number
+}
+
+function ProgressTab({ orders }: { orders: OutsourcingOrderRow[] }) {
+  const supplierProgress = useMemo(() => {
+    const map = new Map<string, SupplierProgress>()
+    for (const o of orders) {
+      const entry = map.get(o.supplierId) ?? {
+        supplierId: o.supplierId,
+        supplierName: o.supplierName,
+        total: 0,
+        pending: 0,
+        partialReceived: 0,
+        completed: 0,
+        overdue: 0,
+        totalQty: 0,
+        receivedQty: 0,
+      }
+      entry.total++
+      if (o.status === "DRAFT" || o.status === "ORDERED") entry.pending++
+      if (o.status === "PARTIAL_RECEIVED") entry.partialReceived++
+      if (o.status === "RECEIVED" || o.status === "CLOSED") entry.completed++
+      if (o.isOverdue) entry.overdue++
+      entry.totalQty += o.totalQty
+      entry.receivedQty += o.totalReceivedQty
+      map.set(o.supplierId, entry)
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total)
+  }, [orders])
+
+  const overdueOrders = useMemo(
+    () => orders.filter((o) => o.isOverdue),
+    [orders]
+  )
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<PurchaseOrderStatus, number> = {
+      DRAFT: 0,
+      ORDERED: 0,
+      PARTIAL_RECEIVED: 0,
+      RECEIVED: 0,
+      CLOSED: 0,
+      CANCELLED: 0,
+    }
+    for (const o of orders) counts[o.status]++
+    return counts
+  }, [orders])
+
+  if (orders.length === 0) {
+    return (
+      <div className="py-14 text-center text-muted-foreground">
+        <TrendingUp className="mx-auto h-10 w-10 mb-3 opacity-25" />
+        <p className="text-[15px]">진행 중인 외주 건이 없습니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-5 space-y-6">
+      {/* 상태별 분포 */}
+      <div>
+        <p className="text-[14px] font-medium mb-3">상태별 현황</p>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {(Object.keys(STATUS_LABEL) as PurchaseOrderStatus[]).map((s) => (
+            <div
+              key={s}
+              className="rounded-lg border bg-muted/30 p-3 text-center"
+            >
+              <p className="text-[20px] font-semibold">{statusCounts[s]}</p>
+              <p className="text-[12px] text-muted-foreground mt-0.5">
+                {STATUS_LABEL[s]}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 공급처별 진행현황 */}
+      <div>
+        <p className="text-[14px] font-medium mb-3">공급처별 진행현황</p>
+        {supplierProgress.length === 0 ? (
+          <p className="text-[14px] text-muted-foreground">데이터 없음</p>
+        ) : (
+          <div className="rounded-lg border overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-muted/40 border-b">
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">공급처</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">전체</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">진행</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">부분입고</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">완료</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-red-500">지연</th>
+                  <th className="px-4 py-2.5 font-medium text-muted-foreground">입고 진행률</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supplierProgress.map((sp, i) => {
+                  const pct =
+                    sp.totalQty > 0
+                      ? Math.round((sp.receivedQty / sp.totalQty) * 100)
+                      : 0
+                  return (
+                    <tr key={sp.supplierId} className={i % 2 === 0 ? "" : "bg-muted/20"}>
+                      <td className="px-4 py-2.5 font-medium">{sp.supplierName}</td>
+                      <td className="px-4 py-2.5 text-right">{sp.total}</td>
+                      <td className="px-4 py-2.5 text-right text-blue-700">{sp.pending}</td>
+                      <td className="px-4 py-2.5 text-right text-amber-700">{sp.partialReceived}</td>
+                      <td className="px-4 py-2.5 text-right text-emerald-700">{sp.completed}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {sp.overdue > 0 ? (
+                          <span className="text-red-600 font-medium">{sp.overdue}</span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-500 rounded-full"
+                              style={{ width: `${Math.min(pct, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[12px] text-muted-foreground w-8 text-right">
+                            {pct}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 납기 지연 */}
+      {overdueOrders.length > 0 && (
+        <div>
+          <p className="text-[14px] font-medium mb-3 flex items-center gap-1.5 text-red-600">
+            <AlertTriangle className="h-4 w-4" />
+            납기 지연 발주 ({overdueOrders.length}건)
+          </p>
+          <div className="rounded-lg border border-red-100 overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-red-50 border-b border-red-100">
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">발주번호</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">공급처</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">납기일</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">상태</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">입고 현황</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overdueOrders.map((o) => (
+                  <tr key={o.id} className="border-b border-red-50 last:border-0">
+                    <td className="px-4 py-2.5 font-mono font-medium">{o.orderNo}</td>
+                    <td className="px-4 py-2.5">{o.supplierName}</td>
+                    <td className="px-4 py-2.5 text-red-600 font-medium">
+                      {new Date(o.expectedDate).toLocaleDateString("ko-KR")}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Badge className={`text-[12px] ${STATUS_STYLE[o.status]}`}>
+                        {STATUS_LABEL[o.status]}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-muted-foreground">
+                      {o.totalReceivedQty}/{o.totalQty}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -430,12 +664,15 @@ export function OutsourcingClient({ data }: Props) {
           <div className="px-4 pt-4 border-b">
             <TabsList className="h-9">
               <TabsTrigger value="orders" className="text-[13px]">
-                발주 현황
+                외주발주
                 <span className="ml-1.5 text-[11px] opacity-70">({orders.length})</span>
               </TabsTrigger>
               <TabsTrigger value="receivings" className="text-[13px]">
-                입고 이력
+                외주입고
                 <span className="ml-1.5 text-[11px] opacity-70">({receivings.length})</span>
+              </TabsTrigger>
+              <TabsTrigger value="progress" className="text-[13px]">
+                외주진행현황
               </TabsTrigger>
             </TabsList>
           </div>
@@ -478,6 +715,10 @@ export function OutsourcingClient({ data }: Props) {
                 ]}
               />
             )}
+          </TabsContent>
+
+          <TabsContent value="progress" className="p-0">
+            <ProgressTab orders={orders} />
           </TabsContent>
         </Tabs>
       </div>

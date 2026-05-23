@@ -23,6 +23,8 @@ export type OutsourcingOrderRow = {
   status: PurchaseOrderStatus
   totalAmount: number | null
   itemCount: number
+  itemSummary: string
+  firstItemCode: string | null
   totalQty: number
   totalReceivedQty: number
   isOverdue: boolean
@@ -81,7 +83,14 @@ export async function getOutsourcingData(
     },
     include: {
       supplier: { select: { id: true, name: true } },
-      items: { select: { qty: true, receivedQty: true } },
+      items: {
+        select: {
+          qty: true,
+          receivedQty: true,
+          unitPrice: true,
+          item: { select: { code: true, name: true } },
+        },
+      },
     },
     orderBy: { orderDate: "desc" },
   })
@@ -89,6 +98,18 @@ export async function getOutsourcingData(
   const orderRows: OutsourcingOrderRow[] = orders.map((o) => {
     const totalQty = o.items.reduce((s, i) => s + Number(i.qty), 0)
     const totalReceivedQty = o.items.reduce((s, i) => s + Number(i.receivedQty), 0)
+    const calculatedAmount = o.items.reduce(
+      (sum, item) => sum + Number(item.qty) * Number(item.unitPrice),
+      0
+    )
+    const firstItem = o.items[0]?.item
+    const itemSummary = firstItem
+      ? o.items.length > 1
+        ? `${firstItem.name} 외 ${o.items.length - 1}건`
+        : firstItem.name
+      : "-"
+    const totalAmount =
+      o.totalAmount !== null ? Number(o.totalAmount) : Math.round(calculatedAmount)
     const isOverdue =
       (o.status === "ORDERED" || o.status === "PARTIAL_RECEIVED") &&
       o.expectedDate < now
@@ -100,8 +121,10 @@ export async function getOutsourcingData(
       supplierName: o.supplier.name,
       supplierId: o.supplier.id,
       status: o.status,
-      totalAmount: o.totalAmount !== null ? Number(o.totalAmount) : null,
+      totalAmount,
       itemCount: o.items.length,
+      itemSummary,
+      firstItemCode: firstItem?.code ?? null,
       totalQty: Math.round(totalQty * 100) / 100,
       totalReceivedQty: Math.round(totalReceivedQty * 100) / 100,
       isOverdue,

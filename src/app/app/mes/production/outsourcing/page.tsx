@@ -17,7 +17,11 @@ export default async function OutsourcingPage({ searchParams }: Props) {
   const params = searchParams ? await searchParams : {}
 
   const rawStatus = params.status?.trim()
-  const status = rawStatus as PurchaseOrderStatus | undefined
+  const status =
+    rawStatus &&
+    Object.values(PurchaseOrderStatus).includes(rawStatus as PurchaseOrderStatus)
+      ? (rawStatus as PurchaseOrderStatus)
+      : undefined
 
   const data = await getOutsourcingData({
     from: params.from?.trim() || undefined,
