@@ -99,7 +99,7 @@ export const MES_NAV: NavItem[] = [
         children: [
           { id: 'nav-defect-stats', parentId: 'nav-quality', label: '불량통계(자주검사)', icon: 'BarChart2', href: '/app/mes/quality/defect-stats', displayOrder: 1, children: [] },
           { id: 'nav-inspection-stages', parentId: 'nav-quality', label: '초중종검사LIST', icon: 'ClipboardCheck', href: '/app/mes/inspection-stages', displayOrder: 2, children: [] },
-          { id: 'nav-work-standards', parentId: 'nav-quality', label: '작업표준서관리', icon: 'BookOpen', href: '/app/mes/quality/work-standards', displayOrder: 3, comingSoon: true, children: [] },
+          { id: 'nav-work-standards', parentId: 'nav-quality', label: '작업표준서관리', icon: 'BookOpen', href: '/app/mes/quality/work-standards', displayOrder: 3, children: [] },
           // 변경점정보등록 + 변경점정보LIST → 변경관리 단일 메뉴 (기존 ECN 구현 활용)
           { id: 'nav-change-management', parentId: 'nav-quality', label: '변경관리', icon: 'GitPullRequest', href: '/app/mes/ecn', displayOrder: 4, children: [] },
         ],
