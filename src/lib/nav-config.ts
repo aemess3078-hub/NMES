@@ -29,11 +29,10 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-locations', parentId: 'nav-master', label: '로케이션관리', icon: 'MapPin', href: '/app/mes/locations', displayOrder: 8, children: [] },
           { id: 'nav-vendors', parentId: 'nav-master', label: '외주처관리', icon: 'Handshake', href: '/app/mes/vendors', displayOrder: 9, children: [] },
           { id: 'nav-inspection-standards', parentId: 'nav-master', label: '검사표준관리', icon: 'FileCheck', href: '/app/mes/master/inspection-standards', displayOrder: 10, comingSoon: true, children: [] },
-          { id: 'nav-molds', parentId: 'nav-master', label: '금형관리', icon: 'Wrench', href: '/app/mes/master/molds', displayOrder: 11, comingSoon: true, children: [] },
-          { id: 'nav-product-groups', parentId: 'nav-master', label: '제품군관리', icon: 'Boxes', href: '/app/mes/master/product-groups', displayOrder: 12, comingSoon: true, children: [] },
-          { id: 'nav-downtime-reasons', parentId: 'nav-master', label: '비가동사유', icon: 'AlertTriangle', href: '/app/mes/master/downtime-reasons', displayOrder: 13, comingSoon: true, children: [] },
-          { id: 'nav-mold-inventory', parentId: 'nav-master', label: '금형재고관리', icon: 'Package', href: '/app/mes/master/mold-inventory', displayOrder: 14, comingSoon: true, children: [] },
-          { id: 'nav-item-categories', parentId: 'nav-master', label: '품목분류관리', icon: 'FolderOpen', href: '/app/mes/master/item-categories', displayOrder: 15, comingSoon: true, children: [] },
+          // 금형관리 + 금형재고관리 → 금형/치공구관리 단일 메뉴 (미구현)
+          { id: 'nav-mold-management', parentId: 'nav-master', label: '금형/치공구관리', icon: 'Wrench', href: '/app/mes/master/molds', displayOrder: 11, comingSoon: true, children: [] },
+          { id: 'nav-downtime-reasons', parentId: 'nav-master', label: '비가동사유', icon: 'AlertTriangle', href: '/app/mes/master/downtime-reasons', displayOrder: 12, comingSoon: true, children: [] },
+          // 제품군관리, 품목분류관리 → 품목관리 내부 개념으로 흡수 (사이드바 노출 제거)
         ],
       },
       // 2. 생산관리
@@ -79,7 +78,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-material-stock', parentId: 'nav-material', label: '자재재고현황', icon: 'Boxes', href: '/app/mes/material/stock', displayOrder: 4, children: [] },
         ],
       },
-      // 5. KPI
+      // 5. KPI — 7개 개별 메뉴 → KPI 대시보드 단일 메뉴 (미구현, comingSoon 유지)
       {
         id: 'nav-kpi',
         parentId: 'section-mes',
@@ -87,13 +86,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'TrendingUp',
         displayOrder: 50,
         children: [
-          { id: 'nav-kpi-lead-time', parentId: 'nav-kpi', label: '제조리드타임 (P)', icon: 'Activity', href: '/app/mes/kpi/lead-time', displayOrder: 1, comingSoon: true, children: [] },
-          { id: 'nav-kpi-defect-rate', parentId: 'nav-kpi', label: '품질불량률 (Q)', icon: 'AlertTriangle', href: '/app/mes/kpi/defect-rate', displayOrder: 2, comingSoon: true, children: [] },
-          { id: 'nav-kpi-labor', parentId: 'nav-kpi', label: '작업공수 (C)', icon: 'Users', href: '/app/mes/kpi/labor-cost', displayOrder: 3, comingSoon: true, children: [] },
-          { id: 'nav-kpi-delivery', parentId: 'nav-kpi', label: '수주/납품리드타임 (D)', icon: 'Truck', href: '/app/mes/kpi/delivery-lead-time', displayOrder: 4, comingSoon: true, children: [] },
-          { id: 'nav-kpi-energy', parentId: 'nav-kpi', label: '전력사용량 (E)', icon: 'Cpu', href: '/app/mes/kpi/energy', displayOrder: 5, comingSoon: true, children: [] },
-          { id: 'nav-kpi-uph', parentId: 'nav-kpi', label: 'UPH (P)', icon: 'BarChart2', href: '/app/mes/kpi/uph', displayOrder: 6, comingSoon: true, children: [] },
-          { id: 'nav-kpi-oee', parentId: 'nav-kpi', label: '설비가동률 (P)', icon: 'BarChart2', href: '/app/mes/kpi/equipment-oee', displayOrder: 7, comingSoon: true, children: [] },
+          { id: 'nav-kpi-dashboard', parentId: 'nav-kpi', label: 'KPI 대시보드', icon: 'LayoutDashboard', href: '/app/mes/kpi', displayOrder: 1, comingSoon: true, children: [] },
         ],
       },
       // 6. 품질관리
@@ -107,8 +100,8 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-defect-stats', parentId: 'nav-quality', label: '불량통계(자주검사)', icon: 'BarChart2', href: '/app/mes/quality/defect-stats', displayOrder: 1, comingSoon: true, children: [] },
           { id: 'nav-inspection-stages', parentId: 'nav-quality', label: '초중종검사LIST', icon: 'ClipboardCheck', href: '/app/mes/inspection-stages', displayOrder: 2, children: [] },
           { id: 'nav-work-standards', parentId: 'nav-quality', label: '작업표준서관리', icon: 'BookOpen', href: '/app/mes/quality/work-standards', displayOrder: 3, comingSoon: true, children: [] },
-          { id: 'nav-ecn', parentId: 'nav-quality', label: '변경점정보등록', icon: 'GitPullRequest', href: '/app/mes/ecn', displayOrder: 4, children: [] },
-          { id: 'nav-change-points', parentId: 'nav-quality', label: '변경점정보LIST', icon: 'FileText', href: '/app/mes/quality/change-points', displayOrder: 5, comingSoon: true, children: [] },
+          // 변경점정보등록 + 변경점정보LIST → 변경관리 단일 메뉴 (기존 ECN 구현 활용)
+          { id: 'nav-change-management', parentId: 'nav-quality', label: '변경관리', icon: 'GitPullRequest', href: '/app/mes/ecn', displayOrder: 4, children: [] },
         ],
       },
       // 7. 영업관리
@@ -129,12 +122,12 @@ export const MES_NAV: NavItem[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════
-  // LMS
+  // 설비관리 (기존 LMS 상위 메뉴명 변경)
   // ═══════════════════════════════════════════════════════════════
   {
     id: 'section-lms',
     parentId: null,
-    label: 'LMS',
+    label: '설비관리',
     icon: 'Cpu',
     displayOrder: 2,
     children: [
@@ -150,11 +143,11 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-lms-status', parentId: 'nav-lms-monitoring', label: '현황모니터링', icon: 'LayoutDashboard', href: '/app/lms/monitoring/status', displayOrder: 2, comingSoon: true, children: [] },
         ],
       },
-      // 2. 설비관리
+      // 2. 설비점검/수리 (기존 '설비관리' 하위 메뉴명 변경 — 중복 방지)
       {
         id: 'nav-lms-equipment',
         parentId: 'section-lms',
-        label: '설비관리',
+        label: '설비점검/수리',
         icon: 'Wrench',
         displayOrder: 20,
         children: [
