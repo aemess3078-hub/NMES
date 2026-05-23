@@ -139,5 +139,11 @@ export async function getEnabledMenuCodes(tenantId: string): Promise<string[]> {
   // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   console.log(`[PERF] feature.getEnabledMenuCodes.total ${Date.now() - _t0}ms  (캐시 HIT이면 ~0ms)`)
   // ─────────────────────────────────────────────────────────────────────────
-  return tenantFeatures.flatMap((tf) => tf.feature.menuCodes)
+  const menuCodes = new Set(tenantFeatures.flatMap((tf) => tf.feature.menuCodes))
+
+  if (tenantFeatures.some((tf) => tf.feature.code === "PURCHASE_ORDER")) {
+    menuCodes.add("outsourcing")
+  }
+
+  return Array.from(menuCodes)
 }

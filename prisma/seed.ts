@@ -1642,7 +1642,7 @@ async function seedFeatures() {
     { code: 'SALES_ORDER', name: '수주관리', description: '수주/출하 관리', category: 'SALES', icon: 'ClipboardList', menuCodes: ['sales-orders', 'shipments', 'order-status', 'delivery-status'], isCore: false, displayOrder: 151 },
     { code: 'SHIPMENT', name: '출하관리', description: '출하 관리', category: 'SALES', icon: 'Truck', menuCodes: ['shipments'], isCore: false, displayOrder: 152 },
     // PURCHASE
-    { code: 'PURCHASE_ORDER', name: '발주관리', description: '발주/입고 관리', category: 'PURCHASE', icon: 'FileInput', menuCodes: ['purchase-orders', 'material-receipt', 'material-issue'], isCore: false, displayOrder: 161 },
+    { code: 'PURCHASE_ORDER', name: '발주관리', description: '발주/입고 관리', category: 'PURCHASE', icon: 'FileInput', menuCodes: ['purchase-orders', 'material-receipt', 'material-issue', 'outsourcing'], isCore: false, displayOrder: 161 },
     { code: 'ITEM_PRICE', name: '단가관리', description: '품목 단가 관리', category: 'PURCHASE', icon: 'CircleDollarSign', menuCodes: ['item-prices'], isCore: false, displayOrder: 162 },
     // MRP
     { code: 'MRP', name: 'MRP 소요량', description: '자재 소요량 계획 및 AI 발주 제안', category: 'PRODUCTION', icon: 'Calculator', menuCodes: ['mrp'], isCore: false, displayOrder: 141 },
