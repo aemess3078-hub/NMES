@@ -49,8 +49,12 @@ export function formatDate(date: Date | string, includeTime = false): string {
  * API 에러 메시지 추출
  */
 export function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : null;
+
+  if (message === 'FORBIDDEN') return '권한이 없습니다.';
+  if (message === 'UNAUTHORIZED') return '로그인이 필요합니다.';
+  if (message) return message;
+
   return '알 수 없는 오류가 발생했습니다.';
 }
 

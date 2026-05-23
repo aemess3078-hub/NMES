@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { UserRole } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { getErrorMessage } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ export async function updateUserRole(
     revalidatePath("/app/mes/users")
     return { success: true }
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { success: false, error: getErrorMessage(e) }
   }
 }
 
@@ -168,7 +169,7 @@ export async function deactivateUser(tenantUserId: string): Promise<{ success: b
     revalidatePath("/app/mes/users")
     return { success: true }
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { success: false, error: getErrorMessage(e) }
   }
 }
 
@@ -205,6 +206,6 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
     revalidatePath("/app/mes/users")
     return { success: true }
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { success: false, error: getErrorMessage(e) }
   }
 }

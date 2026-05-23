@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { getErrorMessage } from "@/lib/utils"
 
 export default function MesError({
   error,
@@ -11,6 +12,9 @@ export default function MesError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  const message = getErrorMessage(error)
+  const isForbidden = message === "권한이 없습니다."
+
   useEffect(() => {
     console.error("[MES Error]", error)
   }, [error])
@@ -23,10 +27,12 @@ export default function MesError({
 
       <div className="space-y-2">
         <h2 className="text-[20px] font-semibold text-foreground">
-          페이지를 불러오는 중 오류가 발생했습니다
+          {isForbidden ? "권한이 없습니다" : "페이지를 불러오는 중 오류가 발생했습니다"}
         </h2>
         <p className="text-[14px] text-muted-foreground max-w-md">
-          서버에서 데이터를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.
+          {isForbidden
+            ? "현재 계정으로는 이 화면에 접근할 수 없습니다."
+            : "서버에서 데이터를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요."}
         </p>
         {error.digest && (
           <p className="text-[12px] text-muted-foreground/50 font-mono">

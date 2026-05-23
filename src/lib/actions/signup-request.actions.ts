@@ -6,6 +6,7 @@ import { UserRole, SignupRequestStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { hashPassword, validatePassword } from "@/lib/password"
 import { maskSensitiveFields } from "@/lib/sanitize"
+import { getErrorMessage } from "@/lib/utils"
 
 function normalizeLoginId(loginId: string): string {
   return loginId.trim().toLowerCase()
@@ -279,7 +280,7 @@ export async function approveSignupRequest(
     return { success: true }
   } catch (e) {
     console.error("[approveSignupRequest] catch:", e)
-    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { success: false, error: getErrorMessage(e) }
   }
 }
 
@@ -320,7 +321,7 @@ export async function rejectSignupRequest(
     revalidatePath("/app/mes/users")
     return { success: true }
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { success: false, error: getErrorMessage(e) }
   }
 }
 
@@ -354,6 +355,6 @@ export async function deleteSignupRequest(
     revalidatePath("/app/mes/users")
     return { success: true }
   } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { success: false, error: getErrorMessage(e) }
   }
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { SalesOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { getErrorMessage } from "@/lib/utils"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -547,6 +548,6 @@ export async function requestProductionFromSalesOrder(
     revalidatePath("/app/mes/production-plan")
     return { ok: true, planNo }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+    return { ok: false, error: getErrorMessage(e) }
   }
 }
