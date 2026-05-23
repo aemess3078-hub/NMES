@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Clock,
   ExternalLink,
-  Info,
   TrendingUp,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -531,17 +530,6 @@ export function OutsourcingClient({ data }: Props) {
 
   return (
     <>
-      {/* 제약 안내 */}
-      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-        <Info className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-        <p className="text-[13px] text-amber-800">
-          <strong>구매/외주 통합 현황 화면입니다.</strong>{" "}
-          외주 전용 구분 필드가 아직 구현되지 않아 구매발주(PurchaseOrder) 전체가 조회됩니다.
-          공급처 필터로 거래처를 선택하면 해당 거래처의 발주만 조회할 수 있습니다.
-          발주 등록·수정 및 입고 처리는 아래 링크를 이용하세요.
-        </p>
-      </div>
-
       {/* 바로가기 */}
       <div className="flex gap-2 flex-wrap">
         <Button variant="outline" size="sm" asChild>
