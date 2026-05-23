@@ -1,0 +1,405 @@
+"use server"
+
+import { prisma } from "@/lib/db/prisma"
+import { getTenantId } from "@/lib/auth"
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type EquipStatFilter = {
+  from: string // YYYY-MM-DD
+  to: string
+  equipmentId?: string
+}
+
+function parseDateRange(f: EquipStatFilter) {
+  return {
+    from: new Date(`${f.from}T00:00:00.000`),
+    to: new Date(`${f.to}T23:59:59.999`),
+  }
+}
+
+function defaultDateRange(): { from: string; to: string } {
+  const to = new Date()
+  const from = new Date(to)
+  from.setDate(from.getDate() - 30)
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  return { from: fmt(from), to: fmt(to) }
+}
+
+// ─── 1. 생산량 통계 ──────────────────────────────────────────────────────────
+
+export type ProductionStats = {
+  totalGoodQty: number
+  totalDefectQty: number
+  defectRate: number | null
+  resultCount: number
+  rows: Array<{ date: string; goodQty: number; defectQty: number }>
+}
+
+async function fetchProductionStats(
+  tenantId: string,
+  f: EquipStatFilter
+): Promise<ProductionStats> {
+  const { from, to } = parseDateRange(f)
+
+  const results = await prisma.productionResult.findMany({
+    where: {
+      startedAt: { gte: from, lte: to },
+      workOrderOperation: {
+        workOrder: { tenantId },
+        ...(f.equipmentId ? { equipmentId: f.equipmentId } : {}),
+      },
+    },
+    select: { startedAt: true, goodQty: true, defectQty: true },
+  })
+
+  const dayMap = new Map<string, { goodQty: number; defectQty: number }>()
+  let totalGoodQty = 0
+  let totalDefectQty = 0
+
+  for (const r of results) {
+    if (!r.startedAt) continue
+    const gq = Number(r.goodQty)
+    const dq = Number(r.defectQty)
+    totalGoodQty += gq
+    totalDefectQty += dq
+    const date = r.startedAt.toISOString().slice(0, 10)
+    const e = dayMap.get(date) ?? { goodQty: 0, defectQty: 0 }
+    e.goodQty += gq
+    e.defectQty += dq
+    dayMap.set(date, e)
+  }
+
+  const totalProd = totalGoodQty + totalDefectQty
+  const rows = Array.from(dayMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, v]) => ({
+      date,
+      goodQty: Math.round(v.goodQty * 10) / 10,
+      defectQty: Math.round(v.defectQty * 10) / 10,
+    }))
+
+  return {
+    totalGoodQty: Math.round(totalGoodQty * 10) / 10,
+    totalDefectQty: Math.round(totalDefectQty * 10) / 10,
+    defectRate: totalProd > 0 ? totalDefectQty / totalProd : null,
+    resultCount: results.length,
+    rows,
+  }
+}
+
+// ─── 2. 에러 통계 ─────────────────────────────────────────────────────────────
+
+export type ErrorStats = {
+  total: number
+  alarmCount: number
+  warningCount: number
+  rows: Array<{
+    equipmentCode: string
+    equipmentName: string
+    alarmCount: number
+    warningCount: number
+  }>
+}
+
+async function fetchErrorStats(
+  tenantId: string,
+  f: EquipStatFilter
+): Promise<ErrorStats> {
+  const { from, to } = parseDateRange(f)
+
+  const events = await prisma.equipmentEvent.findMany({
+    where: {
+      eventType: { in: ["ALARM", "WARNING"] },
+      startedAt: { gte: from, lte: to },
+      equipment: {
+        tenantId,
+        ...(f.equipmentId ? { id: f.equipmentId } : {}),
+      },
+    },
+    select: {
+      eventType: true,
+      equipment: { select: { code: true, name: true } },
+    },
+  })
+
+  const eqMap = new Map<
+    string,
+    { equipmentCode: string; equipmentName: string; alarmCount: number; warningCount: number }
+  >()
+
+  let alarmCount = 0
+  let warningCount = 0
+
+  for (const ev of events) {
+    const key = ev.equipment.code
+    const e = eqMap.get(key) ?? {
+      equipmentCode: ev.equipment.code,
+      equipmentName: ev.equipment.name,
+      alarmCount: 0,
+      warningCount: 0,
+    }
+    if (ev.eventType === "ALARM") {
+      e.alarmCount++
+      alarmCount++
+    } else {
+      e.warningCount++
+      warningCount++
+    }
+    eqMap.set(key, e)
+  }
+
+  return {
+    total: events.length,
+    alarmCount,
+    warningCount,
+    rows: Array.from(eqMap.values()).sort((a, b) =>
+      a.equipmentCode.localeCompare(b.equipmentCode)
+    ),
+  }
+}
+
+// ─── 3. 비가동 시간 통계 ──────────────────────────────────────────────────────
+
+export type DowntimeStats = {
+  totalMinutes: number
+  eventCount: number
+  rows: Array<{
+    equipmentCode: string
+    equipmentName: string
+    stopMinutes: number
+    maintenanceMinutes: number
+    total: number
+  }>
+}
+
+async function fetchDowntimeStats(
+  tenantId: string,
+  f: EquipStatFilter
+): Promise<DowntimeStats> {
+  const { from, to } = parseDateRange(f)
+
+  const events = await prisma.equipmentEvent.findMany({
+    where: {
+      eventType: { in: ["STOP", "MAINTENANCE"] },
+      startedAt: { gte: from, lte: to },
+      equipment: {
+        tenantId,
+        ...(f.equipmentId ? { id: f.equipmentId } : {}),
+      },
+    },
+    select: {
+      eventType: true,
+      startedAt: true,
+      endedAt: true,
+      duration: true,
+      equipment: { select: { code: true, name: true } },
+    },
+  })
+
+  const eqMap = new Map<
+    string,
+    { equipmentCode: string; equipmentName: string; stopMinutes: number; maintenanceMinutes: number }
+  >()
+
+  let totalMinutes = 0
+
+  for (const ev of events) {
+    const mins =
+      ev.duration != null
+        ? ev.duration / 60
+        : ev.endedAt && ev.startedAt
+        ? (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
+        : 0
+
+    totalMinutes += mins
+    const key = ev.equipment.code
+    const e = eqMap.get(key) ?? {
+      equipmentCode: ev.equipment.code,
+      equipmentName: ev.equipment.name,
+      stopMinutes: 0,
+      maintenanceMinutes: 0,
+    }
+    if (ev.eventType === "STOP") e.stopMinutes += mins
+    else e.maintenanceMinutes += mins
+    eqMap.set(key, e)
+  }
+
+  return {
+    totalMinutes: Math.round(totalMinutes),
+    eventCount: events.length,
+    rows: Array.from(eqMap.values())
+      .map((e) => ({
+        ...e,
+        stopMinutes: Math.round(e.stopMinutes),
+        maintenanceMinutes: Math.round(e.maintenanceMinutes),
+        total: Math.round(e.stopMinutes + e.maintenanceMinutes),
+      }))
+      .sort((a, b) => b.total - a.total),
+  }
+}
+
+// ─── 4. 작업시간 통계 ─────────────────────────────────────────────────────────
+
+export type WorkTimeStats = {
+  totalHours: number | null
+  resultCount: number
+  rows: Array<{ date: string; hours: number; goodQty: number }>
+}
+
+async function fetchWorkTimeStats(
+  tenantId: string,
+  f: EquipStatFilter
+): Promise<WorkTimeStats> {
+  const { from, to } = parseDateRange(f)
+
+  const results = await prisma.productionResult.findMany({
+    where: {
+      startedAt: { gte: from, lte: to },
+      endedAt: { not: null },
+      workOrderOperation: {
+        workOrder: { tenantId },
+        ...(f.equipmentId ? { equipmentId: f.equipmentId } : {}),
+      },
+    },
+    select: { startedAt: true, endedAt: true, goodQty: true },
+  })
+
+  const dayMap = new Map<string, { hours: number; goodQty: number }>()
+  let totalHours = 0
+
+  for (const r of results) {
+    if (!r.startedAt || !r.endedAt) continue
+    const h = (r.endedAt.getTime() - r.startedAt.getTime()) / 3_600_000
+    totalHours += h
+    const date = r.startedAt.toISOString().slice(0, 10)
+    const e = dayMap.get(date) ?? { hours: 0, goodQty: 0 }
+    e.hours += h
+    e.goodQty += Number(r.goodQty)
+    dayMap.set(date, e)
+  }
+
+  const rows = Array.from(dayMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, v]) => ({
+      date,
+      hours: Math.round(v.hours * 10) / 10,
+      goodQty: Math.round(v.goodQty * 10) / 10,
+    }))
+
+  return {
+    totalHours: results.length > 0 ? Math.round(totalHours * 10) / 10 : null,
+    resultCount: results.length,
+    rows,
+  }
+}
+
+// ─── 5. 설비가동률 ────────────────────────────────────────────────────────────
+
+export type AvailabilityStats = {
+  avgRate: number | null
+  equipmentCount: number
+  rows: Array<{ code: string; name: string; runMinutes: number; rate: number | null }>
+}
+
+async function fetchAvailabilityStats(
+  tenantId: string,
+  f: EquipStatFilter
+): Promise<AvailabilityStats> {
+  const { from, to } = parseDateRange(f)
+  const totalMinutes = (to.getTime() - from.getTime()) / 60_000
+
+  const equipments = await prisma.equipment.findMany({
+    where: {
+      tenantId,
+      status: "ACTIVE",
+      ...(f.equipmentId ? { id: f.equipmentId } : {}),
+    },
+    select: {
+      code: true,
+      name: true,
+      events: {
+        where: {
+          eventType: "RUN",
+          startedAt: { gte: from, lte: to },
+        },
+        select: { startedAt: true, endedAt: true, duration: true },
+      },
+    },
+    orderBy: { code: "asc" },
+  })
+
+  if (equipments.length === 0) {
+    return { avgRate: null, equipmentCount: 0, rows: [] }
+  }
+
+  const rows = equipments.map((eq) => {
+    const runMinutes = eq.events.reduce((sum, ev) => {
+      if (ev.duration != null) return sum + ev.duration / 60
+      if (ev.startedAt && ev.endedAt)
+        return sum + (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
+      return sum
+    }, 0)
+    return {
+      code: eq.code,
+      name: eq.name,
+      runMinutes: Math.round(runMinutes),
+      rate: totalMinutes > 0 ? runMinutes / totalMinutes : null,
+    }
+  })
+
+  const withEvents = rows.filter((r) => r.runMinutes > 0)
+  const avgRate =
+    withEvents.length > 0
+      ? withEvents.reduce((s, r) => s + (r.rate ?? 0), 0) / withEvents.length
+      : null
+
+  return { avgRate, equipmentCount: equipments.length, rows }
+}
+
+// ─── 설비 목록 (필터용) ────────────────────────────────────────────────────────
+
+export type EquipmentOption = { id: string; code: string; name: string }
+
+export async function getEquipmentOptions(): Promise<EquipmentOption[]> {
+  const tenantId = await getTenantId()
+  return prisma.equipment.findMany({
+    where: { tenantId },
+    select: { id: true, code: true, name: true },
+    orderBy: { code: "asc" },
+  })
+}
+
+// ─── 전체 통계 집계 ───────────────────────────────────────────────────────────
+
+export type EquipmentStatisticsData = {
+  filter: EquipStatFilter
+  production: ProductionStats
+  errors: ErrorStats
+  downtime: DowntimeStats
+  workTime: WorkTimeStats
+  availability: AvailabilityStats
+}
+
+export async function getEquipmentStatisticsData(
+  filterOverride?: Partial<EquipStatFilter>
+): Promise<EquipmentStatisticsData> {
+  const tenantId = await getTenantId()
+  const defaults = defaultDateRange()
+  const filter: EquipStatFilter = {
+    from: filterOverride?.from ?? defaults.from,
+    to: filterOverride?.to ?? defaults.to,
+    equipmentId: filterOverride?.equipmentId,
+  }
+
+  const [production, errors, downtime, workTime, availability] = await Promise.all([
+    fetchProductionStats(tenantId, filter),
+    fetchErrorStats(tenantId, filter),
+    fetchDowntimeStats(tenantId, filter),
+    fetchWorkTimeStats(tenantId, filter),
+    fetchAvailabilityStats(tenantId, filter),
+  ])
+
+  return { filter, production, errors, downtime, workTime, availability }
+}

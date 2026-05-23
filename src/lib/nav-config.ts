@@ -159,22 +159,8 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-lms-check-status', parentId: 'nav-lms-equipment', label: '설비일상점검현황', icon: 'BarChart2', href: '/app/mes/equipment-check-status', displayOrder: 6, children: [] },
         ],
       },
-      // 3. 설비 통계분석
-      {
-        id: 'nav-lms-statistics',
-        parentId: 'section-lms',
-        label: '설비 통계분석',
-        icon: 'FileBarChart',
-        displayOrder: 30,
-        children: [
-          { id: 'nav-lms-stat-prod', parentId: 'nav-lms-statistics', label: '생산량', icon: 'BarChart2', href: '/app/lms/statistics/production', displayOrder: 1, comingSoon: true, children: [] },
-          { id: 'nav-lms-stat-capacity', parentId: 'nav-lms-statistics', label: '능력', icon: 'Activity', href: '/app/lms/statistics/capacity', displayOrder: 2, comingSoon: true, children: [] },
-          { id: 'nav-lms-stat-errors', parentId: 'nav-lms-statistics', label: '에러', icon: 'AlertTriangle', href: '/app/lms/statistics/errors', displayOrder: 3, comingSoon: true, children: [] },
-          { id: 'nav-lms-stat-energy', parentId: 'nav-lms-statistics', label: '전력', icon: 'Cpu', href: '/app/lms/statistics/energy', displayOrder: 4, comingSoon: true, children: [] },
-          { id: 'nav-lms-stat-downtime', parentId: 'nav-lms-statistics', label: '기계 비가동 시간', icon: 'CalendarDays', href: '/app/lms/statistics/downtime', displayOrder: 5, comingSoon: true, children: [] },
-          { id: 'nav-lms-stat-worktime', parentId: 'nav-lms-statistics', label: '작업 시간', icon: 'CalendarDays', href: '/app/lms/statistics/work-time', displayOrder: 6, comingSoon: true, children: [] },
-        ],
-      },
+      // 3. 설비 통계분석 (생산량/에러/비가동/작업시간/전력 통합 화면)
+      { id: 'nav-lms-statistics', parentId: 'section-lms', label: '설비 통계분석', icon: 'FileBarChart', href: '/app/mes/equipment-statistics', displayOrder: 30, children: [] },
       // 4. 설비연동 설정
       {
         id: 'nav-lms-integration',
