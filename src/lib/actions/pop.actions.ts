@@ -353,7 +353,35 @@ export async function startOperation(
   }
 }
 
-// ─── 5. 공정 상태 변경 + WorkOrder 상태 자동 갱신 ────────────────────────────
+// ─── 5. 오늘의 생산실적 조회 ──────────────────────────────────────────────────
+
+export async function getTodayProductionResults() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+
+  return prisma.productionResult.findMany({
+    where: {
+      startedAt: { gte: today, lt: tomorrow },
+    },
+    include: {
+      workOrderOperation: {
+        include: {
+          routingOperation: { select: { name: true } },
+          workOrder: {
+            include: {
+              item: { select: { name: true, code: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { startedAt: "desc" },
+  })
+}
+
+// ─── 6. 공정 상태 변경 + WorkOrder 상태 자동 갱신 ────────────────────────────
 
 export async function updateOperationStatus(
   operationId: string,
