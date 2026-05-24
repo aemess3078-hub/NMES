@@ -55,7 +55,7 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
   const rows = await prisma.inventoryBalance.findMany({
     include: {
       warehouse: { include: { site: true } },
-      item: true,
+      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
       lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [

@@ -289,6 +289,10 @@ export function IssueFormDialog({
 
           <div className="space-y-2">
             <div className="text-[14px] font-medium">출고 원자재 목록</div>
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+              현재 출고 가능한 LOT만 표시됩니다. LOT 미지정 재고는 LOT 추적성 기준상
+              출고 대상에서 제외되며, 관리자에게 재고 정리를 요청하세요.
+            </p>
 
             {pendingMaterials.length === 0 ? (
               <p className="py-2 text-[14px] text-muted-foreground">

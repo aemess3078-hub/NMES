@@ -63,11 +63,21 @@ export function getColumns(): ColumnDef<InventoryBalanceWithDetails>[] {
       ),
       cell: ({ row }) => {
         const lotNo = row.original.lot?.lotNo
-        return lotNo ? (
-          <span className="font-mono text-[13px] text-foreground">{lotNo}</span>
-        ) : (
-          <span className="text-[13px] text-muted-foreground">LOT 없음</span>
-        )
+        const isLotTracked = row.original.item.isLotTracked === true
+        if (lotNo) {
+          return <span className="font-mono text-[13px] text-foreground">{lotNo}</span>
+        }
+        if (isLotTracked) {
+          return (
+            <span className="inline-flex flex-col items-start">
+              <span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[12px] font-medium text-amber-800">
+                LOT 미지정
+              </span>
+              <span className="mt-0.5 text-[11px] text-amber-700">정리 필요</span>
+            </span>
+          )
+        }
+        return <span className="text-[13px] text-muted-foreground">LOT 미적용</span>
       },
     },
     {

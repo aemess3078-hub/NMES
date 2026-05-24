@@ -372,6 +372,13 @@ export function ShipmentFormSheet({
               </div>
             )}
 
+            {fields.length > 0 && selectedWarehouseId && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                현재 출하 가능한 완제품 LOT만 표시됩니다. LOT 미지정 완제품 재고는
+                의료기기 추적성 기준상 출하 대상에서 제외됩니다.
+              </p>
+            )}
+
             {fields.length > 0 && (
               <div className="overflow-hidden rounded-md border">
                 <div className="grid grid-cols-[1.1fr_1.4fr_90px_34px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
