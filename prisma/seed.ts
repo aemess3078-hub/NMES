@@ -2185,7 +2185,10 @@ async function main() {
   console.log('  [24/24] EngineeringChanges (ECN)');
   await seedECNs();
 
-  console.log('  [25/25] InventoryBalances');
+  console.log('  [25/26] Lots (LOT 관리 반제품 seed)');
+  await seedLots();
+
+  console.log('  [26/26] InventoryBalances');
   await seedInventoryBalances();
 
   console.log('\n✔ 시드 완료');
@@ -2216,7 +2219,43 @@ async function main() {
   console.log('  - InventoryBalance: 원자재 3건 / 반제품 2건 / 완제품 1건');
 }
 
+async function seedLots() {
+  // LOT 관리 반제품에 대해 seed Lot 레코드를 생성한다.
+  // @@unique([tenantId, lotNo]) 기반 upsert — 기존 row는 update:{} 로 유지.
+  //
+  // SF-FRAME-001: LOT-20260521-001 은 UI 자재입고로 이미 생성된 row 를 그대로 보존.
+  // SF-SHAFT-001: 기존 DB 에 존재하는 LOT-20260521-002 는 다른 품목 itemId 를 가지므로
+  //   재사용하지 않고, SF-SHAFT-001 전용 lotNo(LOT-SHAFT-20260524-001)를 신규 생성한다.
+
+  // SF-FRAME-001 — 기존 LOT 보존용 upsert (create 는 멱등성 목적, update 는 변경 없음)
+  await prisma.lot.upsert({
+    where: { tenantId_lotNo: { tenantId: IDS.tenant, lotNo: 'LOT-20260521-001' } },
+    create: {
+      id: 'lot-frame-20260521-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-semi-frame-001',
+      lotNo: 'LOT-20260521-001',
+      status: 'ACTIVE',
+    },
+    update: {},
+  })
+
+  // SF-SHAFT-001 전용 Lot — itemId 를 반드시 item-semi-shaft-001 로 고정
+  await prisma.lot.upsert({
+    where: { tenantId_lotNo: { tenantId: IDS.tenant, lotNo: 'LOT-SHAFT-20260524-001' } },
+    create: {
+      id: 'lot-shaft-20260524-001',
+      tenantId: IDS.tenant,
+      itemId: 'item-semi-shaft-001',
+      lotNo: 'LOT-SHAFT-20260524-001',
+      status: 'ACTIVE',
+    },
+    update: {},
+  })
+}
+
 async function seedInventoryBalances() {
+  // ── 1. lotId=null 기준 재고 (비 LOT 품목 + LOT 품목 벌크 수량) ──────────────
   const balances = [
     // 원자재 창고
     { itemId: 'item-raw-steel-001', warehouseId: 'wh-raw-001', qtyOnHand: 500,  qtyAvailable: 500  },
@@ -2258,6 +2297,97 @@ async function seedInventoryBalances() {
         },
       })
     }
+  }
+
+  // ── 2. LOT 연결 재고 (getLotStockByItems 대상: lotId != null) ─────────────
+  // seedLots() 에서 생성한 Lot을 lotNo 기준으로 조회하여 lotId를 동적 결정한다.
+  // SF-FRAME-001: UI 자재입고로 생성된 wh-raw-001 row(LOT-20260521-001, qty=499)가
+  //   이미 정상 존재하므로 seed 에서 추가 row 를 만들지 않는다(중복 드롭다운 방지).
+  // SF-SHAFT-001: 전용 lotNo(LOT-SHAFT-20260524-001)로 생성한 Lot 을 반제품 창고에 연결.
+  const lotBalances: Array<{
+    lotNo: string
+    itemId: string
+    warehouseId: string
+    qtyOnHand: number
+    qtyAvailable: number
+  }> = [
+    // SF-SHAFT-001 전용 LOT — 반제품 창고
+    {
+      lotNo: 'LOT-SHAFT-20260524-001',
+      itemId: 'item-semi-shaft-001',
+      warehouseId: 'wh-semi-001',
+      qtyOnHand: 60,
+      qtyAvailable: 60,
+    },
+  ]
+
+  for (const b of lotBalances) {
+    const lot = await prisma.lot.findUnique({
+      where: { tenantId_lotNo: { tenantId: IDS.tenant, lotNo: b.lotNo } },
+    })
+    if (!lot) {
+      console.warn(`  [seedInventoryBalances] Lot not found for lotNo=${b.lotNo}, skipping.`)
+      continue
+    }
+
+    const existing = await prisma.inventoryBalance.findFirst({
+      where: {
+        tenantId: IDS.tenant,
+        itemId: b.itemId,
+        warehouseId: b.warehouseId,
+        lotId: lot.id,
+      },
+    })
+
+    if (!existing) {
+      await prisma.inventoryBalance.create({
+        data: {
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          itemId: b.itemId,
+          warehouseId: b.warehouseId,
+          lotId: lot.id,
+          qtyOnHand: b.qtyOnHand,
+          qtyAvailable: b.qtyAvailable,
+          qtyHold: 0,
+        },
+      })
+    }
+  }
+
+  // ── 3. 과거 seed 실행에서 생긴 불필요한 LOT 연결 row 정리 ────────────────────
+  // 아래 두 row 는 이전 seed 실행 시 의도치 않게 생성된 잔재다.
+  // 이후 seed 재실행에서도 멱등하게 정리되도록 deleteMany 로 처리한다.
+
+  // SF-SHAFT-001 × LOT-20260521-002: Lot.itemId 가 item-semi-shaft-001 이 아닌
+  // 다른 품목을 가리키는 불일치 row — 삭제
+  const staleShaftLot = await prisma.lot.findUnique({
+    where: { tenantId_lotNo: { tenantId: IDS.tenant, lotNo: 'LOT-20260521-002' } },
+  })
+  if (staleShaftLot && staleShaftLot.itemId !== 'item-semi-shaft-001') {
+    await prisma.inventoryBalance.deleteMany({
+      where: {
+        tenantId: IDS.tenant,
+        itemId: 'item-semi-shaft-001',
+        lotId: staleShaftLot.id,
+      },
+    })
+  }
+
+  // SF-FRAME-001 × wh-semi-001 lotId row: 이전 seed 가 중복 추가한 row — 삭제
+  // wh-raw-001 의 기존 정상 row(LOT-20260521-001, qty=499)만 남긴다.
+  const frameLot = await prisma.lot.findUnique({
+    where: { tenantId_lotNo: { tenantId: IDS.tenant, lotNo: 'LOT-20260521-001' } },
+  })
+  if (frameLot) {
+    await prisma.inventoryBalance.deleteMany({
+      where: {
+        tenantId: IDS.tenant,
+        itemId: 'item-semi-frame-001',
+        warehouseId: 'wh-semi-001',
+        lotId: frameLot.id,
+      },
+    })
   }
 }
 
