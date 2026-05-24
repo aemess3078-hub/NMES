@@ -67,6 +67,25 @@ export type TraceabilityShipment = {
   qty: number
 }
 
+export type TraceabilityWipMovement = {
+  id: string
+  wipUnitId: string
+  movementType: string
+  qty: number
+  sourceType: string | null
+  sourceId: string | null
+  note: string | null
+  createdAt: string
+  fromOperationId: string | null
+  toOperationId: string | null
+  fromOperationName: string | null
+  toOperationName: string | null
+  fromOperationSeq: number | null
+  toOperationSeq: number | null
+  fromWorkCenterName: string | null
+  toWorkCenterName: string | null
+}
+
 export type ManufacturingTraceability = {
   manufacturingNo: string
   workOrder: {
@@ -88,6 +107,7 @@ export type ManufacturingTraceability = {
   packaging: TraceabilityPackaging
   finishedGoodsReceipt: TraceabilityPackaging
   shipments: TraceabilityShipment[]
+  wipMovements: TraceabilityWipMovement[]
 }
 
 export async function getManufacturingTraceability(
@@ -150,6 +170,7 @@ export async function getManufacturingTraceability(
       packaging: null,
       finishedGoodsReceipt: null,
       shipments: [],
+      wipMovements: [],
     }
   }
 
@@ -264,6 +285,53 @@ export async function getManufacturingTraceability(
     }))
   }
 
+  // 재공(WIP) 이동 이력 — 작업지시에 속한 WipUnit의 WipMovement 평탄화
+  const wipUnits = await prisma.wipUnit.findMany({
+    where: { tenantId, workOrderId: workOrder.id },
+    include: {
+      movements: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        include: {
+          fromOperation: {
+            include: { routingOperation: { select: { name: true } } },
+          },
+          toOperation: {
+            include: { routingOperation: { select: { name: true } } },
+          },
+          fromWorkCenter: { select: { name: true } },
+          toWorkCenter: { select: { name: true } },
+        },
+      },
+    },
+  })
+
+  const wipMovements: TraceabilityWipMovement[] = wipUnits
+    .flatMap((wu) =>
+      wu.movements.map((m) => ({
+        id: m.id,
+        wipUnitId: m.wipUnitId,
+        movementType: m.movementType,
+        qty: Number(m.qty),
+        sourceType: m.sourceType,
+        sourceId: m.sourceId,
+        note: m.note,
+        createdAt: m.createdAt.toISOString(),
+        fromOperationId: m.fromOperationId,
+        toOperationId: m.toOperationId,
+        fromOperationName: m.fromOperation?.routingOperation.name ?? null,
+        toOperationName: m.toOperation?.routingOperation.name ?? null,
+        fromOperationSeq: m.fromOperation?.seq ?? null,
+        toOperationSeq: m.toOperation?.seq ?? null,
+        fromWorkCenterName: m.fromWorkCenter?.name ?? null,
+        toWorkCenterName: m.toWorkCenter?.name ?? null,
+      })),
+    )
+    .sort((a, b) => {
+      const dateCompare = a.createdAt.localeCompare(b.createdAt)
+      if (dateCompare !== 0) return dateCompare
+      return a.id.localeCompare(b.id)
+    })
+
   return {
     manufacturingNo: trimmed,
     workOrder: {
@@ -285,6 +353,7 @@ export async function getManufacturingTraceability(
     packaging: packagingInfo,
     finishedGoodsReceipt: packagingInfo,
     shipments,
+    wipMovements,
   }
 }
 

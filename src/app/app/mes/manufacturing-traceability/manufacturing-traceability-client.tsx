@@ -9,6 +9,8 @@ import {
   ShieldCheck,
   PackagePlus,
   Truck,
+  History,
+  ArrowRight,
   type LucideProps,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -50,6 +52,23 @@ const SHIPMENT_STATUS: Record<string, { label: string; className: string }> = {
   CONFIRMED: { label: "확정", className: "bg-blue-100 text-blue-700" },
   SHIPPED: { label: "출하", className: "bg-green-100 text-green-800" },
   CANCELLED: { label: "취소", className: "bg-red-100 text-red-700" },
+}
+
+const WIP_MOVEMENT_TYPE: Record<string, { label: string; className: string }> = {
+  CREATED: { label: "WIP 생성", className: "bg-sky-100 text-sky-700" },
+  STARTED: { label: "작업시작", className: "bg-blue-100 text-blue-700" },
+  MOVED: { label: "공정이동", className: "bg-indigo-100 text-indigo-700" },
+  HOLD: { label: "보류", className: "bg-amber-100 text-amber-800" },
+  RELEASED: { label: "보류해제", className: "bg-emerald-100 text-emerald-700" },
+  SPLIT: { label: "분할", className: "bg-purple-100 text-purple-700" },
+  MERGE: { label: "병합", className: "bg-purple-100 text-purple-700" },
+  DEFECT: { label: "불량", className: "bg-red-100 text-red-700" },
+  REWORK: { label: "재작업", className: "bg-orange-100 text-orange-700" },
+  SCRAP: { label: "폐기", className: "bg-rose-100 text-rose-700" },
+  OUTSOURCED: { label: "외주출고", className: "bg-cyan-100 text-cyan-700" },
+  RETURNED: { label: "외주입고", className: "bg-cyan-100 text-cyan-700" },
+  COMPLETED: { label: "완료", className: "bg-green-100 text-green-800" },
+  ADJUSTED: { label: "조정", className: "bg-slate-100 text-slate-700" },
 }
 
 function formatDate(value: Date | string | null | undefined): string {
@@ -286,6 +305,62 @@ export function ManufacturingTraceabilityClient({
                       <td className="py-2.5 text-[13px] text-muted-foreground">{formatDateTime(lot.issuedAt)}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          <Section
+            icon={History}
+            title="재공 이동 이력"
+            empty={result.wipMovements.length === 0}
+            emptyText="재공 이동 이력이 없습니다."
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-[14px]">
+                <thead>
+                  <tr className="border-b">
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">일시</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">구분</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">이동</th>
+                    <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">수량</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">출처</th>
+                    <th className="pb-2 text-left text-[13px] font-medium text-muted-foreground">비고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.wipMovements.map((movement) => {
+                    const typeConfig = WIP_MOVEMENT_TYPE[movement.movementType]
+                    const fromLabel = movement.fromOperationName
+                      ? displayProcessName(movement.fromOperationName)
+                      : movement.fromWorkCenterName ?? "-"
+                    const toLabel = movement.toOperationName
+                      ? displayProcessName(movement.toOperationName)
+                      : movement.toWorkCenterName
+                        ?? (movement.movementType === "COMPLETED" ? "완료" : "-")
+                    return (
+                      <tr key={movement.id} className="border-b last:border-0 hover:bg-slate-50">
+                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">{formatDateTime(movement.createdAt)}</td>
+                        <td className="py-2.5 pr-4">
+                          <span className={`rounded-full px-2 py-0.5 text-[13px] font-medium ${typeConfig?.className ?? "bg-slate-100 text-slate-700"}`}>
+                            {typeConfig?.label ?? movement.movementType}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <div className="flex items-center gap-1.5 text-[13px]">
+                            <span className="text-muted-foreground">{fromLabel}</span>
+                            <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                            <span className="font-medium text-foreground">{toLabel}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4 text-right">{formatNumber(movement.qty)}</td>
+                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">
+                          {movement.sourceType ?? "-"}
+                        </td>
+                        <td className="py-2.5 text-[13px] text-muted-foreground">{movement.note ?? "-"}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
