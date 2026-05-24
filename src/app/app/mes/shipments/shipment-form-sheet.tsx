@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
@@ -93,13 +93,6 @@ export function ShipmentFormSheet({
   const selectedOrder = salesOrders.find((so) => so.id === selectedOrderId)
   const watchedItemIdsKey = watchedItems.map((item) => item.itemId).join(",")
   const watchedItemCount = watchedItems.length
-
-  const selectedLotByIndex = useMemo(() => {
-    return watchedItems.map((item) => {
-      if (!item?.lotId) return null
-      return availableLotsByItem[item.itemId]?.find((lot) => lot.lotId === item.lotId) ?? null
-    })
-  }, [availableLotsByItem, watchedItems])
 
   useEffect(() => {
     if (!open) return
@@ -392,7 +385,10 @@ export function ShipmentFormSheet({
                   const soItem = selectedOrder?.items.find((item) => item.id === field.salesOrderItemId)
                   const remainingQty = soItem ? Number(soItem.qty) - Number(soItem.shippedQty) : 0
                   const lots = availableLotsByItem[field.itemId] ?? []
-                  const selectedLot = selectedLotByIndex[index]
+                  const currentLotId = watchedItems[index]?.lotId
+                  const selectedLot = currentLotId
+                    ? (availableLotsByItem[field.itemId]?.find((lot) => lot.lotId === currentLotId) ?? null)
+                    : null
                   const maxQty = selectedLot ? Math.min(remainingQty, selectedLot.qtyAvailable) : remainingQty
 
                   return (
@@ -419,7 +415,17 @@ export function ShipmentFormSheet({
                           <FormItem className="pr-2">
                             <Select
                               value={lotField.value || undefined}
-                              onValueChange={lotField.onChange}
+                              onValueChange={(selectedLotId) => {
+                                lotField.onChange(selectedLotId)
+                                const lot = availableLotsByItem[field.itemId]?.find((l) => l.lotId === selectedLotId)
+                                if (lot && lot.qtyAvailable > 0) {
+                                  const effectiveMax = Math.min(remainingQty, lot.qtyAvailable)
+                                  const currentQty = form.getValues(`items.${index}.qty`)
+                                  if (!currentQty || typeof currentQty !== "number" || currentQty <= 0 || currentQty > effectiveMax) {
+                                    form.setValue(`items.${index}.qty`, effectiveMax, { shouldValidate: true, shouldDirty: true })
+                                  }
+                                }
+                              }}
                               disabled={!selectedWarehouseId || isLotLoading || lots.length === 0}
                             >
                               <SelectTrigger className="h-9 text-[13px]">
@@ -475,6 +481,11 @@ export function ShipmentFormSheet({
                                 qtyField.onChange(next)
                               }}
                             />
+                            {selectedLot && (
+                              <p className="text-[12px] text-muted-foreground text-right">
+                                선택 LOT 기준 최대 출하 가능 수량: {maxQty.toLocaleString()} EA
+                              </p>
+                            )}
                             <FormMessage className="text-[12px]" />
                           </FormItem>
                         )}
@@ -498,9 +509,9 @@ export function ShipmentFormSheet({
             <FormField
               control={form.control}
               name="items"
-              render={() => (
+              render={({ fieldState }) => (
                 <FormItem>
-                  <FormMessage className="text-[13px]" />
+                  {fieldState.error?.message && <FormMessage className="text-[13px]" />}
                 </FormItem>
               )}
             />
