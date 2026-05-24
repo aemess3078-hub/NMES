@@ -73,11 +73,21 @@ export type TraceabilityFinishedGoodsReceipt = {
 }
 
 export type TraceabilityShipment = {
+  shipmentId: string
   shipmentNo: string
+  shipmentStatus: string
   status: string
   plannedDate: string
   shippedDate: string | null
+  salesOrderNo: string | null
+  customerName: string | null
+  itemCode: string
+  itemName: string
+  lotId: string | null
+  lotNo: string | null
   qty: number
+  warehouseName: string | null
+  inventoryTransactionNo: string | null
 }
 
 export type TraceabilityWipMovement = {
@@ -326,22 +336,58 @@ export async function getManufacturingTraceability(
       include: {
         shipmentOrder: {
           select: {
+            id: true,
             shipmentNo: true,
             status: true,
             plannedDate: true,
             shippedDate: true,
+            warehouse: { select: { name: true } },
+            salesOrder: {
+              select: {
+                orderNo: true,
+                customer: { select: { name: true } },
+              },
+            },
           },
         },
+        item: { select: { code: true, name: true } },
+        lot: { select: { id: true, lotNo: true } },
       },
       orderBy: { shipmentOrder: { plannedDate: "asc" } },
     })
 
+    const shipmentItemIds = shipmentItems.map((si) => si.id)
+    const shipmentTxs = shipmentItemIds.length > 0
+      ? await prisma.inventoryTransaction.findMany({
+          where: {
+            tenantId,
+            txType: "ISSUE",
+            refType: "SHIPMENT_ITEM",
+            refId: { in: shipmentItemIds },
+          },
+          select: { refId: true, lotId: true, txNo: true },
+        })
+      : []
+    const shipmentTxByItemId = new Map(
+      shipmentTxs.map((tx) => [`${tx.refId}:${tx.lotId ?? "NO_LOT"}`, tx.txNo]),
+    )
+
     shipments = shipmentItems.map((si) => ({
+      shipmentId: si.shipmentOrder.id,
       shipmentNo: si.shipmentOrder.shipmentNo,
+      shipmentStatus: si.shipmentOrder.status,
       status: si.shipmentOrder.status,
       plannedDate: si.shipmentOrder.plannedDate.toISOString(),
       shippedDate: si.shipmentOrder.shippedDate?.toISOString() ?? null,
+      salesOrderNo: si.shipmentOrder.salesOrder.orderNo,
+      customerName: si.shipmentOrder.salesOrder.customer.name,
+      itemCode: si.item.code,
+      itemName: si.item.name,
+      lotId: si.lot?.id ?? null,
+      lotNo: si.lot?.lotNo ?? null,
       qty: Number(si.qty),
+      warehouseName: si.shipmentOrder.warehouse?.name ?? null,
+      inventoryTransactionNo: shipmentTxByItemId.get(`${si.id}:${si.lotId ?? "NO_LOT"}`) ?? null,
     }))
   }
 

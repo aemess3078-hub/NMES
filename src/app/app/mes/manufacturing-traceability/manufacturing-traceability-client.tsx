@@ -523,32 +523,61 @@ export function ManufacturingTraceabilityClient({
             icon={Truck}
             title="출고 이력"
             empty={result.shipments.length === 0}
+            emptyText="출고 이력이 없습니다."
           >
             <div className="overflow-x-auto">
               <table className="w-full text-[14px]">
                 <thead>
                   <tr className="border-b">
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">출고일시</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">출하번호</th>
-                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">상태</th>
-                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">납품예정일</th>
-                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">실제출하일</th>
-                    <th className="pb-2 text-right text-[13px] font-medium text-muted-foreground">수량</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">수주번호</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">고객</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">완제품 LOT</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">품목</th>
+                    <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">수량</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">출고창고</th>
+                    <th className="pb-2 text-left text-[13px] font-medium text-muted-foreground">출고번호</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.shipments.map((shipment, index) => {
-                    const statusConfig = SHIPMENT_STATUS[shipment.status]
+                    const statusConfig = SHIPMENT_STATUS[shipment.shipmentStatus ?? shipment.status]
                     return (
                       <tr key={`${shipment.shipmentNo}-${index}`} className="border-b last:border-0 hover:bg-slate-50">
-                        <td className="py-2.5 pr-4 font-mono text-[13px]">{shipment.shipmentNo}</td>
-                        <td className="py-2.5 pr-4">
-                          <span className={`rounded-full px-2 py-0.5 text-[13px] font-medium ${statusConfig?.className ?? "bg-slate-100 text-slate-700"}`}>
-                            {statusConfig?.label ?? shipment.status}
-                          </span>
+                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">
+                          {formatDateTime(shipment.shippedDate ?? shipment.plannedDate)}
                         </td>
-                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">{formatDate(shipment.plannedDate)}</td>
-                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">{formatDate(shipment.shippedDate)}</td>
-                        <td className="py-2.5 text-right font-medium">{formatNumber(shipment.qty)}</td>
+                        <td className="py-2.5 pr-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="font-mono text-[13px]">{shipment.shipmentNo}</span>
+                            <span className={`w-fit rounded-full px-2 py-0.5 text-[13px] font-medium ${statusConfig?.className ?? "bg-slate-100 text-slate-700"}`}>
+                              {statusConfig?.label ?? shipment.status}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4 font-mono text-[13px] text-muted-foreground">
+                          {shipment.salesOrderNo ?? "-"}
+                        </td>
+                        <td className="py-2.5 pr-4 text-[13px]">{shipment.customerName ?? "-"}</td>
+                        <td className="py-2.5 pr-4 font-mono text-[13px]">
+                          {shipment.lotNo ? (
+                            <span className="text-blue-700">{shipment.lotNo}</span>
+                          ) : (
+                            <span className="text-muted-foreground">LOT 미등록</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <div className="flex flex-col">
+                            <span className="font-mono text-[13px]">{shipment.itemCode}</span>
+                            <span className="text-[13px] text-muted-foreground">{shipment.itemName}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4 text-right font-medium">{formatNumber(shipment.qty)}</td>
+                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">{shipment.warehouseName ?? "-"}</td>
+                        <td className="py-2.5 font-mono text-[13px] text-muted-foreground">
+                          {shipment.inventoryTransactionNo ?? "-"}
+                        </td>
                       </tr>
                     )
                   })}

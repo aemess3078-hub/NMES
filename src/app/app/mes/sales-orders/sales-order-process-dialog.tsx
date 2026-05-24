@@ -27,6 +27,7 @@ import {
 } from "@/lib/actions/sales-order.actions"
 import {
   createShipment,
+  getAvailableFinishedGoodsLots,
   getWarehouses,
 } from "@/lib/actions/shipment.actions"
 import type { SalesOrderRow } from "./columns"
@@ -78,15 +79,32 @@ export function SalesOrderProcessDialog({
       return
     }
     startTransition(async () => {
-      const res = await createShipment(tenantId, siteId, {
+      const availableLotsByItem = await getAvailableFinishedGoodsLots(
+        tenantId,
+        siteId,
+        warehouseId,
+        shippableItems.map((item) => item.itemId),
+      )
+      const shipmentItems = []
+      for (const item of shippableItems) {
+        const lots = availableLotsByItem[item.itemId] ?? []
+        if (lots.length !== 1 || lots[0].qtyAvailable < item.shippableQty) {
+          alert("완제품 LOT를 명확히 선택해야 합니다. 출하관리 화면에서 LOT를 선택해 출하를 등록하세요.")
+          return
+        }
+        shipmentItems.push({
+          salesOrderItemId: item.salesOrderItemId,
+          itemId: item.itemId,
+          qty: item.shippableQty,
+          lotId: lots[0].lotId,
+        })
+      }
+
+      await createShipment(tenantId, siteId, {
         salesOrderId: salesOrder.id,
         plannedDate: new Date(),
         warehouseId,
-        items: shippableItems.map((s) => ({
-          salesOrderItemId: s.salesOrderItemId,
-          itemId: s.itemId,
-          qty: s.shippableQty,
-        })),
+        items: shipmentItems,
       })
       router.refresh()
       onOpenChange(false)

@@ -2,7 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { ShipmentStatus } from "@prisma/client"
-import { MoreHorizontal, CheckCircle, Trash2 } from "lucide-react"
+import { CheckCircle, MoreHorizontal, Trash2 } from "lucide-react"
 import { format } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -27,18 +27,22 @@ export type ShipmentRow = {
   plannedDate: Date | string
   shippedDate?: Date | string | null
   deliveredDate?: Date | string | null
-  items: { qty: number | string }[]
+  items: {
+    qty: number | string
+    lotId?: string | null
+    lot?: { id: string; lotNo: string } | null
+  }[]
 }
 
 const STATUS_CONFIG: Record<
   ShipmentStatus,
   { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
 > = {
-  PLANNED:   { label: "출하예정", variant: "secondary" },
-  PICKED:    { label: "피킹완료", variant: "outline" },
-  SHIPPED:   { label: "출하완료", variant: "default" },
+  PLANNED: { label: "출하예정", variant: "secondary" },
+  PICKED: { label: "피킹완료", variant: "outline" },
+  SHIPPED: { label: "출하완료", variant: "default" },
   DELIVERED: { label: "배송완료", variant: "default" },
-  CANCELLED: { label: "취소",     variant: "destructive" },
+  CANCELLED: { label: "취소", variant: "destructive" },
 }
 
 export function getColumns(
@@ -51,14 +55,14 @@ export function getColumns(
       header: ({ table }) => (
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
           aria-label="전체 선택"
         />
       ),
       cell: ({ row }) => (
         <Checkbox
           checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(!!v)}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
           aria-label="행 선택"
         />
       ),
@@ -92,6 +96,31 @@ export function getColumns(
       ),
     },
     {
+      id: "lotSummary",
+      header: "완제품 LOT",
+      accessorFn: (row) => row.items.map((item) => item.lot?.lotNo ?? "").join(" "),
+      cell: ({ row }) => {
+        const lotNos = Array.from(
+          new Set(row.original.items.map((item) => item.lot?.lotNo).filter(Boolean)),
+        )
+        if (lotNos.length === 0) {
+          return <span className="text-[13px] text-muted-foreground">-</span>
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {lotNos.slice(0, 2).map((lotNo) => (
+              <span key={lotNo} className="font-mono text-[13px] text-blue-700">
+                {lotNo}
+              </span>
+            ))}
+            {lotNos.length > 2 ? (
+              <span className="text-[13px] text-muted-foreground">+{lotNos.length - 2}</span>
+            ) : null}
+          </div>
+        )
+      },
+    },
+    {
       accessorKey: "plannedDate",
       header: "출하예정일",
       cell: ({ row }) => (
@@ -104,11 +133,11 @@ export function getColumns(
       accessorKey: "shippedDate",
       header: "출하일",
       cell: ({ row }) => {
-        const d = row.original.shippedDate
-        if (!d) return <span className="text-[13px] text-muted-foreground">—</span>
+        const date = row.original.shippedDate
+        if (!date) return <span className="text-[13px] text-muted-foreground">-</span>
         return (
           <span className="text-[13px] font-medium">
-            {format(new Date(d), "yyyy-MM-dd")}
+            {format(new Date(date), "yyyy-MM-dd")}
           </span>
         )
       },
@@ -124,7 +153,7 @@ export function getColumns(
       id: "totalQty",
       header: "총수량",
       cell: ({ row }) => {
-        const total = row.original.items.reduce((s, i) => s + Number(i.qty), 0)
+        const total = row.original.items.reduce((sum, item) => sum + Number(item.qty), 0)
         return <span className="text-[13px]">{total.toLocaleString()}</span>
       },
     },
@@ -132,10 +161,10 @@ export function getColumns(
       accessorKey: "status",
       header: "상태",
       cell: ({ row }) => {
-        const cfg = STATUS_CONFIG[row.original.status]
+        const config = STATUS_CONFIG[row.original.status]
         return (
-          <Badge variant={cfg.variant} className="text-[12px]">
-            {cfg.label}
+          <Badge variant={config.variant} className="text-[12px]">
+            {config.label}
           </Badge>
         )
       },
