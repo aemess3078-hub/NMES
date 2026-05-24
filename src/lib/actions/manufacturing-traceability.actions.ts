@@ -59,6 +59,19 @@ export type TraceabilityPackaging = {
   receiptAt: string
 } | null
 
+export type TraceabilityFinishedGoodsReceipt = {
+  id: string
+  receiptAt: string
+  itemCode: string
+  itemName: string
+  lotId: string | null
+  lotNo: string | null
+  receiptQty: number
+  warehouseName: string | null
+  locationName: string | null
+  inventoryTransactionNo: string | null
+}
+
 export type TraceabilityShipment = {
   shipmentNo: string
   status: string
@@ -104,8 +117,11 @@ export type ManufacturingTraceability = {
   materialLots: TraceabilityMaterialLot[]
   processHistory: TraceabilityProcessHistory[]
   inspections: TraceabilityInspection[]
+  // @deprecated — finishedGoodsReceipts 배열을 사용하세요. 호환성 위해 마지막 1건 유지.
   packaging: TraceabilityPackaging
+  // @deprecated — finishedGoodsReceipts 배열을 사용하세요. 호환성 위해 마지막 1건 유지.
   finishedGoodsReceipt: TraceabilityPackaging
+  finishedGoodsReceipts: TraceabilityFinishedGoodsReceipt[]
   shipments: TraceabilityShipment[]
   wipMovements: TraceabilityWipMovement[]
 }
@@ -155,6 +171,8 @@ export async function getManufacturingTraceability(
         include: {
           warehouse: { select: { name: true } },
           location: { select: { name: true } },
+          item: { select: { code: true, name: true } },
+          lot: { select: { id: true, lotNo: true } },
         },
       },
     },
@@ -169,6 +187,7 @@ export async function getManufacturingTraceability(
       inspections: [],
       packaging: null,
       finishedGoodsReceipt: null,
+      finishedGoodsReceipts: [],
       shipments: [],
       wipMovements: [],
     }
@@ -239,7 +258,7 @@ export async function getManufacturingTraceability(
     })),
   )
 
-  // 완제품 입고 (= 포장/입고 정보의 출처) — 최근 1건을 대표값으로
+  // 완제품 입고 (= 포장/입고 정보의 출처) — 최근 1건을 대표값으로 (deprecated 호환)
   const latestReceipt = workOrder.finishedGoodsReceipts[workOrder.finishedGoodsReceipts.length - 1]
   const packagingInfo: TraceabilityPackaging = latestReceipt
     ? {
@@ -249,6 +268,47 @@ export async function getManufacturingTraceability(
         receiptAt: latestReceipt.receiptAt.toISOString(),
       }
     : null
+
+  // 완제품 입고 다건 — 각 입고건의 InventoryTransaction(RECEIPT, refType=WORK_ORDER) 번호 매칭
+  let receiptInventoryTxByLotId = new Map<string, string>()
+  const receiptLotIds = workOrder.finishedGoodsReceipts
+    .map((r) => r.lotId)
+    .filter((id): id is string => id != null)
+  if (receiptLotIds.length > 0) {
+    const receiptTxs = await prisma.inventoryTransaction.findMany({
+      where: {
+        tenantId,
+        txType: "RECEIPT",
+        refType: "WORK_ORDER",
+        refId: workOrder.id,
+        lotId: { in: receiptLotIds },
+      },
+      select: { lotId: true, txNo: true, txAt: true },
+      orderBy: { txAt: "asc" },
+    })
+    // lotId 당 첫 입고 트랜잭션 번호 채택 (1건 입고 = 1 LOT 발번 정책 기준)
+    receiptInventoryTxByLotId = new Map(
+      receiptTxs
+        .filter((t): t is typeof t & { lotId: string } => t.lotId != null)
+        .map((t) => [t.lotId, t.txNo]),
+    )
+  }
+
+  const finishedGoodsReceiptsList: TraceabilityFinishedGoodsReceipt[] =
+    workOrder.finishedGoodsReceipts.map((r) => ({
+      id: r.id,
+      receiptAt: r.receiptAt.toISOString(),
+      itemCode: r.item.code,
+      itemName: r.item.name,
+      lotId: r.lot?.id ?? null,
+      lotNo: r.lot?.lotNo ?? null,
+      receiptQty: Number(r.receiptQty),
+      warehouseName: r.warehouse?.name ?? null,
+      locationName: r.location?.name ?? null,
+      inventoryTransactionNo: r.lot?.id
+        ? receiptInventoryTxByLotId.get(r.lot.id) ?? null
+        : null,
+    }))
 
   // 출고: 같은 LOT가 출고된 ShipmentItem 검색
   // 작업지시의 완제품 입고 LOT를 거쳐 추적
@@ -352,6 +412,7 @@ export async function getManufacturingTraceability(
     inspections,
     packaging: packagingInfo,
     finishedGoodsReceipt: packagingInfo,
+    finishedGoodsReceipts: finishedGoodsReceiptsList,
     shipments,
     wipMovements,
   }

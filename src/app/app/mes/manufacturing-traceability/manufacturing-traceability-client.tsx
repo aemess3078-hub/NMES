@@ -469,29 +469,54 @@ export function ManufacturingTraceabilityClient({
 
           <Section
             icon={PackagePlus}
-            title="포장 / 완제품 입고"
-            empty={!result.finishedGoodsReceipt}
+            title="완제품 입고 이력"
+            empty={result.finishedGoodsReceipts.length === 0}
+            emptyText="완제품 입고 이력이 없습니다."
           >
-            {result.finishedGoodsReceipt && (
-              <div className="grid grid-cols-1 gap-x-8 gap-y-4 text-[14px] sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <span className="mb-0.5 block text-[13px] text-muted-foreground">입고 창고</span>
-                  <span>{result.finishedGoodsReceipt.warehouseName ?? "-"}</span>
-                </div>
-                <div>
-                  <span className="mb-0.5 block text-[13px] text-muted-foreground">로케이션</span>
-                  <span>{result.finishedGoodsReceipt.locationName ?? "-"}</span>
-                </div>
-                <div>
-                  <span className="mb-0.5 block text-[13px] text-muted-foreground">입고수량</span>
-                  <span className="font-semibold">{formatNumber(result.finishedGoodsReceipt.receiptQty)}</span>
-                </div>
-                <div>
-                  <span className="mb-0.5 block text-[13px] text-muted-foreground">입고일시</span>
-                  <span>{formatDateTime(result.finishedGoodsReceipt.receiptAt)}</span>
-                </div>
-              </div>
-            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-[14px]">
+                <thead>
+                  <tr className="border-b">
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">입고일시</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">완제품 LOT</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">품목</th>
+                    <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">수량</th>
+                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">창고 / 로케이션</th>
+                    <th className="pb-2 text-left text-[13px] font-medium text-muted-foreground">입고번호</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.finishedGoodsReceipts.map((receipt) => (
+                    <tr key={receipt.id} className="border-b last:border-0 hover:bg-slate-50">
+                      <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">{formatDateTime(receipt.receiptAt)}</td>
+                      <td className="py-2.5 pr-4 font-mono text-[13px]">
+                        {receipt.lotNo ? (
+                          <span className="text-blue-700">{receipt.lotNo}</span>
+                        ) : (
+                          <span className="text-muted-foreground">LOT 미등록</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <div className="flex flex-col">
+                          <span className="font-mono text-[13px]">{receipt.itemCode}</span>
+                          <span className="text-[13px] text-muted-foreground">{receipt.itemName}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 pr-4 text-right font-semibold">{formatNumber(receipt.receiptQty)}</td>
+                      <td className="py-2.5 pr-4 text-[13px]">
+                        <div className="flex flex-col">
+                          <span>{receipt.warehouseName ?? "-"}</span>
+                          <span className="text-muted-foreground">{receipt.locationName ?? "-"}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 font-mono text-[13px] text-muted-foreground">
+                        {receipt.inventoryTransactionNo ?? "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Section>
 
           <Section
