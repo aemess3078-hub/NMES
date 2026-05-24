@@ -2252,21 +2252,42 @@ async function seedLots() {
     },
     update: {},
   })
+
+  // ── Phase 2-D-1: LOT 미지정 데드재고 cleanup 을 위한 시작 LOT 추가 ─────────
+  // RM-STEEL-001, RM-ALUM-001, SF-FRAME-001(WH-SEMI 별도), FG-ASSY-001 에 대해
+  // demo 환경의 초기 보유 재고를 표현할 시작 LOT 를 생성한다.
+  // seedInventoryBalances Part 2 에서 이 LOT 들에 lotId 가 연결된 재고 row 를 생성한다.
+  const startLots: Array<{ id: string; itemId: string; lotNo: string }> = [
+    { id: 'lot-steel-20260301-001', itemId: 'item-raw-steel-001',  lotNo: 'LOT-STEEL-20260301-001' },
+    { id: 'lot-alum-20260301-001',  itemId: 'item-raw-alum-001',   lotNo: 'LOT-ALUM-20260301-001'  },
+    { id: 'lot-frame-20260301-001-semi', itemId: 'item-semi-frame-001', lotNo: 'LOT-FRAME-20260301-001' },
+    { id: 'lot-fg-20260301-001',    itemId: 'item-fg-assy-001',    lotNo: 'LOT-FG-20260301-001'    },
+  ]
+  for (const l of startLots) {
+    await prisma.lot.upsert({
+      where: { tenantId_lotNo: { tenantId: IDS.tenant, lotNo: l.lotNo } },
+      create: {
+        id: l.id,
+        tenantId: IDS.tenant,
+        itemId: l.itemId,
+        lotNo: l.lotNo,
+        status: 'ACTIVE',
+      },
+      update: {},
+    })
+  }
 }
 
 async function seedInventoryBalances() {
-  // ── 1. lotId=null 기준 재고 (비 LOT 품목 + LOT 품목 벌크 수량) ──────────────
+  // ── 1. lotId=null 기준 재고 (비 LOT 품목 한정) ─────────────────────────────
+  // Phase 2-D-1 이후 정책: isLotTracked=true 품목은 lotId=null 재고로 절대
+  // 생성하지 않는다 (출고/출하 불가 데드재고가 되기 때문). LOT 관리 품목의
+  // 시작 재고는 seedLots() 의 시작 LOT 와 함께 Part 2 에서 lotId 가 연결된
+  // 형태로 생성한다.
   const balances = [
-    // 원자재 창고
-    { itemId: 'item-raw-steel-001', warehouseId: 'wh-raw-001', qtyOnHand: 500,  qtyAvailable: 500  },
-    { itemId: 'item-raw-alum-001',  warehouseId: 'wh-raw-001', qtyOnHand: 300,  qtyAvailable: 300  },
+    // 원자재 창고 — 비LOT 품목만
     { itemId: 'item-raw-bolt-001',  warehouseId: 'wh-raw-001', qtyOnHand: 2000, qtyAvailable: 2000 },
     { itemId: 'item-cons-oil-001',  warehouseId: 'wh-raw-001', qtyOnHand: 100,  qtyAvailable: 100  },
-    // 반제품 창고
-    { itemId: 'item-semi-frame-001', warehouseId: 'wh-semi-001', qtyOnHand: 80, qtyAvailable: 80 },
-    { itemId: 'item-semi-shaft-001', warehouseId: 'wh-semi-001', qtyOnHand: 60, qtyAvailable: 60 },
-    // 완제품 창고
-    { itemId: 'item-fg-assy-001', warehouseId: 'wh-fg-001', qtyOnHand: 25, qtyAvailable: 25 },
   ]
 
   for (const b of balances) {
@@ -2318,6 +2339,35 @@ async function seedInventoryBalances() {
       warehouseId: 'wh-semi-001',
       qtyOnHand: 60,
       qtyAvailable: 60,
+    },
+    // Phase 2-D-1: LOT 관리 품목의 시작 재고 (lotId 연결)
+    {
+      lotNo: 'LOT-STEEL-20260301-001',
+      itemId: 'item-raw-steel-001',
+      warehouseId: 'wh-raw-001',
+      qtyOnHand: 500,
+      qtyAvailable: 500,
+    },
+    {
+      lotNo: 'LOT-ALUM-20260301-001',
+      itemId: 'item-raw-alum-001',
+      warehouseId: 'wh-raw-001',
+      qtyOnHand: 300,
+      qtyAvailable: 300,
+    },
+    {
+      lotNo: 'LOT-FRAME-20260301-001',
+      itemId: 'item-semi-frame-001',
+      warehouseId: 'wh-semi-001',
+      qtyOnHand: 80,
+      qtyAvailable: 80,
+    },
+    {
+      lotNo: 'LOT-FG-20260301-001',
+      itemId: 'item-fg-assy-001',
+      warehouseId: 'wh-fg-001',
+      qtyOnHand: 25,
+      qtyAvailable: 25,
     },
   ]
 
@@ -2386,6 +2436,55 @@ async function seedInventoryBalances() {
         itemId: 'item-semi-frame-001',
         warehouseId: 'wh-semi-001',
         lotId: frameLot.id,
+      },
+    })
+  }
+
+  // ── Phase 2-D-1 cleanup ────────────────────────────────────────────────────
+  // 모든 삭제는 tenantId = IDS.tenant 가드. 운영/타 tenant 데이터에는 영향 없음.
+
+  // 4-3. 더미 Item ( itemCode: 123/456/abc/sdsd/test/CS-OIL-0013 ) 의
+  //      InventoryBalance / InventoryTransaction 만 정리. Item 자체는 보존.
+  const dummyItemCodes = ['123', '456', 'abc', 'sdsd', 'test', 'CS-OIL-0013']
+  const dummyItems = await prisma.item.findMany({
+    where: { tenantId: IDS.tenant, code: { in: dummyItemCodes } },
+    select: { id: true },
+  })
+  const dummyItemIds = dummyItems.map((i) => i.id)
+  if (dummyItemIds.length > 0) {
+    await prisma.inventoryBalance.deleteMany({
+      where: { tenantId: IDS.tenant, itemId: { in: dummyItemIds } },
+    })
+    await prisma.inventoryTransaction.deleteMany({
+      where: { tenantId: IDS.tenant, itemId: { in: dummyItemIds } },
+    })
+  }
+
+  // 4-2. SF-SHAFT-001 @ WH-RAW lotId=null row 삭제
+  //      ─ 반제품(SF)이 원자재 창고(WH-RAW)에 lotId=null 로 들어와 있는 비정상 row
+  //      ─ Q1 분석에서 qty=54940 로 확인됨
+  await prisma.inventoryBalance.deleteMany({
+    where: {
+      tenantId: IDS.tenant,
+      itemId: 'item-semi-shaft-001',
+      warehouseId: 'wh-raw-001',
+      lotId: null,
+    },
+  })
+
+  // 4-1. isLotTracked=true 인데 lotId IS NULL 인 InventoryBalance 잔재 일괄 삭제
+  //      ─ demo tenant 한정. 비LOT 품목의 lotId=null 재고는 보호된다.
+  const lotTrackedItems = await prisma.item.findMany({
+    where: { tenantId: IDS.tenant, isLotTracked: true },
+    select: { id: true },
+  })
+  const lotTrackedItemIds = lotTrackedItems.map((i) => i.id)
+  if (lotTrackedItemIds.length > 0) {
+    await prisma.inventoryBalance.deleteMany({
+      where: {
+        tenantId: IDS.tenant,
+        itemId: { in: lotTrackedItemIds },
+        lotId: null,
       },
     })
   }
