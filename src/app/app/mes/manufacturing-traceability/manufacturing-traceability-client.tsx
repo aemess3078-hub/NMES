@@ -62,7 +62,7 @@ const WIP_MOVEMENT_TYPE: Record<string, { label: string; className: string }> = 
   RELEASED: { label: "보류해제", className: "bg-emerald-100 text-emerald-700" },
   SPLIT: { label: "분할", className: "bg-purple-100 text-purple-700" },
   MERGE: { label: "병합", className: "bg-purple-100 text-purple-700" },
-  DEFECT: { label: "불량", className: "bg-red-100 text-red-700" },
+  DEFECT: { label: "불량 발생", className: "bg-red-100 text-red-700" },
   REWORK: { label: "재작업", className: "bg-orange-100 text-orange-700" },
   SCRAP: { label: "폐기", className: "bg-rose-100 text-rose-700" },
   OUTSOURCED: { label: "외주출고", className: "bg-cyan-100 text-cyan-700" },

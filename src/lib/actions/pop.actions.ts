@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import {
   advanceWipUnitOnOperationComplete,
+  recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
 } from "@/lib/actions/wip-traceability.helpers"
 
@@ -278,6 +279,17 @@ export async function submitProductionResult(
           startedAt: new Date(),
           endedAt: new Date(),
         },
+      })
+
+      await recordProductionResultQualityMovements(tx, {
+        tenantId: op.workOrder.tenantId,
+        siteId: op.workOrder.siteId,
+        workOrderId: op.workOrderId,
+        operationId: workOrderOperationId,
+        workCenterId: op.routingOperation.workCenterId,
+        productionResultId: createdResult.id,
+        defectQty,
+        reworkQty,
       })
 
       await tx.workOrderOperation.update({

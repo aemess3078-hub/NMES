@@ -1,4 +1,4 @@
-import { Prisma, WipUnitStatus } from "@prisma/client"
+import { Prisma, WipMovementType, WipUnitStatus } from "@prisma/client"
 
 // pop.actions.ts 트랜잭션 내부에서만 호출되는 내부 헬퍼.
 // 직접 호출되는 Server Action이 아니므로 "use server" 미사용.
@@ -173,4 +173,77 @@ export async function advanceWipUnitOnOperationComplete(
       createdById: params.createdById ?? null,
     },
   })
+}
+
+export async function recordProductionResultQualityMovements(
+  tx: WipTraceabilityTx,
+  params: {
+    tenantId: string
+    siteId: string | null
+    workOrderId: string
+    operationId: string
+    workCenterId: string | null
+    productionResultId: string
+    defectQty: number
+    reworkQty: number
+    createdById?: string | null
+  }
+): Promise<void> {
+  if (params.defectQty <= 0 && params.reworkQty <= 0) return
+
+  const wipUnit = await findActiveWipUnitForWorkOrder(tx, {
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+  })
+
+  if (!wipUnit) {
+    console.warn(
+      `[wip-traceability] WipUnit not found for workOrderId=${params.workOrderId} on production result quality movement, skipping WIP movement sync`
+    )
+    return
+  }
+
+  // Phase 3-A records quality-related WIP history only.
+  // WipUnit.qty split/deduction is intentionally deferred to Phase 3-B.
+  const movements: Prisma.WipMovementCreateManyInput[] = []
+
+  if (params.defectQty > 0) {
+    movements.push({
+      tenantId: params.tenantId,
+      siteId: params.siteId,
+      wipUnitId: wipUnit.id,
+      movementType: WipMovementType.DEFECT,
+      fromOperationId: params.operationId,
+      toOperationId: params.operationId,
+      fromWorkCenterId: params.workCenterId,
+      toWorkCenterId: params.workCenterId,
+      qty: params.defectQty,
+      sourceType: "ProductionResult",
+      sourceId: params.productionResultId,
+      note: `POP 실적 등록 불량 수량 기록 (defectQty=${params.defectQty})`,
+      createdById: params.createdById ?? null,
+    })
+  }
+
+  if (params.reworkQty > 0) {
+    movements.push({
+      tenantId: params.tenantId,
+      siteId: params.siteId,
+      wipUnitId: wipUnit.id,
+      movementType: WipMovementType.REWORK,
+      fromOperationId: params.operationId,
+      toOperationId: params.operationId,
+      fromWorkCenterId: params.workCenterId,
+      toWorkCenterId: params.workCenterId,
+      qty: params.reworkQty,
+      sourceType: "ProductionResult",
+      sourceId: params.productionResultId,
+      note: `POP 실적 등록 재작업 수량 기록 (reworkQty=${params.reworkQty})`,
+      createdById: params.createdById ?? null,
+    })
+  }
+
+  if (movements.length > 0) {
+    await tx.wipMovement.createMany({ data: movements })
+  }
 }
