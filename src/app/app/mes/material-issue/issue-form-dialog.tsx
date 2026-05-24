@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { AlertCircle, Tag } from "lucide-react"
 import {
@@ -57,6 +57,48 @@ export function IssueFormDialog({
 
   const pendingMaterials = workOrder?.materials.filter((material) => material.pendingQty > 0) ?? []
 
+  // Radix controlled Dialog에서 부모가 open=true로 바꿀 때 onOpenChange가 호출되지 않으므로
+  // useEffect에서 open 변화를 감지해 초기화 및 LOT 재고 로드를 수행한다.
+  useEffect(() => {
+    if (!open || !workOrder) return
+
+    const materials = workOrder.materials.filter((m) => m.pendingQty > 0)
+    const defaults: Record<string, string> = {}
+    const defaultWarehouses: Record<string, string> = {}
+
+    for (const material of materials) {
+      defaults[material.itemId] = String(material.pendingQty)
+      if (!material.item.isLotTracked) {
+        const stockWh = warehouses.find((wh) => (wh.itemStocks[material.itemId] ?? 0) > 0)
+        const rawWh = warehouses.find((wh) => wh.code === "WH-RAW")
+        defaultWarehouses[material.itemId] = stockWh?.id ?? rawWh?.id ?? warehouses[0]?.id ?? ""
+      }
+    }
+
+    setQtyMap(defaults)
+    setWarehouseMap(defaultWarehouses)
+    setLotMap({})
+    setLotStockMap({})
+    setLotLoadingMap({})
+
+    for (const material of materials) {
+      if (!material.item.isLotTracked) continue
+      const itemId = material.itemId
+      setLotLoadingMap((prev) => ({ ...prev, [itemId]: true }))
+      getLotStockByItems([itemId], tenantId)
+        .then((data) => {
+          setLotStockMap((prev) => ({ ...prev, [itemId]: data[itemId] ?? [] }))
+        })
+        .catch(() => {
+          setLotStockMap((prev) => ({ ...prev, [itemId]: [] }))
+        })
+        .finally(() => {
+          setLotLoadingMap((prev) => ({ ...prev, [itemId]: false }))
+        })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, workOrder?.id])
+
   if (!workOrder) return null
 
   const getLotSelectValue = (lotStock: LotStockOption) => `${lotStock.lotId}:${lotStock.warehouseId}`
@@ -107,19 +149,6 @@ export function IssueFormDialog({
       setLotMap({})
       setLotStockMap({})
       setLotLoadingMap({})
-    } else {
-      const defaults: Record<string, string> = {}
-      const defaultWarehouses: Record<string, string> = {}
-      for (const material of pendingMaterials) {
-        defaults[material.itemId] = String(material.pendingQty)
-        if (material.item.isLotTracked) {
-          void loadLotStock(material.itemId)
-        } else {
-          defaultWarehouses[material.itemId] = getDefaultWarehouseId(material.itemId)
-        }
-      }
-      setQtyMap(defaults)
-      setWarehouseMap(defaultWarehouses)
     }
     onOpenChange(nextOpen)
   }
