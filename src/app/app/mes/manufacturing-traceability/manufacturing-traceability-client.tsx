@@ -60,7 +60,7 @@ const WIP_MOVEMENT_TYPE: Record<string, { label: string; className: string }> = 
   MOVED: { label: "공정이동", className: "bg-indigo-100 text-indigo-700" },
   HOLD: { label: "보류", className: "bg-amber-100 text-amber-800" },
   RELEASED: { label: "보류해제", className: "bg-emerald-100 text-emerald-700" },
-  SPLIT: { label: "분할", className: "bg-purple-100 text-purple-700" },
+  SPLIT: { label: "수량 분리", className: "bg-purple-100 text-purple-700" },
   MERGE: { label: "병합", className: "bg-purple-100 text-purple-700" },
   DEFECT: { label: "불량 발생", className: "bg-red-100 text-red-700" },
   REWORK: { label: "재작업", className: "bg-orange-100 text-orange-700" },
@@ -355,7 +355,12 @@ export function ManufacturingTraceabilityClient({
                         </td>
                         <td className="py-2.5 pr-4 text-right">{formatNumber(movement.qty)}</td>
                         <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">
-                          {movement.sourceType ?? "-"}
+                          <div>{movement.sourceType ?? "-"}</div>
+                          {movement.relatedWipUnitId ? (
+                            <div className="mt-0.5 font-mono text-[13px] text-slate-400">
+                              WIP {movement.relatedWipUnitId.slice(-8)}
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-2.5 text-[13px] text-muted-foreground">{movement.note ?? "-"}</td>
                       </tr>

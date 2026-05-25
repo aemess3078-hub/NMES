@@ -118,6 +118,33 @@ export async function advanceWipUnitOnOperationComplete(
     return
   }
 
+  const wipQty = Number(wipUnit.qty)
+  if (wipQty <= 0) {
+    await tx.wipUnit.update({
+      where: { id: wipUnit.id },
+      data: { status: WipUnitStatus.COMPLETED },
+    })
+
+    await tx.wipMovement.create({
+      data: {
+        tenantId: params.tenantId,
+        siteId: params.siteId,
+        wipUnitId: wipUnit.id,
+        movementType: "COMPLETED",
+        fromOperationId: params.completedOperationId,
+        toOperationId: null,
+        fromWorkCenterId: params.completedWorkCenterId,
+        toWorkCenterId: null,
+        qty: 0,
+        sourceType: "ProductionResult",
+        sourceId: params.productionResultId,
+        note: "SCRAP 차감 후 이동 가능 수량이 0이므로 공정 이동 생략",
+        createdById: params.createdById ?? null,
+      },
+    })
+    return
+  }
+
   if (params.nextOperation) {
     await tx.wipUnit.update({
       where: { id: wipUnit.id },
@@ -138,7 +165,7 @@ export async function advanceWipUnitOnOperationComplete(
         toOperationId: params.nextOperation.id,
         fromWorkCenterId: params.completedWorkCenterId,
         toWorkCenterId: params.nextOperation.routingOperation.workCenterId,
-        qty: wipUnit.qty,
+        qty: wipQty,
         sourceType: "ProductionResult",
         sourceId: params.productionResultId,
         note: "공정 완료에 따른 이동",
@@ -166,7 +193,7 @@ export async function advanceWipUnitOnOperationComplete(
       toOperationId: null,
       fromWorkCenterId: params.completedWorkCenterId,
       toWorkCenterId: null,
-      qty: wipUnit.qty,
+      qty: wipQty,
       sourceType: "ProductionResult",
       sourceId: params.productionResultId,
       note: "마지막 공정 완료",
@@ -197,17 +224,36 @@ export async function recordProductionResultQualityMovements(
   })
 
   if (!wipUnit) {
+    if (params.defectQty > 0) {
+      throw new Error(
+        `SCRAP 처리 대상 WipUnit을 찾을 수 없습니다. workOrderId=${params.workOrderId}`
+      )
+    }
+
     console.warn(
       `[wip-traceability] WipUnit not found for workOrderId=${params.workOrderId} on production result quality movement, skipping WIP movement sync`
     )
     return
   }
 
-  // Phase 3-A records quality-related WIP history only.
-  // WipUnit.qty split/deduction is intentionally deferred to Phase 3-B.
+  const existingMovements = await tx.wipMovement.findMany({
+    where: {
+      tenantId: params.tenantId,
+      sourceType: "ProductionResult",
+      sourceId: params.productionResultId,
+    },
+    select: { movementType: true },
+  })
+  const existingMovementTypes = new Set(existingMovements.map((m) => m.movementType))
+  const hasScrapSplit =
+    existingMovementTypes.has(WipMovementType.SPLIT) ||
+    existingMovementTypes.has(WipMovementType.SCRAP)
+
+  // Phase 3-B treats defectQty as confirmed SCRAP.
+  // WipUnit.qty now means the remaining good-flow quantity; REWORK split stays in Phase 3-C.
   const movements: Prisma.WipMovementCreateManyInput[] = []
 
-  if (params.defectQty > 0) {
+  if (params.defectQty > 0 && !existingMovementTypes.has(WipMovementType.DEFECT)) {
     movements.push({
       tenantId: params.tenantId,
       siteId: params.siteId,
@@ -225,7 +271,7 @@ export async function recordProductionResultQualityMovements(
     })
   }
 
-  if (params.reworkQty > 0) {
+  if (params.reworkQty > 0 && !existingMovementTypes.has(WipMovementType.REWORK)) {
     movements.push({
       tenantId: params.tenantId,
       siteId: params.siteId,
@@ -246,4 +292,79 @@ export async function recordProductionResultQualityMovements(
   if (movements.length > 0) {
     await tx.wipMovement.createMany({ data: movements })
   }
+
+  if (params.defectQty <= 0 || hasScrapSplit) return
+
+  const rootQty = Number(wipUnit.qty)
+  if (!Number.isFinite(rootQty)) {
+    throw new Error(`WipUnit 수량을 확인할 수 없습니다. wipUnitId=${wipUnit.id}`)
+  }
+
+  if (params.defectQty > rootQty) {
+    throw new Error(
+      `SCRAP 수량(${params.defectQty})이 이동 가능 WIP 수량(${rootQty})을 초과합니다.`
+    )
+  }
+
+  const childWipUnit = await tx.wipUnit.create({
+    data: {
+      tenantId: wipUnit.tenantId,
+      siteId: wipUnit.siteId,
+      workOrderId: wipUnit.workOrderId,
+      workOrderOperationId: params.operationId,
+      itemId: wipUnit.itemId,
+      lotId: wipUnit.lotId,
+      manufacturingNo: wipUnit.manufacturingNo,
+      currentWorkCenterId: params.workCenterId ?? wipUnit.currentWorkCenterId,
+      currentWarehouseId: wipUnit.currentWarehouseId,
+      currentLocationId: wipUnit.currentLocationId,
+      outsourcingPartnerId: wipUnit.outsourcingPartnerId,
+      sourceProductionResultId: params.productionResultId,
+      parentWipUnitId: wipUnit.id,
+      qty: params.defectQty,
+      status: WipUnitStatus.SCRAPPED,
+    },
+  })
+
+  await tx.wipUnit.update({
+    where: { id: wipUnit.id },
+    data: { qty: rootQty - params.defectQty },
+  })
+
+  await tx.wipMovement.createMany({
+    data: [
+      {
+        tenantId: params.tenantId,
+        siteId: params.siteId,
+        wipUnitId: wipUnit.id,
+        relatedWipUnitId: childWipUnit.id,
+        movementType: WipMovementType.SPLIT,
+        fromOperationId: params.operationId,
+        toOperationId: params.operationId,
+        fromWorkCenterId: params.workCenterId,
+        toWorkCenterId: params.workCenterId,
+        qty: params.defectQty,
+        sourceType: "ProductionResult",
+        sourceId: params.productionResultId,
+        note: `POP 불량 수량 SCRAP 분리 (defectQty=${params.defectQty})`,
+        createdById: params.createdById ?? null,
+      },
+      {
+        tenantId: params.tenantId,
+        siteId: params.siteId,
+        wipUnitId: childWipUnit.id,
+        relatedWipUnitId: wipUnit.id,
+        movementType: WipMovementType.SCRAP,
+        fromOperationId: params.operationId,
+        toOperationId: params.operationId,
+        fromWorkCenterId: params.workCenterId,
+        toWorkCenterId: params.workCenterId,
+        qty: params.defectQty,
+        sourceType: "ProductionResult",
+        sourceId: params.productionResultId,
+        note: `POP 불량 수량 자동 폐기 처리 (defectQty=${params.defectQty})`,
+        createdById: params.createdById ?? null,
+      },
+    ],
+  })
 }

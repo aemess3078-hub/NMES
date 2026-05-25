@@ -93,6 +93,7 @@ export type TraceabilityShipment = {
 export type TraceabilityWipMovement = {
   id: string
   wipUnitId: string
+  relatedWipUnitId: string | null
   movementType: string
   qty: number
   sourceType: string | null
@@ -416,6 +417,7 @@ export async function getManufacturingTraceability(
       wu.movements.map((m) => ({
         id: m.id,
         wipUnitId: m.wipUnitId,
+        relatedWipUnitId: m.relatedWipUnitId,
         movementType: m.movementType,
         qty: Number(m.qty),
         sourceType: m.sourceType,
