@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { WorkOrderStatus, OperationStatus, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { computeWipReceiptStatus } from "./wip-receipt.helpers"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -292,56 +293,13 @@ export async function getWipInventoryRows(tenantId: string) {
 
   return workOrders.flatMap((workOrder) => {
     const finalOperation = workOrder.operations.at(-1) ?? null
-    const rootWipUnits = workOrder.wipUnits.filter(
-      (unit) => unit.parentWipUnitId == null && unit.sourceProductionResultId == null
-    )
-    const completedFinalRootQty = rootWipUnits
-      .filter(
-        (unit) =>
-          unit.status === "COMPLETED" &&
-          unit.workOrderOperationId === finalOperation?.id
-      )
-      .reduce((sum, unit) => sum + Number(unit.qty), 0)
-    const totalReceiptQty = workOrder.finishedGoodsReceipts.reduce(
-      (sum, receipt) => sum + Number(receipt.receiptQty),
-      0
-    )
-    const reworkChildWipUnits = workOrder.wipUnits.filter(
-      (unit) => unit.parentWipUnitId != null && unit.relatedMovements.length > 0
-    )
-    const linkedReworkResultIds = new Set(
-      reworkChildWipUnits
-        .map((unit) => unit.sourceProductionResultId)
-        .filter((resultId): resultId is string => resultId != null)
-    )
-    const hasUnresolvedReworkChild = reworkChildWipUnits.some(
-      (unit) => unit.status === "REWORK"
-    )
-    const hasLegacyReworkResult = workOrder.operations.some((operation) =>
-      operation.productionResults.some(
-        (result) =>
-          Number(result.reworkQty) > 0 && !linkedReworkResultIds.has(result.id)
-      )
-    )
-    const hasUnlinkedReworkMovement = workOrder.wipUnits.some((unit) =>
-      unit.movements.some(
-        (movement) =>
-          movement.movementType === "REWORK" &&
-          movement.relatedWipUnitId == null
-      )
-    )
-    const hasInconsistentCompletedWipQty =
-      completedFinalRootQty > Number(finalOperation?.completedQty ?? 0)
-    const receiptBlockedReason = hasUnresolvedReworkChild
-      ? "미해결 REWORK child가 있어 입고 보류 중입니다."
-      : hasLegacyReworkResult || hasUnlinkedReworkMovement
-        ? "종결 상태를 판별할 수 없는 기존 REWORK 이력이 있어 입고 보류 중입니다."
-        : hasInconsistentCompletedWipQty
-          ? "완료 WIP 수량이 최종공정 완료 수량을 초과하여 입고 보류 중입니다."
-        : null
-    const availableReceiptQty = receiptBlockedReason
-      ? 0
-      : Math.max(0, completedFinalRootQty - totalReceiptQty)
+    // 입고 가능 수량 / 보류 사유는 wip-receipt 공용 헬퍼로 계산해
+    // 완제품입고 검증 로직과 항상 동일한 기준을 사용한다.
+    const wipReceipt = computeWipReceiptStatus(workOrder)
+    const completedFinalRootQty = wipReceipt.completedRootQty
+    const totalReceiptQty = wipReceipt.totalReceiptQty
+    const availableReceiptQty = wipReceipt.availableReceiptQty
+    const receiptBlockedReason = wipReceipt.blockReasonDisplay
     const sortedWipUnits = [...workOrder.wipUnits].sort((left, right) => {
       const leftIsRoot =
         left.parentWipUnitId == null && left.sourceProductionResultId == null

@@ -3,6 +3,10 @@
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import { createFinishedGoodsLot } from "./finished-goods-lot.helpers"
+import {
+  WIP_RECEIPT_BLOCK_REASONS,
+  computeWipReceiptStatus,
+} from "./wip-receipt.helpers"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,89 +70,53 @@ type ReceiptQuantitySource = {
     sourceProductionResultId: string | null
     qty: unknown
     status: string
-    movements: { relatedWipUnitId: string | null }[]
+    movements: { movementType: string; relatedWipUnitId: string | null }[]
     relatedMovements: { id: string }[]
   }[]
 }
 
-const UNRESOLVED_REWORK_RECEIPT_BLOCK_REASON =
-  "미해결 재작업 WIP가 있어 완제품 입고를 진행할 수 없습니다."
-const LEGACY_REWORK_RECEIPT_BLOCK_REASON =
-  "종결 상태를 판별할 수 없는 기존 재작업 이력이 있어 완제품 입고를 진행할 수 없습니다."
-const INCONSISTENT_WIP_RECEIPT_BLOCK_REASON =
-  "완료 WIP 수량이 최종공정 완료 수량을 초과하여 입고를 진행할 수 없습니다."
-
+// WipUnit 추적 작업지시는 computeWipReceiptStatus 결과를 그대로 사용.
+// 레거시(WipUnit 없는) 작업지시는 최종공정 양품 합계를 기준 수량으로 fallback.
 function calculateReceiptQuantity(source: ReceiptQuantitySource) {
+  const status = computeWipReceiptStatus(source)
   const totalGoodQty = source.operations.reduce(
     (sum, operation) =>
-      sum + operation.productionResults.reduce((subtotal, result) => subtotal + Number(result.goodQty), 0),
+      sum +
+      operation.productionResults.reduce(
+        (subtotal, result) => subtotal + Number(result.goodQty),
+        0,
+      ),
     0,
   )
-  const totalReceiptQty = source.finishedGoodsReceipts.reduce(
-    (sum, receipt) => sum + Number(receipt.receiptQty),
-    0,
-  )
-  const rootWipUnits = source.wipUnits.filter(
-    (wipUnit) => wipUnit.parentWipUnitId == null && wipUnit.sourceProductionResultId == null,
-  )
-  const isWipTracked = rootWipUnits.length > 0
   const lastOperation = source.operations.reduce<typeof source.operations[number] | null>(
     (latest, operation) => (!latest || operation.seq > latest.seq ? operation : latest),
     null,
   )
-  const completedRootQty = rootWipUnits
-    .filter(
-      (wipUnit) =>
-        wipUnit.status === "COMPLETED" &&
-        wipUnit.workOrderOperationId === lastOperation?.id,
-    )
-    .reduce((sum, wipUnit) => sum + Number(wipUnit.qty), 0)
   const legacyFinalOperationGoodQty =
-    lastOperation?.productionResults.reduce((sum, result) => sum + Number(result.goodQty), 0) ?? 0
-  const finalOperationCompletedQty = Number(lastOperation?.completedQty ?? 0)
-  const reworkChildWipUnits = source.wipUnits.filter(
-    (wipUnit) => wipUnit.parentWipUnitId != null && wipUnit.sourceProductionResultId != null,
-  )
-  const linkedReworkProductionResultIds = new Set(
-    reworkChildWipUnits
-      .filter((wipUnit) => wipUnit.relatedMovements.length > 0)
-      .map((wipUnit) => wipUnit.sourceProductionResultId),
-  )
-  const hasUnresolvedReworkChild = reworkChildWipUnits.some(
-    (wipUnit) => wipUnit.status === "REWORK",
-  )
-  const hasLegacyReworkProductionResult = source.operations.some((operation) =>
-    operation.productionResults.some(
-      (result) =>
-        Number(result.reworkQty) > 0 && !linkedReworkProductionResultIds.has(result.id),
-    ),
-  )
-  const hasUnlinkedReworkMovement = source.wipUnits.some((wipUnit) =>
-    wipUnit.movements.some((movement) => movement.relatedWipUnitId == null),
-  )
-  const hasLegacyRework = hasLegacyReworkProductionResult || hasUnlinkedReworkMovement
-  const hasInconsistentCompletedWipQty =
-    isWipTracked && completedRootQty > finalOperationCompletedQty
-  const receiptBlockedReason = hasUnresolvedReworkChild
-    ? UNRESOLVED_REWORK_RECEIPT_BLOCK_REASON
-    : hasLegacyRework
-      ? LEGACY_REWORK_RECEIPT_BLOCK_REASON
-    : hasInconsistentCompletedWipQty
-      ? INCONSISTENT_WIP_RECEIPT_BLOCK_REASON
-      : null
-  const receiptBasisQty = isWipTracked ? completedRootQty : legacyFinalOperationGoodQty
+    lastOperation?.productionResults.reduce(
+      (sum, result) => sum + Number(result.goodQty),
+      0,
+    ) ?? 0
+  const receiptBasisQty = status.isWipTracked
+    ? status.completedRootQty
+    : legacyFinalOperationGoodQty
+  const pendingQty = status.blocked
+    ? 0
+    : Math.max(0, receiptBasisQty - status.totalReceiptQty)
 
   return {
     totalGoodQty,
     receiptBasisQty,
-    totalReceiptQty,
-    pendingQty: receiptBlockedReason
-      ? 0
-      : Math.max(0, receiptBasisQty - totalReceiptQty),
-    isWipTracked,
-    receiptBlockedReason,
-    rootWipUnits,
-    finalOperationId: lastOperation?.id ?? null,
+    totalReceiptQty: status.totalReceiptQty,
+    pendingQty,
+    isWipTracked: status.isWipTracked,
+    receiptBlockedReason: status.blockReasonError,
+    rootWipUnits: source.wipUnits.filter(
+      (unit) =>
+        unit.parentWipUnitId == null && unit.sourceProductionResultId == null,
+    ),
+    completedRootWipUnits: status.completedRootWipUnits,
+    finalOperationId: status.finalOperationId,
   }
 }
 
@@ -200,7 +168,7 @@ export async function getWorkOrdersForReceipt(
           status: true,
           movements: {
             where: { movementType: "REWORK" },
-            select: { relatedWipUnitId: true },
+            select: { movementType: true, relatedWipUnitId: true },
           },
           relatedMovements: {
             where: { movementType: "REWORK" },
@@ -324,7 +292,7 @@ export async function createFinishedGoodsReceiptAction(
               lotId: true,
               movements: {
                 where: { movementType: "REWORK" },
-                select: { relatedWipUnitId: true },
+                select: { movementType: true, relatedWipUnitId: true },
               },
               relatedMovements: {
                 where: { movementType: "REWORK" },
@@ -343,36 +311,52 @@ export async function createFinishedGoodsReceiptAction(
         throw new Error("작업지시 품목과 입고 품목이 일치하지 않습니다.")
       }
 
-      // 2. WIP 추적 작업지시는 완료 root qty, 레거시는 최종공정 양품 수량을 입고 기준으로 사용.
+      // 2. WipUnit 기반 입고 검증
+      //    - 완제품입고 대상은 ROOT && status=COMPLETED && 최종공정 도달 WipUnit 만
+      //    - SCRAP_CHILD / REWORK_CHILD / SCRAPPED / REWORK / IN_PROCESS / WAITING /
+      //      parent 있는 child 는 자연스럽게 제외됨 (completedRootWipUnits 필터)
       const receiptQuantity = calculateReceiptQuantity(workOrder)
-      const completedRootWipUnit = workOrder.wipUnits.find(
-        (wipUnit) =>
-          wipUnit.parentWipUnitId == null &&
-          wipUnit.sourceProductionResultId == null &&
-          wipUnit.status === "COMPLETED" &&
-          wipUnit.workOrderOperationId === receiptQuantity.finalOperationId,
-      ) ?? null
+      // lotId 갱신을 위해 트랜잭션 쿼리에서 직접 로드한 완료 root 를 사용 (lotId 필드 포함)
+      const completedRootWipUnit =
+        workOrder.wipUnits.find(
+          (wipUnit) =>
+            wipUnit.parentWipUnitId == null &&
+            wipUnit.sourceProductionResultId == null &&
+            wipUnit.status === "COMPLETED" &&
+            wipUnit.workOrderOperationId === receiptQuantity.finalOperationId,
+        ) ?? null
       if (!receiptQuantity.isWipTracked) {
+        // 레거시: WipUnit 미생성 작업지시 — 최종공정 양품 합계 기준으로 fallback 진행
         console.warn(
           `[finished-goods] WipUnit not found for workOrderId=${workOrder.id} — 레거시 작업지시로 간주하고 입고 진행`,
         )
       }
+
+      // 3. 보류 사유 차단 (rework/legacy/inconsistent)
       if (receiptQuantity.receiptBlockedReason) {
         throw new Error(receiptQuantity.receiptBlockedReason)
       }
 
-      // 3. pendingQty 재계산 — UI max 신뢰하지 않고 동일 산정식으로 서버에서 다시 검증
+      // 4. WIP 추적 작업지시인데 COMPLETED root 가 1건도 없으면 입고 대상 없음
+      if (receiptQuantity.isWipTracked && !completedRootWipUnit) {
+        throw new Error(WIP_RECEIPT_BLOCK_REASONS.NO_COMPLETED_ROOT_ERROR)
+      }
+
+      // 5. pendingQty 재계산 — UI max 신뢰하지 않고 동일 산정식으로 서버에서 다시 검증
       const pendingQty = receiptQuantity.pendingQty
       if (data.receiptQty <= 0) {
         throw new Error("입고 수량은 0보다 커야 합니다.")
       }
+      if (pendingQty <= 0) {
+        throw new Error(WIP_RECEIPT_BLOCK_REASONS.FULLY_RECEIVED_ERROR)
+      }
       if (data.receiptQty > pendingQty) {
         throw new Error(
-          `입고 수량(${data.receiptQty})이 입고 가능 수량(${pendingQty})을 초과합니다.`,
+          `${WIP_RECEIPT_BLOCK_REASONS.NO_AVAILABLE_QTY_ERROR} (요청 ${data.receiptQty} / 가능 ${pendingQty})`,
         )
       }
 
-      // 4. 완제품 Lot 발번 — 부분입고 다회차마다 신규 Lot 발번 (의료기기 추적성)
+      // 6. 완제품 Lot 발번 — 부분입고 다회차마다 신규 Lot 발번 (의료기기 추적성)
       const lot = await createFinishedGoodsLot(tx, {
         tenantId,
         workOrder: {
@@ -383,7 +367,7 @@ export async function createFinishedGoodsReceiptAction(
       })
       createdLotNo = lot.lotNo
 
-      // 5. WipUnit.lotId 갱신 — 최초 LOT 만 연결 (다회차는 FinishedGoodsReceipt 로 추적).
+      // 7. WipUnit.lotId 갱신 — 최초 LOT 만 연결 (다회차는 FinishedGoodsReceipt 로 추적).
       //    WipUnit 1건에는 단일 lotId 만 표현 가능하므로, 다회차 LOT 는 추적성 화면에서
       //    finishedGoodsReceipts 배열로 확인한다.
       if (completedRootWipUnit && completedRootWipUnit.lotId == null) {
@@ -393,7 +377,7 @@ export async function createFinishedGoodsReceiptAction(
         })
       }
 
-      // 6. FinishedGoodsReceipt 생성 (lotId 연결)
+      // 8. FinishedGoodsReceipt 생성 (lotId 연결)
       await tx.finishedGoodsReceipt.create({
         data: {
           tenantId,
@@ -408,7 +392,7 @@ export async function createFinishedGoodsReceiptAction(
         },
       })
 
-      // 7. InventoryTransaction (RECEIPT) 생성 — lotId 연결
+      // 9. InventoryTransaction (RECEIPT) 생성 — lotId 연결
       //    NOTE: 기존 코드가 toLocationId 에 warehouseId 를 넣어왔다 (schema 관계상 Warehouse 매핑).
       //    명명 혼란이 있으나 이번 Phase 에서는 호환성 유지 위해 동일 동작 유지.
       const txNo = await generateReceiptTxNo(tenantId)
@@ -428,7 +412,7 @@ export async function createFinishedGoodsReceiptAction(
         },
       })
 
-      // 8. InventoryBalance — lotId 포함 키로 upsert. 새 LOT 이면 신규 row 생성.
+      // 10. InventoryBalance — lotId 포함 키로 upsert. 새 LOT 이면 신규 row 생성.
       const existing = await tx.inventoryBalance.findFirst({
         where: {
           tenantId,

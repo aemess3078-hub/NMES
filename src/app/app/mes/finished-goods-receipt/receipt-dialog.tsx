@@ -162,7 +162,7 @@ export function ReceiptDialog({
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-md border p-2">
               <div className="text-[13px] text-muted-foreground mb-0.5">
-                {workOrder.isWipTracked ? "완료 WIP" : "최종공정 양품"}
+                {workOrder.isWipTracked ? "완료 재공" : "최종공정 양품"}
               </div>
               <div className="text-[16px] font-semibold">{workOrder.receiptBasisQty}</div>
             </div>

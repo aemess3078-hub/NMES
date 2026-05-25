@@ -136,7 +136,7 @@ export function WipInventoryDataTable({ data }: WipInventoryDataTableProps) {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="작업지시 / 제조번호 / 품목 / WIP 구분 검색"
+            placeholder="작업지시 / 제조번호 / 품목 / 재공 구분 검색"
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             className="h-10 w-[380px] pl-9 text-[14px]"
@@ -201,7 +201,7 @@ export function WipInventoryDataTable({ data }: WipInventoryDataTableProps) {
             ) : (
               <TableRow>
                 <TableCell colSpan={allColumns.length} className="h-28 text-center text-[15px] text-muted-foreground">
-                  조건에 해당하는 WipUnit이 없습니다.
+                  조건에 해당하는 재공품이 없습니다.
                 </TableCell>
               </TableRow>
             )}
@@ -211,7 +211,7 @@ export function WipInventoryDataTable({ data }: WipInventoryDataTableProps) {
 
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-muted-foreground">
-          총 {filteredData.length.toLocaleString()}개 WipUnit
+          총 {filteredData.length.toLocaleString()}개 재공품
         </p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
@@ -258,18 +258,18 @@ function ExpandedDetail({ row }: { row: WipInventoryRow }) {
 
   return (
     <div className="grid gap-3 lg:grid-cols-4">
-      <DetailCard title="WIP 계보">
+      <DetailCard title="재공 계보">
         <DetailRow label="구분" value={unitConfig.label} />
-        <DetailRow label="WIP ID" value={row.id.slice(-12)} mono />
+        <DetailRow label="관리번호" value={row.id.slice(-12)} mono />
         <DetailRow label="수량" value={`${row.qty.toLocaleString()} ${row.workOrder.item.uom}`} accent="sky" />
         {row.parentWipUnit ? (
-          <DetailRow label="parent root" value={`${row.parentWipUnit.qty.toLocaleString()} ${row.workOrder.item.uom}`} />
+          <DetailRow label="원 재공품" value={`${row.parentWipUnit.qty.toLocaleString()} ${row.workOrder.item.uom}`} />
         ) : null}
       </DetailCard>
 
       <DetailCard title="상태 / 발생 근거">
         <div className="flex items-center justify-between text-[13px]">
-          <span className="text-muted-foreground">WIP 상태</span>
+          <span className="text-muted-foreground">재공 상태</span>
           <Badge variant="outline" className={`text-[13px] ${statusConfig.className}`}>
             {statusConfig.label}
           </Badge>
@@ -280,7 +280,7 @@ function ExpandedDetail({ row }: { row: WipInventoryRow }) {
             <DetailRow label="재작업 발생" value={row.sourceProductionResult.reworkQty.toLocaleString()} />
           </>
         ) : (
-          <p className="text-[13px] text-muted-foreground">정상 흐름 root WipUnit입니다.</p>
+          <p className="text-[13px] text-muted-foreground">완제품 입고 대상인 정상 재공품입니다.</p>
         )}
       </DetailCard>
 
@@ -303,8 +303,8 @@ function ExpandedDetail({ row }: { row: WipInventoryRow }) {
         </div>
         {row.unitType === "ROOT" ? (
           <>
-            <DetailRow label="완료 root" value={row.completedFinalRootQty.toLocaleString()} />
-            <DetailRow label="기입고" value={row.totalReceiptQty.toLocaleString()} />
+            <DetailRow label="완료 재공" value={row.completedFinalRootQty.toLocaleString()} />
+            <DetailRow label="이미 입고" value={row.totalReceiptQty.toLocaleString()} />
             <DetailRow label="입고 가능" value={row.availableReceiptQty.toLocaleString()} accent="emerald" />
           </>
         ) : null}

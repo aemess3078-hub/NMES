@@ -19,10 +19,10 @@ export const WIP_STATUS_CONFIG: Record<string, { label: string; className: strin
 }
 
 export const UNIT_TYPE_CONFIG: Record<string, { label: string; className: string }> = {
-  ROOT: { label: "정상 root", className: "border-sky-200 bg-sky-50 text-sky-700" },
-  SCRAP_CHILD: { label: "SCRAP child", className: "border-red-200 bg-red-50 text-red-700" },
-  REWORK_CHILD: { label: "REWORK child", className: "border-orange-200 bg-orange-50 text-orange-700" },
-  CHILD: { label: "분리 child", className: "border-slate-200 bg-slate-50 text-slate-700" },
+  ROOT: { label: "입고 대상", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  SCRAP_CHILD: { label: "불량 분리", className: "border-red-200 bg-red-50 text-red-700" },
+  REWORK_CHILD: { label: "재작업 분리", className: "border-orange-200 bg-orange-50 text-orange-700" },
+  CHILD: { label: "분리 재공품", className: "border-slate-200 bg-slate-50 text-slate-700" },
 }
 
 export const RECEIPT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -68,7 +68,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
     {
       id: "unitType",
       accessorFn: (row) => row.unitType,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="WIP 구분" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="재공 구분" />,
       cell: ({ row }) => {
         const config = UNIT_TYPE_CONFIG[row.original.unitType]
         return (
@@ -78,7 +78,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
             </Badge>
             {row.original.parentWipUnit ? (
               <p className="mt-1 text-[13px] text-muted-foreground">
-                root {row.original.parentWipUnit.qty.toLocaleString()}
+                원 재공품 {row.original.parentWipUnit.qty.toLocaleString()}
               </p>
             ) : null}
           </div>
@@ -109,7 +109,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
     {
       id: "wipStatus",
       accessorFn: (row) => row.wipStatus,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="WIP 상태" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="재공 상태" />,
       cell: ({ row }) => {
         const config = WIP_STATUS_CONFIG[row.original.wipStatus]
         return (
@@ -122,7 +122,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
     {
       id: "qty",
       accessorFn: (row) => row.qty,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="WIP 수량" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="재공 수량" />,
       cell: ({ row }) => (
         <div className="text-right">
           <p className="text-[15px] font-semibold tabular-nums text-foreground">

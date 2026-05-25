@@ -35,16 +35,16 @@ export default async function WipInventoryPage() {
           재공품재고
         </h1>
         <p className="mt-1 text-[15px] text-muted-foreground">
-          MES &gt; 재고관리 · 정상 root와 SCRAP/REWORK child를 WipUnit 기준으로 구분하고 입고 가능 상태를 확인합니다.
+          MES &gt; 재고관리 · 입고 대상 재공품과 불량/재작업 분리 재공품을 구분하고 입고 가능 상태를 확인합니다.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <SummaryCard label="총 작업지시" value={totalOrders.toLocaleString()} suffix="건" />
-        <SummaryCard label="정상 root 수량" value={rootQty.toLocaleString()} suffix="EA" />
+        <SummaryCard label="입고 대상 수량" value={rootQty.toLocaleString()} suffix="EA" />
         <SummaryCard label="폐기 수량" value={scrappedQty.toLocaleString()} suffix="EA" accent="red" />
         <SummaryCard
-          label="미해결 REWORK"
+          label="미해결 재작업"
           value={unresolvedReworkQty.toLocaleString()}
           suffix="EA"
           accent="amber"
