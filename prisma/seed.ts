@@ -1647,8 +1647,8 @@ async function seedFeatures() {
     { code: 'INVENTORY', name: '재고관리', description: '자재/제품 재고 관리', category: 'MATERIAL', icon: 'Boxes', menuCodes: ['inventory', 'inventory-transactions', 'stock', 'wip-inventory'], isCore: false, displayOrder: 80 },
     { code: 'LOT_TRACKING', name: 'LOT/시리얼 추적', description: 'LOT/시리얼 단위 이력 추적 및 번호 규칙 설정', category: 'MATERIAL', icon: 'ScanLine', menuCodes: ['lot', 'lot-rules', 'traceability', 'lot-history', 'manufacturing-traceability'], isCore: false, displayOrder: 90 },
     // QUALITY
-    { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection'], isCore: false, displayOrder: 100 },
-    { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects', 'ecn'], isCore: false, displayOrder: 110 },
+    { code: 'QUALITY_INSPECTION', name: '공정검사', description: '생산 공정 품질 검사', category: 'QUALITY', icon: 'CheckCircle', menuCodes: ['inspection', 'work-standards'], isCore: false, displayOrder: 100 },
+    { code: 'DEFECT_MANAGEMENT', name: '불량관리', description: '불량 분석 및 관리', category: 'QUALITY', icon: 'AlertTriangle', menuCodes: ['defects', 'ecn', 'defect-stats'], isCore: false, displayOrder: 110 },
     // EQUIPMENT
     { code: 'EQUIPMENT_CONNECTION', name: '설비연동', description: 'PLC/설비 데이터 연동', category: 'EQUIPMENT', icon: 'Wifi', menuCodes: ['gateways', 'equipment-connections'], isCore: false, displayOrder: 120 },
     { code: 'TAG_MANAGEMENT', name: '태그관리', description: '설비 데이터 태그 관리', category: 'EQUIPMENT', icon: 'Tag', menuCodes: ['tags'], isCore: false, displayOrder: 130 },
@@ -1671,10 +1671,10 @@ async function seedFeatures() {
     // PARTNER
     { code: 'PARTNER_MANAGEMENT', name: '고객사/거래처 관리', description: '고객사 및 거래처 마스터 관리', category: 'MASTER', icon: 'Handshake', menuCodes: ['customers', 'vendors'], isCore: false, displayOrder: 15 },
     // LMS + 모니터링 + 검사
-    { code: 'EQUIPMENT_MANAGEMENT', name: '설비관리(LMS)', description: '설비 수리요청, 일상점검, 문제유형 관리', category: 'EQUIPMENT', icon: 'Wrench', menuCodes: ['equipment-repair', 'equipment-check', 'equipment-problems'], isCore: false, displayOrder: 125 },
+    { code: 'EQUIPMENT_MANAGEMENT', name: '설비관리(LMS)', description: '설비 수리요청, 일상점검, 문제유형 관리', category: 'EQUIPMENT', icon: 'Wrench', menuCodes: ['equipment-repair', 'equipment-check', 'equipment-problems', 'equipment-check-status', 'equipment-statistics', 'molds'], isCore: false, displayOrder: 125 },
     { code: 'EQUIPMENT_MONITOR', name: '설비 현황 모니터링', description: '실시간 설비 가동 상태 모니터링', category: 'EQUIPMENT', icon: 'Activity', menuCodes: ['equipment-monitor'], isCore: false, displayOrder: 126 },
-    { code: 'INSPECTION_STAGES', name: '초·중·종 검사', description: '초물/중간/종물 단계별 품질검사', category: 'QUALITY', icon: 'ListChecks', menuCodes: ['inspection-stages'], isCore: false, displayOrder: 105 },
-    { code: 'DASHBOARD', name: '생산현황 대시보드', description: 'KPI 및 생산현황 종합 대시보드', category: 'ANALYTICS', icon: 'LayoutDashboard', menuCodes: ['dashboard'], isCore: false, displayOrder: 80 },
+    { code: 'INSPECTION_STAGES', name: '초·중·종 검사', description: '초물/중간/종물 단계별 품질검사', category: 'QUALITY', icon: 'ListChecks', menuCodes: ['inspection-stages', 'inspection-standards'], isCore: false, displayOrder: 105 },
+    { code: 'DASHBOARD', name: '생산현황 대시보드', description: 'KPI 및 생산현황 종합 대시보드', category: 'ANALYTICS', icon: 'LayoutDashboard', menuCodes: ['dashboard', 'kpi'], isCore: false, displayOrder: 80 },
   ];
 
   for (const f of features) {
