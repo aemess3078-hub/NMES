@@ -89,7 +89,7 @@ export function ReworkDataTable({ data }: ReworkDataTableProps) {
             {row.original.reworkQty}개
           </Badge>
           <div className="mt-1 text-[13px] text-muted-foreground">
-            root {row.original.parentWipUnit?.qty ?? "-"}개
+            원 재공품 {row.original.parentWipUnit?.qty ?? "-"}개
           </div>
         </div>
       ),

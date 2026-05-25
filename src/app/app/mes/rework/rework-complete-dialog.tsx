@@ -96,7 +96,7 @@ export function ReworkCompleteDialog({
           {/* 재작업 수량 정보 */}
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="rounded-md border p-3">
-              <div className="text-[13px] text-muted-foreground mb-1">현재 완료 root</div>
+              <div className="text-[13px] text-muted-foreground mb-1">현재 완료 재공</div>
               <div className="text-[20px] font-semibold text-slate-700">
                 {reworkItem.parentWipUnit?.qty ?? "-"}
               </div>
@@ -110,7 +110,7 @@ export function ReworkCompleteDialog({
           </div>
 
           <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-[13px] text-blue-800">
-            이 처리는 완료 WIP 수량의 복귀 및 폐기 이력만 기록하며, 공정 완료 수량을 다시 증가시키지 않습니다.
+            이 처리는 완료 재공 수량의 복귀 및 폐기 이력만 기록하며, 공정 완료 수량을 다시 증가시키지 않습니다.
           </div>
 
           {/* 결과 입력 */}

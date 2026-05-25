@@ -55,7 +55,7 @@ const SHIPMENT_STATUS: Record<string, { label: string; className: string }> = {
 }
 
 const WIP_MOVEMENT_TYPE: Record<string, { label: string; className: string }> = {
-  CREATED: { label: "WIP 생성", className: "bg-sky-100 text-sky-700" },
+  CREATED: { label: "재공품 생성", className: "bg-sky-100 text-sky-700" },
   STARTED: { label: "작업시작", className: "bg-blue-100 text-blue-700" },
   MOVED: { label: "공정이동", className: "bg-indigo-100 text-indigo-700" },
   HOLD: { label: "보류", className: "bg-amber-100 text-amber-800" },
@@ -358,7 +358,7 @@ export function ManufacturingTraceabilityClient({
                           <div>{movement.sourceType ?? "-"}</div>
                           {movement.relatedWipUnitId ? (
                             <div className="mt-0.5 font-mono text-[13px] text-slate-400">
-                              WIP {movement.relatedWipUnitId.slice(-8)}
+                              재공 이력 {movement.relatedWipUnitId.slice(-8)}
                             </div>
                           ) : null}
                         </td>

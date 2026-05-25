@@ -58,7 +58,7 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
               <span className="text-[13px] text-muted-foreground ml-1">{item.uom}</span>
             </div>
             <div className="text-[13px] text-muted-foreground">
-              {isWipTracked ? "완료 WIP 기준" : "최종공정 기준"}
+              {isWipTracked ? "완료 재공품 기준" : "최종공정 기준"}
             </div>
           </div>
         )
