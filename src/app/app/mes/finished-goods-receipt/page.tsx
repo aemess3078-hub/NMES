@@ -17,7 +17,9 @@ export default async function FinishedGoodsReceiptPage() {
   ])
 
   const pendingCount = workOrders.filter((wo) => wo.pendingQty > 0).length
-  const completedCount = workOrders.filter((wo) => wo.pendingQty === 0 && wo.totalReceiptQty > 0).length
+  const completedCount = workOrders.filter(
+    (wo) => !wo.receiptBlockedReason && wo.pendingQty === 0 && wo.totalReceiptQty > 0,
+  ).length
 
   return (
     <div className="space-y-6">

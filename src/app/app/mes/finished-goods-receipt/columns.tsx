@@ -46,15 +46,20 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
     },
     {
       id: "plannedQty",
-      header: "계획/양품",
+      header: "계획/입고 기준",
       cell: ({ row }) => {
-        const { plannedQty, totalGoodQty, item } = row.original
+        const { plannedQty, receiptBasisQty, isWipTracked, item } = row.original
         return (
-          <div className="text-[14px]">
-            <span className="text-muted-foreground">{plannedQty.toLocaleString()}</span>
-            <span className="text-muted-foreground mx-1">/</span>
-            <span className="font-medium">{totalGoodQty.toLocaleString()}</span>
-            <span className="text-[13px] text-muted-foreground ml-1">{item.uom}</span>
+          <div>
+            <div className="text-[14px]">
+              <span className="text-muted-foreground">{plannedQty.toLocaleString()}</span>
+              <span className="text-muted-foreground mx-1">/</span>
+              <span className="font-medium">{receiptBasisQty.toLocaleString()}</span>
+              <span className="text-[13px] text-muted-foreground ml-1">{item.uom}</span>
+            </div>
+            <div className="text-[13px] text-muted-foreground">
+              {isWipTracked ? "완료 WIP 기준" : "최종공정 기준"}
+            </div>
           </div>
         )
       },
@@ -63,7 +68,14 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
       id: "receiptQty",
       header: "입고현황",
       cell: ({ row }) => {
-        const { totalReceiptQty, totalGoodQty, pendingQty, item } = row.original
+        const { totalReceiptQty, receiptBasisQty, pendingQty, receiptBlockedReason, item } = row.original
+        if (receiptBlockedReason) {
+          return (
+            <div className="text-[13px] font-medium text-amber-700">
+              {receiptBlockedReason}
+            </div>
+          )
+        }
         if (pendingQty === 0 && totalReceiptQty > 0) {
           return (
             <div className="flex items-center gap-1.5">
@@ -86,7 +98,7 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
         }
         return (
           <span className="text-[14px] text-muted-foreground">
-            {totalGoodQty > 0 ? `${totalGoodQty.toLocaleString()} ${item.uom} 대기` : "-"}
+            {receiptBasisQty > 0 ? `${receiptBasisQty.toLocaleString()} ${item.uom} 대기` : "-"}
           </span>
         )
       },

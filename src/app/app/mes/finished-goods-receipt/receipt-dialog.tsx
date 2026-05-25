@@ -152,20 +152,28 @@ export function ReceiptDialog({
             </div>
           </div>
 
+          {workOrder.receiptBlockedReason ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-[14px] text-amber-800">
+              {workOrder.receiptBlockedReason}
+            </div>
+          ) : null}
+
           {/* 수량 요약 */}
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-md border p-2">
-              <div className="text-[12px] text-muted-foreground mb-0.5">양품생산</div>
-              <div className="text-[16px] font-semibold">{workOrder.totalGoodQty}</div>
+              <div className="text-[13px] text-muted-foreground mb-0.5">
+                {workOrder.isWipTracked ? "완료 WIP" : "최종공정 양품"}
+              </div>
+              <div className="text-[16px] font-semibold">{workOrder.receiptBasisQty}</div>
             </div>
             <div className="rounded-md border p-2">
-              <div className="text-[12px] text-muted-foreground mb-0.5">기입고</div>
+              <div className="text-[13px] text-muted-foreground mb-0.5">기입고</div>
               <div className="text-[16px] font-semibold text-muted-foreground">
                 {workOrder.totalReceiptQty}
               </div>
             </div>
             <div className="rounded-md border border-green-200 bg-green-50 p-2">
-              <div className="text-[12px] text-green-700 mb-0.5">입고 가능</div>
+              <div className="text-[13px] text-green-700 mb-0.5">입고 가능</div>
               <div className="text-[16px] font-semibold text-green-700">
                 {workOrder.pendingQty}
               </div>
@@ -236,6 +244,7 @@ export function ReceiptDialog({
           <Button
             variant="outline"
             onClick={() => setPrintOpen(true)}
+            disabled={Boolean(workOrder.receiptBlockedReason)}
             className="mr-auto"
           >
             바코드 라벨 출력
@@ -249,7 +258,7 @@ export function ReceiptDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isPending || !warehouseId || !locationId || !receiptQty}
+            disabled={isPending || Boolean(workOrder.receiptBlockedReason) || !warehouseId || !locationId || !receiptQty}
             className="gap-1.5"
           >
             <PackagePlus className="h-4 w-4" />

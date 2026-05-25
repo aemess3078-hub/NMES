@@ -16,8 +16,11 @@ export type WorkOrderForReceipt = {
   item: { id: string; code: string; name: string; uom: string }
   site: { id: string; name: string }
   totalGoodQty: number
+  receiptBasisQty: number
   totalReceiptQty: number
   pendingQty: number
+  isWipTracked: boolean
+  receiptBlockedReason: string | null
   latestInspectionResult: "PASS" | "FAIL" | "CONDITIONAL" | null
   // WipUnit 진행 상태 — 입고 가능 여부 판단 보조용. null 이면 WIP 추적 없는 레거시 작업지시.
   wipUnitStatus: string | null
@@ -48,6 +51,77 @@ export type CreateReceiptInput = {
   lotId?: string | null
 }
 
+type ReceiptQuantitySource = {
+  operations: {
+    seq: number
+    completedQty: unknown
+    productionResults: { goodQty: unknown; reworkQty: unknown }[]
+  }[]
+  finishedGoodsReceipts: { receiptQty: unknown }[]
+  wipUnits: {
+    parentWipUnitId: string | null
+    sourceProductionResultId: string | null
+    qty: unknown
+    status: string
+    movements: { id: string }[]
+  }[]
+}
+
+const REWORK_RECEIPT_BLOCK_REASON =
+  "재작업 이력이 있어 Phase 3-C 반영 전까지 완제품 입고를 진행할 수 없습니다."
+const INCONSISTENT_WIP_RECEIPT_BLOCK_REASON =
+  "완료 WIP 수량이 최종공정 완료 수량을 초과하여 입고를 진행할 수 없습니다."
+
+function calculateReceiptQuantity(source: ReceiptQuantitySource) {
+  const totalGoodQty = source.operations.reduce(
+    (sum, operation) =>
+      sum + operation.productionResults.reduce((subtotal, result) => subtotal + Number(result.goodQty), 0),
+    0,
+  )
+  const totalReceiptQty = source.finishedGoodsReceipts.reduce(
+    (sum, receipt) => sum + Number(receipt.receiptQty),
+    0,
+  )
+  const rootWipUnits = source.wipUnits.filter(
+    (wipUnit) => wipUnit.parentWipUnitId == null && wipUnit.sourceProductionResultId == null,
+  )
+  const isWipTracked = rootWipUnits.length > 0
+  const completedRootQty = rootWipUnits
+    .filter((wipUnit) => wipUnit.status === "COMPLETED")
+    .reduce((sum, wipUnit) => sum + Number(wipUnit.qty), 0)
+  const lastOperation = source.operations.reduce<typeof source.operations[number] | null>(
+    (latest, operation) => (!latest || operation.seq > latest.seq ? operation : latest),
+    null,
+  )
+  const legacyFinalOperationGoodQty =
+    lastOperation?.productionResults.reduce((sum, result) => sum + Number(result.goodQty), 0) ?? 0
+  const finalOperationCompletedQty = Number(lastOperation?.completedQty ?? 0)
+  const hasRework =
+    source.operations.some((operation) =>
+      operation.productionResults.some((result) => Number(result.reworkQty) > 0),
+    ) || source.wipUnits.some((wipUnit) => wipUnit.movements.length > 0)
+  const hasInconsistentCompletedWipQty =
+    isWipTracked && completedRootQty > finalOperationCompletedQty
+  const receiptBlockedReason = isWipTracked && hasRework
+    ? REWORK_RECEIPT_BLOCK_REASON
+    : hasInconsistentCompletedWipQty
+      ? INCONSISTENT_WIP_RECEIPT_BLOCK_REASON
+      : null
+  const receiptBasisQty = isWipTracked ? completedRootQty : legacyFinalOperationGoodQty
+
+  return {
+    totalGoodQty,
+    receiptBasisQty,
+    totalReceiptQty,
+    pendingQty: receiptBlockedReason
+      ? 0
+      : Math.max(0, receiptBasisQty - totalReceiptQty),
+    isWipTracked,
+    receiptBlockedReason,
+    rootWipUnits,
+  }
+}
+
 // ─── COMPLETED WorkOrder 목록 조회 ──────────────────────────────────────────
 
 export async function getWorkOrdersForReceipt(
@@ -61,7 +135,7 @@ export async function getWorkOrdersForReceipt(
       operations: {
         include: {
           productionResults: {
-            select: { goodQty: true },
+            select: { goodQty: true, reworkQty: true },
           },
           qualityInspections: {
             select: { result: true, inspectedAt: true },
@@ -79,29 +153,34 @@ export async function getWorkOrdersForReceipt(
         },
         orderBy: { receiptAt: "desc" },
       },
-      // 루트 WipUnit(parent/source가 없는 것) 1건만 가져와 입고 가능 여부 판단.
       wipUnits: {
-        where: { parentWipUnitId: null, sourceProductionResultId: null },
-        select: { id: true, status: true },
+        where: {
+          OR: [
+            { parentWipUnitId: null, sourceProductionResultId: null },
+            { movements: { some: { movementType: "REWORK" } } },
+          ],
+        },
+        select: {
+          id: true,
+          parentWipUnitId: true,
+          sourceProductionResultId: true,
+          qty: true,
+          status: true,
+          movements: {
+            where: { movementType: "REWORK" },
+            select: { id: true },
+            take: 1,
+          },
+        },
         orderBy: [{ updatedAt: "desc" }],
-        take: 1,
       },
     },
     orderBy: { updatedAt: "desc" },
   })
 
   return workOrders.map((wo) => {
-    const totalGoodQty = wo.operations.reduce((sum, op) => {
-      return (
-        sum +
-        op.productionResults.reduce((s, r) => s + Number(r.goodQty), 0)
-      )
-    }, 0)
-
-    const totalReceiptQty = wo.finishedGoodsReceipts.reduce(
-      (sum, r) => sum + Number(r.receiptQty),
-      0
-    )
+    const receiptQuantity = calculateReceiptQuantity(wo)
+    const latestRootWipUnit = receiptQuantity.rootWipUnits[0] ?? null
 
     // 가장 최근 공정(마지막 seq)의 검사 결과
     const latestInspection = wo.operations
@@ -117,11 +196,14 @@ export async function getWorkOrdersForReceipt(
       plannedQty: Number(wo.plannedQty),
       item: wo.item,
       site: wo.site,
-      totalGoodQty,
-      totalReceiptQty,
-      pendingQty: Math.max(0, totalGoodQty - totalReceiptQty),
+      totalGoodQty: receiptQuantity.totalGoodQty,
+      receiptBasisQty: receiptQuantity.receiptBasisQty,
+      totalReceiptQty: receiptQuantity.totalReceiptQty,
+      pendingQty: receiptQuantity.pendingQty,
+      isWipTracked: receiptQuantity.isWipTracked,
+      receiptBlockedReason: receiptQuantity.receiptBlockedReason,
       latestInspectionResult: (latestInspection?.result as WorkOrderForReceipt["latestInspectionResult"]) ?? null,
-      wipUnitStatus: wo.wipUnits[0]?.status ?? null,
+      wipUnitStatus: latestRootWipUnit?.status ?? null,
       receipts: wo.finishedGoodsReceipts.map((r) => ({
         id: r.id,
         receiptQty: Number(r.receiptQty),
@@ -182,15 +264,33 @@ export async function createFinishedGoodsReceiptAction(
         include: {
           operations: {
             select: {
-              productionResults: { select: { goodQty: true } },
+              seq: true,
+              completedQty: true,
+              productionResults: { select: { goodQty: true, reworkQty: true } },
             },
           },
           finishedGoodsReceipts: { select: { receiptQty: true } },
           wipUnits: {
-            where: { parentWipUnitId: null, sourceProductionResultId: null },
-            select: { id: true, status: true, lotId: true },
+            where: {
+              OR: [
+                { parentWipUnitId: null, sourceProductionResultId: null },
+                { movements: { some: { movementType: "REWORK" } } },
+              ],
+            },
+            select: {
+              id: true,
+              parentWipUnitId: true,
+              sourceProductionResultId: true,
+              qty: true,
+              status: true,
+              lotId: true,
+              movements: {
+                where: { movementType: "REWORK" },
+                select: { id: true },
+                take: 1,
+              },
+            },
             orderBy: [{ updatedAt: "desc" }],
-            take: 1,
           },
         },
       })
@@ -202,29 +302,25 @@ export async function createFinishedGoodsReceiptAction(
         throw new Error("작업지시 품목과 입고 품목이 일치하지 않습니다.")
       }
 
-      // 2. WipUnit 검증 — WipUnit 이 있으면 COMPLETED 만 허용. 없으면 레거시 호환.
-      const rootWipUnit = workOrder.wipUnits[0] ?? null
-      if (rootWipUnit && rootWipUnit.status !== "COMPLETED") {
-        throw new Error(
-          `WipUnit 상태가 COMPLETED 가 아닙니다 (현재 ${rootWipUnit.status}). 마지막 공정을 완료한 뒤 입고하세요.`,
-        )
-      }
-      if (!rootWipUnit) {
+      // 2. WIP 추적 작업지시는 완료 root qty, 레거시는 최종공정 양품 수량을 입고 기준으로 사용.
+      const receiptQuantity = calculateReceiptQuantity(workOrder)
+      const completedRootWipUnit = workOrder.wipUnits.find(
+        (wipUnit) =>
+          wipUnit.parentWipUnitId == null &&
+          wipUnit.sourceProductionResultId == null &&
+          wipUnit.status === "COMPLETED",
+      ) ?? null
+      if (!receiptQuantity.isWipTracked) {
         console.warn(
           `[finished-goods] WipUnit not found for workOrderId=${workOrder.id} — 레거시 작업지시로 간주하고 입고 진행`,
         )
       }
+      if (receiptQuantity.receiptBlockedReason) {
+        throw new Error(receiptQuantity.receiptBlockedReason)
+      }
 
-      // 3. pendingQty 재계산 — UI max 신뢰하지 않고 서버에서 다시 검증
-      const totalGoodQty = workOrder.operations.reduce(
-        (s, op) => s + op.productionResults.reduce((a, r) => a + Number(r.goodQty), 0),
-        0,
-      )
-      const totalReceiptQty = workOrder.finishedGoodsReceipts.reduce(
-        (s, r) => s + Number(r.receiptQty),
-        0,
-      )
-      const pendingQty = Math.max(0, totalGoodQty - totalReceiptQty)
+      // 3. pendingQty 재계산 — UI max 신뢰하지 않고 동일 산정식으로 서버에서 다시 검증
+      const pendingQty = receiptQuantity.pendingQty
       if (data.receiptQty <= 0) {
         throw new Error("입고 수량은 0보다 커야 합니다.")
       }
@@ -248,9 +344,9 @@ export async function createFinishedGoodsReceiptAction(
       // 5. WipUnit.lotId 갱신 — 최초 LOT 만 연결 (다회차는 FinishedGoodsReceipt 로 추적).
       //    WipUnit 1건에는 단일 lotId 만 표현 가능하므로, 다회차 LOT 는 추적성 화면에서
       //    finishedGoodsReceipts 배열로 확인한다.
-      if (rootWipUnit && rootWipUnit.lotId == null) {
+      if (completedRootWipUnit && completedRootWipUnit.lotId == null) {
         await tx.wipUnit.update({
-          where: { id: rootWipUnit.id },
+          where: { id: completedRootWipUnit.id },
           data: { lotId: lot.id },
         })
       }
