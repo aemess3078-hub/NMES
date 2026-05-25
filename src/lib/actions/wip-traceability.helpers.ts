@@ -245,12 +245,92 @@ export async function recordProductionResultQualityMovements(
     select: { movementType: true },
   })
   const existingMovementTypes = new Set(existingMovements.map((m) => m.movementType))
+  const existingChildWipUnits = await tx.wipUnit.findMany({
+    where: {
+      tenantId: params.tenantId,
+      parentWipUnitId: wipUnit.id,
+      sourceProductionResultId: params.productionResultId,
+      status: { in: [WipUnitStatus.SCRAPPED, WipUnitStatus.REWORK] },
+    },
+    select: { id: true, status: true },
+  })
+  let scrappedChildWipUnit =
+    existingChildWipUnits.find((child) => child.status === WipUnitStatus.SCRAPPED) ?? null
+  let reworkChildWipUnit =
+    existingChildWipUnits.find((child) => child.status === WipUnitStatus.REWORK) ?? null
   const hasScrapSplit =
-    existingMovementTypes.has(WipMovementType.SPLIT) ||
-    existingMovementTypes.has(WipMovementType.SCRAP)
+    existingMovementTypes.has(WipMovementType.SCRAP) || scrappedChildWipUnit !== null
+  const hasReworkSplit =
+    existingMovementTypes.has(WipMovementType.REWORK) || reworkChildWipUnit !== null
+  const defectQtyToSeparate =
+    params.defectQty > 0 && !hasScrapSplit ? params.defectQty : 0
+  const reworkQtyToSeparate =
+    params.reworkQty > 0 && !hasReworkSplit ? params.reworkQty : 0
+  const totalSeparatedQty = defectQtyToSeparate + reworkQtyToSeparate
 
-  // Phase 3-B treats defectQty as confirmed SCRAP.
-  // WipUnit.qty now means the remaining good-flow quantity; REWORK split stays in Phase 3-C.
+  if (totalSeparatedQty > 0) {
+    const rootQty = Number(wipUnit.qty)
+    if (!Number.isFinite(rootQty)) {
+      throw new Error(`WipUnit 수량을 확인할 수 없습니다. wipUnitId=${wipUnit.id}`)
+    }
+
+    if (totalSeparatedQty > rootQty) {
+      throw new Error(
+        `분리 수량(${totalSeparatedQty})이 이동 가능 WIP 수량(${rootQty})을 초과합니다.`
+      )
+    }
+
+    if (defectQtyToSeparate > 0) {
+      scrappedChildWipUnit = await tx.wipUnit.create({
+        data: {
+          tenantId: wipUnit.tenantId,
+          siteId: wipUnit.siteId,
+          workOrderId: wipUnit.workOrderId,
+          workOrderOperationId: params.operationId,
+          itemId: wipUnit.itemId,
+          lotId: wipUnit.lotId,
+          manufacturingNo: wipUnit.manufacturingNo,
+          currentWorkCenterId: params.workCenterId ?? wipUnit.currentWorkCenterId,
+          currentWarehouseId: wipUnit.currentWarehouseId,
+          currentLocationId: wipUnit.currentLocationId,
+          outsourcingPartnerId: wipUnit.outsourcingPartnerId,
+          sourceProductionResultId: params.productionResultId,
+          parentWipUnitId: wipUnit.id,
+          qty: defectQtyToSeparate,
+          status: WipUnitStatus.SCRAPPED,
+        },
+      })
+    }
+
+    if (reworkQtyToSeparate > 0) {
+      reworkChildWipUnit = await tx.wipUnit.create({
+        data: {
+          tenantId: wipUnit.tenantId,
+          siteId: wipUnit.siteId,
+          workOrderId: wipUnit.workOrderId,
+          workOrderOperationId: params.operationId,
+          itemId: wipUnit.itemId,
+          lotId: wipUnit.lotId,
+          manufacturingNo: wipUnit.manufacturingNo,
+          currentWorkCenterId: params.workCenterId ?? wipUnit.currentWorkCenterId,
+          currentWarehouseId: wipUnit.currentWarehouseId,
+          currentLocationId: wipUnit.currentLocationId,
+          outsourcingPartnerId: wipUnit.outsourcingPartnerId,
+          sourceProductionResultId: params.productionResultId,
+          parentWipUnitId: wipUnit.id,
+          qty: reworkQtyToSeparate,
+          status: WipUnitStatus.REWORK,
+        },
+      })
+    }
+
+    await tx.wipUnit.update({
+      where: { id: wipUnit.id },
+      data: { qty: rootQty - totalSeparatedQty },
+    })
+  }
+
+  // Split children remove quality-held quantities from the root good-flow quantity.
   const movements: Prisma.WipMovementCreateManyInput[] = []
 
   if (params.defectQty > 0 && !existingMovementTypes.has(WipMovementType.DEFECT)) {
@@ -284,66 +364,25 @@ export async function recordProductionResultQualityMovements(
       qty: params.reworkQty,
       sourceType: "ProductionResult",
       sourceId: params.productionResultId,
+      relatedWipUnitId: reworkChildWipUnit?.id ?? null,
       note: `POP 실적 등록 재작업 수량 기록 (reworkQty=${params.reworkQty})`,
       createdById: params.createdById ?? null,
     })
   }
 
-  if (movements.length > 0) {
-    await tx.wipMovement.createMany({ data: movements })
-  }
-
-  if (params.defectQty <= 0 || hasScrapSplit) return
-
-  const rootQty = Number(wipUnit.qty)
-  if (!Number.isFinite(rootQty)) {
-    throw new Error(`WipUnit 수량을 확인할 수 없습니다. wipUnitId=${wipUnit.id}`)
-  }
-
-  if (params.defectQty > rootQty) {
-    throw new Error(
-      `SCRAP 수량(${params.defectQty})이 이동 가능 WIP 수량(${rootQty})을 초과합니다.`
-    )
-  }
-
-  const childWipUnit = await tx.wipUnit.create({
-    data: {
-      tenantId: wipUnit.tenantId,
-      siteId: wipUnit.siteId,
-      workOrderId: wipUnit.workOrderId,
-      workOrderOperationId: params.operationId,
-      itemId: wipUnit.itemId,
-      lotId: wipUnit.lotId,
-      manufacturingNo: wipUnit.manufacturingNo,
-      currentWorkCenterId: params.workCenterId ?? wipUnit.currentWorkCenterId,
-      currentWarehouseId: wipUnit.currentWarehouseId,
-      currentLocationId: wipUnit.currentLocationId,
-      outsourcingPartnerId: wipUnit.outsourcingPartnerId,
-      sourceProductionResultId: params.productionResultId,
-      parentWipUnitId: wipUnit.id,
-      qty: params.defectQty,
-      status: WipUnitStatus.SCRAPPED,
-    },
-  })
-
-  await tx.wipUnit.update({
-    where: { id: wipUnit.id },
-    data: { qty: rootQty - params.defectQty },
-  })
-
-  await tx.wipMovement.createMany({
-    data: [
+  if (defectQtyToSeparate > 0 && scrappedChildWipUnit) {
+    movements.push(
       {
         tenantId: params.tenantId,
         siteId: params.siteId,
         wipUnitId: wipUnit.id,
-        relatedWipUnitId: childWipUnit.id,
+        relatedWipUnitId: scrappedChildWipUnit.id,
         movementType: WipMovementType.SPLIT,
         fromOperationId: params.operationId,
         toOperationId: params.operationId,
         fromWorkCenterId: params.workCenterId,
         toWorkCenterId: params.workCenterId,
-        qty: params.defectQty,
+        qty: defectQtyToSeparate,
         sourceType: "ProductionResult",
         sourceId: params.productionResultId,
         note: `POP 불량 수량 SCRAP 분리 (defectQty=${params.defectQty})`,
@@ -352,19 +391,42 @@ export async function recordProductionResultQualityMovements(
       {
         tenantId: params.tenantId,
         siteId: params.siteId,
-        wipUnitId: childWipUnit.id,
+        wipUnitId: scrappedChildWipUnit.id,
         relatedWipUnitId: wipUnit.id,
         movementType: WipMovementType.SCRAP,
         fromOperationId: params.operationId,
         toOperationId: params.operationId,
         fromWorkCenterId: params.workCenterId,
         toWorkCenterId: params.workCenterId,
-        qty: params.defectQty,
+        qty: defectQtyToSeparate,
         sourceType: "ProductionResult",
         sourceId: params.productionResultId,
         note: `POP 불량 수량 자동 폐기 처리 (defectQty=${params.defectQty})`,
         createdById: params.createdById ?? null,
-      },
-    ],
-  })
+      }
+    )
+  }
+
+  if (reworkQtyToSeparate > 0 && reworkChildWipUnit) {
+    movements.push({
+      tenantId: params.tenantId,
+      siteId: params.siteId,
+      wipUnitId: wipUnit.id,
+      relatedWipUnitId: reworkChildWipUnit.id,
+      movementType: WipMovementType.SPLIT,
+      fromOperationId: params.operationId,
+      toOperationId: params.operationId,
+      fromWorkCenterId: params.workCenterId,
+      toWorkCenterId: params.workCenterId,
+      qty: reworkQtyToSeparate,
+      sourceType: "ProductionResult",
+      sourceId: params.productionResultId,
+      note: `POP 재작업 수량 분리 (reworkQty=${params.reworkQty})`,
+      createdById: params.createdById ?? null,
+    })
+  }
+
+  if (movements.length > 0) {
+    await tx.wipMovement.createMany({ data: movements })
+  }
 }

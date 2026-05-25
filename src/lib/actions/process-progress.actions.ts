@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { OperationStatus } from "@prisma/client"
+import { OperationStatus, WipUnitStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -247,9 +247,40 @@ export async function dispositionDefects(
   reworkQty: number
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await prisma.productionResult.update({
-      where: { id: productionResultId },
-      data: { reworkQty },
+    await prisma.$transaction(async (tx) => {
+      const productionResult = await tx.productionResult.findUnique({
+        where: { id: productionResultId },
+        select: { defectQty: true, reworkQty: true },
+      })
+      if (!productionResult) {
+        throw new Error("생산실적을 찾을 수 없습니다.")
+      }
+
+      const defectQty = Number(productionResult.defectQty)
+      if (!Number.isFinite(reworkQty) || reworkQty < 0 || reworkQty > defectQty) {
+        throw new Error(`재작업 수량은 0 ~ ${defectQty} 범위여야 합니다.`)
+      }
+
+      if (reworkQty === Number(productionResult.reworkQty)) return
+
+      const scrappedChildWipUnit = await tx.wipUnit.findFirst({
+        where: {
+          sourceProductionResultId: productionResultId,
+          parentWipUnitId: { not: null },
+          status: WipUnitStatus.SCRAPPED,
+        },
+        select: { id: true },
+      })
+      if (scrappedChildWipUnit) {
+        throw new Error(
+          "이미 SCRAPPED WipUnit으로 분리된 불량 실적은 재작업으로 재분류할 수 없습니다."
+        )
+      }
+
+      await tx.productionResult.update({
+        where: { id: productionResultId },
+        data: { reworkQty },
+      })
     })
     revalidatePath("/app/mes/process-progress")
     revalidatePath("/app/mes/rework")
