@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { OperationStatus, WipUnitStatus } from "@prisma/client"
+import { OperationStatus, WipMovementType, WipUnitStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -40,11 +40,19 @@ export type OperationProgressRow = {
 }
 
 export type ReworkRow = {
-  id: string // productionResult.id
+  id: string // rework WipUnit.id
+  manufacturingNo: string | null
   workOrderOperationId: string
   reworkQty: number
   defectQty: number
   startedAt: Date | null
+  canComplete: boolean
+  blockedReason: string | null
+  parentWipUnit: {
+    id: string
+    qty: number
+    status: WipUnitStatus
+  } | null
   workOrder: {
     id: string
     orderNo: string
@@ -145,19 +153,40 @@ export async function getOperationProgressList(
 export async function getReworkPendingList(
   tenantId: string
 ): Promise<ReworkRow[]> {
-  const results = await prisma.productionResult.findMany({
+  const reworkWipUnits = await prisma.wipUnit.findMany({
     where: {
-      reworkQty: { gt: 0 },
-      workOrderOperation: {
-        workOrder: { tenantId },
-      },
+      tenantId,
+      status: WipUnitStatus.REWORK,
+      parentWipUnitId: { not: null },
+      sourceProductionResultId: { not: null },
     },
     include: {
+      sourceProductionResult: {
+        select: {
+          defectQty: true,
+          startedAt: true,
+        },
+      },
+      parentWipUnit: {
+        select: {
+          id: true,
+          qty: true,
+          status: true,
+          workOrderOperationId: true,
+        },
+      },
       workOrderOperation: {
         include: {
           workOrder: {
-            include: {
+            select: {
+              id: true,
+              orderNo: true,
               item: { select: { id: true, code: true, name: true } },
+              operations: {
+                select: { id: true, seq: true },
+                orderBy: { seq: "desc" },
+                take: 1,
+              },
             },
           },
           routingOperation: {
@@ -168,26 +197,49 @@ export async function getReworkPendingList(
         },
       },
     },
-    orderBy: { startedAt: "desc" },
+    orderBy: { createdAt: "desc" },
   })
 
-  return results.map((r) => ({
-    id: r.id,
-    workOrderOperationId: r.workOrderOperationId,
-    reworkQty: Number(r.reworkQty),
-    defectQty: Number(r.defectQty),
-    startedAt: r.startedAt,
-    workOrder: {
-      id: r.workOrderOperation.workOrder.id,
-      orderNo: r.workOrderOperation.workOrder.orderNo,
-      item: r.workOrderOperation.workOrder.item,
-    },
-    routingOperation: {
-      name: r.workOrderOperation.routingOperation.name,
-      seq: r.workOrderOperation.routingOperation.seq,
-      workCenter: r.workOrderOperation.routingOperation.workCenter,
-    },
-  }))
+  return reworkWipUnits.map((wipUnit) => {
+    const lastOperation = wipUnit.workOrderOperation.workOrder.operations[0] ?? null
+    const isFinalOperation = lastOperation?.id === wipUnit.workOrderOperationId
+    const hasCompletedParent =
+      wipUnit.parentWipUnit?.status === WipUnitStatus.COMPLETED &&
+      wipUnit.parentWipUnit.workOrderOperationId === wipUnit.workOrderOperationId
+    const blockedReason = !isFinalOperation
+      ? "중간공정 재작업은 후속 routing 반영 전까지 완료할 수 없습니다."
+      : !hasCompletedParent
+        ? "최종공정 완료 root WipUnit을 확인할 수 없습니다."
+        : null
+
+    return {
+      id: wipUnit.id,
+      manufacturingNo: wipUnit.manufacturingNo,
+      workOrderOperationId: wipUnit.workOrderOperationId,
+      reworkQty: Number(wipUnit.qty),
+      defectQty: Number(wipUnit.sourceProductionResult?.defectQty ?? 0),
+      startedAt: wipUnit.sourceProductionResult?.startedAt ?? wipUnit.createdAt,
+      canComplete: blockedReason == null,
+      blockedReason,
+      parentWipUnit: wipUnit.parentWipUnit
+        ? {
+            id: wipUnit.parentWipUnit.id,
+            qty: Number(wipUnit.parentWipUnit.qty),
+            status: wipUnit.parentWipUnit.status,
+          }
+        : null,
+      workOrder: {
+        id: wipUnit.workOrderOperation.workOrder.id,
+        orderNo: wipUnit.workOrderOperation.workOrder.orderNo,
+        item: wipUnit.workOrderOperation.workOrder.item,
+      },
+      routingOperation: {
+        name: wipUnit.workOrderOperation.routingOperation.name,
+        seq: wipUnit.workOrderOperation.routingOperation.seq,
+        workCenter: wipUnit.workOrderOperation.routingOperation.workCenter,
+      },
+    }
+  })
 }
 
 // ─── 공정 상태 변경 ─────────────────────────────────────────────────────────────
@@ -290,31 +342,161 @@ export async function dispositionDefects(
   }
 }
 
-// ─── 재작업 완료 처리 ────────────────────────────────────────────────────────────
+// ─── 최종공정 재작업 WIP 일괄 종결 ───────────────────────────────────────────────
+
+export type CompleteReworkInput = {
+  reworkWipUnitId: string
+  mergedQty: number
+  scrapQty: number
+}
 
 export async function completeRework(
-  workOrderOperationId: string,
-  reworkedGoodQty: number
+  input: CompleteReworkInput
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.productionResult.create({
-        data: {
-          workOrderOperationId,
-          goodQty: reworkedGoodQty,
-          defectQty: 0,
-          reworkQty: 0,
-          startedAt: new Date(),
-          endedAt: new Date(),
+      const { reworkWipUnitId, mergedQty, scrapQty } = input
+      if (
+        !Number.isFinite(mergedQty) ||
+        !Number.isFinite(scrapQty) ||
+        mergedQty < 0 ||
+        scrapQty < 0 ||
+        mergedQty + scrapQty <= 0
+      ) {
+        throw new Error("복귀 수량과 폐기 수량을 올바르게 입력하세요.")
+      }
+
+      const child = await tx.wipUnit.findUnique({
+        where: { id: reworkWipUnitId },
+        include: {
+          parentWipUnit: {
+            select: {
+              id: true,
+              qty: true,
+              status: true,
+              parentWipUnitId: true,
+              workOrderOperationId: true,
+              currentWorkCenterId: true,
+            },
+          },
+          workOrderOperation: {
+            select: {
+              id: true,
+              workOrder: {
+                select: {
+                  operations: {
+                    select: { id: true, seq: true },
+                    orderBy: { seq: "desc" },
+                    take: 1,
+                  },
+                },
+              },
+            },
+          },
         },
       })
-      await tx.workOrderOperation.update({
-        where: { id: workOrderOperationId },
-        data: { completedQty: { increment: reworkedGoodQty } },
+      if (
+        !child ||
+        child.status !== WipUnitStatus.REWORK ||
+        child.parentWipUnitId == null ||
+        child.sourceProductionResultId == null
+      ) {
+        throw new Error("처리 가능한 REWORK WipUnit을 찾을 수 없습니다.")
+      }
+
+      const existingCompletion = await tx.wipMovement.findFirst({
+        where: {
+          sourceType: "ReworkCompletion",
+          sourceId: child.id,
+        },
+        select: { id: true },
+      })
+      if (existingCompletion) {
+        throw new Error("이미 종결 처리된 REWORK WipUnit입니다.")
+      }
+
+      const childQty = Number(child.qty)
+      if (Math.abs(mergedQty + scrapQty - childQty) > 0.000001) {
+        throw new Error(
+          `복귀 수량과 폐기 수량의 합계는 재작업 수량(${childQty})과 같아야 합니다.`
+        )
+      }
+
+      const lastOperation = child.workOrderOperation.workOrder.operations[0] ?? null
+      if (!lastOperation || lastOperation.id !== child.workOrderOperationId) {
+        throw new Error("중간공정 REWORK WipUnit은 후속 routing 반영 전까지 종결할 수 없습니다.")
+      }
+
+      const parent = child.parentWipUnit
+      if (
+        !parent ||
+        parent.parentWipUnitId != null ||
+        parent.status !== WipUnitStatus.COMPLETED ||
+        parent.workOrderOperationId !== child.workOrderOperationId
+      ) {
+        throw new Error("최종공정 완료 root WipUnit에만 재작업 수량을 복귀할 수 있습니다.")
+      }
+
+      const childStatus =
+        mergedQty > 0 ? WipUnitStatus.COMPLETED : WipUnitStatus.SCRAPPED
+      const claimed = await tx.wipUnit.updateMany({
+        where: { id: child.id, status: WipUnitStatus.REWORK },
+        data: { status: childStatus },
+      })
+      if (claimed.count !== 1) {
+        throw new Error("이미 처리 중이거나 종결된 REWORK WipUnit입니다.")
+      }
+
+      if (mergedQty > 0) {
+        await tx.wipUnit.update({
+          where: { id: parent.id },
+          data: { qty: { increment: mergedQty } },
+        })
+      }
+
+      const movements = []
+      if (mergedQty > 0) {
+        movements.push({
+          tenantId: child.tenantId,
+          siteId: child.siteId,
+          wipUnitId: parent.id,
+          relatedWipUnitId: child.id,
+          movementType: WipMovementType.MERGE,
+          fromOperationId: child.workOrderOperationId,
+          toOperationId: parent.workOrderOperationId,
+          fromWorkCenterId: child.currentWorkCenterId,
+          toWorkCenterId: parent.currentWorkCenterId,
+          qty: mergedQty,
+          sourceType: "ReworkCompletion",
+          sourceId: child.id,
+          note: `재작업 양품 복귀: ${mergedQty}`,
+        })
+      }
+      if (scrapQty > 0) {
+        movements.push({
+          tenantId: child.tenantId,
+          siteId: child.siteId,
+          wipUnitId: child.id,
+          relatedWipUnitId: parent.id,
+          movementType: WipMovementType.SCRAP,
+          fromOperationId: child.workOrderOperationId,
+          toOperationId: child.workOrderOperationId,
+          fromWorkCenterId: child.currentWorkCenterId,
+          toWorkCenterId: child.currentWorkCenterId,
+          qty: scrapQty,
+          sourceType: "ReworkCompletion",
+          sourceId: child.id,
+          note: `재작업 후 폐기: ${scrapQty}`,
+        })
+      }
+      await tx.wipMovement.createMany({
+        data: movements,
       })
     })
     revalidatePath("/app/mes/process-progress")
     revalidatePath("/app/mes/rework")
+    revalidatePath("/app/mes/finished-goods-receipt")
+    revalidatePath("/app/mes/manufacturing-traceability")
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }

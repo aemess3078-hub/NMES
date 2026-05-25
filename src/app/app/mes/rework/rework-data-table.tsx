@@ -69,11 +69,11 @@ export function ReworkDataTable({ data }: ReworkDataTableProps) {
       ),
     },
     {
-      id: "defectQty",
-      header: "불량수량",
+      id: "manufacturingNo",
+      header: "제조번호",
       cell: ({ row }) => (
-        <span className="text-[14px] text-red-600 font-medium">
-          {row.original.defectQty}
+        <span className="font-mono text-[13px] text-muted-foreground">
+          {row.original.manufacturingNo ?? "-"}
         </span>
       ),
     },
@@ -84,10 +84,34 @@ export function ReworkDataTable({ data }: ReworkDataTableProps) {
       ),
       accessorFn: (row) => row.reworkQty,
       cell: ({ row }) => (
-        <Badge className="text-[13px] bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">
-          {row.original.reworkQty}개
-        </Badge>
+        <div>
+          <Badge className="text-[13px] bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100">
+            {row.original.reworkQty}개
+          </Badge>
+          <div className="mt-1 text-[13px] text-muted-foreground">
+            root {row.original.parentWipUnit?.qty ?? "-"}개
+          </div>
+        </div>
       ),
+    },
+    {
+      id: "resolution",
+      header: "처리 가능 여부",
+      cell: ({ row }) =>
+        row.original.canComplete ? (
+          <Badge className="text-[13px] bg-green-100 text-green-800 border-green-200 hover:bg-green-100">
+            최종공정 종결 가능
+          </Badge>
+        ) : (
+          <div>
+            <Badge className="text-[13px] bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-100">
+              보류
+            </Badge>
+            <div className="mt-1 max-w-48 text-[13px] text-muted-foreground">
+              {row.original.blockedReason}
+            </div>
+          </div>
+        ),
     },
     {
       id: "startedAt",
@@ -116,13 +140,14 @@ export function ReworkDataTable({ data }: ReworkDataTableProps) {
           size="sm"
           variant="outline"
           className="h-7 text-[13px] px-2 gap-1"
+          disabled={!row.original.canComplete}
           onClick={() => {
             setTarget(row.original)
             setDialogOpen(true)
           }}
         >
           <Wrench className="h-3 w-3" />
-          완료처리
+          {row.original.canComplete ? "완료처리" : "처리불가"}
         </Button>
       ),
       enableSorting: false,

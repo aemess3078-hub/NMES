@@ -17,7 +17,7 @@ export default async function ReworkPage() {
           재작업/보류 관리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
-          공정부적합 처리에서 재작업으로 지정된 항목을 확인하고 완료 처리합니다.
+          미해결 REWORK WIP를 확인하고, 최종공정에서 발생한 수량만 복귀 또는 폐기로 종결합니다.
         </p>
       </div>
 

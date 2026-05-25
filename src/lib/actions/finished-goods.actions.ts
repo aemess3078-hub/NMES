@@ -53,22 +53,28 @@ export type CreateReceiptInput = {
 
 type ReceiptQuantitySource = {
   operations: {
+    id: string
     seq: number
     completedQty: unknown
-    productionResults: { goodQty: unknown; reworkQty: unknown }[]
+    productionResults: { id: string; goodQty: unknown; reworkQty: unknown }[]
   }[]
   finishedGoodsReceipts: { receiptQty: unknown }[]
   wipUnits: {
+    id: string
+    workOrderOperationId: string
     parentWipUnitId: string | null
     sourceProductionResultId: string | null
     qty: unknown
     status: string
-    movements: { id: string }[]
+    movements: { relatedWipUnitId: string | null }[]
+    relatedMovements: { id: string }[]
   }[]
 }
 
-const REWORK_RECEIPT_BLOCK_REASON =
-  "재작업 이력이 있어 Phase 3-C 반영 전까지 완제품 입고를 진행할 수 없습니다."
+const UNRESOLVED_REWORK_RECEIPT_BLOCK_REASON =
+  "미해결 재작업 WIP가 있어 완제품 입고를 진행할 수 없습니다."
+const LEGACY_REWORK_RECEIPT_BLOCK_REASON =
+  "종결 상태를 판별할 수 없는 기존 재작업 이력이 있어 완제품 입고를 진행할 수 없습니다."
 const INCONSISTENT_WIP_RECEIPT_BLOCK_REASON =
   "완료 WIP 수량이 최종공정 완료 수량을 초과하여 입고를 진행할 수 없습니다."
 
@@ -86,24 +92,47 @@ function calculateReceiptQuantity(source: ReceiptQuantitySource) {
     (wipUnit) => wipUnit.parentWipUnitId == null && wipUnit.sourceProductionResultId == null,
   )
   const isWipTracked = rootWipUnits.length > 0
-  const completedRootQty = rootWipUnits
-    .filter((wipUnit) => wipUnit.status === "COMPLETED")
-    .reduce((sum, wipUnit) => sum + Number(wipUnit.qty), 0)
   const lastOperation = source.operations.reduce<typeof source.operations[number] | null>(
     (latest, operation) => (!latest || operation.seq > latest.seq ? operation : latest),
     null,
   )
+  const completedRootQty = rootWipUnits
+    .filter(
+      (wipUnit) =>
+        wipUnit.status === "COMPLETED" &&
+        wipUnit.workOrderOperationId === lastOperation?.id,
+    )
+    .reduce((sum, wipUnit) => sum + Number(wipUnit.qty), 0)
   const legacyFinalOperationGoodQty =
     lastOperation?.productionResults.reduce((sum, result) => sum + Number(result.goodQty), 0) ?? 0
   const finalOperationCompletedQty = Number(lastOperation?.completedQty ?? 0)
-  const hasRework =
-    source.operations.some((operation) =>
-      operation.productionResults.some((result) => Number(result.reworkQty) > 0),
-    ) || source.wipUnits.some((wipUnit) => wipUnit.movements.length > 0)
+  const reworkChildWipUnits = source.wipUnits.filter(
+    (wipUnit) => wipUnit.parentWipUnitId != null && wipUnit.sourceProductionResultId != null,
+  )
+  const linkedReworkProductionResultIds = new Set(
+    reworkChildWipUnits
+      .filter((wipUnit) => wipUnit.relatedMovements.length > 0)
+      .map((wipUnit) => wipUnit.sourceProductionResultId),
+  )
+  const hasUnresolvedReworkChild = reworkChildWipUnits.some(
+    (wipUnit) => wipUnit.status === "REWORK",
+  )
+  const hasLegacyReworkProductionResult = source.operations.some((operation) =>
+    operation.productionResults.some(
+      (result) =>
+        Number(result.reworkQty) > 0 && !linkedReworkProductionResultIds.has(result.id),
+    ),
+  )
+  const hasUnlinkedReworkMovement = source.wipUnits.some((wipUnit) =>
+    wipUnit.movements.some((movement) => movement.relatedWipUnitId == null),
+  )
+  const hasLegacyRework = hasLegacyReworkProductionResult || hasUnlinkedReworkMovement
   const hasInconsistentCompletedWipQty =
     isWipTracked && completedRootQty > finalOperationCompletedQty
-  const receiptBlockedReason = isWipTracked && hasRework
-    ? REWORK_RECEIPT_BLOCK_REASON
+  const receiptBlockedReason = hasUnresolvedReworkChild
+    ? UNRESOLVED_REWORK_RECEIPT_BLOCK_REASON
+    : hasLegacyRework
+      ? LEGACY_REWORK_RECEIPT_BLOCK_REASON
     : hasInconsistentCompletedWipQty
       ? INCONSISTENT_WIP_RECEIPT_BLOCK_REASON
       : null
@@ -119,6 +148,7 @@ function calculateReceiptQuantity(source: ReceiptQuantitySource) {
     isWipTracked,
     receiptBlockedReason,
     rootWipUnits,
+    finalOperationId: lastOperation?.id ?? null,
   }
 }
 
@@ -135,7 +165,7 @@ export async function getWorkOrdersForReceipt(
       operations: {
         include: {
           productionResults: {
-            select: { goodQty: true, reworkQty: true },
+            select: { id: true, goodQty: true, reworkQty: true },
           },
           qualityInspections: {
             select: { result: true, inspectedAt: true },
@@ -157,19 +187,24 @@ export async function getWorkOrdersForReceipt(
         where: {
           OR: [
             { parentWipUnitId: null, sourceProductionResultId: null },
-            { movements: { some: { movementType: "REWORK" } } },
+            { parentWipUnitId: { not: null }, status: "REWORK" },
+            { relatedMovements: { some: { movementType: "REWORK" } } },
           ],
         },
         select: {
           id: true,
+          workOrderOperationId: true,
           parentWipUnitId: true,
           sourceProductionResultId: true,
           qty: true,
           status: true,
           movements: {
             where: { movementType: "REWORK" },
+            select: { relatedWipUnitId: true },
+          },
+          relatedMovements: {
+            where: { movementType: "REWORK" },
             select: { id: true },
-            take: 1,
           },
         },
         orderBy: [{ updatedAt: "desc" }],
@@ -264,9 +299,10 @@ export async function createFinishedGoodsReceiptAction(
         include: {
           operations: {
             select: {
+              id: true,
               seq: true,
               completedQty: true,
-              productionResults: { select: { goodQty: true, reworkQty: true } },
+              productionResults: { select: { id: true, goodQty: true, reworkQty: true } },
             },
           },
           finishedGoodsReceipts: { select: { receiptQty: true } },
@@ -274,11 +310,13 @@ export async function createFinishedGoodsReceiptAction(
             where: {
               OR: [
                 { parentWipUnitId: null, sourceProductionResultId: null },
-                { movements: { some: { movementType: "REWORK" } } },
+                { parentWipUnitId: { not: null }, status: "REWORK" },
+                { relatedMovements: { some: { movementType: "REWORK" } } },
               ],
             },
             select: {
               id: true,
+              workOrderOperationId: true,
               parentWipUnitId: true,
               sourceProductionResultId: true,
               qty: true,
@@ -286,8 +324,11 @@ export async function createFinishedGoodsReceiptAction(
               lotId: true,
               movements: {
                 where: { movementType: "REWORK" },
+                select: { relatedWipUnitId: true },
+              },
+              relatedMovements: {
+                where: { movementType: "REWORK" },
                 select: { id: true },
-                take: 1,
               },
             },
             orderBy: [{ updatedAt: "desc" }],
@@ -308,7 +349,8 @@ export async function createFinishedGoodsReceiptAction(
         (wipUnit) =>
           wipUnit.parentWipUnitId == null &&
           wipUnit.sourceProductionResultId == null &&
-          wipUnit.status === "COMPLETED",
+          wipUnit.status === "COMPLETED" &&
+          wipUnit.workOrderOperationId === receiptQuantity.finalOperationId,
       ) ?? null
       if (!receiptQuantity.isWipTracked) {
         console.warn(

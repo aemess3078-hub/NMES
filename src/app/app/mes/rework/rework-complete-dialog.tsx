@@ -27,36 +27,50 @@ export function ReworkCompleteDialog({
 }: ReworkCompleteDialogProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [goodQty, setGoodQty] = useState("")
+  const [mergedQty, setMergedQty] = useState("")
+  const [scrapQty, setScrapQty] = useState("")
 
   if (!reworkItem) return null
 
   const handleSubmit = () => {
-    const qty = Number(goodQty)
-    if (isNaN(qty) || qty <= 0) {
-      alert("양품 수량을 올바르게 입력하세요.")
+    const merged = Number(mergedQty)
+    const scrap = Number(scrapQty)
+    if (
+      !Number.isFinite(merged) ||
+      !Number.isFinite(scrap) ||
+      merged < 0 ||
+      scrap < 0 ||
+      merged + scrap <= 0
+    ) {
+      alert("복귀 수량과 폐기 수량을 올바르게 입력하세요.")
       return
     }
-    if (qty > reworkItem.reworkQty) {
-      alert(`재작업 수량(${reworkItem.reworkQty})을 초과할 수 없습니다.`)
+    if (Math.abs(merged + scrap - reworkItem.reworkQty) > 0.000001) {
+      alert(`복귀 수량과 폐기 수량의 합계는 재작업 수량(${reworkItem.reworkQty})과 같아야 합니다.`)
       return
     }
 
     startTransition(async () => {
-      const res = await completeRework(reworkItem.workOrderOperationId, qty)
+      const res = await completeRework({
+        reworkWipUnitId: reworkItem.id,
+        mergedQty: merged,
+        scrapQty: scrap,
+      })
       if (!res.ok) {
         alert(res.error ?? "오류가 발생했습니다.")
         return
       }
       router.refresh()
       onOpenChange(false)
-      setGoodQty("")
+      setMergedQty("")
+      setScrapQty("")
     })
   }
 
   const handleClose = () => {
     onOpenChange(false)
-    setGoodQty("")
+    setMergedQty("")
+    setScrapQty("")
   }
 
   return (
@@ -82,9 +96,9 @@ export function ReworkCompleteDialog({
           {/* 재작업 수량 정보 */}
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="rounded-md border p-3">
-              <div className="text-[13px] text-muted-foreground mb-1">원래 불량</div>
-              <div className="text-[20px] font-semibold text-red-600">
-                {reworkItem.defectQty}
+              <div className="text-[13px] text-muted-foreground mb-1">현재 완료 root</div>
+              <div className="text-[20px] font-semibold text-slate-700">
+                {reworkItem.parentWipUnit?.qty ?? "-"}
               </div>
             </div>
             <div className="rounded-md border p-3">
@@ -95,40 +109,51 @@ export function ReworkCompleteDialog({
             </div>
           </div>
 
-          {/* 결과 입력 */}
-          <div className="space-y-1.5">
-            <Label className="text-[14px]">
-              재작업 완료 후 양품 수량{" "}
-              <span className="text-muted-foreground font-normal">
-                (최대 {reworkItem.reworkQty})
-              </span>
-            </Label>
-            <Input
-              type="number"
-              min={0}
-              max={reworkItem.reworkQty}
-              placeholder="0"
-              value={goodQty}
-              onChange={(e) => setGoodQty(e.target.value)}
-              className="text-[14px]"
-            />
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-[13px] text-blue-800">
+            이 처리는 완료 WIP 수량의 복귀 및 폐기 이력만 기록하며, 공정 완료 수량을 다시 증가시키지 않습니다.
           </div>
 
-          {goodQty && Number(goodQty) >= 0 && (
-            <div className="rounded-md bg-muted/30 p-3 text-[13px] text-muted-foreground">
-              재작업 후 폐기:{" "}
-              <span className="font-medium text-foreground">
-                {Math.max(0, reworkItem.reworkQty - Number(goodQty))}개
-              </span>
+          {/* 결과 입력 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[14px]">양품 복귀 수량</Label>
+              <Input
+                type="number"
+                min={0}
+                max={reworkItem.reworkQty}
+                placeholder="0"
+                value={mergedQty}
+                onChange={(e) => setMergedQty(e.target.value)}
+                className="text-[14px]"
+              />
             </div>
-          )}
+            <div className="space-y-1.5">
+              <Label className="text-[14px]">폐기 수량</Label>
+              <Input
+                type="number"
+                min={0}
+                max={reworkItem.reworkQty}
+                placeholder="0"
+                value={scrapQty}
+                onChange={(e) => setScrapQty(e.target.value)}
+                className="text-[14px]"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-md bg-muted/30 p-3 text-[13px] text-muted-foreground">
+            입력 합계:{" "}
+            <span className="font-medium text-foreground">
+              {(Number(mergedQty) || 0) + (Number(scrapQty) || 0)} / {reworkItem.reworkQty}개
+            </span>
+          </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={isPending}>
             취소
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending || !goodQty}>
+          <Button onClick={handleSubmit} disabled={isPending || !mergedQty || !scrapQty}>
             {isPending ? "처리 중..." : "완료 처리"}
           </Button>
         </DialogFooter>
