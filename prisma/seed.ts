@@ -28,9 +28,27 @@ import {
   PurchaseOrderStatus,
   InspectionSpecStatus,
   InspectionInputType,
+  LotStatus,
+  TransactionType,
+  WipUnitStatus,
+  WipMovementType,
+  InspectionStage,
+  InspectionResult,
+  DefectSeverity,
+  DefectDisposition,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+type SeedMode = 'base' | 'customer' | 'demo'
+
+const requestedSeedMode = process.env.SEED_MODE?.trim().toLowerCase()
+const SEED_MODE: SeedMode =
+  requestedSeedMode === 'base' ||
+  requestedSeedMode === 'customer' ||
+  requestedSeedMode === 'demo'
+    ? requestedSeedMode
+    : 'base'
 
 // ─── IDs ─────────────────────────────────────────────────────────────────────
 
@@ -2101,6 +2119,10 @@ async function seedUserCredentials() {
 
 async function main() {
   console.log('▶ MES 기준정보 시드 시작...\n');
+  console.log(`  [mode] SEED_MODE=${SEED_MODE}`);
+  if (requestedSeedMode && requestedSeedMode !== SEED_MODE) {
+    console.warn(`  - 알 수 없는 SEED_MODE=${requestedSeedMode}; 안전한 base 모드로 실행합니다.`);
+  }
 
   console.log('  [1/11] Tenant');
   await seedTenant();
@@ -2120,8 +2142,12 @@ async function main() {
   console.log('  [5/11] WorkCenters');
   await seedWorkCenters();
 
-  console.log('  [6/11] Equipments');
-  await seedEquipments();
+  if (SEED_MODE === 'demo') {
+    console.log('  [6/11] Equipments');
+    await seedEquipments();
+  } else {
+    console.log('  [6/11] Equipments skipped (SEED_MODE=demo only)');
+  }
 
   console.log('  [7/11] ItemCategories');
   await seedItemCategories();
@@ -2130,8 +2156,12 @@ async function main() {
   await seedWarehouses();
   await seedLocations();
 
-  console.log('  [9/11] BusinessPartners');
-  await seedBusinessPartners();
+  if (SEED_MODE === 'demo') {
+    console.log('  [9/11] BusinessPartners');
+    await seedBusinessPartners();
+  } else {
+    console.log('  [9/11] BusinessPartners skipped (SEED_MODE=demo only)');
+  }
 
   console.log('  [10/11] DefectCodes');
   await seedDefectCodes();
@@ -2149,17 +2179,25 @@ async function main() {
   console.log('  [13+] InspectionSpecs');
   await seedInspectionSpecs();
 
-  console.log('  [14/17] WorkOrders + WorkOrderOperations');
-  await seedWorkOrders();
+  if (SEED_MODE === 'demo') {
+    console.log('  [14/17] WorkOrders + WorkOrderOperations');
+    await seedWorkOrders();
 
-  console.log('  [14+] ProductionResults');
-  await seedProductionResults();
+    console.log('  [14+] ProductionResults');
+    await seedProductionResults();
+  } else {
+    console.log('  [14/17] WorkOrders + ProductionResults skipped (SEED_MODE=demo only)');
+  }
 
   console.log('  [15/17] CodeGroups + CommonCodes');
   await seedCodeGroups();
 
-  console.log('  [16/17] ProductionPlans + PlanItems');
-  await seedProductionPlans();
+  if (SEED_MODE === 'demo') {
+    console.log('  [16/17] ProductionPlans + PlanItems');
+    await seedProductionPlans();
+  } else {
+    console.log('  [16/17] ProductionPlans skipped (SEED_MODE=demo only)');
+  }
 
   console.log('  [17/17] RolePermissions');
   await seedRolePermissions();
@@ -2167,29 +2205,40 @@ async function main() {
   console.log('  [18/18] FeatureDefinitions + Dependencies + TenantFeatures');
   await seedFeatures();
 
-  console.log('  [19/19] Equipment Integration (Gateway + Connections + Tags)');
-  await seedEquipmentIntegration();
+  if (SEED_MODE === 'demo') {
+    console.log('  [19/19] Equipment Integration (Gateway + Connections + Tags)');
+    await seedEquipmentIntegration();
 
-  console.log('  [20/21] SalesOrders + ShipmentOrders');
-  await seedSalesOrders();
+    console.log('  [20/21] SalesOrders + ShipmentOrders');
+    await seedSalesOrders();
 
-  console.log('  [21/22] PurchaseOrders + ItemPrices');
-  await seedPurchaseData();
+    console.log('  [21/22] PurchaseOrders + ItemPrices');
+    await seedPurchaseData();
 
-  console.log('  [22/22] Quotations');
-  await seedQuotations();
+    console.log('  [22/22] Quotations');
+    await seedQuotations();
 
-  console.log('  [23/23] ItemCosts');
-  await seedItemCosts();
+    console.log('  [23/23] ItemCosts');
+    await seedItemCosts();
 
-  console.log('  [24/24] EngineeringChanges (ECN)');
-  await seedECNs();
+    console.log('  [24/24] EngineeringChanges (ECN)');
+    await seedECNs();
 
-  console.log('  [25/26] Lots (LOT 관리 반제품 seed)');
-  await seedLots();
+    console.log('  [25/26] Lots (LOT 관리 반제품 seed)');
+    await seedLots();
 
-  console.log('  [26/26] InventoryBalances');
-  await seedInventoryBalances();
+    console.log('  [26/26] InventoryBalances');
+    await seedInventoryBalances();
+  } else {
+    console.log('  [19/26] Operational demo data skipped (SEED_MODE=demo only)');
+  }
+
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  [27/27] Medical traceability demo data v2'
+      : '  [27/27] Medical traceability demo data v2 cleanup only',
+  );
+  await seedMedicalTraceabilityDemoV2(SEED_MODE);
 
   console.log('\n✔ 시드 완료');
   console.log('  - Tenant: 1');
@@ -2197,26 +2246,65 @@ async function main() {
   console.log('  - UserCredential: admin/Admin@1234  manager/Manager@1234  operator/Operator@1234');
   console.log('  - Site: 2 (본공장 / 물류창고)');
   console.log('  - TenantUser: 3');
-  console.log('  - WorkCenter: 4');
-  console.log('  - Equipment: 4');
+  console.log('  - WorkCenter: 6');
+  console.log(SEED_MODE === 'demo' ? '  - Equipment: 4' : '  - Equipment: 미생성 (demo 전용)');
   console.log('  - ItemCategory: 6 (4 루트 + 2 원자재 하위)');
   console.log('  - Warehouse: 3 / Location: 8');
-  console.log('  - BusinessPartner: 5');
+  console.log(
+    SEED_MODE === 'demo' ? '  - BusinessPartner: 5' : '  - BusinessPartner: 미생성 (demo 전용)',
+  );
   console.log('  - DefectCode: 7');
   console.log('  - Item: 8 / NumberingRule: 2 (LOT + SERIAL)');
   console.log('  - BOM: 2 / BOMItem: 5');
-  console.log('  - Routing: 2 / RoutingOperation: 7');
-  console.log('  - WorkOrder: 2 / WorkOrderOperation: 4');
-  console.log('  - ProductionResult: 3 (WO-2026-001 seq=10)');
+  console.log('  - Routing: 3 / RoutingOperation: 12');
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - WorkOrder: 기본 3 + Seed v2 5 / WorkOrderOperation: 기본 9 + Seed v2 25'
+      : '  - WorkOrder: 미생성 (demo 전용)',
+  );
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - ProductionResult: 기본 3 + Seed v2 25'
+      : '  - ProductionResult: 미생성 (demo 전용)',
+  );
   console.log('  - CodeGroup: 4 / CommonCode: 17');
-  console.log('  - ProductionPlan: 1 / PlanItem: 2');
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - ProductionPlan: 1 / PlanItem: 2'
+      : '  - ProductionPlan: 미생성 (demo 전용)',
+  );
   console.log('  - RolePermission: ~212 (5 roles × 13 resources)');
   console.log('  - FeatureDefinition: 20 / FeatureDependency: 14 / TenantFeature: 12');
-  console.log('  - EdgeGateway: 1 / EquipmentConnection: 2 / DataTag: 6');
-  console.log('  - SalesOrder: 2 / ShipmentOrder: 1');
-  console.log('  - PurchaseOrder: 2 / ItemPrice: N건');
-  console.log('  - Quotation: 2 / QuotationItem: 3');
-  console.log('  - InventoryBalance: 원자재 3건 / 반제품 2건 / 완제품 1건');
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - EdgeGateway: 1 / EquipmentConnection: 2 / DataTag: 6'
+      : '  - Equipment Integration: 미생성 (demo 전용)',
+  );
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - SalesOrder: 기본 2 + Seed v2 1 / ShipmentOrder: 기본 1 + Seed v2 1'
+      : '  - SalesOrder / ShipmentOrder: 미생성 (demo 전용)',
+  );
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - PurchaseOrder: 2 / ItemPrice: N건'
+      : '  - PurchaseOrder / ItemPrice: 미생성 (demo 전용)',
+  );
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - Quotation: 2 / QuotationItem: 3'
+      : '  - Quotation: 미생성 (demo 전용)',
+  );
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - InventoryBalance: 기본 시작 재고 + Seed v2 LOT 재고'
+      : '  - InventoryBalance: 미생성 (demo 전용)',
+  );
+  console.log(
+    SEED_MODE === 'demo'
+      ? '  - Medical Traceability Seed v2: WorkOrder 5 / 정상·SCRAP·최종 REWORK·중간 REWORK·레거시 REWORK'
+      : '  - Medical Traceability Seed v2: 미생성 (기존 demo prefix 데이터 정리)',
+  );
 }
 
 async function seedLots() {
@@ -2487,6 +2575,914 @@ async function seedInventoryBalances() {
         lotId: null,
       },
     })
+  }
+}
+
+async function seedMedicalTraceabilityDemoV2(mode: SeedMode) {
+  const fgItemId = 'item-fg-assy-001'
+  const steelItemId = 'item-raw-steel-001'
+  const alumItemId = 'item-raw-alum-001'
+  const inspectionSpecId = 'ispec-med-fg-ins-001'
+  const scenarios = [
+    {
+      key: 'normal',
+      workOrderId: 'wo-demo-normal-001',
+      orderNo: 'WO-DEMO-NORMAL-001',
+      manufacturingNo: 'MFG-DEMO-NORMAL-001',
+      rootId: 'wip-demo-normal-root-001',
+      rootQty: 10,
+      fgLotId: 'lot-demo-fg-normal-001',
+      fgLotNo: 'LOT-DEMO-FG-NORMAL-001',
+      receiptQty: 10,
+    },
+    {
+      key: 'scrap',
+      workOrderId: 'wo-demo-scrap-001',
+      orderNo: 'WO-DEMO-SCRAP-001',
+      manufacturingNo: 'MFG-DEMO-SCRAP-001',
+      rootId: 'wip-demo-scrap-root-001',
+      rootQty: 8,
+      fgLotId: 'lot-demo-fg-scrap-001',
+      fgLotNo: 'LOT-DEMO-FG-SCRAP-001',
+      receiptQty: 8,
+    },
+    {
+      key: 'rework-final',
+      workOrderId: 'wo-demo-rework-final-001',
+      orderNo: 'WO-DEMO-REWORK-FINAL-001',
+      manufacturingNo: 'MFG-DEMO-REWORK-FINAL-001',
+      rootId: 'wip-demo-rework-final-root-001',
+      rootQty: 9,
+      fgLotId: 'lot-demo-fg-rework-final-001',
+      fgLotNo: 'LOT-DEMO-FG-REWORK-FINAL-001',
+      receiptQty: 9,
+    },
+    {
+      key: 'rework-mid',
+      workOrderId: 'wo-demo-rework-mid-001',
+      orderNo: 'WO-DEMO-REWORK-MID-001',
+      manufacturingNo: 'MFG-DEMO-REWORK-MID-001',
+      rootId: 'wip-demo-rework-mid-root-001',
+      rootQty: 8,
+      fgLotId: null,
+      fgLotNo: null,
+      receiptQty: 0,
+    },
+    {
+      key: 'rework-legacy',
+      workOrderId: 'wo-demo-rework-legacy-001',
+      orderNo: 'WO-DEMO-REWORK-LEGACY-001',
+      manufacturingNo: 'MFG-DEMO-REWORK-LEGACY-001',
+      rootId: 'wip-demo-rework-legacy-root-001',
+      rootQty: 10,
+      fgLotId: null,
+      fgLotNo: null,
+      receiptQty: 0,
+    },
+  ] as const
+  const operationTemplates = [
+    { seq: 10, routingOperationId: 'rop-med-10', workCenterId: IDS.workCenters.machining },
+    { seq: 20, routingOperationId: 'rop-med-20', workCenterId: IDS.workCenters.postProcess },
+    { seq: 30, routingOperationId: 'rop-med-30', workCenterId: IDS.workCenters.inspection },
+    { seq: 40, routingOperationId: 'rop-med-40', workCenterId: IDS.workCenters.packaging },
+    { seq: 50, routingOperationId: 'rop-med-50', workCenterId: IDS.workCenters.finishedStore },
+  ] as const
+  const rawLots = [
+    { id: 'lot-demo-rm-steel-001', lotNo: 'LOT-DEMO-RM-STEEL-001', itemId: steelItemId },
+    { id: 'lot-demo-rm-alum-001', lotNo: 'LOT-DEMO-RM-ALUM-001', itemId: alumItemId },
+  ] as const
+  const baseAt = new Date('2026-05-18T09:00:00+09:00')
+  const at = (days: number, hours = 0) =>
+    new Date(baseAt.getTime() + days * 24 * 60 * 60 * 1000 + hours * 60 * 60 * 1000)
+  const operationId = (key: string, seq: number) => `woo-demo-${key}-${seq}`
+  const resultId = (key: string, seq: number) => `pr-demo-${key}-${seq}`
+
+  await prisma.$transaction(async (tx) => {
+    const existingWorkOrders = await tx.workOrder.findMany({
+      where: {
+        tenantId: IDS.tenant,
+        OR: [
+          { orderNo: { startsWith: 'WO-DEMO-' } },
+          { manufacturingNo: { startsWith: 'MFG-DEMO-' } },
+        ],
+      },
+      select: { id: true, operations: { select: { id: true } } },
+    })
+    const workOrderIds = existingWorkOrders.map((workOrder) => workOrder.id)
+    const operationIds = existingWorkOrders.flatMap((workOrder) =>
+      workOrder.operations.map((operation) => operation.id),
+    )
+    const shipmentItems = await tx.shipmentItem.findMany({
+      where: {
+        shipmentOrder: {
+          tenantId: IDS.tenant,
+          shipmentNo: { startsWith: 'SH-DEMO-' },
+        },
+      },
+      select: { id: true },
+    })
+    const shipmentItemIds = shipmentItems.map((item) => item.id)
+    const demoLots = await tx.lot.findMany({
+      where: { tenantId: IDS.tenant, lotNo: { startsWith: 'LOT-DEMO-' } },
+      select: { id: true },
+    })
+    const demoLotIds = demoLots.map((lot) => lot.id)
+
+    if (workOrderIds.length > 0) {
+      await tx.wipUnitMaterialLot.deleteMany({
+        where: { wipUnit: { workOrderId: { in: workOrderIds } } },
+      })
+      await tx.wipMovement.deleteMany({
+        where: { wipUnit: { workOrderId: { in: workOrderIds } } },
+      })
+      await tx.wipUnit.deleteMany({ where: { workOrderId: { in: workOrderIds } } })
+      await tx.finishedGoodsReceipt.deleteMany({ where: { workOrderId: { in: workOrderIds } } })
+      await tx.workOrderMaterialLot.deleteMany({ where: { workOrderId: { in: workOrderIds } } })
+      if (operationIds.length > 0) {
+        const inspections = await tx.qualityInspection.findMany({
+          where: { workOrderOperationId: { in: operationIds } },
+          select: { id: true },
+        })
+        const inspectionIds = inspections.map((inspection) => inspection.id)
+        if (inspectionIds.length > 0) {
+          await tx.defectRecord.deleteMany({ where: { qualityInspectionId: { in: inspectionIds } } })
+        }
+        await tx.qualityInspection.deleteMany({ where: { workOrderOperationId: { in: operationIds } } })
+        await tx.productionResult.deleteMany({ where: { workOrderOperationId: { in: operationIds } } })
+        await tx.workOrderOperation.deleteMany({ where: { id: { in: operationIds } } })
+      }
+      await tx.workOrder.deleteMany({ where: { id: { in: workOrderIds } } })
+    }
+    await tx.inventoryTransaction.deleteMany({
+      where: {
+        tenantId: IDS.tenant,
+        OR: [
+          { txNo: { startsWith: 'TX-DEMO-' } },
+          ...(shipmentItemIds.length > 0
+            ? [{ refType: 'SHIPMENT_ITEM', refId: { in: shipmentItemIds } }]
+            : []),
+        ],
+      },
+    })
+    await tx.shipmentItem.deleteMany({
+      where: { shipmentOrder: { tenantId: IDS.tenant, shipmentNo: { startsWith: 'SH-DEMO-' } } },
+    })
+    await tx.shipmentOrder.deleteMany({
+      where: { tenantId: IDS.tenant, shipmentNo: { startsWith: 'SH-DEMO-' } },
+    })
+    await tx.salesOrderItem.deleteMany({
+      where: { salesOrder: { tenantId: IDS.tenant, orderNo: { startsWith: 'SO-DEMO-' } } },
+    })
+    await tx.salesOrder.deleteMany({
+      where: { tenantId: IDS.tenant, orderNo: { startsWith: 'SO-DEMO-' } },
+    })
+    if (demoLotIds.length > 0) {
+      await tx.inventoryBalance.deleteMany({
+        where: { tenantId: IDS.tenant, lotId: { in: demoLotIds } },
+      })
+      await tx.lot.deleteMany({ where: { id: { in: demoLotIds } } })
+    }
+
+    if (mode !== 'demo') return
+
+    for (const lot of rawLots) {
+      await tx.lot.create({
+        data: {
+          id: lot.id,
+          tenantId: IDS.tenant,
+          itemId: lot.itemId,
+          lotNo: lot.lotNo,
+          status: LotStatus.ACTIVE,
+          manufactureDate: at(-10),
+        },
+      })
+    }
+    for (const scenario of scenarios) {
+      if (!scenario.fgLotId || !scenario.fgLotNo) continue
+      await tx.lot.create({
+        data: {
+          id: scenario.fgLotId,
+          tenantId: IDS.tenant,
+          itemId: fgItemId,
+          lotNo: scenario.fgLotNo,
+          status: LotStatus.ACTIVE,
+          manufactureDate: at(4),
+        },
+      })
+    }
+    await tx.inventoryTransaction.createMany({
+      data: [
+        {
+          id: 'tx-demo-rm-receipt-steel-001',
+          tenantId: IDS.tenant,
+          itemId: steelItemId,
+          lotId: rawLots[0].id,
+          toLocationId: IDS.warehouses.rawMaterial,
+          txNo: 'TX-DEMO-RM-RECEIPT-STEEL-001',
+          txType: TransactionType.RECEIPT,
+          qty: 100,
+          refType: 'SEED_OPENING',
+          refId: rawLots[0].id,
+          note: 'Seed v2 원자재 LOT 시작 입고',
+          txAt: at(-9),
+        },
+        {
+          id: 'tx-demo-rm-receipt-alum-001',
+          tenantId: IDS.tenant,
+          itemId: alumItemId,
+          lotId: rawLots[1].id,
+          toLocationId: IDS.warehouses.rawMaterial,
+          txNo: 'TX-DEMO-RM-RECEIPT-ALUM-001',
+          txType: TransactionType.RECEIPT,
+          qty: 50,
+          refType: 'SEED_OPENING',
+          refId: rawLots[1].id,
+          note: 'Seed v2 원자재 LOT 시작 입고',
+          txAt: at(-9),
+        },
+      ],
+    })
+    await tx.inventoryBalance.createMany({
+      data: [
+        {
+          id: 'ib-demo-rm-steel-001',
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          itemId: steelItemId,
+          lotId: rawLots[0].id,
+          warehouseId: IDS.warehouses.rawMaterial,
+          qtyOnHand: 90,
+          qtyAvailable: 90,
+          qtyHold: 0,
+        },
+        {
+          id: 'ib-demo-rm-alum-001',
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          itemId: alumItemId,
+          lotId: rawLots[1].id,
+          warehouseId: IDS.warehouses.rawMaterial,
+          qtyOnHand: 45,
+          qtyAvailable: 45,
+          qtyHold: 0,
+        },
+      ],
+    })
+
+    for (let index = 0; index < scenarios.length; index++) {
+      const scenario = scenarios[index]
+      const startedAt = at(index)
+      const finalOperationId = operationId(scenario.key, 50)
+      const inspectionOperationId = operationId(scenario.key, 30)
+      const child =
+        scenario.key === 'scrap'
+          ? {
+              id: 'wip-demo-scrap-child-001',
+              sourceResultId: resultId(scenario.key, 30),
+              operationId: inspectionOperationId,
+              workCenterId: IDS.workCenters.inspection,
+              qty: 2,
+              status: WipUnitStatus.SCRAPPED,
+            }
+          : scenario.key === 'rework-final'
+            ? {
+                id: 'wip-demo-rework-final-child-001',
+                sourceResultId: resultId(scenario.key, 50),
+                operationId: finalOperationId,
+                workCenterId: IDS.workCenters.finishedStore,
+                qty: 3,
+                status: WipUnitStatus.COMPLETED,
+              }
+            : scenario.key === 'rework-mid'
+              ? {
+                  id: 'wip-demo-rework-mid-child-001',
+                  sourceResultId: resultId(scenario.key, 20),
+                  operationId: operationId(scenario.key, 20),
+                  workCenterId: IDS.workCenters.postProcess,
+                  qty: 2,
+                  status: WipUnitStatus.REWORK,
+                }
+              : null
+
+      await tx.workOrder.create({
+        data: {
+          id: scenario.workOrderId,
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          itemId: fgItemId,
+          bomId: 'bom-fg-assy-001',
+          routingId: 'rtg-medical-std-001',
+          orderNo: scenario.orderNo,
+          manufacturingNo: scenario.manufacturingNo,
+          plannedQty: 10,
+          status: WorkOrderStatus.COMPLETED,
+          dueDate: at(index + 7),
+        },
+      })
+      for (const operation of operationTemplates) {
+        const completedQty =
+          scenario.key === 'scrap' && operation.seq >= 40
+            ? 8
+            : scenario.key === 'rework-mid' && operation.seq >= 30
+              ? 8
+              : 10
+        const defectQty = scenario.key === 'scrap' && operation.seq === 30 ? 2 : 0
+        const reworkQty =
+          scenario.key === 'rework-final' && operation.seq === 50
+            ? 3
+            : (scenario.key === 'rework-mid' && operation.seq === 20) ||
+                (scenario.key === 'rework-legacy' && operation.seq === 50)
+              ? 2
+              : 0
+        await tx.workOrderOperation.create({
+          data: {
+            id: operationId(scenario.key, operation.seq),
+            workOrderId: scenario.workOrderId,
+            routingOperationId: operation.routingOperationId,
+            seq: operation.seq,
+            status: OperationStatus.COMPLETED,
+            plannedQty: 10,
+            completedQty,
+          },
+        })
+        await tx.productionResult.create({
+          data: {
+            id: resultId(scenario.key, operation.seq),
+            workOrderOperationId: operationId(scenario.key, operation.seq),
+            goodQty: completedQty - defectQty - reworkQty,
+            defectQty,
+            reworkQty,
+            startedAt: new Date(startedAt.getTime() + operation.seq * 60 * 1000),
+            endedAt: new Date(startedAt.getTime() + (operation.seq + 30) * 60 * 1000),
+          },
+        })
+      }
+
+      const steelTxId = `tx-demo-${scenario.key}-issue-steel-001`
+      const alumTxId = `tx-demo-${scenario.key}-issue-alum-001`
+      await tx.inventoryTransaction.createMany({
+        data: [
+          {
+            id: steelTxId,
+            tenantId: IDS.tenant,
+            itemId: steelItemId,
+            lotId: rawLots[0].id,
+            fromLocationId: IDS.warehouses.rawMaterial,
+            txNo: `TX-DEMO-${scenario.key.toUpperCase()}-ISSUE-STEEL-001`,
+            txType: TransactionType.ISSUE,
+            qty: 2,
+            refType: 'WORK_ORDER',
+            refId: scenario.workOrderId,
+            note: 'Seed v2 제조 투입 LOT 출고',
+            txAt: startedAt,
+          },
+          {
+            id: alumTxId,
+            tenantId: IDS.tenant,
+            itemId: alumItemId,
+            lotId: rawLots[1].id,
+            fromLocationId: IDS.warehouses.rawMaterial,
+            txNo: `TX-DEMO-${scenario.key.toUpperCase()}-ISSUE-ALUM-001`,
+            txType: TransactionType.ISSUE,
+            qty: 1,
+            refType: 'WORK_ORDER',
+            refId: scenario.workOrderId,
+            note: 'Seed v2 제조 투입 LOT 출고',
+            txAt: startedAt,
+          },
+        ],
+      })
+      const steelMaterialLotId = `woml-demo-${scenario.key}-steel-001`
+      const alumMaterialLotId = `woml-demo-${scenario.key}-alum-001`
+      await tx.workOrderMaterialLot.createMany({
+        data: [
+          {
+            id: steelMaterialLotId,
+            tenantId: IDS.tenant,
+            workOrderId: scenario.workOrderId,
+            manufacturingNo: scenario.manufacturingNo,
+            materialItemId: steelItemId,
+            materialLotNo: rawLots[0].lotNo,
+            qty: 2,
+            unit: 'KG',
+            issuedAt: startedAt,
+            inventoryTransactionId: steelTxId,
+          },
+          {
+            id: alumMaterialLotId,
+            tenantId: IDS.tenant,
+            workOrderId: scenario.workOrderId,
+            manufacturingNo: scenario.manufacturingNo,
+            materialItemId: alumItemId,
+            materialLotNo: rawLots[1].lotNo,
+            qty: 1,
+            unit: 'KG',
+            issuedAt: startedAt,
+            inventoryTransactionId: alumTxId,
+          },
+        ],
+      })
+      await tx.wipUnit.create({
+        data: {
+          id: scenario.rootId,
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          workOrderId: scenario.workOrderId,
+          workOrderOperationId: finalOperationId,
+          itemId: fgItemId,
+          lotId: scenario.fgLotId,
+          manufacturingNo: scenario.manufacturingNo,
+          currentWorkCenterId: IDS.workCenters.finishedStore,
+          qty: scenario.rootQty,
+          status: WipUnitStatus.COMPLETED,
+          createdAt: startedAt,
+        },
+      })
+      if (child) {
+        await tx.wipUnit.create({
+          data: {
+            id: child.id,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            workOrderId: scenario.workOrderId,
+            workOrderOperationId: child.operationId,
+            itemId: fgItemId,
+            manufacturingNo: scenario.manufacturingNo,
+            currentWorkCenterId: child.workCenterId,
+            sourceProductionResultId: child.sourceResultId,
+            parentWipUnitId: scenario.rootId,
+            qty: child.qty,
+            status: child.status,
+            createdAt: startedAt,
+          },
+        })
+      }
+      await tx.wipUnitMaterialLot.createMany({
+        data: [
+          {
+            id: `wuml-demo-${scenario.key}-steel-001`,
+            tenantId: IDS.tenant,
+            wipUnitId: scenario.rootId,
+            workOrderMaterialLotId: steelMaterialLotId,
+            materialItemId: steelItemId,
+            materialLotId: rawLots[0].id,
+            materialLotNo: rawLots[0].lotNo,
+            qty: 2,
+            unit: 'KG',
+            linkedAt: startedAt,
+          },
+          {
+            id: `wuml-demo-${scenario.key}-alum-001`,
+            tenantId: IDS.tenant,
+            wipUnitId: scenario.rootId,
+            workOrderMaterialLotId: alumMaterialLotId,
+            materialItemId: alumItemId,
+            materialLotId: rawLots[1].id,
+            materialLotNo: rawLots[1].lotNo,
+            qty: 1,
+            unit: 'KG',
+            linkedAt: startedAt,
+          },
+        ],
+      })
+
+      const afterPostQty = scenario.key === 'rework-mid' ? 8 : 10
+      const afterInspectionQty = scenario.key === 'scrap' ? 8 : afterPostQty
+      await tx.wipMovement.createMany({
+        data: [
+          {
+            id: `wm-demo-${scenario.key}-created-001`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.CREATED,
+            toOperationId: operationId(scenario.key, 10),
+            toWorkCenterId: IDS.workCenters.machining,
+            qty: 10,
+            sourceType: 'MATERIAL_ISSUE',
+            sourceId: steelTxId,
+            note: '자재출고로 WIP 생성',
+            createdAt: new Date(startedAt.getTime() + 5 * 60 * 1000),
+          },
+          {
+            id: `wm-demo-${scenario.key}-started-001`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.STARTED,
+            toOperationId: operationId(scenario.key, 10),
+            toWorkCenterId: IDS.workCenters.machining,
+            qty: 10,
+            sourceType: 'WorkOrderOperation',
+            sourceId: operationId(scenario.key, 10),
+            note: 'POP 작업시작',
+            createdAt: new Date(startedAt.getTime() + 10 * 60 * 1000),
+          },
+          {
+            id: `wm-demo-${scenario.key}-moved-10-20`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.MOVED,
+            fromOperationId: operationId(scenario.key, 10),
+            toOperationId: operationId(scenario.key, 20),
+            fromWorkCenterId: IDS.workCenters.machining,
+            toWorkCenterId: IDS.workCenters.postProcess,
+            qty: 10,
+            sourceType: 'ProductionResult',
+            sourceId: resultId(scenario.key, 10),
+            note: '공정 완료에 따른 이동',
+            createdAt: new Date(startedAt.getTime() + 60 * 60 * 1000),
+          },
+          {
+            id: `wm-demo-${scenario.key}-moved-20-30`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.MOVED,
+            fromOperationId: operationId(scenario.key, 20),
+            toOperationId: operationId(scenario.key, 30),
+            fromWorkCenterId: IDS.workCenters.postProcess,
+            toWorkCenterId: IDS.workCenters.inspection,
+            qty: afterPostQty,
+            sourceType: 'ProductionResult',
+            sourceId: resultId(scenario.key, 20),
+            note: '공정 완료에 따른 이동',
+            createdAt: new Date(startedAt.getTime() + 2 * 60 * 60 * 1000),
+          },
+          {
+            id: `wm-demo-${scenario.key}-moved-30-40`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.MOVED,
+            fromOperationId: operationId(scenario.key, 30),
+            toOperationId: operationId(scenario.key, 40),
+            fromWorkCenterId: IDS.workCenters.inspection,
+            toWorkCenterId: IDS.workCenters.packaging,
+            qty: afterInspectionQty,
+            sourceType: 'ProductionResult',
+            sourceId: resultId(scenario.key, 30),
+            note: '공정 완료에 따른 이동',
+            createdAt: new Date(startedAt.getTime() + 3 * 60 * 60 * 1000),
+          },
+          {
+            id: `wm-demo-${scenario.key}-moved-40-50`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.MOVED,
+            fromOperationId: operationId(scenario.key, 40),
+            toOperationId: finalOperationId,
+            fromWorkCenterId: IDS.workCenters.packaging,
+            toWorkCenterId: IDS.workCenters.finishedStore,
+            qty: afterInspectionQty,
+            sourceType: 'ProductionResult',
+            sourceId: resultId(scenario.key, 40),
+            note: '공정 완료에 따른 이동',
+            createdAt: new Date(startedAt.getTime() + 4 * 60 * 60 * 1000),
+          },
+        ],
+      })
+      if (scenario.key === 'scrap' && child) {
+        await tx.wipMovement.createMany({
+          data: [
+            {
+              id: 'wm-demo-scrap-defect-001',
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: scenario.rootId,
+              movementType: WipMovementType.DEFECT,
+              fromOperationId: inspectionOperationId,
+              toOperationId: inspectionOperationId,
+              fromWorkCenterId: IDS.workCenters.inspection,
+              toWorkCenterId: IDS.workCenters.inspection,
+              qty: 2,
+              sourceType: 'ProductionResult',
+              sourceId: child.sourceResultId,
+              note: 'POP 실적 등록 불량 수량 기록 (defectQty=2)',
+              createdAt: new Date(startedAt.getTime() + 140 * 60 * 1000),
+            },
+            {
+              id: 'wm-demo-scrap-split-001',
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: scenario.rootId,
+              relatedWipUnitId: child.id,
+              movementType: WipMovementType.SPLIT,
+              fromOperationId: inspectionOperationId,
+              toOperationId: inspectionOperationId,
+              fromWorkCenterId: IDS.workCenters.inspection,
+              toWorkCenterId: IDS.workCenters.inspection,
+              qty: 2,
+              sourceType: 'ProductionResult',
+              sourceId: child.sourceResultId,
+              note: 'POP 불량 수량 SCRAP 분리 (defectQty=2)',
+              createdAt: new Date(startedAt.getTime() + 141 * 60 * 1000),
+            },
+            {
+              id: 'wm-demo-scrap-dispose-001',
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: child.id,
+              relatedWipUnitId: scenario.rootId,
+              movementType: WipMovementType.SCRAP,
+              fromOperationId: inspectionOperationId,
+              toOperationId: inspectionOperationId,
+              fromWorkCenterId: IDS.workCenters.inspection,
+              toWorkCenterId: IDS.workCenters.inspection,
+              qty: 2,
+              sourceType: 'ProductionResult',
+              sourceId: child.sourceResultId,
+              note: 'POP 불량 수량 자동 폐기 처리 (defectQty=2)',
+              createdAt: new Date(startedAt.getTime() + 142 * 60 * 1000),
+            },
+          ],
+        })
+      }
+      if ((scenario.key === 'rework-final' || scenario.key === 'rework-mid') && child) {
+        const reworkMovementMinute = scenario.key === 'rework-mid' ? 115 : 245
+        await tx.wipMovement.createMany({
+          data: [
+            {
+              id: `wm-demo-${scenario.key}-rework-001`,
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: scenario.rootId,
+              relatedWipUnitId: child.id,
+              movementType: WipMovementType.REWORK,
+              fromOperationId: child.operationId,
+              toOperationId: child.operationId,
+              fromWorkCenterId: child.workCenterId,
+              toWorkCenterId: child.workCenterId,
+              qty: child.qty,
+              sourceType: 'ProductionResult',
+              sourceId: child.sourceResultId,
+              note: `POP 실적 등록 재작업 수량 기록 (reworkQty=${child.qty})`,
+              createdAt: new Date(startedAt.getTime() + reworkMovementMinute * 60 * 1000),
+            },
+            {
+              id: `wm-demo-${scenario.key}-split-001`,
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: scenario.rootId,
+              relatedWipUnitId: child.id,
+              movementType: WipMovementType.SPLIT,
+              fromOperationId: child.operationId,
+              toOperationId: child.operationId,
+              fromWorkCenterId: child.workCenterId,
+              toWorkCenterId: child.workCenterId,
+              qty: child.qty,
+              sourceType: 'ProductionResult',
+              sourceId: child.sourceResultId,
+              note: `POP 재작업 수량 분리 (reworkQty=${child.qty})`,
+              createdAt: new Date(startedAt.getTime() + (reworkMovementMinute + 1) * 60 * 1000),
+            },
+          ],
+        })
+      }
+      if (scenario.key === 'rework-legacy') {
+        await tx.wipMovement.create({
+          data: {
+            id: 'wm-demo-rework-legacy-rework-001',
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            wipUnitId: scenario.rootId,
+            movementType: WipMovementType.REWORK,
+            fromOperationId: finalOperationId,
+            toOperationId: finalOperationId,
+            fromWorkCenterId: IDS.workCenters.finishedStore,
+            toWorkCenterId: IDS.workCenters.finishedStore,
+            qty: 2,
+            sourceType: 'ProductionResult',
+            sourceId: resultId(scenario.key, 50),
+            note: '레거시 재작업 이력 (연결된 REWORK child 없음)',
+            createdAt: new Date(startedAt.getTime() + 245 * 60 * 1000),
+          },
+        })
+      }
+      const completionQty =
+        scenario.key === 'rework-final' ? 7 : scenario.key === 'rework-legacy' ? 10 : scenario.rootQty
+      await tx.wipMovement.create({
+        data: {
+          id: `wm-demo-${scenario.key}-completed-001`,
+          tenantId: IDS.tenant,
+          siteId: IDS.sites.factory,
+          wipUnitId: scenario.rootId,
+          movementType: WipMovementType.COMPLETED,
+          fromOperationId: finalOperationId,
+          fromWorkCenterId: IDS.workCenters.finishedStore,
+          qty: completionQty,
+          sourceType: 'ProductionResult',
+          sourceId: resultId(scenario.key, 50),
+          note: '마지막 공정 완료',
+          createdAt: new Date(startedAt.getTime() + 5 * 60 * 60 * 1000),
+        },
+      })
+      if (scenario.key === 'rework-final' && child) {
+        await tx.wipMovement.createMany({
+          data: [
+            {
+              id: 'wm-demo-rework-final-merge-001',
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: scenario.rootId,
+              relatedWipUnitId: child.id,
+              movementType: WipMovementType.MERGE,
+              fromOperationId: finalOperationId,
+              toOperationId: finalOperationId,
+              fromWorkCenterId: IDS.workCenters.finishedStore,
+              toWorkCenterId: IDS.workCenters.finishedStore,
+              qty: 2,
+              sourceType: 'ReworkCompletion',
+              sourceId: child.id,
+              note: '재작업 양품 복귀: 2',
+              createdAt: new Date(startedAt.getTime() + 6 * 60 * 60 * 1000),
+            },
+            {
+              id: 'wm-demo-rework-final-scrap-001',
+              tenantId: IDS.tenant,
+              siteId: IDS.sites.factory,
+              wipUnitId: child.id,
+              relatedWipUnitId: scenario.rootId,
+              movementType: WipMovementType.SCRAP,
+              fromOperationId: finalOperationId,
+              toOperationId: finalOperationId,
+              fromWorkCenterId: IDS.workCenters.finishedStore,
+              toWorkCenterId: IDS.workCenters.finishedStore,
+              qty: 1,
+              sourceType: 'ReworkCompletion',
+              sourceId: child.id,
+              note: '재작업 후 폐기: 1',
+              createdAt: new Date(startedAt.getTime() + 6 * 60 * 60 * 1000 + 60 * 1000),
+            },
+          ],
+        })
+      }
+      if (scenario.key === 'normal' || scenario.key === 'scrap' || scenario.key === 'rework-final') {
+        const inspectionId = `qi-demo-${scenario.key}-001`
+        await tx.qualityInspection.create({
+          data: {
+            id: inspectionId,
+            workOrderOperationId: inspectionOperationId,
+            inspectionSpecId,
+            inspectorId: IDS.profiles.manager,
+            stage: InspectionStage.FINAL,
+            result: scenario.key === 'scrap' ? InspectionResult.CONDITIONAL : InspectionResult.PASS,
+            inspectedQty: scenario.key === 'scrap' ? 10 : scenario.rootQty,
+            inspectedAt: new Date(startedAt.getTime() + 3 * 60 * 60 * 1000),
+          },
+        })
+        if (scenario.key === 'scrap') {
+          await tx.defectRecord.create({
+            data: {
+              id: 'dr-demo-scrap-001',
+              qualityInspectionId: inspectionId,
+              defectCodeId: IDS.defectCodes.vis01,
+              qty: 2,
+              severity: DefectSeverity.MAJOR,
+              disposition: DefectDisposition.SCRAP,
+            },
+          })
+        }
+      }
+      if (scenario.fgLotId && scenario.receiptQty > 0) {
+        await tx.finishedGoodsReceipt.create({
+          data: {
+            id: `fgr-demo-${scenario.key}-001`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            workOrderId: scenario.workOrderId,
+            itemId: fgItemId,
+            lotId: scenario.fgLotId,
+            warehouseId: IDS.warehouses.finished,
+            locationId: IDS.locations.fgA,
+            receiptQty: scenario.receiptQty,
+            receiptAt: new Date(startedAt.getTime() + 7 * 60 * 60 * 1000),
+          },
+        })
+        await tx.inventoryTransaction.create({
+          data: {
+            id: `tx-demo-${scenario.key}-fg-receipt-001`,
+            tenantId: IDS.tenant,
+            itemId: fgItemId,
+            lotId: scenario.fgLotId,
+            toLocationId: IDS.warehouses.finished,
+            txNo: `TX-DEMO-${scenario.key.toUpperCase()}-FG-RECEIPT-001`,
+            txType: TransactionType.RECEIPT,
+            qty: scenario.receiptQty,
+            refType: 'WORK_ORDER',
+            refId: scenario.workOrderId,
+            note: 'Seed v2 완제품 입고',
+            txAt: new Date(startedAt.getTime() + 7 * 60 * 60 * 1000),
+          },
+        })
+        await tx.inventoryBalance.create({
+          data: {
+            id: `ib-demo-${scenario.key}-fg-001`,
+            tenantId: IDS.tenant,
+            siteId: IDS.sites.factory,
+            itemId: fgItemId,
+            lotId: scenario.fgLotId,
+            warehouseId: IDS.warehouses.finished,
+            qtyOnHand: scenario.key === 'normal' ? 6 : scenario.receiptQty,
+            qtyAvailable: scenario.key === 'normal' ? 6 : scenario.receiptQty,
+            qtyHold: 0,
+          },
+        })
+      }
+    }
+
+    const salesOrder = await tx.salesOrder.create({
+      data: {
+        id: 'so-demo-normal-001',
+        tenantId: IDS.tenant,
+        siteId: IDS.sites.factory,
+        customerId: IDS.businessPartners.customer1,
+        orderNo: 'SO-DEMO-NORMAL-001',
+        orderDate: at(0),
+        deliveryDate: at(8),
+        status: SalesOrderStatus.PARTIAL_SHIPPED,
+        currency: 'KRW',
+        note: 'Seed v2 정상 제조번호 출하 검증 주문',
+      },
+    })
+    const salesOrderItem = await tx.salesOrderItem.create({
+      data: {
+        id: 'soi-demo-normal-001',
+        salesOrderId: salesOrder.id,
+        itemId: fgItemId,
+        qty: 10,
+        unitPrice: 50000,
+        producedQty: 10,
+        shippedQty: 4,
+      },
+    })
+    const shipment = await tx.shipmentOrder.create({
+      data: {
+        id: 'sh-demo-normal-001',
+        tenantId: IDS.tenant,
+        siteId: IDS.sites.factory,
+        salesOrderId: salesOrder.id,
+        shipmentNo: 'SH-DEMO-NORMAL-001',
+        status: ShipmentStatus.SHIPPED,
+        plannedDate: at(8),
+        shippedDate: at(9),
+        warehouseId: IDS.warehouses.finished,
+        note: 'Seed v2 정상 LOT 출하 검증',
+      },
+    })
+    const shipmentItem = await tx.shipmentItem.create({
+      data: {
+        id: 'shi-demo-normal-001',
+        shipmentOrderId: shipment.id,
+        salesOrderItemId: salesOrderItem.id,
+        itemId: fgItemId,
+        qty: 4,
+        lotId: 'lot-demo-fg-normal-001',
+      },
+    })
+    await tx.inventoryTransaction.create({
+      data: {
+        id: 'tx-demo-normal-fg-shipment-001',
+        tenantId: IDS.tenant,
+        itemId: fgItemId,
+        lotId: 'lot-demo-fg-normal-001',
+        fromLocationId: IDS.warehouses.finished,
+        txNo: 'TX-DEMO-NORMAL-FG-ISSUE-001',
+        txType: TransactionType.ISSUE,
+        qty: 4,
+        refType: 'SHIPMENT_ITEM',
+        refId: shipmentItem.id,
+        note: 'Seed v2 정상 완제품 출하',
+        txAt: at(9),
+      },
+    })
+  })
+
+  if (mode !== 'demo') return
+
+  const nullLotBalanceCount = await prisma.inventoryBalance.count({
+    where: {
+      tenantId: IDS.tenant,
+      lotId: null,
+      item: { isLotTracked: true },
+    },
+  })
+  if (nullLotBalanceCount > 0) {
+    throw new Error('Seed v2 검증 실패: LOT 추적 품목에 lotId=null 재고가 남아 있습니다.')
+  }
+  const demoBalances = await prisma.inventoryBalance.findMany({
+    where: { tenantId: IDS.tenant, lot: { lotNo: { startsWith: 'LOT-DEMO-' } } },
+    include: { lot: { select: { itemId: true, lotNo: true } } },
+  })
+  const mismatch = demoBalances.find(
+    (balance) => balance.lot != null && balance.itemId !== balance.lot.itemId,
+  )
+  if (mismatch?.lot) {
+    throw new Error(
+      `Seed v2 검증 실패: InventoryBalance 품목과 LOT 품목이 다릅니다. lotNo=${mismatch.lot.lotNo}`,
+    )
   }
 }
 
