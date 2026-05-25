@@ -391,6 +391,7 @@ model Tenant {
   equipmentDailyChecks  EquipmentDailyCheck[]
   userCredentials       UserCredential[]
   loginHistories        LoginHistory[]
+  itemGroups            ItemGroup[]
 }
 
 model Profile {
@@ -547,27 +548,51 @@ model BusinessPartner {
 }
 
 model ItemCategory {
-  id           String  @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
   parentId     String?
   code         String
   name         String
-  displayOrder Int     @default(0)
+  itemType     ItemType?
+  displayOrder Int       @default(0)
 
-  tenant   Tenant         @relation(fields: [tenantId], references: [id])
-  parent   ItemCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children ItemCategory[] @relation("CategoryTree")
-  items    Item[]
+  tenant     Tenant         @relation(fields: [tenantId], references: [id])
+  parent     ItemCategory?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children   ItemCategory[] @relation("CategoryTree")
+  items      Item[]
+  itemGroups ItemGroup[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([parentId])
 }
 
+model ItemGroup {
+  id           String   @id @default(cuid())
+  tenantId     String
+  categoryId   String
+  code         String
+  name         String
+  description  String?
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  category ItemCategory @relation(fields: [categoryId], references: [id])
+  items    Item[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([categoryId])
+}
+
 model Item {
   id              String     @id @default(cuid())
   tenantId        String
   categoryId      String?
+  itemGroupId     String?
   code            String
   name            String
   itemType        ItemType
@@ -579,8 +604,9 @@ model Item {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  tenant   Tenant        @relation(fields: [tenantId], references: [id])
-  category ItemCategory? @relation(fields: [categoryId], references: [id])
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  category  ItemCategory? @relation(fields: [categoryId], references: [id])
+  itemGroup ItemGroup?    @relation(fields: [itemGroupId], references: [id])
 
   substitutes             ItemSubstitute[]       @relation("PrimaryItem")
   substituteOf            ItemSubstitute[]       @relation("SubstituteItem")
@@ -610,6 +636,7 @@ model Item {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([categoryId])
+  @@index([itemGroupId])
 }
 
 model ItemSubstitute {
