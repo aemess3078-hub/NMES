@@ -165,64 +165,100 @@ export async function getWorkOrders(): Promise<WorkOrderWithDetails[]> {
 export type WipInventoryRow = Awaited<ReturnType<typeof getWipInventoryRows>>[number]
 
 export async function getWipInventoryRows(tenantId: string) {
-  const operations = await prisma.workOrderOperation.findMany({
+  const workOrders = await prisma.workOrder.findMany({
     where: {
-      workOrder: {
-        tenantId,
-        status: { in: ["RELEASED", "IN_PROGRESS", "COMPLETED"] },
-      },
+      tenantId,
+      status: { in: ["RELEASED", "IN_PROGRESS", "COMPLETED"] },
+      wipUnits: { some: {} },
     },
     select: {
       id: true,
-      seq: true,
+      orderNo: true,
+      manufacturingNo: true,
       status: true,
       plannedQty: true,
-      completedQty: true,
-      equipment: {
+      dueDate: true,
+      createdAt: true,
+      item: {
         select: {
           id: true,
           code: true,
           name: true,
+          uom: true,
         },
       },
-      workOrder: {
-        select: {
-          id: true,
-          orderNo: true,
-          status: true,
-          plannedQty: true,
-          dueDate: true,
-          createdAt: true,
-          item: {
-            select: {
-              id: true,
-              code: true,
-              name: true,
-              uom: true,
-            },
-          },
-        },
-      },
-      routingOperation: {
+      operations: {
         select: {
           id: true,
           seq: true,
-          operationCode: true,
-          name: true,
-          workCenter: {
+          status: true,
+          plannedQty: true,
+          completedQty: true,
+          productionResults: {
+            select: { id: true, reworkQty: true },
+          },
+          routingOperation: {
             select: {
               id: true,
-              code: true,
+              seq: true,
+              operationCode: true,
               name: true,
+              workCenter: {
+                select: { id: true, code: true, name: true },
+              },
             },
           },
         },
+        orderBy: { seq: "asc" },
+      },
+      finishedGoodsReceipts: {
+        select: { receiptQty: true },
       },
       wipUnits: {
         select: {
           id: true,
           qty: true,
           status: true,
+          createdAt: true,
+          updatedAt: true,
+          parentWipUnitId: true,
+          sourceProductionResultId: true,
+          workOrderOperationId: true,
+          parentWipUnit: {
+            select: { id: true, qty: true, status: true },
+          },
+          sourceProductionResult: {
+            select: { id: true, defectQty: true, reworkQty: true },
+          },
+          workOrderOperation: {
+            select: {
+              id: true,
+              seq: true,
+              status: true,
+              plannedQty: true,
+              completedQty: true,
+              equipment: {
+                select: { id: true, code: true, name: true },
+              },
+              routingOperation: {
+                select: {
+                  id: true,
+                  seq: true,
+                  operationCode: true,
+                  name: true,
+                  workCenter: {
+                    select: { id: true, code: true, name: true },
+                  },
+                },
+              },
+            },
+          },
+          currentWorkCenter: {
+            select: { id: true, code: true, name: true },
+          },
+          currentWarehouse: {
+            select: { id: true, code: true, name: true },
+          },
           currentLocation: {
             select: {
               id: true,
@@ -230,74 +266,173 @@ export async function getWipInventoryRows(tenantId: string) {
               name: true,
             },
           },
+          movements: {
+            select: {
+              movementType: true,
+              relatedWipUnitId: true,
+              qty: true,
+              note: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: "desc" },
+          },
+          relatedMovements: {
+            where: { movementType: "REWORK" },
+            select: { id: true },
+          },
         },
-      },
-      productionResults: {
-        select: {
-          id: true,
-          goodQty: true,
-          defectQty: true,
-          reworkQty: true,
-          startedAt: true,
-          endedAt: true,
-        },
-        orderBy: { startedAt: "asc" },
+        orderBy: [{ parentWipUnitId: "asc" }, { createdAt: "asc" }],
       },
     },
     orderBy: [
-      { workOrder: { dueDate: "asc" } },
-      { workOrder: { orderNo: "asc" } },
-      { seq: "asc" },
+      { dueDate: "asc" },
+      { orderNo: "asc" },
     ],
   })
 
-  return operations.map((operation) => {
-    const productionQty = Number(operation.completedQty)
-    const plannedQty = Number(operation.plannedQty)
-    const activeWipQty = operation.wipUnits
+  return workOrders.flatMap((workOrder) => {
+    const finalOperation = workOrder.operations.at(-1) ?? null
+    const rootWipUnits = workOrder.wipUnits.filter(
+      (unit) => unit.parentWipUnitId == null && unit.sourceProductionResultId == null
+    )
+    const completedFinalRootQty = rootWipUnits
       .filter(
         (unit) =>
-          unit.status === "WAITING" ||
-          unit.status === "IN_PROCESS" ||
-          unit.status === "ON_HOLD"
+          unit.status === "COMPLETED" &&
+          unit.workOrderOperationId === finalOperation?.id
       )
       .reduce((sum, unit) => sum + Number(unit.qty), 0)
-    const totalGoodQty = operation.productionResults.reduce(
-      (sum, result) => sum + Number(result.goodQty),
+    const totalReceiptQty = workOrder.finishedGoodsReceipts.reduce(
+      (sum, receipt) => sum + Number(receipt.receiptQty),
       0
     )
-    const totalDefectQty = operation.productionResults.reduce(
-      (sum, result) => sum + Number(result.defectQty),
-      0
+    const reworkChildWipUnits = workOrder.wipUnits.filter(
+      (unit) => unit.parentWipUnitId != null && unit.relatedMovements.length > 0
     )
-    const startedAt = operation.productionResults.find((result) => result.startedAt)?.startedAt ?? null
+    const linkedReworkResultIds = new Set(
+      reworkChildWipUnits
+        .map((unit) => unit.sourceProductionResultId)
+        .filter((resultId): resultId is string => resultId != null)
+    )
+    const hasUnresolvedReworkChild = reworkChildWipUnits.some(
+      (unit) => unit.status === "REWORK"
+    )
+    const hasLegacyReworkResult = workOrder.operations.some((operation) =>
+      operation.productionResults.some(
+        (result) =>
+          Number(result.reworkQty) > 0 && !linkedReworkResultIds.has(result.id)
+      )
+    )
+    const hasUnlinkedReworkMovement = workOrder.wipUnits.some((unit) =>
+      unit.movements.some(
+        (movement) =>
+          movement.movementType === "REWORK" &&
+          movement.relatedWipUnitId == null
+      )
+    )
+    const hasInconsistentCompletedWipQty =
+      completedFinalRootQty > Number(finalOperation?.completedQty ?? 0)
+    const receiptBlockedReason = hasUnresolvedReworkChild
+      ? "미해결 REWORK child가 있어 입고 보류 중입니다."
+      : hasLegacyReworkResult || hasUnlinkedReworkMovement
+        ? "종결 상태를 판별할 수 없는 기존 REWORK 이력이 있어 입고 보류 중입니다."
+        : hasInconsistentCompletedWipQty
+          ? "완료 WIP 수량이 최종공정 완료 수량을 초과하여 입고 보류 중입니다."
+        : null
+    const availableReceiptQty = receiptBlockedReason
+      ? 0
+      : Math.max(0, completedFinalRootQty - totalReceiptQty)
+    const sortedWipUnits = [...workOrder.wipUnits].sort((left, right) => {
+      const leftIsRoot =
+        left.parentWipUnitId == null && left.sourceProductionResultId == null
+      const rightIsRoot =
+        right.parentWipUnitId == null && right.sourceProductionResultId == null
+      if (leftIsRoot !== rightIsRoot) return leftIsRoot ? -1 : 1
+      return left.createdAt.getTime() - right.createdAt.getTime()
+    })
 
-    return {
-      id: operation.id,
-      seq: operation.seq,
-      status: operation.status,
-      plannedQty,
-      productionQty,
-      remainingQty: plannedQty - productionQty,
-      activeWipQty,
-      totalGoodQty,
-      totalDefectQty,
-      startedAt,
-      workOrder: {
-        id: operation.workOrder.id,
-        orderNo: operation.workOrder.orderNo,
-        status: operation.workOrder.status,
-        plannedQty: Number(operation.workOrder.plannedQty),
-        dueDate: operation.workOrder.dueDate,
-        createdAt: operation.workOrder.createdAt,
-        item: operation.workOrder.item,
-      },
-      routingOperation: operation.routingOperation,
-      equipment: operation.equipment,
-      wipLocations: operation.wipUnits
-        .map((unit) => unit.currentLocation)
-        .filter((location): location is NonNullable<typeof location> => location != null),
-    }
+    return sortedWipUnits.map((unit) => {
+      const isRoot =
+        unit.parentWipUnitId == null && unit.sourceProductionResultId == null
+      const isReworkChild =
+        !isRoot &&
+        (unit.relatedMovements.length > 0 ||
+          Number(unit.sourceProductionResult?.reworkQty ?? 0) > 0)
+      const unitType = isRoot
+        ? "ROOT"
+        : isReworkChild
+          ? "REWORK_CHILD"
+          : unit.status === "SCRAPPED"
+            ? "SCRAP_CHILD"
+            : "CHILD"
+      const isFinalCompletedRoot =
+        isRoot &&
+        unit.status === "COMPLETED" &&
+        unit.workOrderOperationId === finalOperation?.id
+      const receiptStatus = !isRoot
+        ? "NOT_APPLICABLE"
+        : !isFinalCompletedRoot
+          ? "NOT_READY"
+          : receiptBlockedReason
+            ? "ON_HOLD"
+            : availableReceiptQty > 0
+              ? "AVAILABLE"
+              : "RECEIVED"
+
+      return {
+        id: unit.id,
+        unitType,
+        qty: Number(unit.qty),
+        wipStatus: unit.status,
+        parentWipUnit: unit.parentWipUnit
+          ? {
+              id: unit.parentWipUnit.id,
+              qty: Number(unit.parentWipUnit.qty),
+              status: unit.parentWipUnit.status,
+            }
+          : null,
+        sourceProductionResult: unit.sourceProductionResult
+          ? {
+              id: unit.sourceProductionResult.id,
+              defectQty: Number(unit.sourceProductionResult.defectQty),
+              reworkQty: Number(unit.sourceProductionResult.reworkQty),
+            }
+          : null,
+        currentWorkCenter: unit.currentWorkCenter,
+        currentWarehouse: unit.currentWarehouse,
+        currentLocation: unit.currentLocation,
+        latestMovement: unit.movements[0]
+          ? {
+              ...unit.movements[0],
+              qty: Number(unit.movements[0].qty),
+            }
+          : null,
+        receiptStatus,
+        receiptBlockedReason: isRoot ? receiptBlockedReason : null,
+        completedFinalRootQty,
+        totalReceiptQty,
+        availableReceiptQty,
+        workOrder: {
+          id: workOrder.id,
+          orderNo: workOrder.orderNo,
+          manufacturingNo: workOrder.manufacturingNo,
+          status: workOrder.status,
+          plannedQty: Number(workOrder.plannedQty),
+          dueDate: workOrder.dueDate,
+          createdAt: workOrder.createdAt,
+          item: workOrder.item,
+        },
+        operation: {
+          id: unit.workOrderOperation.id,
+          seq: unit.workOrderOperation.seq,
+          status: unit.workOrderOperation.status,
+          plannedQty: Number(unit.workOrderOperation.plannedQty),
+          completedQty: Number(unit.workOrderOperation.completedQty),
+          routingOperation: unit.workOrderOperation.routingOperation,
+          equipment: unit.workOrderOperation.equipment,
+        },
+      }
+    })
   })
 }
 

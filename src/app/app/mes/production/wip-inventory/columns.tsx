@@ -1,256 +1,158 @@
 "use client"
 
 import { ColumnDef } from "@tanstack/react-table"
-import { OperationStatus } from "@prisma/client"
-import { format } from "date-fns"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import type { WipInventoryRow } from "@/lib/actions/work-order.actions"
 
-export const STATUS_CONFIG: Record<
-  OperationStatus,
-  { label: string; className: string }
-> = {
-  PENDING: {
-    label: "대기",
-    className: "border-slate-200 bg-slate-50 text-slate-700",
-  },
-  IN_PROGRESS: {
-    label: "진행중",
-    className: "border-amber-200 bg-amber-50 text-amber-700",
-  },
-  COMPLETED: {
-    label: "완료",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  },
-  SKIPPED: {
-    label: "건너뜀",
-    className: "border-zinc-200 bg-zinc-50 text-zinc-700",
-  },
+export const WIP_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  WAITING: { label: "대기", className: "border-slate-200 bg-slate-50 text-slate-700" },
+  IN_PROCESS: { label: "진행중", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  ON_HOLD: { label: "보류", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  OUTSOURCED: { label: "외주", className: "border-indigo-200 bg-indigo-50 text-indigo-700" },
+  IN_TRANSIT: { label: "이동중", className: "border-blue-200 bg-blue-50 text-blue-700" },
+  RECEIVED: { label: "복귀", className: "border-cyan-200 bg-cyan-50 text-cyan-700" },
+  COMPLETED: { label: "완료", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  SCRAPPED: { label: "폐기", className: "border-red-200 bg-red-50 text-red-700" },
+  REWORK: { label: "재작업 보류", className: "border-orange-200 bg-orange-50 text-orange-700" },
 }
 
-export function getDisplayRemainingQty(row: WipInventoryRow) {
-  return Math.max(0, row.remainingQty)
+export const UNIT_TYPE_CONFIG: Record<string, { label: string; className: string }> = {
+  ROOT: { label: "정상 root", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  SCRAP_CHILD: { label: "SCRAP child", className: "border-red-200 bg-red-50 text-red-700" },
+  REWORK_CHILD: { label: "REWORK child", className: "border-orange-200 bg-orange-50 text-orange-700" },
+  CHILD: { label: "분리 child", className: "border-slate-200 bg-slate-50 text-slate-700" },
 }
 
-export function getProgress(row: WipInventoryRow) {
-  if (row.plannedQty <= 0) return 0
-  return (row.productionQty / row.plannedQty) * 100
-}
-
-export function isDelayed(row: WipInventoryRow) {
-  if (row.status === "COMPLETED" || row.remainingQty <= 0 || !row.workOrder.dueDate) {
-    return false
-  }
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const dueDate = new Date(row.workOrder.dueDate)
-  dueDate.setHours(0, 0, 0, 0)
-  return dueDate < today
-}
-
-export function isNearDue(row: WipInventoryRow) {
-  if (row.status === "COMPLETED" || row.remainingQty <= 0 || !row.workOrder.dueDate) {
-    return false
-  }
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const dueDate = new Date(row.workOrder.dueDate)
-  dueDate.setHours(0, 0, 0, 0)
-  const diffDays = (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-  return diffDays >= 0 && diffDays <= 3
+export const RECEIPT_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  AVAILABLE: { label: "입고 가능", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  ON_HOLD: { label: "입고 보류", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  RECEIVED: { label: "입고 완료", className: "border-slate-200 bg-slate-50 text-slate-700" },
+  NOT_READY: { label: "공정 진행중", className: "border-blue-200 bg-blue-50 text-blue-700" },
+  NOT_APPLICABLE: { label: "입고 대상 아님", className: "border-zinc-200 bg-zinc-50 text-zinc-600" },
 }
 
 export function getColumns(): ColumnDef<WipInventoryRow>[] {
   return [
     {
-      id: "orderNo",
+      id: "workOrder",
       accessorFn: (row) => row.workOrder.orderNo,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="작업지시" />
-      ),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="작업지시 / 제조번호" />,
       cell: ({ row }) => (
-        <span className="font-mono text-[13px] font-semibold text-primary whitespace-nowrap">
-          {row.original.workOrder.orderNo}
-        </span>
+        <div className="min-w-[170px]">
+          <p className="font-mono text-[13px] font-semibold text-primary">
+            {row.original.workOrder.orderNo}
+          </p>
+          <p className="mt-0.5 font-mono text-[13px] text-muted-foreground">
+            {row.original.workOrder.manufacturingNo ?? "-"}
+          </p>
+        </div>
       ),
     },
     {
       id: "item",
       accessorFn: (row) => row.workOrder.item.name,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목" />
-      ),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="품목" />,
       cell: ({ row }) => (
-        <div className="min-w-0 max-w-[160px]">
-          <p className="text-[14px] font-medium text-foreground leading-snug line-clamp-2">
+        <div className="max-w-[160px]">
+          <p className="text-[14px] font-medium leading-snug text-foreground">
             {row.original.workOrder.item.name}
           </p>
-          <p className="font-mono text-[12px] text-muted-foreground mt-0.5">
+          <p className="mt-0.5 font-mono text-[13px] text-muted-foreground">
             {row.original.workOrder.item.code}
           </p>
         </div>
       ),
     },
     {
-      id: "operation",
-      accessorFn: (row) => row.routingOperation.name,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="공정/작업장" />
-      ),
-      cell: ({ row }) => (
-        <div className="min-w-0 max-w-[150px]">
-          <p className="truncate text-[14px] font-medium text-foreground">
-            <span className="text-muted-foreground mr-1">{row.original.seq}.</span>
-            {row.original.routingOperation.name}
-          </p>
-          <p className="truncate text-[12px] text-muted-foreground">
-            {row.original.routingOperation.workCenter.name}
-          </p>
-        </div>
-      ),
-    },
-    {
-      id: "quantitySummary",
-      accessorFn: (row) => row.productionQty,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="수량 현황" />
-      ),
+      id: "unitType",
+      accessorFn: (row) => row.unitType,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="WIP 구분" />,
       cell: ({ row }) => {
-        const remaining = getDisplayRemainingQty(row.original)
-        const isOver = row.original.remainingQty < 0
+        const config = UNIT_TYPE_CONFIG[row.original.unitType]
         return (
-          <div className="text-right">
-            <p className="text-[14px] font-medium tabular-nums whitespace-nowrap">
-              <span className="text-emerald-700">
-                {row.original.productionQty.toLocaleString()}
-              </span>
-              <span className="text-muted-foreground mx-1">/</span>
-              <span className="text-foreground">
-                {row.original.plannedQty.toLocaleString()}
-              </span>
-            </p>
-            {remaining > 0 && !isOver ? (
-              <p className="text-[12px] text-amber-700 tabular-nums">
-                잔량 {remaining.toLocaleString()}
+          <div>
+            <Badge variant="outline" className={`text-[13px] ${config.className}`}>
+              {config.label}
+            </Badge>
+            {row.original.parentWipUnit ? (
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                root {row.original.parentWipUnit.qty.toLocaleString()}
               </p>
             ) : null}
-            {isOver ? (
-              <Badge
-                variant="outline"
-                className="border-red-200 bg-red-50 text-[11px] text-red-700"
-              >
-                수량 확인
-              </Badge>
-            ) : null}
           </div>
         )
       },
     },
     {
-      id: "progress",
-      accessorFn: (row) => getProgress(row),
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="진행 현황" />
-      ),
+      id: "operation",
+      accessorFn: (row) => row.operation.routingOperation.name,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="현재 공정 / 위치" />,
       cell: ({ row }) => {
-        const progress = getProgress(row.original)
-        const displayProgress = Math.min(progress, 100)
-        const config = STATUS_CONFIG[row.original.status]
+        const location = row.original.currentLocation?.name ?? row.original.currentWarehouse?.name
         return (
-          <div className="w-[130px]">
-            <div className="flex items-center justify-between mb-1">
-              <Badge
-                variant="outline"
-                className={`text-[11px] ${config.className}`}
-              >
-                {config.label}
-              </Badge>
-              <span className="text-[12px] font-medium tabular-nums">
-                {Math.round(displayProgress)}%
-              </span>
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary transition-all"
-                style={{ width: `${displayProgress}%` }}
-              />
-            </div>
-            {progress > 100 ? (
-              <p className="mt-0.5 text-right text-[11px] text-red-600">초과</p>
-            ) : null}
+          <div className="max-w-[175px]">
+            <p className="text-[14px] font-medium text-foreground">
+              <span className="mr-1 text-muted-foreground">{row.original.operation.seq}.</span>
+              {row.original.operation.routingOperation.name}
+            </p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
+              {row.original.currentWorkCenter?.name ??
+                row.original.operation.routingOperation.workCenter.name}
+            </p>
+            {location ? <p className="text-[13px] text-muted-foreground">{location}</p> : null}
           </div>
         )
       },
     },
     {
-      id: "activeWipQty",
-      accessorFn: (row) => row.activeWipQty,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="재공수량" />
-      ),
+      id: "wipStatus",
+      accessorFn: (row) => row.wipStatus,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="WIP 상태" />,
+      cell: ({ row }) => {
+        const config = WIP_STATUS_CONFIG[row.original.wipStatus]
+        return (
+          <Badge variant="outline" className={`text-[13px] ${config.className}`}>
+            {config.label}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: "qty",
+      accessorFn: (row) => row.qty,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="WIP 수량" />,
       cell: ({ row }) => (
         <div className="text-right">
-          <span className="block text-[14px] font-medium tabular-nums">
-            {row.original.activeWipQty.toLocaleString()}
-          </span>
-          {row.original.wipLocations.length > 0 ? (
-            <p className="text-[11px] text-muted-foreground">
-              {row.original.wipLocations[0].name}
-              {row.original.wipLocations.length > 1
-                ? ` 외 ${row.original.wipLocations.length - 1}`
-                : ""}
-            </p>
-          ) : null}
+          <p className="text-[15px] font-semibold tabular-nums text-foreground">
+            {row.original.qty.toLocaleString()}
+          </p>
+          <p className="text-[13px] text-muted-foreground">{row.original.workOrder.item.uom}</p>
         </div>
       ),
     },
     {
-      id: "schedule",
-      accessorFn: (row) =>
-        row.workOrder.dueDate ? new Date(row.workOrder.dueDate).getTime() : 0,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="일정" />
-      ),
+      id: "receiptStatus",
+      accessorFn: (row) => row.receiptStatus,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="완제품입고" />,
       cell: ({ row }) => {
-        const dueDate = row.original.workOrder.dueDate
-        if (!dueDate) {
-          return <span className="text-[13px] text-muted-foreground">-</span>
-        }
-        const delayed = isDelayed(row.original)
-        const nearDue = isNearDue(row.original)
+        const config = RECEIPT_STATUS_CONFIG[row.original.receiptStatus]
         return (
-          <div className="whitespace-nowrap">
-            <p
-              className={`text-[13px] font-medium ${
-                delayed ? "text-red-600" : "text-foreground"
-              }`}
-            >
-              {format(new Date(dueDate), "yyyy-MM-dd")}
-            </p>
-            {delayed ? (
-              <Badge
-                variant="outline"
-                className="mt-0.5 border-red-200 bg-red-50 text-[11px] text-red-700"
-              >
-                지연
-              </Badge>
-            ) : nearDue ? (
-              <Badge
-                variant="outline"
-                className="mt-0.5 border-amber-200 bg-amber-50 text-[11px] text-amber-700"
-              >
-                임박
-              </Badge>
-            ) : (
-              <Badge
-                variant="outline"
-                className="mt-0.5 border-emerald-200 bg-emerald-50 text-[11px] text-emerald-700"
-              >
-                정상
-              </Badge>
-            )}
+          <div className="max-w-[190px]">
+            <Badge variant="outline" className={`text-[13px] ${config.className}`}>
+              {config.label}
+            </Badge>
+            {row.original.receiptStatus === "AVAILABLE" ? (
+              <p className="mt-1 text-[13px] font-medium tabular-nums text-emerald-700">
+                가능 {row.original.availableReceiptQty.toLocaleString()}
+              </p>
+            ) : null}
+            {row.original.receiptBlockedReason ? (
+              <p className="mt-1 text-[13px] text-amber-700">
+                {row.original.receiptBlockedReason}
+              </p>
+            ) : null}
           </div>
         )
       },
