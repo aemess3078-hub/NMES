@@ -13,6 +13,7 @@ export type MaterialReceiptOrderRow = {
   id: string
   orderNo: string
   status: string
+  orderDate: Date | string | null
   expectedDate: Date | string | null
   supplier: { id: string; name: string; code: string }
   items: Array<{
@@ -68,10 +69,11 @@ export function MaterialReceiptDataTable({
     <>
       <div className="rounded-lg border overflow-hidden">
         {/* 테이블 헤더 */}
-        <div className="grid grid-cols-[40px_1fr_1fr_1fr_1fr_120px] bg-muted/30 border-b">
+        <div className="grid grid-cols-[40px_1fr_1fr_1fr_1fr_1fr_120px] bg-muted/30 border-b">
           <div className="py-2.5 px-3" />
           <div className="py-2.5 px-3 text-[13px] font-medium text-muted-foreground">발주번호</div>
           <div className="py-2.5 px-3 text-[13px] font-medium text-muted-foreground">공급사</div>
+          <div className="py-2.5 px-3 text-[13px] font-medium text-muted-foreground">발주일시</div>
           <div className="py-2.5 px-3 text-[13px] font-medium text-muted-foreground">입고예정일</div>
           <div className="py-2.5 px-3 text-[13px] font-medium text-muted-foreground">상태</div>
           <div className="py-2.5 px-3 text-[13px] font-medium text-muted-foreground text-right">처리</div>
@@ -92,7 +94,7 @@ export function MaterialReceiptDataTable({
             return (
               <div key={order.id}>
                 {/* 발주 행 */}
-                <div className="grid grid-cols-[40px_1fr_1fr_1fr_1fr_120px] items-center hover:bg-muted/20 transition-colors">
+                <div className="grid grid-cols-[40px_1fr_1fr_1fr_1fr_1fr_120px] items-center hover:bg-muted/20 transition-colors">
                   {/* 펼치기 버튼 */}
                   <button
                     className="flex items-center justify-center h-full py-3 px-3 text-muted-foreground hover:text-foreground transition-colors"
@@ -115,6 +117,17 @@ export function MaterialReceiptDataTable({
                   {/* 공급사 */}
                   <div className="py-3 px-3">
                     <span className="text-[14px]">{order.supplier.name}</span>
+                  </div>
+
+                  {/* 발주일시 */}
+                  <div className="py-3 px-3">
+                    {order.orderDate ? (
+                      <span className="text-[13px] text-muted-foreground">
+                        {format(new Date(order.orderDate), "yyyy-MM-dd HH:mm")}
+                      </span>
+                    ) : (
+                      <span className="text-[13px] text-muted-foreground">—</span>
+                    )}
                   </div>
 
                   {/* 입고예정일 */}
