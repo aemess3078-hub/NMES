@@ -92,7 +92,7 @@ export async function getItemsForBom() {
 export async function getComponentItems() {
   const tenantId = await getTenantId()
   return prisma.item.findMany({
-    where: { tenantId },
+    where: { tenantId, itemType: { in: ["RAW_MATERIAL", "SEMI_FINISHED", "CONSUMABLE"] } },
     select: { id: true, code: true, name: true, itemType: true, uom: true },
     orderBy: { code: "asc" },
   })

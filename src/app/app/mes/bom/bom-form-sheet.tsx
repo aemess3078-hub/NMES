@@ -108,7 +108,7 @@ export function BomFormSheet({
           componentItemId: bi.componentItemId,
           seq: bi.seq,
           qtyPer: bi.qtyPer,
-          scrapRate: bi.scrapRate,
+          scrapRate: 0,  // 손실률은 항상 0으로 저장
         })),
       }
 
@@ -132,7 +132,7 @@ export function BomFormSheet({
       componentItemId: "",
       seq: nextSeq,
       qtyPer: 1,
-      scrapRate: 0,
+      scrapRate: 0,  // 손실률은 항상 0으로 유지
     })
   }
 
@@ -212,18 +212,17 @@ export function BomFormSheet({
             {/* 자재 테이블 헤더 */}
             {fields.length > 0 && (
               <div className="rounded-md border overflow-hidden">
-                <div className="grid grid-cols-[40px_1fr_80px_80px_40px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
+                <div className="grid grid-cols-[40px_1fr_80px_40px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
                   <span>순서</span>
                   <span>자재</span>
                   <span className="text-right">소요량</span>
-                  <span className="text-right">손실률</span>
                   <span></span>
                 </div>
 
                 {fields.map((field, index) => (
                   <div
                     key={field.id}
-                    className="grid grid-cols-[40px_1fr_80px_80px_40px] gap-0 items-center px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
+                    className="grid grid-cols-[40px_1fr_80px_40px] gap-0 items-center px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
                   >
                     {/* 순서 */}
                     <span className="text-[13px] text-muted-foreground">
@@ -269,29 +268,6 @@ export function BomFormSheet({
                           <Input
                             type="number"
                             min={0}
-                            step={0.001}
-                            className="h-8 text-[13px] text-right"
-                            value={f.value ?? ""}
-                            onChange={(e) => {
-                              const val = e.target.value
-                              f.onChange(val === "" ? "" : parseFloat(val))
-                            }}
-                          />
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 손실률 */}
-                    <FormField
-                      control={form.control}
-                      name={`bomItems.${index}.scrapRate`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            max={1}
                             step={0.001}
                             className="h-8 text-[13px] text-right"
                             value={f.value ?? ""}
