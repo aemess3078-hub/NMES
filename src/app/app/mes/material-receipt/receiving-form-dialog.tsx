@@ -124,6 +124,30 @@ export function ReceivingFormDialog({
       return
     }
 
+    // 클라이언트 검증
+    for (const ins of inspections) {
+      const received = parseFloat(ins.thisReceivedQty) || 0
+      if (received <= 0) continue
+
+      if (received > ins.pendingQty) {
+        alert(
+          `[${ins.itemCode}] ${ins.itemName}\n` +
+          `입고수량(${received.toLocaleString()})이 잔여수량(${ins.pendingQty.toLocaleString()} ${ins.uom})을 초과합니다.`
+        )
+        return
+      }
+
+      const accepted = parseFloat(ins.thisAcceptedQty) || 0
+      const rejected = parseFloat(ins.thisRejectedQty) || 0
+      if (Math.abs(accepted + rejected - received) > 0.001) {
+        alert(
+          `[${ins.itemCode}] ${ins.itemName}\n` +
+          `합격수량과 불합격수량의 합은 금회 입고수량과 같아야 합니다.`
+        )
+        return
+      }
+    }
+
     setIsLoading(true)
     try {
       for (const ins of inspections) {
@@ -250,7 +274,12 @@ export function ReceivingFormDialog({
               {/* 수량 입력 */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-[13px]">금회 입고수량</Label>
+                  <Label className="text-[13px]">
+                    금회 입고수량
+                    <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                      (최대 {ins.pendingQty.toLocaleString()} {ins.uom})
+                    </span>
+                  </Label>
                   <Input
                     type="number"
                     min={0}
@@ -265,8 +294,13 @@ export function ReceivingFormDialog({
                         thisRejectedQty: "0",
                       })
                     }}
-                    className="h-8 text-[13px]"
+                    className={`h-8 text-[13px] ${(parseFloat(ins.thisReceivedQty) || 0) > ins.pendingQty ? "border-red-400 focus-visible:ring-red-400" : ""}`}
                   />
+                  {(parseFloat(ins.thisReceivedQty) || 0) > ins.pendingQty && (
+                    <p className="text-[12px] text-red-600">
+                      잔여수량 {ins.pendingQty.toLocaleString()} {ins.uom} 초과
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">합격수량</Label>
@@ -346,7 +380,14 @@ export function ReceivingFormDialog({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             취소
           </Button>
-          <Button onClick={handleConfirm} disabled={isLoading || !warehouseId}>
+          <Button
+            onClick={handleConfirm}
+            disabled={
+              isLoading ||
+              !warehouseId ||
+              inspections.some((ins) => (parseFloat(ins.thisReceivedQty) || 0) > ins.pendingQty)
+            }
+          >
             {isLoading ? "처리 중..." : "입고 확정"}
           </Button>
         </DialogFooter>

@@ -75,7 +75,7 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
     where: { id: data.purchaseOrderItemId },
     include: {
       purchaseOrder: { select: { siteId: true } },
-      item: { select: { isLotTracked: true } },
+      item: { select: { isLotTracked: true, uom: true } },
     },
   })
 
@@ -85,6 +85,27 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
       `입고 창고의 사이트가 발주 사이트와 다릅니다. ` +
       `창고는 반드시 발주의 사이트에 속해야 합니다.`
     )
+  }
+
+  // ── 2-A. 수량 검증 (DB 기준 재계산) ──────────────────────────────────────
+  const orderedQty = Number(purchaseOrderItem.qty)
+  const alreadyReceivedQty = Number(purchaseOrderItem.receivedQty)
+  const remainingQty = orderedQty - alreadyReceivedQty
+  const uom = purchaseOrderItem.item.uom
+
+  if (data.receivedQty <= 0) {
+    throw new Error("입고수량은 0보다 커야 합니다.")
+  }
+  if (data.receivedQty > remainingQty) {
+    throw new Error(
+      `입고수량은 잔여수량을 초과할 수 없습니다. 잔여수량: ${remainingQty.toLocaleString("ko-KR")} ${uom}`
+    )
+  }
+  if (data.acceptedQty < 0 || data.rejectedQty < 0) {
+    throw new Error("합격수량과 불합격수량은 0 이상이어야 합니다.")
+  }
+  if (Math.abs(data.acceptedQty + data.rejectedQty - data.receivedQty) > 0.001) {
+    throw new Error("합격수량과 불합격수량의 합은 금회 입고수량과 같아야 합니다.")
   }
 
   const isLotTracked = purchaseOrderItem.item.isLotTracked ?? false
