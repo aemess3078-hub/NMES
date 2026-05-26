@@ -9,7 +9,7 @@ import type { WipUnit } from "@prisma/client"
 
 export type MaterialRequirement = {
   itemId: string
-  item: { id: string; code: string; name: string; uom: string; spec: string | null; isLotTracked: boolean }
+  item: { id: string; code: string; name: string; uom: string; spec: string | null; isLotTracked: boolean; itemType: string }
   requiredQty: number
   issuedQty: number
   pendingQty: number
@@ -79,7 +79,7 @@ export async function getWorkOrdersForIssue(
           bomItems: {
             include: {
               componentItem: {
-                select: { id: true, code: true, name: true, uom: true, spec: true, isLotTracked: true },
+                select: { id: true, code: true, name: true, uom: true, spec: true, isLotTracked: true, itemType: true },
               },
             },
             orderBy: { seq: "asc" },

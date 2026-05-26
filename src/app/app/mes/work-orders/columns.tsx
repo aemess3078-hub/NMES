@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 import { type OperationStatus, type WorkOrderStatus } from "@prisma/client"
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
+import { Boxes, ChevronDown, ChevronRight, ExternalLink, Layers, Package, Wrench, type LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,13 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
+
+const itemTypeBadge: Record<string, { label: string; className: string; Icon: LucideIcon }> = {
+  FINISHED: { label: "완제품", className: "border-blue-200 bg-blue-50 text-blue-700", Icon: Package },
+  SEMI_FINISHED: { label: "반제품", className: "border-purple-200 bg-purple-50 text-purple-700", Icon: Layers },
+  RAW_MATERIAL: { label: "원자재", className: "border-slate-200 bg-slate-50 text-slate-600", Icon: Boxes },
+  CONSUMABLE: { label: "소모품", className: "border-amber-200 bg-amber-50 text-amber-700", Icon: Wrench },
+}
 
 const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   DRAFT: "초안",
@@ -160,12 +167,23 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="품목명" />
       ),
-      cell: ({ row }) => (
-        <div className="text-[14px]">
-          <div className="font-medium">{row.original.item.name}</div>
-          <div className="font-mono text-[13px] text-muted-foreground">{row.original.item.code}</div>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const badge = itemTypeBadge[row.original.item.itemType]
+        return (
+          <div className="text-[14px]">
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium">{row.original.item.name}</span>
+              {badge && (
+                <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}>
+                  <badge.Icon className="h-2.5 w-2.5" />
+                  {badge.label}
+                </span>
+              )}
+            </div>
+            <div className="font-mono text-[13px] text-muted-foreground">{row.original.item.code}</div>
+          </div>
+        )
+      },
     },
     {
       id: "plannedQty",
