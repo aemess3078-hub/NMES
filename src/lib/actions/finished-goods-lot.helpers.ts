@@ -21,6 +21,7 @@ export type FinishedGoodsLotTx = Prisma.TransactionClient
 type GenerateInput = {
   manufacturingNo: string | null
   orderNo: string | null
+  isSemiFinished?: boolean
 }
 
 function formatYyyymmdd(date: Date): string {
@@ -28,6 +29,12 @@ function formatYyyymmdd(date: Date): string {
 }
 
 function baseLotNo(input: GenerateInput): string {
+  if (input.isSemiFinished) {
+    // 반제품: 제조번호를 공식 키로 쓰지 않으므로 orderNo 기반 SF- prefix 사용
+    const order = input.orderNo?.trim()
+    if (order) return `SF-${order}`
+    return ""
+  }
   const mfg = input.manufacturingNo?.trim()
   if (mfg) return `FG-${mfg}`
   const order = input.orderNo?.trim()
@@ -38,9 +45,10 @@ function baseLotNo(input: GenerateInput): string {
 async function generateFallbackLotNo(
   tx: FinishedGoodsLotTx,
   tenantId: string,
+  lotPrefix = "LOT-FG",
 ): Promise<string> {
   const today = formatYyyymmdd(new Date())
-  const prefix = `LOT-FG-${today}-`
+  const prefix = `${lotPrefix}-${today}-`
   const count = await tx.lot.count({
     where: { tenantId, lotNo: { startsWith: prefix } },
   })
@@ -125,13 +133,16 @@ export async function createFinishedGoodsLot(
       itemId: string
     }
     forceNewLot?: boolean
+    /** true 이면 SF- prefix 로 반제품 LOT 발번. false(기본) 이면 FG- prefix */
+    isSemiFinished?: boolean
   },
 ): Promise<Lot> {
-  const { tenantId, workOrder, forceNewLot } = params
+  const { tenantId, workOrder, forceNewLot, isSemiFinished = false } = params
 
   const base = baseLotNo({
     manufacturingNo: workOrder.manufacturingNo,
     orderNo: workOrder.orderNo,
+    isSemiFinished,
   })
 
   let lotNo: string
@@ -144,7 +155,7 @@ export async function createFinishedGoodsLot(
       forceNewLot ?? true,
     )
   } else {
-    lotNo = await generateFallbackLotNo(tx, tenantId)
+    lotNo = await generateFallbackLotNo(tx, tenantId, isSemiFinished ? "LOT-SF" : "LOT-FG")
   }
 
   return tx.lot.create({

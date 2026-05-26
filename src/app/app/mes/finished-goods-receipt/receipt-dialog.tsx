@@ -53,6 +53,9 @@ export function ReceiptDialog({
 
   if (!workOrder) return null
 
+  const isSemiFinished = workOrder.item.itemType === "SEMI_FINISHED"
+  const receiptLabel = isSemiFinished ? "반제품" : "완제품"
+
   function handleScan(parsed: ParsedBarcode) {
     if (parsed.itemCode !== workOrder!.item.code) {
       alert(`스캔한 품목(${parsed.itemCode})이 작업지시 품목(${workOrder!.item.code})과 다릅니다.`)
@@ -122,14 +125,14 @@ export function ReceiptDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-[18px]">
             <PackagePlus className="h-5 w-5 text-green-600" />
-            완제품 입고 처리
+            {receiptLabel} 입고 처리
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           {/* 바코드 스캔 검증 */}
           <div className="space-y-1">
-            <p className="text-[13px] font-medium text-muted-foreground">완제품 바코드 스캔</p>
+            <p className="text-[13px] font-medium text-muted-foreground">{receiptLabel} 바코드 스캔</p>
             {scanVerified ? (
               <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-green-50 border border-green-200">
                 <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
@@ -138,7 +141,7 @@ export function ReceiptDialog({
             ) : (
               <BarcodeScanInput
                 onScan={handleScan}
-                placeholder="완제품 바코드를 스캔하여 품목을 확인하세요 (선택)"
+                placeholder={`${receiptLabel} 바코드를 스캔하여 품목을 확인하세요 (선택)`}
               />
             )}
           </div>
@@ -262,7 +265,7 @@ export function ReceiptDialog({
             className="gap-1.5"
           >
             <PackagePlus className="h-4 w-4" />
-            {isPending ? "처리 중..." : "입고 처리"}
+            {isPending ? "처리 중..." : `${receiptLabel} 입고`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -270,7 +273,7 @@ export function ReceiptDialog({
       <BarcodePrintDialog
         open={printOpen}
         onOpenChange={setPrintOpen}
-        title={`완제품 라벨 — ${workOrder.orderNo}`}
+        title={`${receiptLabel} 라벨 — ${workOrder.orderNo}`}
         items={[{
           itemCode: workOrder.item.code,
           itemName: workOrder.item.name,

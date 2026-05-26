@@ -17,7 +17,7 @@ export type WorkOrderForReceipt = {
   status: string
   dueDate: Date | null
   plannedQty: number
-  item: { id: string; code: string; name: string; uom: string }
+  item: { id: string; code: string; name: string; uom: string; itemType: string | null }
   site: { id: string; name: string }
   totalGoodQty: number
   receiptBasisQty: number
@@ -128,7 +128,7 @@ export async function getWorkOrdersForReceipt(
   const workOrders = await prisma.workOrder.findMany({
     where: { tenantId, status: "COMPLETED" },
     include: {
-      item: { select: { id: true, code: true, name: true, uom: true } },
+      item: { select: { id: true, code: true, name: true, uom: true, itemType: true } },
       site: { select: { id: true, name: true } },
       operations: {
         include: {
@@ -311,6 +311,13 @@ export async function createFinishedGoodsReceiptAction(
         throw new Error("작업지시 품목과 입고 품목이 일치하지 않습니다.")
       }
 
+      // 품목 유형 조회 — 반제품(SEMI_FINISHED) 여부에 따라 LOT 발번 prefix 결정
+      const itemRecord = await tx.item.findUnique({
+        where: { id: data.itemId },
+        select: { itemType: true },
+      })
+      const isSemiFinished = itemRecord?.itemType === "SEMI_FINISHED"
+
       // 2. WipUnit 기반 입고 검증
       //    - 완제품입고 대상은 ROOT && status=COMPLETED && 최종공정 도달 WipUnit 만
       //    - SCRAP_CHILD / REWORK_CHILD / SCRAPPED / REWORK / IN_PROCESS / WAITING /
@@ -356,7 +363,9 @@ export async function createFinishedGoodsReceiptAction(
         )
       }
 
-      // 6. 완제품 Lot 발번 — 부분입고 다회차마다 신규 Lot 발번 (의료기기 추적성)
+      // 6. LOT 발번 — 부분입고 다회차마다 신규 Lot 발번 (의료기기 추적성)
+      //    FINISHED: FG-{manufacturingNo} 또는 FG-{orderNo}
+      //    SEMI_FINISHED: SF-{orderNo} (반제품은 제조번호 공식 키 미사용)
       const lot = await createFinishedGoodsLot(tx, {
         tenantId,
         workOrder: {
@@ -364,6 +373,7 @@ export async function createFinishedGoodsReceiptAction(
           manufacturingNo: workOrder.manufacturingNo,
           itemId: workOrder.itemId,
         },
+        isSemiFinished,
       })
       createdLotNo = lot.lotNo
 
@@ -407,7 +417,7 @@ export async function createFinishedGoodsReceiptAction(
           qty: data.receiptQty,
           refType: "WORK_ORDER",
           refId: data.workOrderId,
-          note: "완제품 입고 처리",
+          note: isSemiFinished ? "반제품 입고 처리" : "완제품 입고 처리",
           txAt: new Date(),
         },
       })
