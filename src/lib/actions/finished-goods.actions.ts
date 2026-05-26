@@ -1,8 +1,10 @@
 "use server"
 
+import { LotGenealogyRelation } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import { createFinishedGoodsLot } from "./finished-goods-lot.helpers"
+import { createLotGenealogyLink } from "./lot-genealogy.helpers"
 import {
   WIP_RECEIPT_BLOCK_REASONS,
   computeWipReceiptStatus,
@@ -385,6 +387,31 @@ export async function createFinishedGoodsReceiptAction(
           where: { id: completedRootWipUnit.id },
           data: { lotId: lot.id },
         })
+      }
+
+      // 7-B. LotGenealogy: 완제품 입고 시 투입된 반제품 LOT → 완제품 LOT 연결 (INPUT)
+      //      SEMI_FINISHED 입고는 자체가 최종 조립 LOT가 아니므로 연결 대상 외.
+      //      WorkOrderMaterialLot.inventoryTransaction.lotId 경로로 반제품 Lot ID 확보.
+      if (!isSemiFinished) {
+        const materialLotRecords = await tx.workOrderMaterialLot.findMany({
+          where: { tenantId, workOrderId: data.workOrderId },
+          include: {
+            materialItem: { select: { itemType: true } },
+            inventoryTransaction: { select: { lotId: true } },
+          },
+        })
+        for (const ml of materialLotRecords) {
+          if (ml.materialItem.itemType !== "SEMI_FINISHED") continue
+          const parentLotId = ml.inventoryTransaction?.lotId
+          if (!parentLotId) continue
+          await createLotGenealogyLink(tx, {
+            tenantId,
+            parentLotId,
+            childLotId: lot.id,
+            relationType: LotGenealogyRelation.INPUT,
+            qty: Number(ml.qty),
+          })
+        }
       }
 
       // 8. FinishedGoodsReceipt 생성 (lotId 연결)
