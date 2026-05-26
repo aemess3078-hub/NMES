@@ -11,6 +11,7 @@ import {
   Truck,
   History,
   ArrowRight,
+  GitBranch,
   type LucideProps,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import {
   getManufacturingTraceability,
   type ManufacturingTraceability,
+  type TraceabilityLotGenealogyNode,
 } from "@/lib/actions/manufacturing-traceability.actions"
 
 const WORK_ORDER_STATUS: Record<string, { label: string; className: string }> = {
@@ -122,6 +124,53 @@ function Section({
         )}
       </div>
     </section>
+  )
+}
+
+const ITEM_TYPE_BADGE: Record<string, { label: string; className: string }> = {
+  FINISHED: { label: "완제품", className: "bg-green-100 text-green-700" },
+  SEMI_FINISHED: { label: "반제품", className: "bg-blue-100 text-blue-700" },
+  RAW_MATERIAL: { label: "원자재", className: "bg-amber-100 text-amber-700" },
+  CONSUMABLE: { label: "소모품", className: "bg-slate-100 text-slate-600" },
+}
+
+function LotTreeNode({
+  node,
+  depth = 0,
+}: {
+  node: TraceabilityLotGenealogyNode
+  depth?: number
+}) {
+  const badge = node.itemType ? ITEM_TYPE_BADGE[node.itemType] : null
+  return (
+    <div>
+      <div
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2"
+        style={{ paddingLeft: `${depth * 24}px` }}
+      >
+        {depth > 0 && (
+          <span className="shrink-0 font-mono text-[13px] text-slate-400">└─</span>
+        )}
+        <span className="shrink-0 font-mono text-[13px] font-medium text-blue-700">
+          {node.lotNo}
+        </span>
+        {badge && (
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium ${badge.className}`}>
+            {badge.label}
+          </span>
+        )}
+        <span className="shrink-0 font-mono text-[12px] text-muted-foreground">{node.itemCode}</span>
+        <span className="text-[13px] text-foreground">{node.itemName}</span>
+        {node.qty != null && (
+          <span className="ml-auto shrink-0 text-[13px] text-muted-foreground">
+            투입 <span className="font-medium text-foreground">{formatNumber(node.qty)}</span>
+          </span>
+        )}
+      </div>
+      {node.parents.map((parent) => (
+        <LotTreeNode key={parent.lotId} node={parent} depth={depth + 1} />
+      ))}
+    </div>
   )
 }
 
@@ -272,6 +321,26 @@ export function ManufacturingTraceabilityClient({
                   {formatNumber(workOrder.plannedQty)} {workOrder.item.uom}
                 </span>
               </div>
+            </div>
+          </Section>
+
+          <Section
+            icon={GitBranch}
+            title="LOT 계보"
+            empty={!result.lotGenealogyTrees?.length}
+            emptyText="등록된 LOT 계보가 없습니다."
+          >
+            <div className="space-y-4">
+              {result.lotGenealogyTrees?.map((tree, index) => (
+                <div key={tree.lotId} className="rounded-lg border border-slate-200 px-4 py-3">
+                  {(result.lotGenealogyTrees?.length ?? 0) > 1 && (
+                    <p className="mb-2 text-[12px] font-medium text-muted-foreground">
+                      입고 {index + 1}차
+                    </p>
+                  )}
+                  <LotTreeNode node={tree} depth={0} />
+                </div>
+              ))}
             </div>
           </Section>
 

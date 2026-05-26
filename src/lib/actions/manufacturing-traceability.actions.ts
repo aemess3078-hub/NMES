@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { getLotGenealogyForTraceability, type LotGenealogyNode } from "./lot-genealogy.helpers"
 
 // ─── 의료기기 제조번호 추적성 ────────────────────────────────────────────────
 //
@@ -110,6 +111,17 @@ export type TraceabilityWipMovement = {
   toWorkCenterName: string | null
 }
 
+export type TraceabilityLotGenealogyNode = {
+  lotId: string
+  lotNo: string
+  itemCode: string
+  itemName: string
+  itemType: string | null
+  relationType: string | null
+  qty: number | null
+  parents: TraceabilityLotGenealogyNode[]
+}
+
 export type ManufacturingTraceability = {
   manufacturingNo: string
   workOrder: {
@@ -135,6 +147,20 @@ export type ManufacturingTraceability = {
   finishedGoodsReceipts: TraceabilityFinishedGoodsReceipt[]
   shipments: TraceabilityShipment[]
   wipMovements: TraceabilityWipMovement[]
+  lotGenealogyTrees?: TraceabilityLotGenealogyNode[]
+}
+
+function toLotGenealogyNode(node: LotGenealogyNode): TraceabilityLotGenealogyNode {
+  return {
+    lotId: node.lot.id,
+    lotNo: node.lot.lotNo,
+    itemCode: node.lot.item.code,
+    itemName: node.lot.item.name,
+    itemType: node.lot.item.itemType,
+    relationType: node.relationType as string | null,
+    qty: node.qty,
+    parents: node.parents.map(toLotGenealogyNode),
+  }
 }
 
 export async function getManufacturingTraceability(
@@ -201,6 +227,7 @@ export async function getManufacturingTraceability(
       finishedGoodsReceipts: [],
       shipments: [],
       wipMovements: [],
+      lotGenealogyTrees: [],
     }
   }
 
@@ -440,6 +467,17 @@ export async function getManufacturingTraceability(
       return a.id.localeCompare(b.id)
     })
 
+  // LOT 계보 — 완제품 LOT 기준 upstream INPUT 계층 조회 (입고 LOT별)
+  const lotGenealogyTrees: TraceabilityLotGenealogyNode[] = []
+  const seenLotIds = new Set<string>()
+  for (const receipt of workOrder.finishedGoodsReceipts) {
+    const lotId = receipt.lot?.id
+    if (!lotId || seenLotIds.has(lotId)) continue
+    seenLotIds.add(lotId)
+    const tree = await getLotGenealogyForTraceability(lotId, tenantId)
+    if (tree) lotGenealogyTrees.push(toLotGenealogyNode(tree))
+  }
+
   return {
     manufacturingNo: trimmed,
     workOrder: {
@@ -463,6 +501,7 @@ export async function getManufacturingTraceability(
     finishedGoodsReceipts: finishedGoodsReceiptsList,
     shipments,
     wipMovements,
+    lotGenealogyTrees,
   }
 }
 
