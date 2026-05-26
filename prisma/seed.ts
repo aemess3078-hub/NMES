@@ -2676,10 +2676,10 @@ async function seedMedicalTraceabilityDemoV2(mode: SeedMode) {
     )
     const shipmentItems = await tx.shipmentItem.findMany({
       where: {
-        shipmentOrder: {
-          tenantId: IDS.tenant,
-          shipmentNo: { startsWith: 'SH-DEMO-' },
-        },
+        OR: [
+          { shipmentOrder: { tenantId: IDS.tenant, shipmentNo: { startsWith: 'SH-DEMO-' } } },
+          { salesOrderItem: { salesOrder: { tenantId: IDS.tenant, orderNo: { startsWith: 'SO-DEMO-' } } } },
+        ],
       },
       select: { id: true },
     })
@@ -2726,11 +2726,16 @@ async function seedMedicalTraceabilityDemoV2(mode: SeedMode) {
         ],
       },
     })
-    await tx.shipmentItem.deleteMany({
-      where: { shipmentOrder: { tenantId: IDS.tenant, shipmentNo: { startsWith: 'SH-DEMO-' } } },
-    })
+    if (shipmentItemIds.length > 0) {
+      await tx.shipmentItem.deleteMany({ where: { id: { in: shipmentItemIds } } })
+    }
     await tx.shipmentOrder.deleteMany({
-      where: { tenantId: IDS.tenant, shipmentNo: { startsWith: 'SH-DEMO-' } },
+      where: {
+        OR: [
+          { tenantId: IDS.tenant, shipmentNo: { startsWith: 'SH-DEMO-' } },
+          { salesOrder: { tenantId: IDS.tenant, orderNo: { startsWith: 'SO-DEMO-' } } },
+        ],
+      },
     })
     await tx.salesOrderItem.deleteMany({
       where: { salesOrder: { tenantId: IDS.tenant, orderNo: { startsWith: 'SO-DEMO-' } } },
