@@ -329,18 +329,19 @@ async function seedItemCategories() {
     code: string;
     name: string;
     displayOrder: number;
+    itemType: ItemType;
   }> = [
-    { id: IDS.itemCategories.raw,         code: 'CAT-RAW',  name: '원자재',   displayOrder: 0 },
-    { id: IDS.itemCategories.semifinished, code: 'CAT-SEMI', name: '반제품',   displayOrder: 1 },
-    { id: IDS.itemCategories.finished,     code: 'CAT-FG',   name: '완제품',   displayOrder: 2 },
-    { id: IDS.itemCategories.consumable,   code: 'CAT-CONS', name: '소모품',   displayOrder: 3 },
+    { id: IDS.itemCategories.raw,         code: 'CAT-RAW',  name: '원자재',   displayOrder: 0, itemType: ItemType.RAW_MATERIAL },
+    { id: IDS.itemCategories.semifinished, code: 'CAT-SEMI', name: '반제품',   displayOrder: 1, itemType: ItemType.SEMI_FINISHED },
+    { id: IDS.itemCategories.finished,     code: 'CAT-FG',   name: '완제품',   displayOrder: 2, itemType: ItemType.FINISHED },
+    { id: IDS.itemCategories.consumable,   code: 'CAT-CONS', name: '소모품',   displayOrder: 3, itemType: ItemType.CONSUMABLE },
   ];
 
   for (const cat of roots) {
     await prisma.itemCategory.upsert({
       where: { id: cat.id },
       create: { ...cat, tenantId: IDS.tenant, parentId: null },
-      update: {},
+      update: { itemType: cat.itemType },
     });
   }
 
@@ -350,16 +351,17 @@ async function seedItemCategories() {
     code: string;
     name: string;
     displayOrder: number;
+    itemType: ItemType;
   }> = [
-    { id: IDS.itemCategories.rawMetal,    code: 'CAT-RAW-METAL', name: '금속 원자재',   displayOrder: 0 },
-    { id: IDS.itemCategories.rawChemical, code: 'CAT-RAW-CHEM',  name: '화학 원자재',   displayOrder: 1 },
+    { id: IDS.itemCategories.rawMetal,    code: 'CAT-RAW-METAL', name: '금속 원자재',   displayOrder: 0, itemType: ItemType.RAW_MATERIAL },
+    { id: IDS.itemCategories.rawChemical, code: 'CAT-RAW-CHEM',  name: '화학 원자재',   displayOrder: 1, itemType: ItemType.RAW_MATERIAL },
   ];
 
   for (const cat of rawChildren) {
     await prisma.itemCategory.upsert({
       where: { id: cat.id },
       create: { ...cat, tenantId: IDS.tenant, parentId: IDS.itemCategories.raw },
-      update: {},
+      update: { itemType: cat.itemType },
     });
   }
 }
@@ -1635,7 +1637,7 @@ async function seedItemCosts() {
 async function seedFeatures() {
   const features = [
     // MASTER
-    { code: 'ITEM', name: '품목관리', description: '품목 마스터 데이터 관리', category: 'MASTER', icon: 'Package', menuCodes: ['items', 'sites', 'locations'], isCore: true, displayOrder: 10 },
+    { code: 'ITEM', name: '품목관리', description: '품목 마스터 데이터 관리', category: 'MASTER', icon: 'Package', menuCodes: ['items', 'item-categories', 'item-groups', 'sites', 'locations'], isCore: true, displayOrder: 10 },
     { code: 'BOM', name: 'BOM 관리', description: '자재명세서(BOM) 관리', category: 'MASTER', icon: 'GitBranch', menuCodes: ['bom'], isCore: false, displayOrder: 20 },
     { code: 'ROUTING', name: '공정/라우팅', description: '생산 공정 및 라우팅 관리', category: 'MASTER', icon: 'Network', menuCodes: ['routing', 'work-centers'], isCore: false, displayOrder: 30 },
     { code: 'EQUIPMENT', name: '설비관리', description: '생산 설비 마스터 관리', category: 'MASTER', icon: 'Cpu', menuCodes: ['equipment'], isCore: false, displayOrder: 40 },

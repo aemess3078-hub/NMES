@@ -1,36 +1,46 @@
+import { getItemGroupsForManagement } from "@/lib/actions/item-group.actions"
 import { getItemCategoriesForManagement } from "@/lib/actions/item-category.actions"
-import { ItemCategoryDataTable } from "./item-category-data-table"
+import { ItemGroupDataTable } from "./item-group-data-table"
 
 export const dynamic = "force-dynamic"
 
-export default async function ItemCategoriesPage() {
-  const categories = await getItemCategoriesForManagement()
+export default async function ItemGroupsPage() {
+  const [groups, categories] = await Promise.all([
+    getItemGroupsForManagement(),
+    getItemCategoriesForManagement(),
+  ])
 
-  const total      = categories.length
-  const withType   = categories.filter((c) => c.itemType != null).length
-  const withGroups = categories.filter((c) => c._count.itemGroups > 0).length
+  const total    = groups.length
+  const active   = groups.filter((g) => g.isActive).length
+  const inactive = groups.filter((g) => !g.isActive).length
+
+  const categoryOptions = categories.map((c) => ({
+    id:   c.id,
+    code: c.code,
+    name: c.name,
+  }))
 
   return (
     <div className="p-6 space-y-6">
       {/* 헤더 */}
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          품목분류관리
+          품목군관리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
-          MES &gt; 기준정보관리 · 품목 분류 코드를 등록하고 관리합니다.
+          MES &gt; 기준정보관리 · 품목분류별 세부 품목군을 등록하고 관리합니다.
         </p>
       </div>
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <SummaryCard label="전체 품목분류" value={total} />
-        <SummaryCard label="시스템 유형 지정" value={withType}   accent="blue" />
-        <SummaryCard label="품목군 연결"    value={withGroups} accent="green" />
+        <SummaryCard label="전체 품목군"  value={total} />
+        <SummaryCard label="사용"         value={active}   accent="green" />
+        <SummaryCard label="미사용"       value={inactive} accent="amber" />
       </div>
 
       {/* 테이블 */}
-      <ItemCategoryDataTable data={categories} />
+      <ItemGroupDataTable data={groups} categories={categoryOptions} />
     </div>
   )
 }
@@ -44,10 +54,11 @@ function SummaryCard({
 }: {
   label:   string
   value:   number
-  accent?: "green" | "blue"
+  accent?: "green" | "amber" | "blue"
 }) {
   const textColor =
     accent === "green" ? "text-emerald-700"
+    : accent === "amber" ? "text-amber-600"
     : accent === "blue"  ? "text-blue-600"
     : "text-foreground"
 

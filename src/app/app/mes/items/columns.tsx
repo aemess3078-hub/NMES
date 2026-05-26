@@ -2,30 +2,36 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { ItemType, ItemStatus } from "@prisma/client"
-
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
-import { ItemWithCategory } from "@/lib/actions/item.actions"
+import type { ItemWithDetails } from "@/lib/actions/item.actions"
 
-const itemTypeLabels: Record<ItemType, string> = {
-  RAW_MATERIAL: "원자재",
+export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
+  RAW_MATERIAL:  "원자재",
   SEMI_FINISHED: "반제품",
-  FINISHED: "완제품",
-  CONSUMABLE: "소모품",
+  FINISHED:      "완제품",
+  CONSUMABLE:    "소모품",
+}
+
+const itemTypeBadgeClass: Record<ItemType, string> = {
+  FINISHED:      "bg-blue-100 text-blue-800 border-blue-200",
+  SEMI_FINISHED: "bg-purple-100 text-purple-800 border-purple-200",
+  RAW_MATERIAL:  "bg-amber-100 text-amber-800 border-amber-200",
+  CONSUMABLE:    "bg-slate-100 text-slate-700 border-slate-200",
 }
 
 const itemStatusLabels: Record<ItemStatus, string> = {
-  ACTIVE: "활성",
-  INACTIVE: "비활성",
+  ACTIVE:       "활성",
+  INACTIVE:     "비활성",
   DISCONTINUED: "단종",
 }
 
 export function getColumns(callbacks: {
-  onEdit: (item: ItemWithCategory) => void
-  onDelete: (item: ItemWithCategory) => void
-}): ColumnDef<ItemWithCategory>[] {
+  onEdit:   (item: ItemWithDetails) => void
+  onDelete: (item: ItemWithDetails) => void
+}): ColumnDef<ItemWithDetails>[] {
   return [
     {
       id: "select",
@@ -35,51 +41,42 @@ export function getColumns(callbacks: {
             table.getIsAllPageRowsSelected() ||
             (table.getIsSomePageRowsSelected() && "indeterminate")
           }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
           aria-label="전체 선택"
         />
       ),
       cell: ({ row }) => (
         <Checkbox
           checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          onCheckedChange={(v) => row.toggleSelected(!!v)}
           aria-label="행 선택"
         />
       ),
       enableSorting: false,
-      enableHiding: false,
+      enableHiding:  false,
     },
     {
       accessorKey: "code",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목코드" />
-      ),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="품목코드" />,
       cell: ({ row }) => (
-        <span className="font-medium text-[14px]">{row.getValue("code")}</span>
+        <span className="font-mono font-medium text-[14px]">{row.getValue("code")}</span>
       ),
     },
     {
       accessorKey: "name",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목명" />
-      ),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="품목명" />,
       cell: ({ row }) => (
         <span className="text-[14px]">{row.getValue("name")}</span>
       ),
     },
     {
       accessorKey: "itemType",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="유형" />
-      ),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="시스템 유형" />,
       cell: ({ row }) => {
-        const type = row.getValue("itemType") as ItemType
+        const t = row.getValue("itemType") as ItemType
         return (
-          <Badge
-            variant={type === "FINISHED" ? "default" : "secondary"}
-            className="text-[13px]"
-          >
-            {itemTypeLabels[type]}
+          <Badge variant="outline" className={`text-[13px] ${itemTypeBadgeClass[t] ?? ""}`}>
+            {ITEM_TYPE_LABELS[t] ?? t}
           </Badge>
         )
       },
@@ -87,52 +84,60 @@ export function getColumns(callbacks: {
         filterValues.includes(row.getValue(id)),
     },
     {
-      id: "category",
-      accessorFn: (row) => row.category?.name ?? "-",
-      header: "카테고리",
-      cell: ({ row }) => (
-        <span className="text-[14px] text-muted-foreground">
-          {row.getValue("category") as string}
-        </span>
-      ),
+      id:         "category",
+      accessorFn: (row) => row.category?.name ?? null,
+      header:     "품목분류",
+      cell: ({ row }) => {
+        const name = row.original.category?.name
+        return (
+          <span className="text-[14px] text-muted-foreground">
+            {name ?? <span className="text-[13px] italic">품목분류 미지정</span>}
+          </span>
+        )
+      },
+    },
+    {
+      id:         "itemGroup",
+      accessorFn: (row) => row.itemGroup?.name ?? null,
+      header:     "품목군",
+      cell: ({ row }) => {
+        const name = row.original.itemGroup?.name
+        return (
+          <span className="text-[13px] text-muted-foreground">
+            {name ?? "—"}
+          </span>
+        )
+      },
     },
     {
       accessorKey: "uom",
-      header: "단위",
+      header:      "단위",
       cell: ({ row }) => (
         <span className="text-[14px]">{row.getValue("uom")}</span>
       ),
     },
     {
-      accessorKey: "isLotTracked",
-      header: "LOT",
-      cell: ({ row }) => {
-        const isTracked = row.getValue("isLotTracked") as boolean
-        return (
-          <Badge
-            variant={isTracked ? "default" : "secondary"}
-            className="text-[13px]"
-          >
-            {isTracked ? "O" : "X"}
-          </Badge>
-        )
-      },
+      accessorKey: "spec",
+      header:      "규격",
+      cell: ({ row }) => (
+        <span className="text-[13px] text-muted-foreground line-clamp-1 max-w-[160px]">
+          {row.getValue("spec") ?? "—"}
+        </span>
+      ),
     },
     {
       accessorKey: "status",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="상태" />
-      ),
+      header: ({ column }) => <DataTableColumnHeader column={column} title="상태" />,
       cell: ({ row }) => {
-        const status = row.getValue("status") as ItemStatus
+        const s = row.getValue("status") as ItemStatus
         const variantMap: Record<ItemStatus, "default" | "secondary" | "destructive"> = {
-          ACTIVE: "default",
-          INACTIVE: "secondary",
+          ACTIVE:       "default",
+          INACTIVE:     "secondary",
           DISCONTINUED: "destructive",
         }
         return (
-          <Badge variant={variantMap[status]} className="text-[13px]">
-            {itemStatusLabels[status]}
+          <Badge variant={variantMap[s]} className="text-[13px]">
+            {itemStatusLabels[s]}
           </Badge>
         )
       },
@@ -143,12 +148,12 @@ export function getColumns(callbacks: {
       id: "actions",
       cell: ({ row }) => (
         <DataTableRowActions
-          onEdit={() => callbacks.onEdit(row.original)}
+          onEdit={()   => callbacks.onEdit(row.original)}
           onDelete={() => callbacks.onDelete(row.original)}
         />
       ),
       enableSorting: false,
-      enableHiding: false,
+      enableHiding:  false,
     },
   ]
 }
