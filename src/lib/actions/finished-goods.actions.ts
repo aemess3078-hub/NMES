@@ -389,10 +389,12 @@ export async function createFinishedGoodsReceiptAction(
         })
       }
 
-      // 7-B. LotGenealogy: 완제품 입고 시 투입된 반제품 LOT → 완제품 LOT 연결 (INPUT)
-      //      SEMI_FINISHED 입고는 자체가 최종 조립 LOT가 아니므로 연결 대상 외.
-      //      WorkOrderMaterialLot.inventoryTransaction.lotId 경로로 반제품 Lot ID 확보.
-      if (!isSemiFinished) {
+      // 7-B. LotGenealogy: 투입 LOT → 생성 LOT INPUT 연결
+      //      FINISHED 입고: 투입 반제품 LOT → FG LOT (Phase 4-B-3)
+      //      SEMI_FINISHED 입고: 투입 원자재 LOT → SF LOT (Phase 4-B-4)
+      //      WorkOrderMaterialLot.inventoryTransaction.lotId 경로로 Lot ID 확보.
+      {
+        const filterItemType = isSemiFinished ? "RAW_MATERIAL" : "SEMI_FINISHED"
         const materialLotRecords = await tx.workOrderMaterialLot.findMany({
           where: { tenantId, workOrderId: data.workOrderId },
           include: {
@@ -401,7 +403,7 @@ export async function createFinishedGoodsReceiptAction(
           },
         })
         for (const ml of materialLotRecords) {
-          if (ml.materialItem.itemType !== "SEMI_FINISHED") continue
+          if (ml.materialItem.itemType !== filterItemType) continue
           const parentLotId = ml.inventoryTransaction?.lotId
           if (!parentLotId) continue
           await createLotGenealogyLink(tx, {
