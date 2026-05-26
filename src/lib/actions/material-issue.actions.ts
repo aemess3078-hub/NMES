@@ -217,16 +217,6 @@ export async function getLotStockByItems(
   return result
 }
 
-// ─── txNo 생성 헬퍼 (트랜잭션 외부에서 호출) ─────────────────────────────────
-
-async function generateIssueTxNo(tenantId: string): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-  const count = await prisma.inventoryTransaction.count({
-    where: { tenantId, txNo: { startsWith: `ISS-${today}` } },
-  })
-  return `ISS-${today}-${String(count + 1).padStart(4, "0")}`
-}
-
 // ─── 자재출고 처리 ─────────────────────────────────────────────────────────────
 
 export async function issueMaterialsForWorkOrder(
@@ -276,10 +266,16 @@ export async function issueMaterialsForWorkOrder(
     )
   }
 
-  // txNo 사전 생성 (트랜잭션 외부)
+  // txNo 사전 생성 (트랜잭션 외부) — 한 번만 count 조회하여 중복 방지
   const txNos: string[] = []
-  for (let i = 0; i < activeItems.length; i++) {
-    txNos.push(await generateIssueTxNo(tenantId))
+  if (activeItems.length > 0) {
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+    const baseCount = await prisma.inventoryTransaction.count({
+      where: { tenantId, txNo: { startsWith: `ISS-${today}` } },
+    })
+    for (let i = 0; i < activeItems.length; i++) {
+      txNos.push(`ISS-${today}-${String(baseCount + i + 1).padStart(4, "0")}`)
+    }
   }
 
   try {
