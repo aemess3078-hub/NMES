@@ -22,6 +22,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-items', parentId: 'nav-master', label: '품목관리', icon: 'Package', href: '/app/mes/items', displayOrder: 1, children: [] },
           { id: 'nav-item-categories', parentId: 'nav-master', label: '품목분류관리', icon: 'Tags', href: '/app/mes/master/item-categories', displayOrder: 2, children: [] },
           { id: 'nav-item-groups', parentId: 'nav-master', label: '품목군관리', icon: 'Layers', href: '/app/mes/master/item-groups', displayOrder: 3, children: [] },
+          { id: 'nav-bom', parentId: 'nav-master', label: 'BOM관리', icon: 'GitBranch', href: '/app/mes/bom', displayOrder: 3.5, children: [] },
           { id: 'nav-equipment-master', parentId: 'nav-master', label: '설비관리', icon: 'Cog', href: '/app/mes/master/equipment', displayOrder: 4, children: [] },
           { id: 'nav-defects', parentId: 'nav-master', label: '불량관리', icon: 'AlertTriangle', href: '/app/mes/defects', displayOrder: 5, children: [] },
           { id: 'nav-routing', parentId: 'nav-master', label: '라우팅관리', icon: 'Workflow', href: '/app/mes/routing', displayOrder: 6, children: [] },
