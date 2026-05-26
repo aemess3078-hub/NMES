@@ -3,41 +3,49 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { ItemFormSheet } from "./item-form-sheet"
-import { deleteItem, ItemWithCategory } from "@/lib/actions/item.actions"
-import { ItemFormValues } from "./item-form-schema"
+import { deleteItem, type ItemWithDetails } from "@/lib/actions/item.actions"
+import { type ItemFormValues } from "./item-form-schema"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
-interface Category {
-  id: string
-  code: string
-  name: string
+type Category = {
+  id:       string
+  code:     string
+  name:     string
+  itemType: string | null
+}
+
+type ItemGroupOption = {
+  id:         string
+  code:       string
+  name:       string
+  categoryId: string
 }
 
 interface ItemDataTableProps {
-  items: ItemWithCategory[]
+  items:      ItemWithDetails[]
   categories: Category[]
-  tenantId: string
+  itemGroups: ItemGroupOption[]
+  tenantId:   string
 }
 
-export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProps) {
-  const router = useRouter()
-  const canMutate = useUserRole() !== "VIEWER"
-  const [formOpen, setFormOpen] = useState(false)
-  const [formMode, setFormMode] = useState<"create" | "edit">("create")
-  const [editingItem, setEditingItem] = useState<ItemWithCategory | null>(null)
+export function ItemDataTable({ items, categories, itemGroups, tenantId }: ItemDataTableProps) {
+  const router     = useRouter()
+  const canMutate  = useUserRole() !== "VIEWER"
+  const [formOpen,     setFormOpen]     = useState(false)
+  const [formMode,     setFormMode]     = useState<"create" | "edit">("create")
+  const [editingItem,  setEditingItem]  = useState<ItemWithDetails | null>(null)
 
-  const handleEdit = (item: ItemWithCategory) => {
+  const handleEdit = (item: ItemWithDetails) => {
     setEditingItem(item)
     setFormMode("edit")
     setFormOpen(true)
   }
 
-  const handleDelete = async (item: ItemWithCategory) => {
+  const handleDelete = async (item: ItemWithDetails) => {
     if (!confirm(`'${item.name}' 품목을 삭제하시겠습니까?`)) return
     try {
       await deleteItem(item.id)
@@ -47,23 +55,20 @@ export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProp
     }
   }
 
-  const allColumns = getColumns({
-    onEdit: handleEdit,
-    onDelete: handleDelete,
-  })
-  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
+  const allColumns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
+  const columns    = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const defaultValues: Partial<ItemFormValues> | undefined = editingItem
     ? {
-        code: editingItem.code,
-        name: editingItem.name,
-        itemType: editingItem.itemType,
-        categoryId: editingItem.categoryId ?? null,
-        uom: editingItem.uom,
-        spec: editingItem.spec ?? null,
-        isLotTracked: editingItem.isLotTracked,
+        code:            editingItem.code,
+        name:            editingItem.name,
+        categoryId:      editingItem.categoryId ?? "",
+        itemGroupId:     editingItem.itemGroupId ?? null,
+        uom:             editingItem.uom,
+        spec:            editingItem.spec ?? null,
+        isLotTracked:    editingItem.isLotTracked,
         isSerialTracked: editingItem.isSerialTracked,
-        status: editingItem.status,
+        status:          editingItem.status,
       }
     : undefined
 
@@ -90,8 +95,8 @@ export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProp
         searchableColumns={[{ id: "name", title: "품목명" }]}
         filterableColumns={[
           {
-            id: "itemType",
-            title: "품목유형",
+            id:    "itemType",
+            title: "시스템 유형",
             options: [
               { label: "원자재", value: "RAW_MATERIAL" },
               { label: "반제품", value: "SEMI_FINISHED" },
@@ -100,12 +105,12 @@ export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProp
             ],
           },
           {
-            id: "status",
+            id:    "status",
             title: "상태",
             options: [
-              { label: "활성", value: "ACTIVE" },
+              { label: "활성",  value: "ACTIVE" },
               { label: "비활성", value: "INACTIVE" },
-              { label: "단종", value: "DISCONTINUED" },
+              { label: "단종",  value: "DISCONTINUED" },
             ],
           },
         ]}
@@ -118,6 +123,7 @@ export function ItemDataTable({ items, categories, tenantId }: ItemDataTableProp
         defaultValues={defaultValues}
         itemId={editingItem?.id}
         categories={categories}
+        itemGroups={itemGroups}
         tenantId={tenantId}
       />
     </div>
