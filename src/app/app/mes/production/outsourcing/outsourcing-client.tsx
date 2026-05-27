@@ -8,14 +8,25 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
-  ExternalLink,
-  TrendingUp,
+  Plus,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Loader2,
+  PackageCheck,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -25,11 +36,17 @@ import {
 } from "@/components/ui/select"
 import { DataTable } from "@/components/common/data-table"
 import { ColumnDef } from "@tanstack/react-table"
-import Link from "next/link"
 import type {
   OutsourcingData,
   OutsourcingOrderRow,
-  OutsourcingReceivingRow,
+  OutsourcingWipUnitRow,
+  OutsourcingAvailableWipUnitRow,
+  OutsourcingWipReceivingRow,
+} from "@/lib/actions/outsourcing.actions"
+import {
+  createOutsourcingOrder,
+  issueWipUnitToOutsourcing,
+  receiveWipUnitFromOutsourcing,
 } from "@/lib/actions/outsourcing.actions"
 import { PurchaseOrderStatus } from "@prisma/client"
 
@@ -53,220 +70,475 @@ const STATUS_STYLE: Record<PurchaseOrderStatus, string> = {
   CANCELLED: "bg-red-100 text-red-500 border-0",
 }
 
-const RESULT_STYLE: Record<string, string> = {
-  PASS: "bg-emerald-100 text-emerald-700 border-0",
-  FAIL: "bg-red-100 text-red-700 border-0",
-  CONDITIONAL: "bg-amber-100 text-amber-700 border-0",
+// ─── Helper ───────────────────────────────────────────────────────────────────
+
+function extractProcessName(note: string | null): string {
+  if (!note) return "-"
+  const match = note.match(/\[OUTSOURCING\] ([^\n]+)/)
+  return match ? match[1].trim() : "-"
 }
 
-const RESULT_LABEL: Record<string, string> = {
-  PASS: "합격",
-  FAIL: "불합격",
-  CONDITIONAL: "조건부합격",
+// ─── CreateOrderDialog ────────────────────────────────────────────────────────
+
+interface CreateOrderDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  partners: { id: string; name: string }[]
+  recentProcessNames: string[]
 }
 
-const KRW_FORMATTER = new Intl.NumberFormat("ko-KR", {
-  style: "currency",
-  currency: "KRW",
-  maximumFractionDigits: 0,
-})
+function CreateOrderDialog({
+  open,
+  onOpenChange,
+  partners,
+  recentProcessNames,
+}: CreateOrderDialogProps) {
+  const [supplierId, setSupplierId] = useState("")
+  const [processName, setProcessName] = useState("")
+  const [qty, setQty] = useState("")
+  const [expectedDate, setExpectedDate] = useState("")
+  const [note, setNote] = useState("")
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
 
-// ─── Column definitions ───────────────────────────────────────────────────────
+  function resetForm() {
+    setSupplierId("")
+    setProcessName("")
+    setQty("")
+    setExpectedDate("")
+    setNote("")
+  }
 
-const orderColumns: ColumnDef<OutsourcingOrderRow>[] = [
-  {
-    accessorKey: "orderNo",
-    header: "발주번호",
-    cell: ({ row }) => (
-      <span className="font-mono text-[13px] font-medium">{row.original.orderNo}</span>
-    ),
-  },
-  {
-    accessorKey: "supplierName",
-    header: "공급처",
-    cell: ({ row }) => <span className="text-[14px]">{row.original.supplierName}</span>,
-  },
-  {
-    accessorKey: "itemSummary",
-    header: "대표 품목",
-    cell: ({ row }) => (
-      <div className="min-w-[150px]">
-        <p className="text-[14px] font-medium">{row.original.itemSummary}</p>
-        {row.original.firstItemCode && (
-          <p className="text-[13px] text-muted-foreground font-mono">
-            {row.original.firstItemCode}
-          </p>
-        )}
-      </div>
-    ),
-  },
-  {
-    accessorKey: "orderDate",
-    header: "발주/납기",
-    cell: ({ row }) => (
-      <div className="min-w-[120px] space-y-0.5">
-        <p className="text-[13px] text-muted-foreground">
-          발주 {new Date(row.original.orderDate).toLocaleDateString("ko-KR")}
-        </p>
-        <p
-          className={`text-[13px] ${
-            row.original.isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"
-          }`}
-        >
-          납기 {new Date(row.original.expectedDate).toLocaleDateString("ko-KR")}
-          {row.original.isOverdue && " 지연"}
-        </p>
-      </div>
-    ),
-  },
-  {
-    accessorKey: "totalQty",
-    header: "수량",
-    cell: ({ row }) => (
-      <div className="text-right">
-        <p className="text-[14px] font-medium">
-          {row.original.totalQty.toLocaleString("ko-KR")}
-        </p>
-        <p className="text-[13px] text-muted-foreground">
-          {row.original.itemCount}개 품목
-        </p>
-      </div>
-    ),
-  },
-  {
-    accessorKey: "totalAmount",
-    header: "총 금액",
-    cell: ({ row }) => (
-      <span className="block min-w-[100px] text-right text-[14px] font-medium">
-        {row.original.totalAmount !== null
-          ? KRW_FORMATTER.format(row.original.totalAmount)
-          : "-"}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "totalReceivedQty",
-    header: "입고 현황",
-    cell: ({ row }) => {
-      const { totalQty, totalReceivedQty } = row.original
-      const pct = totalQty > 0 ? Math.round((totalReceivedQty / totalQty) * 100) : 0
-      return (
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className="h-full bg-emerald-500 rounded-full"
-              style={{ width: `${Math.min(pct, 100)}%` }}
+  function handleClose() {
+    resetForm()
+    onOpenChange(false)
+  }
+
+  function handleSubmit() {
+    const trimmed = processName.trim()
+    if (!supplierId) {
+      alert("외주처를 선택해주세요.")
+      return
+    }
+    if (!trimmed) {
+      alert("외주공정명을 입력해주세요.")
+      return
+    }
+
+    const noteParts: string[] = []
+    if (qty) noteParts.push(`수량: ${qty}`)
+    if (note.trim()) noteParts.push(note.trim())
+    const combinedNote = noteParts.join("\n") || undefined
+
+    startTransition(async () => {
+      try {
+        await createOutsourcingOrder({
+          supplierId,
+          outsourcingProcessName: trimmed,
+          expectedDate: expectedDate || undefined,
+          note: combinedNote,
+        })
+        router.refresh()
+        handleClose()
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "등록 중 오류가 발생했습니다.")
+      }
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose() }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-[18px]">외주발주 등록</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">
+              외주처 <span className="text-red-500">*</span>
+            </Label>
+            <Select value={supplierId} onValueChange={setSupplierId}>
+              <SelectTrigger className="text-[14px] h-9">
+                <SelectValue placeholder="외주처 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {partners.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="text-[14px]">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="outsourcing-process-name" className="text-[13px]">
+              외주공정명 <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="outsourcing-process-name"
+              list="outsourcing-process-datalist"
+              value={processName}
+              onChange={(e) => setProcessName(e.target.value)}
+              placeholder="예) 발색, 착색, 와이어, 표면처리, 열처리, 세척, 자동화공정 등"
+              className="text-[14px] h-9"
+            />
+            {recentProcessNames.length > 0 && (
+              <datalist id="outsourcing-process-datalist">
+                {recentProcessNames.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">수량</Label>
+              <Input
+                type="number"
+                min="0"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                placeholder="0"
+                className="text-[14px] h-9"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">납기일</Label>
+              <Input
+                type="date"
+                value={expectedDate}
+                onChange={(e) => setExpectedDate(e.target.value)}
+                className="text-[14px] h-9"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">비고</Label>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="추가 메모 (선택사항)"
+              className="text-[14px] resize-none"
+              rows={3}
             />
           </div>
-          <span className="text-[13px] text-muted-foreground">
-            {totalReceivedQty}/{totalQty}
-          </span>
         </div>
-      )
-    },
-  },
-  {
-    accessorKey: "status",
-    header: "상태/비고",
-    cell: ({ row }) => {
-      const s = row.original.status
-      return (
-        <div className="min-w-[120px] space-y-1">
-          <Badge className={`text-[13px] ${STATUS_STYLE[s]}`}>
-            {STATUS_LABEL[s]}
-          </Badge>
-          <p className="line-clamp-2 text-[13px] text-muted-foreground">
-            {row.original.note || (row.original.isOverdue ? "납기 지연" : "특이사항 없음")}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={isPending}>
+            취소
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isPending || !supplierId || !processName.trim()}
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                등록 중...
+              </>
+            ) : (
+              "등록"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── IssueWipDialog ────────────────────────────────────────────────────────────
+
+interface IssueWipDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  order: OutsourcingOrderRow | null
+  availableWipUnits: OutsourcingAvailableWipUnitRow[]
+}
+
+function IssueWipDialog({
+  open,
+  onOpenChange,
+  order,
+  availableWipUnits,
+}: IssueWipDialogProps) {
+  const [selectedWipId, setSelectedWipId] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return availableWipUnits
+    const s = search.toLowerCase()
+    return availableWipUnits.filter(
+      (w) =>
+        w.mfgNo.toLowerCase().includes(s) ||
+        w.itemName.toLowerCase().includes(s) ||
+        w.itemCode.toLowerCase().includes(s) ||
+        w.workOrderNo.toLowerCase().includes(s)
+    )
+  }, [availableWipUnits, search])
+
+  function handleClose() {
+    setSelectedWipId(null)
+    setSearch("")
+    onOpenChange(false)
+  }
+
+  function handleSubmit() {
+    if (!selectedWipId || !order) return
+    startTransition(async () => {
+      try {
+        await issueWipUnitToOutsourcing({
+          wipUnitId: selectedWipId,
+          outsourcingOrderId: order.id,
+        })
+        router.refresh()
+        handleClose()
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "출고 처리 중 오류가 발생했습니다.")
+      }
+    })
+  }
+
+  if (!order) return null
+
+  const processName = extractProcessName(order.note)
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-[18px]">외주출고 처리</DialogTitle>
+        </DialogHeader>
+
+        <div className="rounded-lg bg-muted/50 p-3">
+          <div className="flex flex-wrap gap-6">
+            <div>
+              <p className="text-[12px] text-muted-foreground mb-0.5">발주번호</p>
+              <p className="text-[14px] font-mono font-medium">{order.orderNo}</p>
+            </div>
+            <div>
+              <p className="text-[12px] text-muted-foreground mb-0.5">외주처</p>
+              <p className="text-[14px] font-medium">{order.supplierName}</p>
+            </div>
+            <div>
+              <p className="text-[12px] text-muted-foreground mb-0.5">외주공정</p>
+              <p className="text-[14px] font-medium">{processName}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[14px] font-medium">출고할 재공 선택</p>
+            <Input
+              placeholder="제조번호 · 품목 · 작업지시로 검색"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-56 h-8 text-[13px]"
+            />
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="py-10 text-center text-[14px] text-muted-foreground border rounded-lg">
+              {availableWipUnits.length === 0
+                ? "출고 가능한 재공이 없습니다."
+                : "검색 조건에 맞는 재공이 없습니다."}
+            </div>
+          ) : (
+            <div className="rounded-lg border max-h-64 overflow-y-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="bg-muted/40 border-b">
+                    <th className="w-8 px-3 py-2.5" />
+                    <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">제조번호</th>
+                    <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">품목</th>
+                    <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">수량</th>
+                    <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">작업지시</th>
+                    <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">공정순서</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((w) => (
+                    <tr
+                      key={w.id}
+                      className={`border-b cursor-pointer last:border-0 transition-colors ${
+                        selectedWipId === w.id
+                          ? "bg-blue-50 hover:bg-blue-50"
+                          : "hover:bg-muted/30"
+                      }`}
+                      onClick={() => setSelectedWipId(w.id)}
+                    >
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="radio"
+                          readOnly
+                          checked={selectedWipId === w.id}
+                          className="cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-muted-foreground">{w.mfgNo}</td>
+                      <td className="px-3 py-2.5">
+                        <p className="font-medium">{w.itemName}</p>
+                        <p className="text-[12px] text-muted-foreground">{w.itemCode}</p>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-medium">
+                        {w.qty.toLocaleString("ko-KR")}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-muted-foreground">{w.workOrderNo}</td>
+                      <td className="px-3 py-2.5 text-center text-muted-foreground">
+                        {w.operationSeq}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={isPending}>
+            취소
+          </Button>
+          <Button onClick={handleSubmit} disabled={!selectedWipId || isPending}>
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                처리 중...
+              </>
+            ) : (
+              <>
+                <ArrowUpRight className="h-4 w-4 mr-1.5" />
+                출고 처리
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── ReceiveWipDialog ──────────────────────────────────────────────────────────
+
+interface ReceiveWipDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  wipUnit: OutsourcingWipUnitRow | null
+}
+
+function ReceiveWipDialog({ open, onOpenChange, wipUnit }: ReceiveWipDialogProps) {
+  const [note, setNote] = useState("")
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+
+  function handleClose() {
+    setNote("")
+    onOpenChange(false)
+  }
+
+  function handleSubmit() {
+    if (!wipUnit) return
+    startTransition(async () => {
+      try {
+        await receiveWipUnitFromOutsourcing({
+          wipUnitId: wipUnit.id,
+          note: note.trim() || undefined,
+        })
+        router.refresh()
+        handleClose()
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "입고 처리 중 오류가 발생했습니다.")
+      }
+    })
+  }
+
+  if (!wipUnit) return null
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-[18px]">외주입고 처리</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="rounded-lg bg-muted/50 p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">제조번호</p>
+                <p className="text-[14px] font-mono font-medium">{wipUnit.mfgNo}</p>
+              </div>
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">수량</p>
+                <p className="text-[14px] font-medium">
+                  {wipUnit.qty.toLocaleString("ko-KR")}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">품목</p>
+                <p className="text-[14px] font-medium">{wipUnit.itemName}</p>
+              </div>
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">외주처</p>
+                <p className="text-[14px] font-medium">{wipUnit.partnerName}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">비고 (선택)</Label>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="입고 관련 메모 (선택사항)"
+              className="text-[14px] resize-none"
+              rows={3}
+            />
+          </div>
+
+          <p className="text-[13px] text-muted-foreground rounded-md bg-blue-50 px-3 py-2">
+            입고 처리 시 재공 상태가 <strong>IN_PROCESS</strong>로 복귀됩니다.
           </p>
         </div>
-      )
-    },
-    filterFn: (row, _id, filterValues: string[]) =>
-      filterValues.includes(row.original.status),
-  },
-]
 
-const receivingColumns: ColumnDef<OutsourcingReceivingRow>[] = [
-  {
-    accessorKey: "inspectedAt",
-    header: "입고일",
-    cell: ({ row }) => (
-      <span className="text-[13px] font-mono text-muted-foreground">
-        {new Date(row.original.inspectedAt).toLocaleDateString("ko-KR")}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "orderNo",
-    header: "발주번호",
-    cell: ({ row }) => (
-      <span className="font-mono text-[13px]">{row.original.orderNo}</span>
-    ),
-  },
-  {
-    accessorKey: "supplierName",
-    header: "공급처",
-    cell: ({ row }) => <span className="text-[14px]">{row.original.supplierName}</span>,
-  },
-  {
-    accessorKey: "itemName",
-    header: "품목",
-    cell: ({ row }) => (
-      <div>
-        <p className="text-[14px]">{row.original.itemName}</p>
-        <p className="text-[12px] text-muted-foreground font-mono">{row.original.itemCode}</p>
-      </div>
-    ),
-  },
-  {
-    accessorKey: "receivedQty",
-    header: "입고 수량",
-    cell: ({ row }) => <span className="text-[14px]">{row.original.receivedQty}</span>,
-  },
-  {
-    accessorKey: "acceptedQty",
-    header: "합격 수량",
-    cell: ({ row }) => (
-      <span className="text-[14px] text-emerald-700 font-medium">
-        {row.original.acceptedQty}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "rejectedQty",
-    header: "불합격",
-    cell: ({ row }) => (
-      <span
-        className={`text-[14px] ${
-          row.original.rejectedQty > 0 ? "text-red-600 font-medium" : "text-muted-foreground"
-        }`}
-      >
-        {row.original.rejectedQty}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "result",
-    header: "검사결과",
-    cell: ({ row }) => {
-      const r = row.original.result
-      return (
-        <Badge className={`text-[12px] ${RESULT_STYLE[r] ?? ""}`}>
-          {RESULT_LABEL[r] ?? r}
-        </Badge>
-      )
-    },
-  },
-]
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={isPending}>
+            취소
+          </Button>
+          <Button onClick={handleSubmit} disabled={isPending}>
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                처리 중...
+              </>
+            ) : (
+              <>
+                <ArrowDownLeft className="h-4 w-4 mr-1.5" />
+                입고 처리
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
-function EmptyState({ label }: { label: string }) {
+function EmptyState({ icon, label }: { icon?: React.ReactNode; label: string }) {
   return (
     <div className="py-14 text-center text-muted-foreground">
-      <Truck className="mx-auto h-10 w-10 mb-3 opacity-25" />
-      <p className="text-[15px]">{label} 데이터가 없습니다.</p>
-      <p className="text-[13px] mt-1">기간·공급처 조건을 변경하거나 필터를 초기화해 보세요.</p>
+      {icon ?? <Truck className="mx-auto h-10 w-10 mb-3 opacity-25" />}
+      <p className="text-[15px]">{label}</p>
+      <p className="text-[13px] mt-1 opacity-70">필터 조건을 변경하거나 초기화해 보세요.</p>
     </div>
   )
 }
@@ -295,200 +567,6 @@ function SummaryCard({
   )
 }
 
-// ─── Progress tab ─────────────────────────────────────────────────────────────
-
-type SupplierProgress = {
-  supplierId: string
-  supplierName: string
-  total: number
-  pending: number
-  partialReceived: number
-  completed: number
-  overdue: number
-  totalQty: number
-  receivedQty: number
-}
-
-function ProgressTab({ orders }: { orders: OutsourcingOrderRow[] }) {
-  const supplierProgress = useMemo(() => {
-    const map = new Map<string, SupplierProgress>()
-    for (const o of orders) {
-      const entry = map.get(o.supplierId) ?? {
-        supplierId: o.supplierId,
-        supplierName: o.supplierName,
-        total: 0,
-        pending: 0,
-        partialReceived: 0,
-        completed: 0,
-        overdue: 0,
-        totalQty: 0,
-        receivedQty: 0,
-      }
-      entry.total++
-      if (o.status === "DRAFT" || o.status === "ORDERED") entry.pending++
-      if (o.status === "PARTIAL_RECEIVED") entry.partialReceived++
-      if (o.status === "RECEIVED" || o.status === "CLOSED") entry.completed++
-      if (o.isOverdue) entry.overdue++
-      entry.totalQty += o.totalQty
-      entry.receivedQty += o.totalReceivedQty
-      map.set(o.supplierId, entry)
-    }
-    return Array.from(map.values()).sort((a, b) => b.total - a.total)
-  }, [orders])
-
-  const overdueOrders = useMemo(
-    () => orders.filter((o) => o.isOverdue),
-    [orders]
-  )
-
-  const statusCounts = useMemo(() => {
-    const counts: Record<PurchaseOrderStatus, number> = {
-      DRAFT: 0,
-      ORDERED: 0,
-      PARTIAL_RECEIVED: 0,
-      RECEIVED: 0,
-      CLOSED: 0,
-      CANCELLED: 0,
-    }
-    for (const o of orders) counts[o.status]++
-    return counts
-  }, [orders])
-
-  if (orders.length === 0) {
-    return (
-      <div className="py-14 text-center text-muted-foreground">
-        <TrendingUp className="mx-auto h-10 w-10 mb-3 opacity-25" />
-        <p className="text-[15px]">진행 중인 외주 건이 없습니다.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-5 space-y-6">
-      {/* 상태별 분포 */}
-      <div>
-        <p className="text-[14px] font-medium mb-3">상태별 현황</p>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {(Object.keys(STATUS_LABEL) as PurchaseOrderStatus[]).map((s) => (
-            <div
-              key={s}
-              className="rounded-lg border bg-muted/30 p-3 text-center"
-            >
-              <p className="text-[20px] font-semibold">{statusCounts[s]}</p>
-              <p className="text-[12px] text-muted-foreground mt-0.5">
-                {STATUS_LABEL[s]}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 공급처별 진행현황 */}
-      <div>
-        <p className="text-[14px] font-medium mb-3">공급처별 진행현황</p>
-        {supplierProgress.length === 0 ? (
-          <p className="text-[14px] text-muted-foreground">데이터 없음</p>
-        ) : (
-          <div className="rounded-lg border overflow-hidden">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="bg-muted/40 border-b">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">공급처</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">전체</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">진행</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">부분입고</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">완료</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-red-500">지연</th>
-                  <th className="px-4 py-2.5 font-medium text-muted-foreground">입고 진행률</th>
-                </tr>
-              </thead>
-              <tbody>
-                {supplierProgress.map((sp, i) => {
-                  const pct =
-                    sp.totalQty > 0
-                      ? Math.round((sp.receivedQty / sp.totalQty) * 100)
-                      : 0
-                  return (
-                    <tr key={sp.supplierId} className={i % 2 === 0 ? "" : "bg-muted/20"}>
-                      <td className="px-4 py-2.5 font-medium">{sp.supplierName}</td>
-                      <td className="px-4 py-2.5 text-right">{sp.total}</td>
-                      <td className="px-4 py-2.5 text-right text-blue-700">{sp.pending}</td>
-                      <td className="px-4 py-2.5 text-right text-amber-700">{sp.partialReceived}</td>
-                      <td className="px-4 py-2.5 text-right text-emerald-700">{sp.completed}</td>
-                      <td className="px-4 py-2.5 text-right">
-                        {sp.overdue > 0 ? (
-                          <span className="text-red-600 font-medium">{sp.overdue}</span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
-                            <div
-                              className="h-full bg-emerald-500 rounded-full"
-                              style={{ width: `${Math.min(pct, 100)}%` }}
-                            />
-                          </div>
-                          <span className="text-[12px] text-muted-foreground w-8 text-right">
-                            {pct}%
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* 납기 지연 */}
-      {overdueOrders.length > 0 && (
-        <div>
-          <p className="text-[14px] font-medium mb-3 flex items-center gap-1.5 text-red-600">
-            <AlertTriangle className="h-4 w-4" />
-            납기 지연 발주 ({overdueOrders.length}건)
-          </p>
-          <div className="rounded-lg border border-red-100 overflow-hidden">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="bg-red-50 border-b border-red-100">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">발주번호</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">공급처</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">납기일</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">상태</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">입고 현황</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overdueOrders.map((o) => (
-                  <tr key={o.id} className="border-b border-red-50 last:border-0">
-                    <td className="px-4 py-2.5 font-mono font-medium">{o.orderNo}</td>
-                    <td className="px-4 py-2.5">{o.supplierName}</td>
-                    <td className="px-4 py-2.5 text-red-600 font-medium">
-                      {new Date(o.expectedDate).toLocaleDateString("ko-KR")}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <Badge className={`text-[12px] ${STATUS_STYLE[o.status]}`}>
-                        {STATUS_LABEL[o.status]}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-muted-foreground">
-                      {o.totalReceivedQty}/{o.totalQty}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -500,53 +578,260 @@ export function OutsourcingClient({ data }: Props) {
   const pathname = usePathname()
   const [, startTransition] = useTransition()
 
+  // Filter state
   const [from, setFrom] = useState(data.filter.from ?? "")
   const [to, setTo] = useState(data.filter.to ?? "")
   const [supplierId, setSupplierId] = useState(data.filter.supplierId ?? "__all__")
-  const [status, setStatus] = useState(data.filter.status ?? "__all__")
+  const [filterStatus, setFilterStatus] = useState(data.filter.status ?? "__all__")
+
+  // Dialog state
+  const [createOpen, setCreateOpen] = useState(false)
+  const [issueOrder, setIssueOrder] = useState<OutsourcingOrderRow | null>(null)
+  const [receiveWip, setReceiveWip] = useState<OutsourcingWipUnitRow | null>(null)
 
   function handleApply() {
     const params = new URLSearchParams()
     if (from) params.set("from", from)
     if (to) params.set("to", to)
     if (supplierId && supplierId !== "__all__") params.set("supplierId", supplierId)
-    if (status && status !== "__all__") params.set("status", status)
-    startTransition(() => {
-      router.push(`${pathname}?${params.toString()}`)
-    })
+    if (filterStatus && filterStatus !== "__all__") params.set("status", filterStatus)
+    startTransition(() => router.push(`${pathname}?${params.toString()}`))
   }
 
   function handleReset() {
     setFrom("")
     setTo("")
     setSupplierId("__all__")
-    setStatus("__all__")
-    startTransition(() => {
-      router.push(pathname)
-    })
+    setFilterStatus("__all__")
+    startTransition(() => router.push(pathname))
   }
 
-  const { summary, orders, receivings, partners } = data
+  const { summary, orders, wipUnits, wipReceivingHistory, availableWipUnits, partners, recentProcessNames } = data
+
+  // Memoized column definitions (need callbacks for action buttons)
+  const orderColumns = useMemo<ColumnDef<OutsourcingOrderRow>[]>(
+    () => [
+      {
+        accessorKey: "orderNo",
+        header: "발주번호",
+        cell: ({ row }) => (
+          <span className="font-mono text-[13px] font-medium">{row.original.orderNo}</span>
+        ),
+      },
+      {
+        accessorKey: "supplierName",
+        header: "공급처",
+        cell: ({ row }) => <span className="text-[14px]">{row.original.supplierName}</span>,
+      },
+      {
+        id: "processName",
+        header: "외주공정",
+        cell: ({ row }) => (
+          <span className="text-[14px]">{extractProcessName(row.original.note)}</span>
+        ),
+      },
+      {
+        accessorKey: "orderDate",
+        header: "발주/납기",
+        cell: ({ row }) => (
+          <div className="min-w-[120px] space-y-0.5">
+            <p className="text-[13px] text-muted-foreground">
+              발주 {new Date(row.original.orderDate).toLocaleDateString("ko-KR")}
+            </p>
+            <p
+              className={`text-[13px] ${
+                row.original.isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"
+              }`}
+            >
+              납기 {new Date(row.original.expectedDate).toLocaleDateString("ko-KR")}
+              {row.original.isOverdue && " ⚠ 지연"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "totalQty",
+        header: "수량",
+        cell: ({ row }) => (
+          <span className="text-[14px] font-medium">
+            {row.original.totalQty.toLocaleString("ko-KR")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "상태",
+        cell: ({ row }) => {
+          const s = row.original.status
+          return (
+            <Badge className={`text-[13px] ${STATUS_STYLE[s]}`}>
+              {STATUS_LABEL[s]}
+            </Badge>
+          )
+        },
+        filterFn: (row, _id, filterValues: string[]) =>
+          filterValues.includes(row.original.status),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => {
+          const s = row.original.status
+          const canIssue = s === "ORDERED" || s === "DRAFT"
+          if (!canIssue) return null
+          return (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[13px] h-8 whitespace-nowrap"
+              onClick={() => setIssueOrder(row.original)}
+            >
+              <ArrowUpRight className="h-3.5 w-3.5 mr-1" />
+              출고처리
+            </Button>
+          )
+        },
+      },
+    ],
+    []
+  )
+
+  const wipUnitColumns = useMemo<ColumnDef<OutsourcingWipUnitRow>[]>(
+    () => [
+      {
+        accessorKey: "mfgNo",
+        header: "제조번호",
+        cell: ({ row }) => (
+          <span className="font-mono text-[13px] text-muted-foreground">{row.original.mfgNo}</span>
+        ),
+      },
+      {
+        accessorKey: "itemName",
+        header: "품목",
+        cell: ({ row }) => (
+          <div>
+            <p className="text-[14px] font-medium">{row.original.itemName}</p>
+            <p className="text-[12px] text-muted-foreground">{row.original.itemCode}</p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "qty",
+        header: "수량",
+        cell: ({ row }) => (
+          <span className="text-[14px] font-medium">
+            {row.original.qty.toLocaleString("ko-KR")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "partnerName",
+        header: "외주처",
+        cell: ({ row }) => <span className="text-[14px]">{row.original.partnerName}</span>,
+      },
+      {
+        accessorKey: "processName",
+        header: "공정",
+        cell: ({ row }) => (
+          <span className="text-[13px] text-muted-foreground">{row.original.processName}</span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-[13px] h-8 whitespace-nowrap"
+            onClick={() => setReceiveWip(row.original)}
+          >
+            <ArrowDownLeft className="h-3.5 w-3.5 mr-1" />
+            입고처리
+          </Button>
+        ),
+      },
+    ],
+    []
+  )
+
+  const wipReceivingColumns = useMemo<ColumnDef<OutsourcingWipReceivingRow>[]>(
+    () => [
+      {
+        accessorKey: "createdAt",
+        header: "처리일시",
+        cell: ({ row }) => (
+          <span className="text-[13px] font-mono text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleDateString("ko-KR")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "mfgNo",
+        header: "제조번호",
+        cell: ({ row }) => (
+          <span className="font-mono text-[13px]">{row.original.mfgNo}</span>
+        ),
+      },
+      {
+        accessorKey: "itemName",
+        header: "품목",
+        cell: ({ row }) => (
+          <div>
+            <p className="text-[14px]">{row.original.itemName}</p>
+            <p className="text-[12px] text-muted-foreground">{row.original.itemCode}</p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "qty",
+        header: "수량",
+        cell: ({ row }) => (
+          <span className="text-[14px] font-medium">
+            {row.original.qty.toLocaleString("ko-KR")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "partnerName",
+        header: "외주처",
+        cell: ({ row }) => <span className="text-[14px]">{row.original.partnerName}</span>,
+      },
+      {
+        accessorKey: "note",
+        header: "비고",
+        cell: ({ row }) => (
+          <span className="text-[13px] text-muted-foreground line-clamp-1">
+            {row.original.note || "-"}
+          </span>
+        ),
+      },
+    ],
+    []
+  )
 
   return (
     <>
-      {/* 바로가기 */}
-      <div className="flex gap-2 flex-wrap">
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/app/mes/purchase-orders">
-            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-            구매발주 등록/수정
-          </Link>
-        </Button>
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/app/mes/material-receipt">
-            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-            입고 처리
-          </Link>
-        </Button>
-      </div>
+      {/* Dialogs */}
+      <CreateOrderDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        partners={partners}
+        recentProcessNames={recentProcessNames}
+      />
+      <IssueWipDialog
+        open={issueOrder !== null}
+        onOpenChange={(v) => { if (!v) setIssueOrder(null) }}
+        order={issueOrder}
+        availableWipUnits={availableWipUnits}
+      />
+      <ReceiveWipDialog
+        open={receiveWip !== null}
+        onOpenChange={(v) => { if (!v) setReceiveWip(null) }}
+        wipUnit={receiveWip}
+      />
 
-      {/* 요약 카드 */}
+      {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
         <SummaryCard
           icon={<Truck className="h-5 w-5 text-blue-600" />}
@@ -580,7 +865,7 @@ export function OutsourcingClient({ data }: Props) {
         />
       </div>
 
-      {/* 필터 */}
+      {/* Filter */}
       <div className="rounded-lg border bg-card p-4">
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-1.5">
@@ -608,9 +893,7 @@ export function OutsourcingClient({ data }: Props) {
                 <SelectValue placeholder="전체 공급처" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__" className="text-[14px]">
-                  전체 공급처
-                </SelectItem>
+                <SelectItem value="__all__" className="text-[14px]">전체 공급처</SelectItem>
                 {partners.map((p) => (
                   <SelectItem key={p.id} value={p.id} className="text-[14px]">
                     {p.name}
@@ -621,7 +904,7 @@ export function OutsourcingClient({ data }: Props) {
           </div>
           <div className="space-y-1.5">
             <Label className="text-[13px]">상태</Label>
-            <Select value={status} onValueChange={setStatus}>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="text-[14px] h-9 w-40">
                 <SelectValue placeholder="전체" />
               </SelectTrigger>
@@ -636,38 +919,46 @@ export function OutsourcingClient({ data }: Props) {
             </Select>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleApply} className="h-9">
-              조회
-            </Button>
-            <Button size="sm" variant="outline" onClick={handleReset} className="h-9">
-              초기화
-            </Button>
+            <Button size="sm" onClick={handleApply} className="h-9">조회</Button>
+            <Button size="sm" variant="outline" onClick={handleReset} className="h-9">초기화</Button>
           </div>
         </div>
       </div>
 
-      {/* 탭 */}
+      {/* Tabs */}
       <div className="rounded-lg border bg-card">
         <Tabs defaultValue="orders">
-          <div className="px-4 pt-4 border-b">
+          <div className="px-4 pt-4 border-b flex items-center justify-between">
             <TabsList className="h-9">
               <TabsTrigger value="orders" className="text-[13px]">
-                외주발주
+                외주발주 현황
                 <span className="ml-1.5 text-[11px] opacity-70">({orders.length})</span>
               </TabsTrigger>
-              <TabsTrigger value="receivings" className="text-[13px]">
-                외주입고
-                <span className="ml-1.5 text-[11px] opacity-70">({receivings.length})</span>
+              <TabsTrigger value="wip" className="text-[13px]">
+                외주 진행 재공
+                <span className="ml-1.5 text-[11px] opacity-70">({wipUnits.length})</span>
               </TabsTrigger>
-              <TabsTrigger value="progress" className="text-[13px]">
-                외주진행현황
+              <TabsTrigger value="history" className="text-[13px]">
+                외주 입고 이력
+                <span className="ml-1.5 text-[11px] opacity-70">({wipReceivingHistory.length})</span>
               </TabsTrigger>
             </TabsList>
           </div>
 
+          {/* Tab 1: 외주발주 현황 */}
           <TabsContent value="orders" className="p-0">
+            <div className="px-4 py-3 border-b flex justify-end">
+              <Button
+                size="sm"
+                className="h-9 text-[13px]"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                외주발주 등록
+              </Button>
+            </div>
             {orders.length === 0 ? (
-              <EmptyState label="발주" />
+              <EmptyState label="발주 데이터가 없습니다." />
             ) : (
               <DataTable
                 columns={orderColumns}
@@ -690,23 +981,50 @@ export function OutsourcingClient({ data }: Props) {
             )}
           </TabsContent>
 
-          <TabsContent value="receivings" className="p-0">
-            {receivings.length === 0 ? (
-              <EmptyState label="입고 이력" />
+          {/* Tab 2: 외주 진행 재공 */}
+          <TabsContent value="wip" className="p-0">
+            {wipUnits.length === 0 ? (
+              <div className="py-14 text-center text-muted-foreground">
+                <PackageCheck className="mx-auto h-10 w-10 mb-3 opacity-25" />
+                <p className="text-[15px]">현재 외주 진행 중인 재공이 없습니다.</p>
+                <p className="text-[13px] mt-1 opacity-70">
+                  외주발주 등록 후 출고처리하면 여기에 표시됩니다.
+                </p>
+              </div>
             ) : (
               <DataTable
-                columns={receivingColumns}
-                data={receivings}
+                columns={wipUnitColumns}
+                data={wipUnits}
                 searchableColumns={[
-                  { id: "orderNo", title: "발주번호" },
-                  { id: "itemName", title: "품목" },
+                  { id: "mfgNo", title: "제조번호" },
+                  { id: "itemName", title: "품목명" },
+                  { id: "partnerName", title: "외주처" },
                 ]}
               />
             )}
           </TabsContent>
 
-          <TabsContent value="progress" className="p-0">
-            <ProgressTab orders={orders} />
+          {/* Tab 3: 외주 입고 이력 */}
+          <TabsContent value="history" className="p-0">
+            {wipReceivingHistory.length === 0 ? (
+              <div className="py-14 text-center text-muted-foreground">
+                <ArrowDownLeft className="mx-auto h-10 w-10 mb-3 opacity-25" />
+                <p className="text-[15px]">외주 입고 이력이 없습니다.</p>
+                <p className="text-[13px] mt-1 opacity-70">
+                  입고처리 완료된 재공이 여기에 기록됩니다.
+                </p>
+              </div>
+            ) : (
+              <DataTable
+                columns={wipReceivingColumns}
+                data={wipReceivingHistory}
+                searchableColumns={[
+                  { id: "mfgNo", title: "제조번호" },
+                  { id: "itemName", title: "품목명" },
+                  { id: "partnerName", title: "외주처" },
+                ]}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </div>

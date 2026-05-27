@@ -64,13 +64,37 @@ export type OutsourcingWipUnitRow = {
   processName: string
 }
 
+export type OutsourcingAvailableWipUnitRow = {
+  id: string
+  mfgNo: string
+  itemCode: string
+  itemName: string
+  qty: number
+  workOrderNo: string
+  operationSeq: number
+}
+
+export type OutsourcingWipReceivingRow = {
+  id: string
+  createdAt: string
+  mfgNo: string
+  itemCode: string
+  itemName: string
+  qty: number
+  partnerName: string
+  note: string | null
+}
+
 export type OutsourcingData = {
   filter: OutsourcingFilter
   summary: OutsourcingSummary
   orders: OutsourcingOrderRow[]
   receivings: OutsourcingReceivingRow[]
   wipUnits: OutsourcingWipUnitRow[]
+  availableWipUnits: OutsourcingAvailableWipUnitRow[]
+  wipReceivingHistory: OutsourcingWipReceivingRow[]
   partners: { id: string; name: string }[]
+  recentProcessNames: string[]
 }
 
 // ─── 타입 ────────────────────────────────────────────────────────────────────
@@ -78,6 +102,7 @@ export type OutsourcingData = {
 export type CreateOutsourcingOrderInput = {
   supplierId: string
   outsourcingProcessName: string
+  expectedDate?: string  // YYYY-MM-DD
   note?: string
 }
 
@@ -124,7 +149,9 @@ export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) 
       siteId: (await prisma.site.findFirst({ where: { tenantId } }))?.id || "",
       status: "ORDERED",
       orderDate: now,
-      expectedDate: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      expectedDate: data.expectedDate
+        ? new Date(`${data.expectedDate}T00:00:00.000`)
+        : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
       note,
     },
   })
@@ -411,6 +438,71 @@ export async function getOutsourcingData(
     processName: `공정순서 ${w.workOrderOperation.seq}`,
   }))
 
+  // ── 출고 가능한 WipUnit (IN_PROCESS / WAITING) ──────────────────────────────
+  const availableWipUnitsData = await prisma.wipUnit.findMany({
+    where: {
+      tenantId,
+      status: { in: ["IN_PROCESS", "WAITING"] },
+    },
+    include: {
+      item: { select: { code: true, name: true } },
+      workOrder: { select: { orderNo: true } },
+      workOrderOperation: { select: { seq: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  })
+
+  const availableWipUnitRows: OutsourcingAvailableWipUnitRow[] = availableWipUnitsData.map((w) => ({
+    id: w.id,
+    mfgNo: w.manufacturingNo || "-",
+    itemCode: w.item.code,
+    itemName: w.item.name,
+    qty: Number(w.qty),
+    workOrderNo: w.workOrder?.orderNo || "-",
+    operationSeq: w.workOrderOperation.seq,
+  }))
+
+  // ── 외주입고 이력 (WipMovement RETURNED) ─────────────────────────────────────
+  const wipReceivingHistoryData = await prisma.wipMovement.findMany({
+    where: {
+      tenantId,
+      movementType: "RETURNED",
+    },
+    include: {
+      wipUnit: {
+        include: { item: { select: { code: true, name: true } } },
+      },
+      fromPartner: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  })
+
+  const wipReceivingHistoryRows: OutsourcingWipReceivingRow[] = wipReceivingHistoryData.map((m) => ({
+    id: m.id,
+    createdAt: m.createdAt.toISOString(),
+    mfgNo: m.wipUnit.manufacturingNo || "-",
+    itemCode: m.wipUnit.item.code,
+    itemName: m.wipUnit.item.name,
+    qty: Number(m.qty),
+    partnerName: m.fromPartner?.name || "-",
+    note: m.note,
+  }))
+
+  // ── 최근 외주공정명 (datalist 후보용) ─────────────────────────────────────────
+  const recentProcessNames = Array.from(
+    new Set(
+      orders
+        .map((o) => {
+          if (!o.note) return null
+          const match = o.note.match(/\[OUTSOURCING\] ([^\n]+)/)
+          return match ? match[1].trim() : null
+        })
+        .filter((n): n is string => n !== null)
+    )
+  ).slice(0, 10)
+
   // ── 요약 ─────────────────────────────────────────────────────────────────────
   const pendingOrders = orderRows.filter(
     (o) => o.status === "DRAFT" || o.status === "ORDERED"
@@ -433,6 +525,9 @@ export async function getOutsourcingData(
     orders: orderRows,
     receivings: receivingRows,
     wipUnits: wipUnitRows,
+    availableWipUnits: availableWipUnitRows,
+    wipReceivingHistory: wipReceivingHistoryRows,
     partners: partners.map((p) => ({ id: p.id, name: p.name })),
+    recentProcessNames,
   }
 }
