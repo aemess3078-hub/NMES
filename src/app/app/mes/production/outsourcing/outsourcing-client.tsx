@@ -50,6 +50,18 @@ import {
 } from "@/lib/actions/outsourcing.actions"
 import { PurchaseOrderStatus } from "@prisma/client"
 
+// ─── WipUnit status display ───────────────────────────────────────────────────
+
+const WIP_STATUS_LABEL: Record<"OUTSOURCED" | "RECEIVED", string> = {
+  OUTSOURCED: "외주진행중",
+  RECEIVED: "입고검사대기",
+}
+
+const WIP_STATUS_STYLE: Record<"OUTSOURCED" | "RECEIVED", string> = {
+  OUTSOURCED: "bg-cyan-100 text-cyan-700 border-0",
+  RECEIVED: "bg-violet-100 text-violet-700 border-0",
+}
+
 // ─── Status labels ────────────────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
@@ -737,19 +749,39 @@ export function OutsourcingClient({ data }: Props) {
         ),
       },
       {
+        id: "wipStatus",
+        header: "상태",
+        cell: ({ row }) => {
+          const s = row.original.wipStatus
+          return (
+            <Badge className={`text-[13px] font-medium ${WIP_STATUS_STYLE[s]}`}>
+              {WIP_STATUS_LABEL[s]}
+            </Badge>
+          )
+        },
+      },
+      {
         id: "actions",
         header: "",
-        cell: ({ row }) => (
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-[13px] h-8 whitespace-nowrap"
-            onClick={() => setReceiveWip(row.original)}
-          >
-            <ArrowDownLeft className="h-3.5 w-3.5 mr-1" />
-            입고처리
-          </Button>
-        ),
+        cell: ({ row }) => {
+          if (row.original.wipStatus === "RECEIVED") {
+            // TODO(OS-4b): 검사처리 다이얼로그 연결 (inspectOutsourcedWipUnit)
+            return (
+              <span className="text-[13px] text-muted-foreground px-2">검사처리 준비중</span>
+            )
+          }
+          return (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[13px] h-8 whitespace-nowrap"
+              onClick={() => setReceiveWip(row.original)}
+            >
+              <ArrowDownLeft className="h-3.5 w-3.5 mr-1" />
+              입고처리
+            </Button>
+          )
+        },
       },
     ],
     []

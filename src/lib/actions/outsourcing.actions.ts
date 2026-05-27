@@ -62,6 +62,7 @@ export type OutsourcingWipUnitRow = {
   qty: number
   partnerName: string
   processName: string
+  wipStatus: "OUTSOURCED" | "RECEIVED"
 }
 
 export type OutsourcingAvailableWipUnitRow = {
@@ -258,7 +259,7 @@ export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOuts
     await tx.wipUnit.update({
       where: { id: data.wipUnitId },
       data: {
-        status: "IN_PROCESS",
+        status: "RECEIVED",
         outsourcingPartnerId: null,
       },
     })
@@ -272,7 +273,7 @@ export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOuts
         sourceType: "PurchaseOrder",
         sourceId: purchaseOrder?.id || "",
         qty: wipUnit.qty,
-        note: `외주입고: ${supplier.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}${data.note ? ` - ${data.note}` : ""}`,
+        note: `외주입고/검사대기: ${supplier.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}${data.note ? ` - ${data.note}` : ""}`,
       },
     })
   })
@@ -414,11 +415,11 @@ export async function getOutsourcingData(
     orderBy: { name: "asc" },
   })
 
-  // ── 외주 중인 WipUnit ────────────────────────────────────────────────────────
+  // ── 외주 중인 WipUnit (OUTSOURCED: 외주진행중, RECEIVED: 입고검사대기) ────────
   const outsourcedWipUnits = await prisma.wipUnit.findMany({
     where: {
       tenantId,
-      status: "OUTSOURCED",
+      status: { in: ["OUTSOURCED", "RECEIVED"] },
     },
     include: {
       item: { select: { code: true, name: true } },
@@ -436,6 +437,7 @@ export async function getOutsourcingData(
     qty: Number(w.qty),
     partnerName: w.outsourcingPartner?.name || "-",
     processName: `공정순서 ${w.workOrderOperation.seq}`,
+    wipStatus: w.status as "OUTSOURCED" | "RECEIVED",
   }))
 
   // ── 출고 가능한 WipUnit (IN_PROCESS / WAITING) ──────────────────────────────
