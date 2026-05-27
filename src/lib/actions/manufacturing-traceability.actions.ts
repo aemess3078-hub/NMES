@@ -109,6 +109,8 @@ export type TraceabilityWipMovement = {
   toOperationSeq: number | null
   fromWorkCenterName: string | null
   toWorkCenterName: string | null
+  fromPartnerName: string | null
+  toPartnerName: string | null
 }
 
 export type TraceabilityLotGenealogyNode = {
@@ -434,6 +436,8 @@ export async function getManufacturingTraceability(
           },
           fromWorkCenter: { select: { name: true } },
           toWorkCenter: { select: { name: true } },
+          fromPartner: { select: { name: true } },
+          toPartner: { select: { name: true } },
         },
       },
     },
@@ -459,6 +463,8 @@ export async function getManufacturingTraceability(
         toOperationSeq: m.toOperation?.seq ?? null,
         fromWorkCenterName: m.fromWorkCenter?.name ?? null,
         toWorkCenterName: m.toWorkCenter?.name ?? null,
+        fromPartnerName: m.fromPartner?.name ?? null,
+        toPartnerName: m.toPartner?.name ?? null,
       })),
     )
     .sort((a, b) => {
