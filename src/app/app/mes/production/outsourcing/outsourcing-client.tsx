@@ -375,6 +375,7 @@ function IssueWipDialog({
                     <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">수량</th>
                     <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">작업지시</th>
                     <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">공정순서</th>
+                    <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">구분</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -384,7 +385,9 @@ function IssueWipDialog({
                       className={`border-b cursor-pointer last:border-0 transition-colors ${
                         selectedWipId === w.id
                           ? "bg-blue-50 hover:bg-blue-50"
-                          : "hover:bg-muted/30"
+                          : w.wipStatus === "REWORK"
+                            ? "bg-amber-50/40 hover:bg-amber-50/60"
+                            : "hover:bg-muted/30"
                       }`}
                       onClick={() => setSelectedWipId(w.id)}
                     >
@@ -407,6 +410,11 @@ function IssueWipDialog({
                       <td className="px-3 py-2.5 font-mono text-muted-foreground">{w.workOrderNo}</td>
                       <td className="px-3 py-2.5 text-center text-muted-foreground">
                         {w.operationSeq}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {w.wipStatus === "REWORK" && (
+                          <Badge className="text-[11px] bg-amber-100 text-amber-700 border-0">재외주 대상</Badge>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -733,7 +741,7 @@ function InspectWipDialog({ open, onOpenChange, wipUnit }: InspectWipDialogProps
           {/* 재외주 안내 */}
           {parsedRework > 0 && (
             <p className="text-[13px] text-muted-foreground rounded-md bg-amber-50 px-3 py-2">
-              재외주 수량은 REWORK 재공으로 분리되며, OS-4c에서 재외주출고 대상에 포함됩니다.
+              재외주 수량은 REWORK 재공으로 분리되며, 외주출고 처리 시 재외주 대상으로 표시됩니다.
             </p>
           )}
 
