@@ -13,6 +13,7 @@ import {
   ArrowDownLeft,
   Loader2,
   PackageCheck,
+  ClipboardCheck,
 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -47,6 +48,7 @@ import {
   createOutsourcingOrder,
   issueWipUnitToOutsourcing,
   receiveWipUnitFromOutsourcing,
+  inspectOutsourcedWipUnit,
 } from "@/lib/actions/outsourcing.actions"
 import { PurchaseOrderStatus } from "@prisma/client"
 
@@ -543,6 +545,240 @@ function ReceiveWipDialog({ open, onOpenChange, wipUnit }: ReceiveWipDialogProps
   )
 }
 
+// ─── InspectWipDialog ─────────────────────────────────────────────────────────
+
+interface InspectWipDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  wipUnit: OutsourcingWipUnitRow | null
+}
+
+function InspectWipDialog({ open, onOpenChange, wipUnit }: InspectWipDialogProps) {
+  const [acceptedQty, setAcceptedQty] = useState("")
+  const [defectQty, setDefectQty] = useState("")
+  const [reworkQty, setReworkQty] = useState("")
+  const [note, setNote] = useState("")
+  const [error, setError] = useState("")
+  const [isPending, startTransition] = useTransition()
+  const router = useRouter()
+
+  function handleClose() {
+    setAcceptedQty("")
+    setDefectQty("")
+    setReworkQty("")
+    setNote("")
+    setError("")
+    onOpenChange(false)
+  }
+
+  function handleAllAccept() {
+    if (!wipUnit) return
+    setAcceptedQty(String(wipUnit.qty))
+    setDefectQty("0")
+    setReworkQty("0")
+    setError("")
+  }
+
+  const parsedAccepted = Number(acceptedQty) || 0
+  const parsedDefect = Number(defectQty) || 0
+  const parsedRework = Number(reworkQty) || 0
+  const totalInput = parsedAccepted + parsedDefect + parsedRework
+  const wipQty = wipUnit?.qty ?? 0
+  const isQtyMatch = Math.abs(totalInput - wipQty) < 0.000001
+  const isAllZero = totalInput === 0
+  const hasNegative = parsedAccepted < 0 || parsedDefect < 0 || parsedRework < 0
+  const canSubmit = isQtyMatch && !isAllZero && !hasNegative && !isPending
+
+  function handleSubmit() {
+    if (!wipUnit) return
+    if (!isQtyMatch) {
+      setError(`합계(${totalInput})가 재공 수량(${wipQty})과 일치해야 합니다.`)
+      return
+    }
+    setError("")
+    startTransition(async () => {
+      try {
+        await inspectOutsourcedWipUnit({
+          wipUnitId: wipUnit.id,
+          acceptedQty: parsedAccepted,
+          defectQty: parsedDefect,
+          reworkQty: parsedRework,
+          note: note.trim() || undefined,
+        })
+        router.refresh()
+        handleClose()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "검사처리 중 오류가 발생했습니다.")
+      }
+    })
+  }
+
+  if (!wipUnit) return null
+
+  const qtyDiff = totalInput - wipQty
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose() }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-[18px]">외주입고 검사처리</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* WipUnit 정보 */}
+          <div className="rounded-lg bg-muted/50 p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">제조번호</p>
+                <p className="text-[14px] font-mono font-medium">{wipUnit.mfgNo}</p>
+              </div>
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">입고검사대기 수량</p>
+                <p className="text-[14px] font-medium text-violet-700">
+                  {wipQty.toLocaleString("ko-KR")}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">품목</p>
+                <p className="text-[14px] font-medium">{wipUnit.itemName}</p>
+                <p className="text-[12px] text-muted-foreground">{wipUnit.itemCode}</p>
+              </div>
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">공정</p>
+                <p className="text-[14px]">{wipUnit.processName}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* 안내 */}
+          <p className="text-[13px] text-muted-foreground rounded-md bg-blue-50 px-3 py-2">
+            합격, 불량, 재외주 수량의 합계는 입고검사대기 수량과 같아야 합니다.
+          </p>
+
+          {/* 전량 합격 빠른 선택 */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="text-[13px] h-8 w-full border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+            onClick={handleAllAccept}
+            disabled={isPending}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+            전량 합격 ({wipQty.toLocaleString("ko-KR")})
+          </Button>
+
+          {/* 수량 입력 */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[13px] text-emerald-700">합격 수량</Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={acceptedQty}
+                onChange={(e) => { setAcceptedQty(e.target.value); setError("") }}
+                className="text-[14px]"
+                placeholder="0"
+                disabled={isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[13px] text-red-600">불량 수량</Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={defectQty}
+                onChange={(e) => { setDefectQty(e.target.value); setError("") }}
+                className="text-[14px]"
+                placeholder="0"
+                disabled={isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[13px] text-amber-600">재외주 수량</Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={reworkQty}
+                onChange={(e) => { setReworkQty(e.target.value); setError("") }}
+                className="text-[14px]"
+                placeholder="0"
+                disabled={isPending}
+              />
+            </div>
+          </div>
+
+          {/* 합계 표시 */}
+          <div className={`flex items-center justify-between rounded-md px-3 py-2 text-[13px] ${
+            totalInput === 0
+              ? "bg-muted/50 text-muted-foreground"
+              : isQtyMatch
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-red-50 text-red-600"
+          }`}>
+            <span>합계</span>
+            <span className="font-medium tabular-nums">
+              {totalInput.toLocaleString("ko-KR")} / {wipQty.toLocaleString("ko-KR")}
+              {totalInput > 0 && !isQtyMatch && (
+                <span className="ml-1">
+                  ({qtyDiff > 0 ? "+" : ""}{qtyDiff.toLocaleString("ko-KR")})
+                </span>
+              )}
+            </span>
+          </div>
+
+          {/* 재외주 안내 */}
+          {parsedRework > 0 && (
+            <p className="text-[13px] text-muted-foreground rounded-md bg-amber-50 px-3 py-2">
+              재외주 수량은 REWORK 재공으로 분리되며, OS-4c에서 재외주출고 대상에 포함됩니다.
+            </p>
+          )}
+
+          {/* 비고 */}
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">비고 (선택)</Label>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="검사 관련 메모 (선택사항)"
+              className="text-[14px] resize-none"
+              rows={2}
+              disabled={isPending}
+            />
+          </div>
+
+          {/* 오류 */}
+          {error && (
+            <p className="text-[13px] text-red-600 rounded-md bg-red-50 px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={isPending}>
+            취소
+          </Button>
+          <Button onClick={handleSubmit} disabled={!canSubmit}>
+            {isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                처리 중...
+              </>
+            ) : (
+              <>
+                <ClipboardCheck className="h-4 w-4 mr-1.5" />
+                검사처리
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState({ icon, label }: { icon?: React.ReactNode; label: string }) {
@@ -600,6 +836,7 @@ export function OutsourcingClient({ data }: Props) {
   const [createOpen, setCreateOpen] = useState(false)
   const [issueOrder, setIssueOrder] = useState<OutsourcingOrderRow | null>(null)
   const [receiveWip, setReceiveWip] = useState<OutsourcingWipUnitRow | null>(null)
+  const [inspectWip, setInspectWip] = useState<OutsourcingWipUnitRow | null>(null)
 
   function handleApply() {
     const params = new URLSearchParams()
@@ -765,9 +1002,16 @@ export function OutsourcingClient({ data }: Props) {
         header: "",
         cell: ({ row }) => {
           if (row.original.wipStatus === "RECEIVED") {
-            // TODO(OS-4b): 검사처리 다이얼로그 연결 (inspectOutsourcedWipUnit)
             return (
-              <span className="text-[13px] text-muted-foreground px-2">검사처리 준비중</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-[13px] h-8 whitespace-nowrap border-violet-200 text-violet-700 hover:bg-violet-50"
+                onClick={() => setInspectWip(row.original)}
+              >
+                <ClipboardCheck className="h-3.5 w-3.5 mr-1" />
+                검사처리
+              </Button>
             )
           }
           return (
@@ -861,6 +1105,11 @@ export function OutsourcingClient({ data }: Props) {
         open={receiveWip !== null}
         onOpenChange={(v) => { if (!v) setReceiveWip(null) }}
         wipUnit={receiveWip}
+      />
+      <InspectWipDialog
+        open={inspectWip !== null}
+        onOpenChange={(v) => { if (!v) setInspectWip(null) }}
+        wipUnit={inspectWip}
       />
 
       {/* Summary cards */}
