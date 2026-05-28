@@ -73,6 +73,8 @@ export type OutsourcingAvailableWipUnitRow = {
   qty: number
   workOrderNo: string
   operationSeq: number
+  wipStatus: "IN_PROCESS" | "WAITING" | "REWORK"
+  parentWipUnitId: string | null
 }
 
 export type OutsourcingWipReceivingRow = {
@@ -645,11 +647,11 @@ export async function getOutsourcingData(
     wipStatus: w.status as "OUTSOURCED" | "RECEIVED",
   }))
 
-  // ── 출고 가능한 WipUnit (IN_PROCESS / WAITING) ──────────────────────────────
+  // ── 출고 가능한 WipUnit (IN_PROCESS / WAITING / REWORK) ─────────────────────
   const availableWipUnitsData = await prisma.wipUnit.findMany({
     where: {
       tenantId,
-      status: { in: ["IN_PROCESS", "WAITING"] },
+      status: { in: ["IN_PROCESS", "WAITING", "REWORK"] },
     },
     include: {
       item: { select: { code: true, name: true } },
@@ -668,6 +670,8 @@ export async function getOutsourcingData(
     qty: Number(w.qty),
     workOrderNo: w.workOrder?.orderNo || "-",
     operationSeq: w.workOrderOperation.seq,
+    wipStatus: w.status as "IN_PROCESS" | "WAITING" | "REWORK",
+    parentWipUnitId: w.parentWipUnitId,
   }))
 
   // ── 외주입고 이력 (WipMovement RETURNED) ─────────────────────────────────────
