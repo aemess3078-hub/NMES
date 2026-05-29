@@ -1,12 +1,32 @@
-export default function Page() {
+import { getEquipmentsForLMS } from "@/lib/actions/equipment-management.actions"
+import {
+  getParameterRows,
+  getParameterPageSummary,
+} from "@/lib/actions/tag-current-value.actions"
+import { ParametersClient } from "./parameters-client"
+
+export const dynamic = "force-dynamic"
+
+export default async function ParametersPage() {
+  const [equipments, summary, rows] = await Promise.all([
+    getEquipmentsForLMS(),
+    getParameterPageSummary(),
+    getParameterRows(),
+  ])
+
+  // 클라이언트에 필요한 필드만 추출 (직렬화 안전)
+  const equipmentOptions = equipments.map((eq) => ({
+    id: eq.id,
+    code: eq.code,
+    name: eq.name,
+    workCenterName: eq.workCenter.name,
+  }))
+
   return (
-    <div className="p-6 space-y-2">
-      <h1 className="text-[26px] font-semibold text-foreground">파라미터보기</h1>
-      <p className="text-[14px] text-muted-foreground">LMS &gt; 설비관리</p>
-      <div className="mt-8 p-8 rounded-lg border border-dashed border-border bg-muted/20 text-center">
-        <p className="text-[15px] text-muted-foreground">설비 설정 파라미터 조회 및 변경 이력 화면입니다.</p>
-        <span className="inline-block mt-3 px-3 py-1 rounded-full text-[13px] bg-muted text-muted-foreground">준비중</span>
-      </div>
-    </div>
+    <ParametersClient
+      equipments={equipmentOptions}
+      summary={summary}
+      initialRows={rows}
+    />
   )
 }

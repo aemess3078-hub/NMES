@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { getTenantId } from "@/lib/auth"
 
 export type TagCurrentValueRow = {
   tagId: string
@@ -72,6 +73,117 @@ export async function getCurrentTagValuesByEquipment(
     equipmentId: r.tag.connection.equipment.id,
     equipmentName: r.tag.connection.equipment.name,
   }))
+}
+
+// ─── Parameter page types ─────────────────────────────────────────────────────
+
+export type ParameterRow = {
+  tagId: string
+  tagCode: string
+  displayName: string
+  category: string
+  dataType: string
+  unit: string | null
+  plcAddress: string
+  currentValue: string | null
+  numericValue: number | null
+  quality: string | null
+  receivedAt: Date | null
+  equipmentId: string
+  equipmentCode: string
+  equipmentName: string
+}
+
+export type ParameterPageSummary = {
+  totalEquipment: number
+  connectedEquipment: number
+  totalTags: number
+  receivedTags: number
+  noValueTags: number
+}
+
+// ─── Get all active tags with current values (optional equipment filter) ────────
+//   - includes tags WITHOUT a current value (미수신) unlike getCurrentTagValuesByEquipment
+
+export async function getParameterRows(equipmentId?: string): Promise<ParameterRow[]> {
+  const tenantId = await getTenantId()
+
+  const tags = await prisma.dataTag.findMany({
+    where: {
+      isActive: true,
+      connection: {
+        isActive: true,
+        equipment: {
+          tenantId,
+          ...(equipmentId ? { id: equipmentId } : {}),
+        },
+      },
+    },
+    include: {
+      currentValue: true,
+      connection: {
+        select: {
+          equipment: { select: { id: true, code: true, name: true } },
+        },
+      },
+    },
+    orderBy: [
+      { connection: { equipment: { code: "asc" } } },
+      { category: "asc" },
+      { tagCode: "asc" },
+    ],
+  })
+
+  return tags.map((tag) => ({
+    tagId: tag.id,
+    tagCode: tag.tagCode,
+    displayName: tag.displayName,
+    category: tag.category as string,
+    dataType: tag.dataType as string,
+    unit: tag.unit,
+    plcAddress: tag.plcAddress,
+    currentValue: tag.currentValue?.value ?? null,
+    numericValue:
+      tag.currentValue?.numericValue != null
+        ? Number(tag.currentValue.numericValue)
+        : null,
+    quality: tag.currentValue?.quality ?? null,
+    receivedAt: tag.currentValue?.timestamp ?? null,
+    equipmentId: tag.connection.equipment.id,
+    equipmentCode: tag.connection.equipment.code,
+    equipmentName: tag.connection.equipment.name,
+  }))
+}
+
+// ─── Summary stats for parameter page ─────────────────────────────────────────
+
+export async function getParameterPageSummary(): Promise<ParameterPageSummary> {
+  const tenantId = await getTenantId()
+
+  const [totalEquipment, connectedEquipment, totalTags, receivedTags] =
+    await Promise.all([
+      prisma.equipment.count({ where: { tenantId } }),
+      prisma.equipment.count({
+        where: { tenantId, connections: { some: { isActive: true } } },
+      }),
+      prisma.dataTag.count({
+        where: {
+          isActive: true,
+          connection: { isActive: true, equipment: { tenantId } },
+        },
+      }),
+      prisma.tagCurrentValue.count({
+        where: { tag: { connection: { equipment: { tenantId } } } },
+      }),
+    ])
+
+  return {
+    totalEquipment,
+    connectedEquipment,
+    totalTags,
+    receivedTags,
+    noValueTags: Math.max(0, totalTags - receivedTags),
+  }
 }
 
 // ─── Get current values for a specific list of tagIds ─────────────────────────
