@@ -358,6 +358,115 @@ async function fetchAvailabilityStats(
   return { avgRate, equipmentCount: equipments.length, rows }
 }
 
+// ─── 에러 이력 조회 (설비관리 > 에러보기) ────────────────────────────────────
+//   fetchErrorStats()는 집계(통계) 용도이고,
+//   getEquipmentErrorEvents()는 상세 이력 조회 용도이다.
+
+export type ErrorEventRow = {
+  id: string
+  equipmentId: string
+  equipmentCode: string
+  equipmentName: string
+  eventType: string          // "ALARM" | "WARNING"
+  message: string | null
+  startedAt: Date
+  endedAt: Date | null
+  durationSeconds: number | null
+}
+
+export type ErrorEventSummary = {
+  total: number
+  alarmCount: number
+  warningCount: number
+  activeCount: number        // endedAt is null (미해제)
+  totalDurationSeconds: number
+}
+
+export type ErrorEventAppliedFilter = {
+  from: string
+  to: string
+  equipmentId: string | undefined
+}
+
+export async function getEquipmentErrorEvents(
+  fromOverride?: string,
+  toOverride?: string,
+  equipmentId?: string
+): Promise<{
+  events: ErrorEventRow[]
+  summary: ErrorEventSummary
+  appliedFilter: ErrorEventAppliedFilter
+}> {
+  const tenantId = await getTenantId()
+  const defaults = defaultDateRange()
+
+  const from = fromOverride ?? defaults.from
+  const to   = toOverride   ?? defaults.to
+
+  const fromDate = new Date(`${from}T00:00:00.000`)
+  const toDate   = new Date(`${to}T23:59:59.999`)
+
+  const rawEvents = await prisma.equipmentEvent.findMany({
+    where: {
+      eventType: { in: ["ALARM", "WARNING"] },
+      startedAt: { gte: fromDate, lte: toDate },
+      equipment: {
+        tenantId,
+        ...(equipmentId ? { id: equipmentId } : {}),
+      },
+    },
+    select: {
+      id:        true,
+      eventType: true,
+      message:   true,
+      startedAt: true,
+      endedAt:   true,
+      duration:  true,
+      equipment: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: { startedAt: "desc" },
+  })
+
+  const events: ErrorEventRow[] = rawEvents.map((ev) => {
+    const dur =
+      ev.duration != null
+        ? ev.duration
+        : ev.endedAt != null
+        ? Math.round(
+            (ev.endedAt.getTime() - ev.startedAt.getTime()) / 1000
+          )
+        : null
+    return {
+      id:              ev.id,
+      equipmentId:     ev.equipment.id,
+      equipmentCode:   ev.equipment.code,
+      equipmentName:   ev.equipment.name,
+      eventType:       ev.eventType as string,
+      message:         ev.message,
+      startedAt:       ev.startedAt,
+      endedAt:         ev.endedAt,
+      durationSeconds: dur,
+    }
+  })
+
+  const summary: ErrorEventSummary = {
+    total:                events.length,
+    alarmCount:           events.filter((e) => e.eventType === "ALARM").length,
+    warningCount:         events.filter((e) => e.eventType === "WARNING").length,
+    activeCount:          events.filter((e) => e.endedAt === null).length,
+    totalDurationSeconds: events.reduce(
+      (sum, e) => sum + (e.durationSeconds ?? 0),
+      0
+    ),
+  }
+
+  return {
+    events,
+    summary,
+    appliedFilter: { from, to, equipmentId },
+  }
+}
+
 // ─── 설비 목록 (필터용) ────────────────────────────────────────────────────────
 
 export type EquipmentOption = { id: string; code: string; name: string }

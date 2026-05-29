@@ -152,7 +152,7 @@ export const MES_NAV: NavItem[] = [
         icon: 'Wrench',
         displayOrder: 20,
         children: [
-          { id: 'nav-lms-errors', parentId: 'nav-lms-equipment', label: '에러보기', icon: 'AlertTriangle', href: '/app/lms/equipment/errors', displayOrder: 1, comingSoon: true, children: [] },
+          { id: 'nav-lms-errors', parentId: 'nav-lms-equipment', label: '에러보기', icon: 'AlertTriangle', href: '/app/lms/equipment/errors', displayOrder: 1, children: [] },
           { id: 'nav-lms-params', parentId: 'nav-lms-equipment', label: '파라미터보기', icon: 'Settings', href: '/app/lms/equipment/parameters', displayOrder: 2, children: [] },
           { id: 'nav-lms-repair-req', parentId: 'nav-lms-equipment', label: '설비점검/수리', icon: 'Wrench', href: '/app/mes/equipment-repair', displayOrder: 3, children: [] },
           { id: 'nav-lms-problem-types', parentId: 'nav-lms-equipment', label: '설비문제유형등록', icon: 'AlertTriangle', href: '/app/mes/equipment-problems', displayOrder: 4, children: [] },
