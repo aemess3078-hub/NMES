@@ -141,7 +141,7 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 10,
         children: [
           { id: 'nav-lms-analysis', parentId: 'nav-lms-monitoring', label: '분석모니터링', icon: 'Activity', href: '/app/mes/equipment-monitor', displayOrder: 1, children: [] },
-          { id: 'nav-lms-status', parentId: 'nav-lms-monitoring', label: '현황모니터링', icon: 'LayoutDashboard', href: '/app/lms/monitoring/status', displayOrder: 2, comingSoon: true, children: [] },
+          { id: 'nav-lms-status', parentId: 'nav-lms-monitoring', label: '현황모니터링', icon: 'LayoutDashboard', href: '/app/lms/monitoring/status', displayOrder: 2, children: [] },
         ],
       },
       // 2. 설비점검/수리 (기존 '설비관리' 하위 메뉴명 변경 — 중복 방지)
