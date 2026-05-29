@@ -160,8 +160,18 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-lms-check-status', parentId: 'nav-lms-equipment', label: '설비일상점검현황', icon: 'BarChart2', href: '/app/mes/equipment-check-status', displayOrder: 6, children: [] },
         ],
       },
-      // 3. 설비 통계분석 (생산량/에러/비가동/작업시간/전력 통합 화면)
-      { id: 'nav-lms-statistics', parentId: 'section-lms', label: '설비 통계분석', icon: 'FileBarChart', href: '/app/mes/equipment-statistics', displayOrder: 30, children: [] },
+      // 3. 설비 통계분석
+      {
+        id: 'nav-lms-statistics',
+        parentId: 'section-lms',
+        label: '설비 통계분석',
+        icon: 'FileBarChart',
+        displayOrder: 30,
+        children: [
+          { id: 'nav-lms-stats-integrated', parentId: 'nav-lms-statistics', label: '통합통계', icon: 'BarChart2', href: '/app/mes/equipment-statistics', displayOrder: 1, children: [] },
+          { id: 'nav-lms-stats-capacity', parentId: 'nav-lms-statistics', label: '능력', icon: 'Gauge', href: '/app/lms/statistics/capacity', displayOrder: 2, children: [] },
+        ],
+      },
       // 4. 설비연동 설정
       {
         id: 'nav-lms-integration',

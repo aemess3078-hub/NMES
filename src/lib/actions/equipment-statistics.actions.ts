@@ -512,3 +512,145 @@ export async function getEquipmentStatisticsData(
 
   return { filter, production, errors, downtime, workTime, availability }
 }
+
+// ─── 6. 설비 처리능력(CAPA) 분석 ─────────────────────────────────────────────
+
+export type CapacityRow = {
+  equipmentId: string
+  equipmentCode: string
+  equipmentName: string
+  totalGoodQty: number
+  workMinutes: number
+  actualUPH: number | null
+  stdUPH: number | null
+  achievementRate: number | null
+  isBottleneck: boolean
+  resultCount: number
+}
+
+export type CapacityStats = {
+  rows: CapacityRow[]
+  totalEquipmentCount: number
+  bottleneckCount: number
+  avgAchievementRate: number | null
+  avgUPH: number | null
+  filter: EquipStatFilter
+}
+
+export async function getEquipmentCapacityStats(
+  filterOverride?: Partial<EquipStatFilter>
+): Promise<CapacityStats> {
+  const tenantId = await getTenantId()
+  const defaults = defaultDateRange()
+  const filter: EquipStatFilter = {
+    from: filterOverride?.from ?? defaults.from,
+    to: filterOverride?.to ?? defaults.to,
+    equipmentId: filterOverride?.equipmentId,
+  }
+  const { from, to } = parseDateRange(filter)
+
+  const results = await prisma.productionResult.findMany({
+    where: {
+      startedAt: { gte: from, lte: to },
+      endedAt: { not: null },
+      workOrderOperation: {
+        workOrder: { tenantId },
+        equipmentId: { not: null },
+        ...(filter.equipmentId ? { equipmentId: filter.equipmentId } : {}),
+      },
+    },
+    select: {
+      goodQty: true,
+      startedAt: true,
+      endedAt: true,
+      workOrderOperation: {
+        select: {
+          equipmentId: true,
+          equipment: { select: { code: true, name: true } },
+          routingOperation: { select: { standardTime: true } },
+        },
+      },
+    },
+  })
+
+  type EqAgg = {
+    equipmentId: string
+    equipmentCode: string
+    equipmentName: string
+    totalGoodQty: number
+    workMs: number
+    stdTimeSecs: number[]
+    resultCount: number
+  }
+  const eqMap = new Map<string, EqAgg>()
+
+  for (const r of results) {
+    const op = r.workOrderOperation
+    if (!op.equipmentId || !op.equipment) continue
+    const key = op.equipmentId
+    const e = eqMap.get(key) ?? {
+      equipmentId: op.equipmentId,
+      equipmentCode: op.equipment.code,
+      equipmentName: op.equipment.name,
+      totalGoodQty: 0,
+      workMs: 0,
+      stdTimeSecs: [],
+      resultCount: 0,
+    }
+    e.totalGoodQty += Number(r.goodQty)
+    if (r.startedAt && r.endedAt) {
+      e.workMs += r.endedAt.getTime() - r.startedAt.getTime()
+    }
+    const st = Number(op.routingOperation.standardTime)
+    if (st > 0) e.stdTimeSecs.push(st)
+    e.resultCount++
+    eqMap.set(key, e)
+  }
+
+  const rows: CapacityRow[] = Array.from(eqMap.values()).map((e) => {
+    const workMinutes = Math.round(e.workMs / 60_000)
+    const workHours = e.workMs / 3_600_000
+    const actualUPH = workHours > 0 ? Math.round((e.totalGoodQty / workHours) * 10) / 10 : null
+    const avgStdSecs =
+      e.stdTimeSecs.length > 0
+        ? e.stdTimeSecs.reduce((s, v) => s + v, 0) / e.stdTimeSecs.length
+        : 0
+    const stdUPH = avgStdSecs > 0 ? Math.round((3600 / avgStdSecs) * 10) / 10 : null
+    const achievementRate =
+      actualUPH !== null && stdUPH !== null && stdUPH > 0
+        ? Math.round((actualUPH / stdUPH) * 1000) / 10
+        : null
+    return {
+      equipmentId: e.equipmentId,
+      equipmentCode: e.equipmentCode,
+      equipmentName: e.equipmentName,
+      totalGoodQty: Math.round(e.totalGoodQty * 10) / 10,
+      workMinutes,
+      actualUPH,
+      stdUPH,
+      achievementRate,
+      isBottleneck: achievementRate !== null && achievementRate < 80,
+      resultCount: e.resultCount,
+    }
+  })
+
+  rows.sort((a, b) => (a.achievementRate ?? Infinity) - (b.achievementRate ?? Infinity))
+
+  const withUPH = rows.filter((r) => r.actualUPH !== null)
+  const withRate = rows.filter((r) => r.achievementRate !== null)
+
+  return {
+    rows,
+    filter,
+    totalEquipmentCount: rows.length,
+    bottleneckCount: rows.filter((r) => r.isBottleneck).length,
+    avgUPH:
+      withUPH.length > 0
+        ? Math.round((withUPH.reduce((s, r) => s + (r.actualUPH ?? 0), 0) / withUPH.length) * 10) / 10
+        : null,
+    avgAchievementRate:
+      withRate.length > 0
+        ? Math.round((withRate.reduce((s, r) => s + (r.achievementRate ?? 0), 0) / withRate.length) * 10) / 10
+        : null,
+  }
+}
