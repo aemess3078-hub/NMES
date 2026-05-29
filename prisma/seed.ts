@@ -1234,6 +1234,22 @@ async function seedCodeGroups() {
         { id: 'cc-cost-02', code: 'OVERHEAD_RATE',        name: '경비율 (%)',        displayOrder: 2, extra: { value: 10 } },
       ],
     },
+    {
+      id: 'cg-downtime-reason',
+      groupCode: 'DOWNTIME_REASON',
+      groupName: '비가동사유',
+      isSystem: true,
+      codes: [
+        { id: 'cc-dr-01', code: 'EQUIP_FAIL',    name: '설비고장',         displayOrder: 1  },
+        { id: 'cc-dr-02', code: 'TOOL_CHANGE',   name: '공구교체',         displayOrder: 2  },
+        { id: 'cc-dr-03', code: 'MATERIAL_WAIT', name: '자재대기',         displayOrder: 3  },
+        { id: 'cc-dr-04', code: 'OPERATOR_WAIT', name: '작업자대기',       displayOrder: 4  },
+        { id: 'cc-dr-05', code: 'MOLD_ISSUE',    name: '금형/치공구 문제', displayOrder: 5  },
+        { id: 'cc-dr-06', code: 'QUALITY_CHECK', name: '품질확인',         displayOrder: 6  },
+        { id: 'cc-dr-07', code: 'PLANNED_STOP',  name: '계획정지',         displayOrder: 7  },
+        { id: 'cc-dr-99', code: 'OTHER',         name: '기타',             displayOrder: 99 },
+      ],
+    },
   ];
 
   for (const group of groups) {
@@ -2269,7 +2285,7 @@ async function main() {
       ? '  - ProductionResult: 기본 3 + Seed v2 25'
       : '  - ProductionResult: 미생성 (demo 전용)',
   );
-  console.log('  - CodeGroup: 4 / CommonCode: 17');
+  console.log('  - CodeGroup: 6 / CommonCode: 27');
   console.log(
     SEED_MODE === 'demo'
       ? '  - ProductionPlan: 1 / PlanItem: 2'

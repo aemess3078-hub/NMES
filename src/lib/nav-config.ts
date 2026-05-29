@@ -34,7 +34,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-inspection-standards', parentId: 'nav-master', label: '검사표준관리', icon: 'FileCheck', href: '/app/mes/master/inspection-standards', displayOrder: 12, children: [] },
           // 금형관리 + 금형재고관리 → 금형/치공구관리 단일 메뉴 (미구현)
           { id: 'nav-mold-management', parentId: 'nav-master', label: '금형/치공구관리', icon: 'Wrench', href: '/app/mes/master/molds', displayOrder: 13, children: [] },
-          { id: 'nav-downtime-reasons', parentId: 'nav-master', label: '비가동사유', icon: 'AlertTriangle', href: '/app/mes/master/downtime-reasons', displayOrder: 14, comingSoon: true, children: [] },
+          { id: 'nav-downtime-reasons', parentId: 'nav-master', label: '비가동사유', icon: 'AlertTriangle', href: '/app/mes/master/downtime-reasons', displayOrder: 14, children: [] },
         ],
       },
       // 2. 생산관리
