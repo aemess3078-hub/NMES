@@ -38,6 +38,7 @@ interface DataTableProps<TData, TValue> {
   searchableColumns?: DataTableSearchableColumn<TData>[]
   filterableColumns?: DataTableFilterableColumn<TData>[]
   pageSize?: number
+  defaultSorting?: SortingState
   onRowClick?: (row: TData) => void
   renderExpandedRow?: (row: TData) => React.ReactNode
 }
@@ -48,6 +49,7 @@ export function DataTable<TData, TValue>({
   searchableColumns = [],
   filterableColumns = [],
   pageSize = 20,
+  defaultSorting = [],
   onRowClick,
   renderExpandedRow,
 }: DataTableProps<TData, TValue>) {
@@ -58,7 +60,7 @@ export function DataTable<TData, TValue>({
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   )
-  const [sorting, setSorting] = React.useState<SortingState>([])
+  const [sorting, setSorting] = React.useState<SortingState>(defaultSorting)
 
   const table = useReactTable({
     data,

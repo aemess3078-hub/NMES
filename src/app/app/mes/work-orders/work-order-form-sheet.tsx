@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
@@ -79,7 +79,7 @@ const DEFAULT_FORM_VALUES: WorkOrderFormValues = {
 
 const workOrderStatusOptions = [
   { label: "초안", value: WorkOrderStatus.DRAFT },
-  { label: "릴리즈", value: WorkOrderStatus.RELEASED },
+  { label: "작업대기", value: WorkOrderStatus.RELEASED },
 ]
 
 const itemTypeLabels: Record<string, string> = {
@@ -107,6 +107,9 @@ export function WorkOrderFormSheet({
   const [loadingBoms, setLoadingBoms] = useState(false)
   const router = useRouter()
 
+  // 사용자가 직접 수정한 공정 계획수량 인덱스를 추적 (상단 plannedQty 변경 시 덮어쓰지 않기 위함)
+  const manuallyEditedOps = useRef<Set<number>>(new Set())
+
   const form = useForm<WorkOrderFormValues>({
     resolver: zodResolver(workOrderFormSchema),
     defaultValues: DEFAULT_FORM_VALUES,
@@ -121,6 +124,7 @@ export function WorkOrderFormSheet({
 
   useEffect(() => {
     if (mode === "create" && open) {
+      manuallyEditedOps.current.clear()
       form.reset(DEFAULT_FORM_VALUES)
       setBoms([])
       setRoutings([])
@@ -143,6 +147,16 @@ export function WorkOrderFormSheet({
         setLoadingBoms(false)
       })
 
+      const editOps = workOrder.operations.map((op) => ({
+        routingOperationId: op.routingOperationId,
+        equipmentId: op.equipmentId ?? null,
+        seq: op.seq,
+        plannedQty: Number(op.plannedQty),
+      }))
+      // edit 모드에서 기존 공정 수량은 DB 값을 유지 (수동 편집으로 취급)
+      manuallyEditedOps.current.clear()
+      editOps.forEach((_, i) => manuallyEditedOps.current.add(i))
+
       form.reset({
         siteId: workOrder.siteId,
         itemId: workOrder.itemId,
@@ -156,12 +170,7 @@ export function WorkOrderFormSheet({
           ? new Date(workOrder.dueDate).toISOString().split("T")[0]
           : null,
         productionPlanItemId: workOrder.productionPlanItemId ?? null,
-        operations: workOrder.operations.map((op) => ({
-          routingOperationId: op.routingOperationId,
-          equipmentId: op.equipmentId ?? null,
-          seq: op.seq,
-          plannedQty: Number(op.plannedQty),
-        })),
+        operations: editOps,
       })
     }
   }, [mode, workOrder, open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -196,6 +205,7 @@ export function WorkOrderFormSheet({
   // ─── 라우팅 변경 핸들러 (Operations 자동 채움) ──────────────────────────────
 
   const handleRoutingChange = (routingId: string) => {
+    manuallyEditedOps.current.clear()
     form.setValue("routingId", routingId)
     const routing = routings.find((r) => r.id === routingId)
     if (routing?.operations && routing.operations.length > 0) {
@@ -238,6 +248,19 @@ export function WorkOrderFormSheet({
   const selectedRoutingId = form.watch("routingId")
   const selectedRouting = routings.find((r) => r.id === selectedRoutingId)
   const availableOperations = selectedRouting?.operations ?? []
+
+  // ─── 상단 계획수량 변경 시 수동 편집하지 않은 공정 수량 동기화 ───────────────
+
+  const watchedPlannedQty = form.watch("plannedQty")
+  useEffect(() => {
+    const qty = Number(watchedPlannedQty)
+    if (!qty || fields.length === 0) return
+    fields.forEach((_, index) => {
+      if (!manuallyEditedOps.current.has(index)) {
+        form.setValue(`operations.${index}.plannedQty`, qty)
+      }
+    })
+  }, [watchedPlannedQty]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -510,6 +533,7 @@ export function WorkOrderFormSheet({
                             onChange={(e) => {
                               const val = e.target.value
                               f.onChange(val === "" ? "" : parseFloat(val))
+                              manuallyEditedOps.current.add(index)
                             }}
                           />
                           <FormMessage className="text-[12px]" />

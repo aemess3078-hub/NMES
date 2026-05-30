@@ -231,7 +231,7 @@ export function WorkOrderDataTable({
       title: "상태",
       options: [
         { label: "초안", value: "DRAFT" },
-        { label: "릴리즈", value: "RELEASED" },
+        { label: "작업대기", value: "RELEASED" },
         { label: "진행중", value: "IN_PROGRESS" },
         { label: "완료", value: "COMPLETED" },
         { label: "취소", value: "CANCELLED" },
@@ -265,6 +265,7 @@ export function WorkOrderDataTable({
           { id: "itemName" as keyof WorkOrderWithDetails, title: "품목명" },
         ]}
         filterableColumns={filterableColumns}
+        defaultSorting={[{ id: "createdAt", desc: true }]}
         renderExpandedRow={(workOrder) => (
           <WorkOrderExpandedRow workOrder={workOrder} />
         )}

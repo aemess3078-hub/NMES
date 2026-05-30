@@ -21,7 +21,7 @@ const itemTypeBadge: Record<string, { label: string; className: string; Icon: Lu
 
 const workOrderStatusLabels: Record<WorkOrderStatus, string> = {
   DRAFT: "초안",
-  RELEASED: "릴리즈",
+  RELEASED: "작업대기",
   IN_PROGRESS: "진행중",
   COMPLETED: "완료",
   CANCELLED: "취소",
@@ -249,6 +249,20 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
             <div className="mt-1 text-[12px] text-muted-foreground">{status.detail}</div>
           </div>
         )
+      },
+    },
+    {
+      id: "createdAt",
+      accessorFn: (row) => row.createdAt,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="지시일자" />
+      ),
+      cell: ({ row }) => {
+        const val = row.original.createdAt
+        if (!val) return <span className="text-[14px] text-muted-foreground">-</span>
+        const d = new Date(val)
+        const formatted = `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}`
+        return <span className="text-[13px] font-mono text-muted-foreground">{formatted}</span>
       },
     },
     {
