@@ -11,8 +11,13 @@ export type ProductionResultWithDetails = {
   goodQty: number
   defectQty: number
   reworkQty: number
-  startedAt: Date | null
-  endedAt: Date | null
+  startedAt: string | null
+  endedAt: string | null
+  equipment: {
+    id: string
+    code: string
+    name: string
+  } | null
   workOrderOperation: {
     id: string
     seq: number
@@ -78,8 +83,18 @@ export async function getProductionResults(
         : {}),
     },
     include: {
+      workOrderOperationAssignment: {
+        select: {
+          equipment: {
+            select: { id: true, code: true, name: true },
+          },
+        },
+      },
       workOrderOperation: {
         include: {
+          equipment: {
+            select: { id: true, code: true, name: true },
+          },
           workOrder: {
             include: {
               item: {
@@ -107,30 +122,38 @@ export async function getProductionResults(
     orderBy: { startedAt: "desc" },
   })
 
-  return results.map((r) => ({
-    id: r.id,
-    workOrderOperationId: r.workOrderOperationId,
-    goodQty: Number(r.goodQty),
-    defectQty: Number(r.defectQty),
-    reworkQty: Number(r.reworkQty),
-    startedAt: r.startedAt,
-    endedAt: r.endedAt,
-    workOrderOperation: {
-      id: r.workOrderOperation.id,
-      seq: r.workOrderOperation.seq,
-      status: r.workOrderOperation.status,
-      workOrder: {
-        id: r.workOrderOperation.workOrder.id,
-        orderNo: r.workOrderOperation.workOrder.orderNo,
-        item: r.workOrderOperation.workOrder.item,
+  return results.map((r) => {
+    const equipment =
+      r.workOrderOperationAssignment?.equipment ??
+      r.workOrderOperation.equipment ??
+      null
+
+    return {
+      id: r.id,
+      workOrderOperationId: r.workOrderOperationId,
+      goodQty: Number(r.goodQty),
+      defectQty: Number(r.defectQty),
+      reworkQty: Number(r.reworkQty),
+      startedAt: r.startedAt?.toISOString() ?? null,
+      endedAt: r.endedAt?.toISOString() ?? null,
+      equipment,
+      workOrderOperation: {
+        id: r.workOrderOperation.id,
+        seq: r.workOrderOperation.seq,
+        status: r.workOrderOperation.status,
+        workOrder: {
+          id: r.workOrderOperation.workOrder.id,
+          orderNo: r.workOrderOperation.workOrder.orderNo,
+          item: r.workOrderOperation.workOrder.item,
+        },
+        routingOperation: {
+          id: r.workOrderOperation.routingOperation.id,
+          name: r.workOrderOperation.routingOperation.name,
+          seq: r.workOrderOperation.routingOperation.seq,
+          workCenter: r.workOrderOperation.routingOperation.workCenter,
+        },
       },
-      routingOperation: {
-        id: r.workOrderOperation.routingOperation.id,
-        name: r.workOrderOperation.routingOperation.name,
-        seq: r.workOrderOperation.routingOperation.seq,
-        workCenter: r.workOrderOperation.routingOperation.workCenter,
-      },
-    },
-  }))
+    }
+  })
 }
 

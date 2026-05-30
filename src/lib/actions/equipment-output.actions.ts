@@ -19,7 +19,7 @@ export type EquipmentOutputRow = {
   defectRate:     number   // 0–100 percentage
   workTimeMin:    number   // total minutes
   resultCount:    number
-  latestAt:       Date | null
+  latestAt:       string | null
 }
 
 // ─── 설비별 생산실적 집계 ──────────────────────────────────────────────────────
@@ -30,9 +30,12 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
   const results = await prisma.productionResult.findMany({
     where: {
       workOrderOperation: {
-        equipmentId: { not: null },
-        workOrder:   { tenantId },
+        workOrder: { tenantId },
       },
+      OR: [
+        { workOrderOperationAssignmentId: { not: null } },
+        { workOrderOperation: { equipmentId: { not: null } } },
+      ],
     },
     select: {
       id:        true,
@@ -41,6 +44,20 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
       reworkQty: true,
       startedAt: true,
       endedAt:   true,
+      workOrderOperationAssignment: {
+        select: {
+          equipment: {
+            select: {
+              id:            true,
+              code:          true,
+              name:          true,
+              equipmentType: true,
+              site:       { select: { name: true } },
+              workCenter: { select: { name: true } },
+            },
+          },
+        },
+      },
       workOrderOperation: {
         select: {
           equipment: {
@@ -60,11 +77,12 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
   })
 
   // ── 설비별로 그룹핑 ──────────────────────────────────────────────────────────
+  // assignment 실적은 assignment.equipment, 기존 실적은 operation.equipment 우선
   const map = new Map<string, EquipmentOutputRow>()
 
   for (const r of results) {
-    const eq = r.workOrderOperation.equipment
-    if (!eq) continue   // equipmentId not null filter guarantees this, but guard anyway
+    const eq = r.workOrderOperationAssignment?.equipment ?? r.workOrderOperation.equipment
+    if (!eq) continue
 
     const good    = Number(r.goodQty)
     const defect  = Number(r.defectQty)
@@ -73,6 +91,7 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
       r.startedAt && r.endedAt
         ? (r.endedAt.getTime() - r.startedAt.getTime()) / 60_000
         : 0
+    const startedAtStr = r.startedAt?.toISOString() ?? null
 
     const existing = map.get(eq.id)
     if (existing) {
@@ -82,8 +101,8 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
       existing.totalQty    += good + defect + rework
       existing.workTimeMin += workMin
       existing.resultCount += 1
-      if (r.startedAt && (!existing.latestAt || r.startedAt > existing.latestAt)) {
-        existing.latestAt = r.startedAt
+      if (startedAtStr && (!existing.latestAt || startedAtStr > existing.latestAt)) {
+        existing.latestAt = startedAtStr
       }
     } else {
       map.set(eq.id, {
@@ -100,7 +119,7 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
         defectRate:     0,
         workTimeMin:    workMin,
         resultCount:    1,
-        latestAt:       r.startedAt,
+        latestAt:       startedAtStr,
       })
     }
   }
@@ -116,7 +135,7 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
   rows.sort((a, b) => {
     if (!a.latestAt) return 1
     if (!b.latestAt) return -1
-    return b.latestAt.getTime() - a.latestAt.getTime()
+    return b.latestAt > a.latestAt ? 1 : b.latestAt < a.latestAt ? -1 : 0
   })
 
   return rows

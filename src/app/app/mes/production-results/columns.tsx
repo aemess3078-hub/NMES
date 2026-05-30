@@ -14,9 +14,10 @@ const operationStatusLabels: Record<OperationStatus, string> = {
   SKIPPED: "건너뜀",
 }
 
-function formatDateTime(date: Date | null): string {
+function formatDateTime(date: string | null): string {
   if (!date) return "-"
   const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return "-"
   const dateStr = d.toISOString().split("T")[0]
   const timeStr = d.toTimeString().slice(0, 5)
   return `${dateStr} ${timeStr}`
@@ -77,6 +78,23 @@ export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
           {row.original.workOrderOperation.routingOperation.workCenter.name}
         </span>
       ),
+    },
+    {
+      id: "equipment",
+      accessorFn: (row) => row.equipment?.name ?? "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="설비" />
+      ),
+      cell: ({ row }) => {
+        const eq = row.original.equipment
+        if (!eq) return <span className="text-[13px] text-muted-foreground">—</span>
+        return (
+          <div className="flex flex-col">
+            <span className="text-[14px]">{eq.name}</span>
+            <span className="text-[13px] text-muted-foreground font-mono">{eq.code}</span>
+          </div>
+        )
+      },
     },
     {
       id: "goodQty",
