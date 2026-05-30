@@ -348,50 +348,51 @@ model Tenant {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  sites                 Site[]
-  tenantUsers           TenantUser[]
-  businessPartners      BusinessPartner[]
-  itemCategories        ItemCategory[]
-  items                 Item[]
-  warehouses            Warehouse[]
-  numberingRules        NumberingRule[]
-  lots                  Lot[]
-  inventoryBalances     InventoryBalance[]
-  inventoryTxns         InventoryTransaction[]
-  workOrders            WorkOrder[]
-  defectCodes           DefectCode[]
-  documents             Document[]
-  inspectionSpecs       InspectionSpec[]
-  auditLogs             AuditLog[]
-  approvalRequests      ApprovalRequest[]
-  equipments            Equipment[]
-  finishedGoodsReceipts FinishedGoodsReceipt[]
-  wipUnits              WipUnit[]
-  wipMovements          WipMovement[]
-  wipUnitMaterialLots   WipUnitMaterialLot[]
-  boms                  BOM[]
-  routings              Routing[]
-  itemRoutings          ItemRouting[]
-  productionPlans       ProductionPlan[]
-  codeGroups            CodeGroup[]
-  rolePermissions       RolePermission[]
-  tenantFeatures        TenantFeature[]
-  gateways              EdgeGateway[]
-  salesOrders           SalesOrder[]             @relation("TenantSalesOrders")
-  shipmentOrders        ShipmentOrder[]          @relation("TenantShipmentOrders")
-  purchaseOrders        PurchaseOrder[]          @relation("TenantPurchaseOrders")
-  itemPrices            ItemPrice[]              @relation("TenantItemPrices")
-  aiUsageLogs           AIUsageLog[]             @relation("TenantAIUsageLogs")
-  quotations            Quotation[]              @relation("TenantQuotations")
-  itemCosts             ItemCost[]               @relation("TenantItemCosts")
-  engineeringChanges    EngineeringChange[]      @relation("TenantECNs")
-  signupRequests        SignupRequest[]
-  equipmentProblemTypes EquipmentProblemType[]
-  equipmentRepairs      EquipmentRepairRequest[]
-  equipmentDailyChecks  EquipmentDailyCheck[]
-  userCredentials       UserCredential[]
-  loginHistories        LoginHistory[]
-  itemGroups            ItemGroup[]
+  sites                         Site[]
+  tenantUsers                   TenantUser[]
+  businessPartners              BusinessPartner[]
+  itemCategories                ItemCategory[]
+  items                         Item[]
+  warehouses                    Warehouse[]
+  numberingRules                NumberingRule[]
+  lots                          Lot[]
+  inventoryBalances             InventoryBalance[]
+  inventoryTxns                 InventoryTransaction[]
+  workOrders                    WorkOrder[]
+  defectCodes                   DefectCode[]
+  documents                     Document[]
+  inspectionSpecs               InspectionSpec[]
+  auditLogs                     AuditLog[]
+  approvalRequests              ApprovalRequest[]
+  equipments                    Equipment[]
+  finishedGoodsReceipts         FinishedGoodsReceipt[]
+  wipUnits                      WipUnit[]
+  wipMovements                  WipMovement[]
+  wipUnitMaterialLots           WipUnitMaterialLot[]
+  boms                          BOM[]
+  routings                      Routing[]
+  itemRoutings                  ItemRouting[]
+  productionPlans               ProductionPlan[]
+  codeGroups                    CodeGroup[]
+  rolePermissions               RolePermission[]
+  tenantFeatures                TenantFeature[]
+  gateways                      EdgeGateway[]
+  salesOrders                   SalesOrder[]                   @relation("TenantSalesOrders")
+  shipmentOrders                ShipmentOrder[]                @relation("TenantShipmentOrders")
+  purchaseOrders                PurchaseOrder[]                @relation("TenantPurchaseOrders")
+  itemPrices                    ItemPrice[]                    @relation("TenantItemPrices")
+  aiUsageLogs                   AIUsageLog[]                   @relation("TenantAIUsageLogs")
+  quotations                    Quotation[]                    @relation("TenantQuotations")
+  itemCosts                     ItemCost[]                     @relation("TenantItemCosts")
+  engineeringChanges            EngineeringChange[]            @relation("TenantECNs")
+  signupRequests                SignupRequest[]
+  equipmentProblemTypes         EquipmentProblemType[]
+  equipmentRepairs              EquipmentRepairRequest[]
+  equipmentDailyChecks          EquipmentDailyCheck[]
+  userCredentials               UserCredential[]
+  loginHistories                LoginHistory[]
+  itemGroups                    ItemGroup[]
+  workOrderOperationAssignments WorkOrderOperationAssignment[]
 }
 
 model Profile {
@@ -763,12 +764,13 @@ model Equipment {
   site       Site       @relation(fields: [siteId], references: [id])
   workCenter WorkCenter @relation(fields: [workCenterId], references: [id])
 
-  operationMaps       EquipmentOperationMap[]
-  workOrderOperations WorkOrderOperation[]
-  connections         EquipmentConnection[]
-  events              EquipmentEvent[]
-  repairRequests      EquipmentRepairRequest[]
-  dailyChecks         EquipmentDailyCheck[]
+  operationMaps                 EquipmentOperationMap[]
+  workOrderOperations           WorkOrderOperation[]
+  connections                   EquipmentConnection[]
+  events                        EquipmentEvent[]
+  repairRequests                EquipmentRepairRequest[]
+  dailyChecks                   EquipmentDailyCheck[]
+  workOrderOperationAssignments WorkOrderOperationAssignment[]
 
   @@unique([siteId, code])
   @@index([tenantId])
@@ -1033,13 +1035,39 @@ model WorkOrderOperation {
   wipUnits             WipUnit[]
   productionResults    ProductionResult[]
   qualityInspections   QualityInspection[]
-  wipMovementsFrom     WipMovement[]         @relation("WipMovementFromOperation")
-  wipMovementsTo       WipMovement[]         @relation("WipMovementToOperation")
+  wipMovementsFrom     WipMovement[]                  @relation("WipMovementFromOperation")
+  wipMovementsTo       WipMovement[]                  @relation("WipMovementToOperation")
+  assignments          WorkOrderOperationAssignment[]
 
   @@unique([workOrderId, seq])
   @@index([workOrderId])
   @@index([routingOperationId])
   @@index([equipmentId])
+}
+
+model WorkOrderOperationAssignment {
+  id                   String          @id @default(cuid())
+  tenantId             String
+  workOrderOperationId String
+  equipmentId          String
+  assignedQty          Decimal         @db.Decimal(18, 6)
+  completedQty         Decimal         @default(0) @db.Decimal(18, 6)
+  status               OperationStatus @default(PENDING)
+  seq                  Int             @default(1)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  tenant             Tenant             @relation(fields: [tenantId], references: [id])
+  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id], onDelete: Cascade)
+  equipment          Equipment          @relation(fields: [equipmentId], references: [id])
+
+  productionResults ProductionResult[]
+
+  @@unique([workOrderOperationId, equipmentId])
+  @@index([tenantId])
+  @@index([workOrderOperationId])
+  @@index([equipmentId])
+  @@index([status])
 }
 
 model MaterialReservation {
@@ -1296,18 +1324,21 @@ model WipUnitMaterialLot {
 }
 
 model ProductionResult {
-  id                   String    @id @default(cuid())
-  workOrderOperationId String
-  goodQty              Decimal   @default(0) @db.Decimal(18, 6)
-  defectQty            Decimal   @default(0) @db.Decimal(18, 6)
-  reworkQty            Decimal   @default(0) @db.Decimal(18, 6)
-  startedAt            DateTime?
-  endedAt              DateTime?
+  id                             String    @id @default(cuid())
+  workOrderOperationId           String
+  workOrderOperationAssignmentId String?
+  goodQty                        Decimal   @default(0) @db.Decimal(18, 6)
+  defectQty                      Decimal   @default(0) @db.Decimal(18, 6)
+  reworkQty                      Decimal   @default(0) @db.Decimal(18, 6)
+  startedAt                      DateTime?
+  endedAt                        DateTime?
 
-  workOrderOperation WorkOrderOperation @relation(fields: [workOrderOperationId], references: [id])
-  sourceWipUnits     WipUnit[]          @relation("WipUnitSourceProductionResult")
+  workOrderOperation           WorkOrderOperation            @relation(fields: [workOrderOperationId], references: [id])
+  workOrderOperationAssignment WorkOrderOperationAssignment? @relation(fields: [workOrderOperationAssignmentId], references: [id])
+  sourceWipUnits               WipUnit[]                     @relation("WipUnitSourceProductionResult")
 
   @@index([workOrderOperationId])
+  @@index([workOrderOperationAssignmentId])
 }
 
 model FinishedGoodsReceipt {
