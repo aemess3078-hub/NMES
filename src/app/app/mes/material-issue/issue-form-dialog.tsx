@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { AlertCircle, Tag } from "lucide-react"
+import { AlertCircle, Plus, Tag, X } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,16 @@ function isLotManaged(item: MaterialRequirement["item"]): boolean {
 import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
+// ── 다중 LOT 분할 행 타입 ─────────────────────────────────────────────────────
+
+type LotSplitRow = {
+  key: string
+  lotValue: string   // "lotId:warehouseId" composite
+  qty: string
+}
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
 interface IssueFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -52,8 +62,8 @@ export function IssueFormDialog({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [warehouseMap, setWarehouseMap] = useState<Record<string, string>>({})
-  const [qtyMap, setQtyMap] = useState<Record<string, string>>({})
-  const [lotMap, setLotMap] = useState<Record<string, string>>({})
+  const [qtyMap, setQtyMap] = useState<Record<string, string>>({})          // 비LOT 품목 출고수량
+  const [lotSplitsMap, setLotSplitsMap] = useState<Record<string, LotSplitRow[]>>({})  // LOT 품목 분할행
   const [lotStockMap, setLotStockMap] = useState<Record<string, LotStockOption[]>>({})
   const [lotLoadingMap, setLotLoadingMap] = useState<Record<string, boolean>>({})
   const [printOpen, setPrintOpen] = useState(false)
@@ -62,27 +72,71 @@ export function IssueFormDialog({
 
   const pendingMaterials = workOrder?.materials.filter((material) => material.pendingQty > 0) ?? []
 
-  // Radix controlled Dialog에서 부모가 open=true로 바꿀 때 onOpenChange가 호출되지 않으므로
-  // useEffect에서 open 변화를 감지해 초기화 및 LOT 재고 로드를 수행한다.
+  // ── LOT 분할 행 헬퍼 ─────────────────────────────────────────────────────────
+
+  const getLotSelectValue = (lotStock: LotStockOption) => `${lotStock.lotId}:${lotStock.warehouseId}`
+
+  const getLotSplits = (itemId: string): LotSplitRow[] =>
+    lotSplitsMap[itemId] ?? [{ key: `${itemId}-0`, lotValue: "", qty: "" }]
+
+  const getLotSplitTotal = (itemId: string): number =>
+    getLotSplits(itemId).reduce((sum, row) => sum + (Number(row.qty) || 0), 0)
+
+  const getLotFromSplitRow = (itemId: string, row: LotSplitRow): LotStockOption | null => {
+    if (!row.lotValue) return null
+    return lotStockMap[itemId]?.find((l) => getLotSelectValue(l) === row.lotValue) ?? null
+  }
+
+  const addLotSplit = (itemId: string) => {
+    setLotSplitsMap((prev) => ({
+      ...prev,
+      [itemId]: [...(prev[itemId] ?? []), { key: `${itemId}-${Date.now()}`, lotValue: "", qty: "" }],
+    }))
+  }
+
+  const removeLotSplit = (itemId: string, key: string) => {
+    setLotSplitsMap((prev) => ({
+      ...prev,
+      [itemId]: (prev[itemId] ?? []).filter((r) => r.key !== key),
+    }))
+  }
+
+  const updateLotSplitRow = (itemId: string, key: string, field: keyof LotSplitRow, value: string) => {
+    setLotSplitsMap((prev) => ({
+      ...prev,
+      [itemId]: (prev[itemId] ?? []).map((r) => r.key === key ? { ...r, [field]: value } : r),
+    }))
+  }
+
+  // ── 초기화 (Dialog 열릴 때) ──────────────────────────────────────────────────
+
   useEffect(() => {
     if (!open || !workOrder) return
 
     const materials = workOrder.materials.filter((m) => m.pendingQty > 0)
     const defaults: Record<string, string> = {}
     const defaultWarehouses: Record<string, string> = {}
+    const defaultLotSplits: Record<string, LotSplitRow[]> = {}
 
     for (const material of materials) {
-      defaults[material.itemId] = String(material.pendingQty)
       if (!isLotManaged(material.item)) {
+        defaults[material.itemId] = String(material.pendingQty)
         const stockWh = warehouses.find((wh) => (wh.itemStocks[material.itemId] ?? 0) > 0)
         const rawWh = warehouses.find((wh) => wh.code === "WH-RAW")
         defaultWarehouses[material.itemId] = stockWh?.id ?? rawWh?.id ?? warehouses[0]?.id ?? ""
+      } else {
+        // LOT 품목: 초기 분할 행 1개 (필요수량 pre-fill)
+        defaultLotSplits[material.itemId] = [{
+          key: `${material.itemId}-init-0`,
+          lotValue: "",
+          qty: String(material.pendingQty),
+        }]
       }
     }
 
     setQtyMap(defaults)
     setWarehouseMap(defaultWarehouses)
-    setLotMap({})
+    setLotSplitsMap(defaultLotSplits)
     setLotStockMap({})
     setLotLoadingMap({})
 
@@ -106,32 +160,6 @@ export function IssueFormDialog({
 
   if (!workOrder) return null
 
-  const getLotSelectValue = (lotStock: LotStockOption) => `${lotStock.lotId}:${lotStock.warehouseId}`
-
-  const getSelectedLot = (itemId: string) => {
-    const selectedValue = lotMap[itemId]
-    if (!selectedValue) return null
-    return lotStockMap[itemId]?.find((lotStock) => getLotSelectValue(lotStock) === selectedValue) ?? null
-  }
-
-  const getDefaultWarehouseId = (itemId: string) => {
-    const stockWarehouse = warehouses.find((warehouse) => (warehouse.itemStocks[itemId] ?? 0) > 0)
-    const rawWarehouse = warehouses.find((warehouse) => warehouse.code === "WH-RAW")
-    return stockWarehouse?.id ?? rawWarehouse?.id ?? warehouses[0]?.id ?? ""
-  }
-
-  const loadLotStock = async (itemId: string) => {
-    setLotLoadingMap((prev) => ({ ...prev, [itemId]: true }))
-    try {
-      const data = await getLotStockByItems([itemId], tenantId)
-      setLotStockMap((prev) => ({ ...prev, [itemId]: data[itemId] ?? [] }))
-    } catch {
-      setLotStockMap((prev) => ({ ...prev, [itemId]: [] }))
-    } finally {
-      setLotLoadingMap((prev) => ({ ...prev, [itemId]: false }))
-    }
-  }
-
   const handleWarehouseChange = (itemId: string, nextWarehouseId: string) => {
     setWarehouseMap((prev) => ({ ...prev, [itemId]: nextWarehouseId }))
   }
@@ -151,7 +179,7 @@ export function IssueFormDialog({
     if (!nextOpen) {
       setWarehouseMap({})
       setQtyMap({})
-      setLotMap({})
+      setLotSplitsMap({})
       setLotStockMap({})
       setLotLoadingMap({})
     }
@@ -161,16 +189,15 @@ export function IssueFormDialog({
   function getEffectiveStock(
     material: (typeof pendingMaterials)[number],
     selectedWarehouseId: string,
-    selectedLot: LotStockOption | null,
   ): number {
-    if (isLotManaged(material.item)) {
-      return selectedLot?.qtyAvailable ?? 0
-    }
-    const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === selectedWarehouseId)
+    const selectedWarehouse = warehouses.find((wh) => wh.id === selectedWarehouseId)
     return selectedWarehouse?.itemStocks[material.itemId] ?? 0
   }
 
+  // ── 제출 ─────────────────────────────────────────────────────────────────────
+
   const handleSubmit = () => {
+    // 비LOT 창고 누락 검증
     const missingWarehouses = pendingMaterials.filter(
       (material) =>
         !isLotManaged(material.item) &&
@@ -178,36 +205,78 @@ export function IssueFormDialog({
         !warehouseMap[material.itemId],
     )
     if (missingWarehouses.length > 0) {
-      alert(`다음 원자재의 출고 창고를 선택해 주세요.\n${missingWarehouses.map((material) => material.item.name).join("\n")}`)
+      alert(`다음 원자재의 출고 창고를 선택해 주세요.\n${missingWarehouses.map((m) => m.item.name).join("\n")}`)
       return
     }
 
-    const missingLots = pendingMaterials.filter(
-      (material) => isLotManaged(material.item) && Number(qtyMap[material.itemId] ?? 0) > 0 && !lotMap[material.itemId],
-    )
-    if (missingLots.length > 0) {
-      alert(`다음 LOT 관리 품목의 LOT를 선택해 주세요.\n${missingLots.map((material) => material.item.name).join("\n")}`)
-      return
+    // LOT 분할행 검증
+    for (const material of pendingMaterials) {
+      if (!isLotManaged(material.item)) continue
+      const splits = getLotSplits(material.itemId)
+      const total = getLotSplitTotal(material.itemId)
+      if (total === 0) continue
+
+      // 모든 수량 > 0 행에 LOT 선택 필요
+      const missingSplitLot = splits.some((r) => Number(r.qty) > 0 && !r.lotValue)
+      if (missingSplitLot) {
+        alert(`${material.item.name}: 수량이 입력된 LOT 행에 LOT를 선택해 주세요.`)
+        return
+      }
+
+      // 중복 LOT 차단: 창고가 달라도 같은 lotId는 한 자재 내 1회만 허용
+      const selectedLotIds = splits
+        .filter((r) => r.lotValue && Number(r.qty) > 0)
+        .map((r) => getLotFromSplitRow(material.itemId, r)?.lotId)
+        .filter((lotId): lotId is string => Boolean(lotId))
+      if (new Set(selectedLotIds).size !== selectedLotIds.length) {
+        alert(`${material.item.name}: 동일한 LOT를 중복 선택할 수 없습니다.`)
+        return
+      }
+
+      // 각 분할행 재고 초과 검증
+      for (const row of splits) {
+        if (!row.lotValue || !(Number(row.qty) > 0)) continue
+        const lot = getLotFromSplitRow(material.itemId, row)
+        if (lot && Number(row.qty) > lot.qtyAvailable) {
+          alert(`${material.item.name} / ${lot.lotNo}: 출고수량(${row.qty})이 LOT 가용재고(${lot.qtyAvailable})를 초과합니다.`)
+          return
+        }
+      }
     }
 
     try {
       const items = pendingMaterials.map((material) => {
-        const issueQty = Number(qtyMap[material.itemId] ?? 0)
-        const selectedLot = isLotManaged(material.item) ? getSelectedLot(material.itemId) : null
-        const selectedWarehouseId = isLotManaged(material.item)
-          ? (selectedLot?.warehouseId ?? "")
-          : (warehouseMap[material.itemId] ?? "")
-        const selectedLotId = selectedLot?.lotId ?? null
-        const stock = getEffectiveStock(material, selectedWarehouseId, selectedLot)
+        if (isLotManaged(material.item)) {
+          const activeSplits = getLotSplits(material.itemId).filter(
+            (r) => r.lotValue && Number(r.qty) > 0
+          )
+          const lots = activeSplits.map((row) => {
+            const lotStock = getLotFromSplitRow(material.itemId, row)!
+            return {
+              lotId: lotStock.lotId,
+              warehouseId: lotStock.warehouseId,
+              quantity: Number(row.qty),
+            }
+          })
+          const totalIssueQty = lots.reduce((s, l) => s + l.quantity, 0)
+          return {
+            itemId: material.itemId,
+            issueQty: totalIssueQty,
+            lots,
+            requiredQty: material.requiredQty,
+            reservationId: material.reservationId,
+          }
+        }
 
+        const issueQty = Number(qtyMap[material.itemId] ?? 0)
+        const selectedWarehouseId = warehouseMap[material.itemId] ?? ""
+        const stock = getEffectiveStock(material, selectedWarehouseId)
         if (issueQty > stock) {
           throw new Error(`${material.item.name}: 출고 수량(${issueQty})이 재고(${stock})를 초과합니다.`)
         }
-
         return {
           itemId: material.itemId,
           warehouseId: selectedWarehouseId,
-          lotId: selectedLotId,
           issueQty,
           requiredQty: material.requiredQty,
           reservationId: material.reservationId,
@@ -216,11 +285,7 @@ export function IssueFormDialog({
 
       startTransition(async () => {
         const result = await issueMaterialsForWorkOrder(
-          {
-            workOrderId: workOrder.id,
-            siteId: workOrder.site.id,
-            items,
-          },
+          { workOrderId: workOrder.id, siteId: workOrder.site.id, items },
           tenantId,
         )
         if (!result.ok) {
@@ -235,26 +300,40 @@ export function IssueFormDialog({
     }
   }
 
+  // ── 재고 초과 경고 ───────────────────────────────────────────────────────────
+
   const hasOverStock = pendingMaterials.some((material) => {
+    if (isLotManaged(material.item)) {
+      return getLotSplits(material.itemId).some((row) => {
+        const lot = getLotFromSplitRow(material.itemId, row)
+        return lot != null && Number(row.qty) > lot.qtyAvailable
+      })
+    }
     const selectedWarehouseId = warehouseMap[material.itemId] ?? ""
-    const selectedLot = isLotManaged(material.item) ? getSelectedLot(material.itemId) : null
-    if (isLotManaged(material.item) && !selectedLot) return false
-    return getEffectiveStock(material, selectedWarehouseId, selectedLot) < Number(qtyMap[material.itemId] ?? 0)
+    return getEffectiveStock(material, selectedWarehouseId) < Number(qtyMap[material.itemId] ?? 0)
   })
 
-  const selectedLotSummaries = pendingMaterials
-    .map((material) => {
-      const lotStock = getSelectedLot(material.itemId)
-      if (!lotStock) return null
-      return {
-        itemName: material.item.name,
-        lotNo: lotStock.lotNo,
-        warehouseName: `[${lotStock.warehouseCode}] ${lotStock.warehouseName}`,
-        qty: Number(qtyMap[material.itemId] ?? 0),
-        unit: lotStock.unit,
-      }
-    })
-    .filter((summary): summary is { itemName: string; lotNo: string; warehouseName: string; qty: number; unit: string } => summary != null)
+  // ── 연결 LOT 요약 (blue box) ─────────────────────────────────────────────────
+
+  const selectedLotSummaries = pendingMaterials.flatMap((material) => {
+    if (!isLotManaged(material.item)) return []
+    return getLotSplits(material.itemId)
+      .filter((row) => row.lotValue && Number(row.qty) > 0)
+      .map((row) => {
+        const lot = getLotFromSplitRow(material.itemId, row)
+        if (!lot) return null
+        return {
+          itemName: material.item.name,
+          lotNo: lot.lotNo,
+          warehouseName: `[${lot.warehouseCode}] ${lot.warehouseName}`,
+          qty: Number(row.qty),
+          unit: lot.unit,
+        }
+      })
+      .filter((s): s is { itemName: string; lotNo: string; warehouseName: string; qty: number; unit: string } => s !== null)
+  })
+
+  // ── 렌더 ─────────────────────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={handleOpen}>
@@ -316,26 +395,207 @@ export function IssueFormDialog({
                 </div>
 
                 {pendingMaterials.map((material) => {
-                  const selectedLot = isLotManaged(material.item) ? getSelectedLot(material.itemId) : null
-                  const selectedWarehouseId = isLotManaged(material.item)
-                    ? (selectedLot?.warehouseId ?? "")
-                    : (warehouseMap[material.itemId] ?? "")
-                  const selectedLotId = selectedLot?.lotId ?? null
-                  const stock = getEffectiveStock(material, selectedWarehouseId, selectedLot)
-                  const issueQty = Number(qtyMap[material.itemId] ?? 0)
-                  const isOverStock = isLotManaged(material.item) && !selectedLot ? false : issueQty > stock
-                  const isHighlighted = highlightedItemId === material.itemId
                   const lotOptions = lotStockMap[material.itemId] ?? []
                   const lotLoading = lotLoadingMap[material.itemId] ?? false
-                  const warehouseMissing = !isLotManaged(material.item) && issueQty > 0 && !selectedWarehouseId
-                  const lotMissing = isLotManaged(material.item) && issueQty > 0 && !selectedLotId
+                  const isHighlighted = highlightedItemId === material.itemId
+
+                  if (isLotManaged(material.item)) {
+                    // ── LOT 관리 품목 ─────────────────────────────────────────
+                    const splits = getLotSplits(material.itemId)
+                    const splitTotal = getLotSplitTotal(material.itemId)
+                    const isTotalMismatch = splitTotal > 0 && Math.abs(splitTotal - material.pendingQty) > 0.001
+                    const isAnyOverStock = splits.some((row) => {
+                      const lot = getLotFromSplitRow(material.itemId, row)
+                      return lot != null && Number(row.qty) > lot.qtyAvailable
+                    })
+                    const connectedLots = splits
+                      .filter((r) => r.lotValue)
+                      .map((r) => getLotFromSplitRow(material.itemId, r)?.lotNo)
+                      .filter(Boolean)
+                      .join(", ")
+
+                    return (
+                      <div
+                        key={material.itemId}
+                        ref={(el) => { rowRefs.current[material.itemId] = el }}
+                        className={`grid min-w-[940px] grid-cols-[minmax(260px,1fr)_170px_90px_90px_90px_110px_130px] items-start border-b transition-colors duration-300 last:border-0 ${
+                          isHighlighted ? "border-green-300 bg-green-50" : "hover:bg-muted/10"
+                        }`}
+                      >
+                        {/* 소재명 + LOT 분할 행 */}
+                        <div className="px-3 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[14px] font-medium">{material.item.name}</span>
+                            <span className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[11px] font-medium text-blue-700">
+                              <Tag className="h-3 w-3" />
+                              LOT
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[13px] text-muted-foreground">
+                            <span className="font-mono">{material.item.code}</span>
+                            <span className="mx-1">/</span>
+                            <span>{material.item.spec ?? "규격 없음"}</span>
+                            <span className="mx-1">/</span>
+                            <span>{material.item.uom}</span>
+                          </div>
+
+                          {/* LOT 분할 행 목록 */}
+                          <div className="mt-2 space-y-1.5">
+                            {splits.map((row) => {
+                              const rowLot = getLotFromSplitRow(material.itemId, row)
+                              const rowQty = Number(row.qty) || 0
+                              const rowOverStock = rowLot != null && rowQty > rowLot.qtyAvailable
+                              const rowLotMissing = rowQty > 0 && !row.lotValue
+                              // 이 품목의 다른 행에서 이미 선택된 lotId 세트
+                              const usedLotIds = new Set(
+                                splits
+                                  .filter((r) => r.key !== row.key && r.lotValue)
+                                  .map((r) => getLotFromSplitRow(material.itemId, r)?.lotId)
+                                  .filter((lotId): lotId is string => Boolean(lotId))
+                              )
+
+                              return (
+                                <div key={row.key} className="flex items-start gap-1.5">
+                                  {/* LOT 선택 */}
+                                  <div className="flex-1">
+                                    <Select
+                                      value={row.lotValue}
+                                      onValueChange={(v) => updateLotSplitRow(material.itemId, row.key, "lotValue", v)}
+                                      disabled={lotLoading}
+                                    >
+                                      <SelectTrigger className={`h-8 w-full text-[13px] ${rowLotMissing ? "border-amber-400 ring-amber-200" : ""}`}>
+                                        <SelectValue placeholder={lotLoading ? "조회 중..." : "LOT 선택"} />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {lotOptions.length > 0 ? (
+                                          lotOptions
+                                            .filter((l) => {
+                                              const val = getLotSelectValue(l)
+                                              return val === row.lotValue || !usedLotIds.has(l.lotId)
+                                            })
+                                            .map((lotStock) => (
+                                              <SelectItem key={getLotSelectValue(lotStock)} value={getLotSelectValue(lotStock)} className="text-[13px]">
+                                                {lotStock.lotNo} / [{lotStock.warehouseCode}] / 가용 {lotStock.qtyAvailable.toLocaleString()} {lotStock.unit}
+                                              </SelectItem>
+                                            ))
+                                        ) : (
+                                          <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
+                                            {lotLoading ? "조회 중..." : "가용 LOT 없음"}
+                                          </div>
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                    {rowLot && (
+                                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                        [{rowLot.warehouseCode}] {rowLot.warehouseName} · 가용 {rowLot.qtyAvailable.toLocaleString()}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* 수량 입력 */}
+                                  <div className="w-24">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.001}
+                                      value={row.qty}
+                                      onChange={(e) => updateLotSplitRow(material.itemId, row.key, "qty", e.target.value)}
+                                      className={`h-8 text-right text-[13px] ${rowOverStock ? "border-red-400 focus-visible:ring-red-400" : ""}`}
+                                      placeholder="수량"
+                                    />
+                                    {rowOverStock && (
+                                      <p className="mt-0.5 text-[11px] text-red-600 flex items-center gap-0.5">
+                                        <AlertCircle className="h-3 w-3" />재고 초과
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* 행 삭제 버튼 */}
+                                  {splits.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeLotSplit(material.itemId, row.key)}
+                                      className="mt-1 text-muted-foreground hover:text-red-500 transition-colors"
+                                      title="행 삭제"
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
+
+                            {/* LOT 추가 버튼 */}
+                            <button
+                              type="button"
+                              onClick={() => addLotSplit(material.itemId)}
+                              className="flex items-center gap-1 text-[12px] text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              LOT 추가
+                            </button>
+
+                            {/* 합계 표시 */}
+                            {splitTotal > 0 && (
+                              <p className={`text-[12px] font-medium ${isTotalMismatch ? "text-amber-700" : "text-emerald-700"}`}>
+                                합계: {splitTotal.toLocaleString()} / 필요 {material.pendingQty.toLocaleString()} {material.item.uom}
+                                {isTotalMismatch && " ⚠ 불일치"}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 출고창고 */}
+                        <div className="px-3 py-2.5">
+                          <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-[13px]">
+                            <div className="text-muted-foreground">LOT 선택으로 자동 지정</div>
+                          </div>
+                        </div>
+
+                        {/* 필요수량 */}
+                        <div className="px-3 py-2.5 text-right text-[14px]">
+                          {material.requiredQty.toLocaleString()}
+                        </div>
+
+                        {/* 재고 (LOT별 — 분할 행에서 확인) */}
+                        <div className="px-3 py-2.5 text-right">
+                          <span className="text-[13px] text-muted-foreground">LOT별</span>
+                        </div>
+
+                        {/* 기출고 */}
+                        <div className="px-3 py-2.5 text-right text-[14px] text-muted-foreground">
+                          {material.issuedQty.toLocaleString()}
+                        </div>
+
+                        {/* 출고수량 (합계, 읽기 전용) */}
+                        <div className="px-3 py-2.5 text-right">
+                          <span className={`text-[14px] font-medium ${isAnyOverStock ? "text-red-600" : isTotalMismatch && splitTotal > 0 ? "text-amber-700" : ""}`}>
+                            {splitTotal > 0 ? splitTotal.toLocaleString() : "-"}
+                          </span>
+                          {splitTotal > 0 && <div className="text-[11px] text-muted-foreground">LOT별 합산</div>}
+                        </div>
+
+                        {/* 연결 LOT */}
+                        <div className="px-3 py-2.5 text-right">
+                          <span className="font-mono text-[12px] text-blue-700 leading-5 break-all">
+                            {connectedLots || "-"}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  // ── 비LOT 품목 (기존 동작 유지) ──────────────────────────────
+                  const selectedWarehouseId = warehouseMap[material.itemId] ?? ""
+                  const stock = getEffectiveStock(material, selectedWarehouseId)
+                  const issueQty = Number(qtyMap[material.itemId] ?? 0)
+                  const isOverStock = issueQty > stock
+                  const warehouseMissing = issueQty > 0 && !selectedWarehouseId
 
                   return (
                     <div
                       key={material.itemId}
-                      ref={(element) => {
-                        rowRefs.current[material.itemId] = element
-                      }}
+                      ref={(el) => { rowRefs.current[material.itemId] = el }}
                       className={`grid min-w-[940px] grid-cols-[minmax(260px,1fr)_170px_90px_90px_90px_110px_130px] items-start border-b transition-colors duration-300 last:border-0 ${
                         isHighlighted ? "border-green-300 bg-green-50" : "hover:bg-muted/10"
                       }`}
@@ -343,12 +603,6 @@ export function IssueFormDialog({
                       <div className="px-3 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[14px] font-medium">{material.item.name}</span>
-                          {isLotManaged(material.item) && (
-                            <span className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[11px] font-medium text-blue-700">
-                              <Tag className="h-3 w-3" />
-                              LOT
-                            </span>
-                          )}
                         </div>
                         <div className="mt-0.5 text-[13px] text-muted-foreground">
                           <span className="font-mono">{material.item.code}</span>
@@ -357,84 +611,29 @@ export function IssueFormDialog({
                           <span className="mx-1">/</span>
                           <span>{material.item.uom}</span>
                         </div>
-
-                        {isLotManaged(material.item) && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-[13px] text-muted-foreground">
-                              LOT를 선택하면 해당 LOT가 보관된 창고에서 자동 출고됩니다.
-                            </p>
-                            <Select
-                                value={lotMap[material.itemId] ?? ""}
-                                onValueChange={(value) =>
-                                  setLotMap((prev) => ({ ...prev, [material.itemId]: value }))
-                                }
-                                disabled={lotLoading}
-                              >
-                                <SelectTrigger className={`h-8 w-full text-[13px] ${lotMissing ? "border-amber-400 ring-amber-200" : ""}`}>
-                                  <SelectValue placeholder={lotLoading ? "조회 중..." : "LOT 선택 (필수)"} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {lotOptions.length > 0 ? (
-                                    lotOptions.map((lotStock) => (
-                                      <SelectItem key={getLotSelectValue(lotStock)} value={getLotSelectValue(lotStock)} className="text-[13px]">
-                                        {lotStock.lotNo} / [{lotStock.warehouseCode}] {lotStock.warehouseName} / 가용 {lotStock.qtyAvailable.toLocaleString()} {lotStock.unit}
-                                      </SelectItem>
-                                    ))
-                                  ) : (
-                                    <div className="px-2 py-1.5 text-[13px] text-muted-foreground">
-                                      {lotLoading ? "조회 중..." : "가용 LOT 없음"}
-                                    </div>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            {lotMissing && (
-                              <p className="mt-0.5 flex items-center gap-1 text-[12px] text-amber-600">
-                                <AlertCircle className="h-3 w-3" />
-                                LOT를 선택해야 출고할 수 있습니다.
-                              </p>
-                            )}
-                          </div>
-                        )}
                       </div>
 
                       <div className="px-3 py-2.5">
-                        {isLotManaged(material.item) ? (
-                          <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-[13px]">
-                            {selectedLot ? (
-                              <>
-                                <div className="font-medium">[{selectedLot.warehouseCode}] {selectedLot.warehouseName}</div>
-                                <div className="mt-0.5 text-muted-foreground">LOT 선택으로 자동 지정</div>
-                              </>
-                            ) : (
-                              <span className="text-muted-foreground">LOT 선택 필요</span>
-                            )}
-                          </div>
-                        ) : (
-                          <>
-                            <p className="mb-1 text-[13px] text-muted-foreground">
-                              기본 출고창고가 자동 선택되며 필요 시 변경할 수 있습니다.
-                            </p>
-                            <Select
-                              value={selectedWarehouseId}
-                              onValueChange={(value) => handleWarehouseChange(material.itemId, value)}
-                            >
-                              <SelectTrigger className={`h-8 text-[13px] ${warehouseMissing ? "border-amber-400 ring-amber-200" : ""}`}>
-                                <SelectValue placeholder="창고 선택" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {warehouses.map((warehouse) => (
-                                  <SelectItem key={warehouse.id} value={warehouse.id} className="text-[13px]">
-                                    [{warehouse.code}] {warehouse.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {warehouseMissing && (
-                              <p className="mt-1 text-[12px] text-amber-600">
-                                출고창고를 선택해 주세요.
-                              </p>
-                            )}
-                          </>
+                        <p className="mb-1 text-[13px] text-muted-foreground">
+                          기본 출고창고가 자동 선택되며 필요 시 변경할 수 있습니다.
+                        </p>
+                        <Select
+                          value={selectedWarehouseId}
+                          onValueChange={(value) => handleWarehouseChange(material.itemId, value)}
+                        >
+                          <SelectTrigger className={`h-8 text-[13px] ${warehouseMissing ? "border-amber-400 ring-amber-200" : ""}`}>
+                            <SelectValue placeholder="창고 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {warehouses.map((warehouse) => (
+                              <SelectItem key={warehouse.id} value={warehouse.id} className="text-[13px]">
+                                [{warehouse.code}] {warehouse.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {warehouseMissing && (
+                          <p className="mt-1 text-[12px] text-amber-600">출고창고를 선택해 주세요.</p>
                         )}
                       </div>
 
@@ -443,9 +642,6 @@ export function IssueFormDialog({
                       </div>
                       <div className={`px-3 py-2.5 text-right text-[14px] font-medium ${stock < material.pendingQty ? "text-red-600" : "text-green-700"}`}>
                         {stock.toLocaleString()}
-                        {isLotManaged(material.item) && selectedLotId && (
-                          <div className="text-[11px] font-normal text-muted-foreground">LOT 잔량</div>
-                        )}
                       </div>
                       <div className="px-3 py-2.5 text-right text-[14px] text-muted-foreground">
                         {material.issuedQty.toLocaleString()}
@@ -459,10 +655,7 @@ export function IssueFormDialog({
                             step={0.001}
                             value={qtyMap[material.itemId] ?? ""}
                             onChange={(event) =>
-                              setQtyMap((prev) => ({
-                                ...prev,
-                                [material.itemId]: event.target.value,
-                              }))
+                              setQtyMap((prev) => ({ ...prev, [material.itemId]: event.target.value }))
                             }
                             className={`h-8 pr-2 text-right text-[13px] ${isOverStock ? "border-red-400 focus-visible:ring-red-400" : ""}`}
                           />
@@ -472,9 +665,7 @@ export function IssueFormDialog({
                         </div>
                       </div>
                       <div className="px-3 py-2.5 text-right">
-                        <span className="font-mono text-[13px] text-blue-700">
-                          {selectedLot?.lotNo ?? "-"}
-                        </span>
+                        <span className="font-mono text-[13px] text-blue-700">-</span>
                       </div>
                     </div>
                   )
@@ -489,8 +680,8 @@ export function IssueFormDialog({
                 제조번호에 연결될 자재 LOT
               </p>
               <div className="mt-2 grid gap-1 text-[13px] text-blue-900 md:grid-cols-2">
-                {selectedLotSummaries.map((summary) => (
-                  <div key={`${summary.itemName}-${summary.lotNo}`}>
+                {selectedLotSummaries.map((summary, idx) => (
+                  <div key={`${summary.itemName}-${summary.lotNo}-${idx}`}>
                     {summary.itemName} / <span className="font-mono">{summary.lotNo}</span> / {summary.warehouseName} / {summary.qty.toLocaleString()} {summary.unit}
                   </div>
                 ))}
@@ -536,7 +727,9 @@ export function IssueFormDialog({
         items={pendingMaterials.map((material) => ({
           itemCode: material.item.code,
           itemName: material.item.name,
-          quantity: Number(qtyMap[material.itemId] ?? material.pendingQty),
+          quantity: isLotManaged(material.item)
+            ? getLotSplitTotal(material.itemId)
+            : Number(qtyMap[material.itemId] ?? material.pendingQty),
           uom: material.item.uom,
         }))}
       />

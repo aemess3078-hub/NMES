@@ -54,11 +54,23 @@ export type IssueMaterialInput = {
   items: {
     itemId: string
     warehouseId?: string
-    lotId?: string | null      // LOT 관리 품목은 필수, 비관리 품목은 null/undefined
-    issueQty: number
+    lotId?: string | null      // LOT 관리 품목 단일 LOT (backward compat)
+    lots?: { lotId: string; warehouseId: string; quantity: number }[]  // 다중 LOT 분할 출고
+    issueQty: number           // lots 사용 시 합계와 일치해야 함
     requiredQty: number
     reservationId: string | null
   }[]
+}
+
+const QUANTITY_SCALE = 1_000_000
+
+function toScaledQuantity(value: number): bigint | null {
+  if (!Number.isFinite(value)) return null
+
+  const scaled = Math.round(value * QUANTITY_SCALE)
+  if (Math.abs(value - scaled / QUANTITY_SCALE) > 1e-9) return null
+
+  return BigInt(scaled)
 }
 
 // ─── 자재출고 대상 WorkOrder 조회 ─────────────────────────────────────────────
@@ -227,10 +239,75 @@ export async function issueMaterialsForWorkOrder(
   const activeItems = data.items.filter((i) => i.issueQty > 0)
   if (activeItems.length === 0)
     return { ok: false, error: "출고 수량을 입력하세요." }
+  if (activeItems.some((item) => !Number.isFinite(item.issueQty))) {
+    return { ok: false, error: "출고 수량이 올바르지 않습니다." }
+  }
+
+  // ── 다중 LOT 검증 (트랜잭션 전) ─────────────────────────────────────────────
+  for (const item of activeItems) {
+    if (!item.lots || item.lots.length === 0) continue
+    const lotIds = item.lots.map((l) => l.lotId)
+    if (new Set(lotIds).size !== lotIds.length) {
+      return { ok: false, error: "동일 LOT가 중복 선택되었습니다." }
+    }
+    const issueQtyScaled = toScaledQuantity(item.issueQty)
+    if (issueQtyScaled === null || issueQtyScaled <= BigInt(0)) {
+      return { ok: false, error: "출고 수량이 올바르지 않습니다." }
+    }
+    let sumQtyScaled = BigInt(0)
+    for (const lot of item.lots) {
+      if (!lot.warehouseId) {
+        return { ok: false, error: "LOT 출고 창고가 누락되었습니다." }
+      }
+      const lotQtyScaled = toScaledQuantity(lot.quantity)
+      if (lotQtyScaled === null || lotQtyScaled <= BigInt(0)) {
+        return { ok: false, error: "LOT별 출고 수량은 0보다 커야 합니다." }
+      }
+      sumQtyScaled += lotQtyScaled
+    }
+    if (sumQtyScaled !== issueQtyScaled) {
+      const sumQty = Number(sumQtyScaled) / QUANTITY_SCALE
+      return {
+        ok: false,
+        error: `LOT 수량 합계(${sumQty})가 출고수량(${item.issueQty})과 일치하지 않습니다.`,
+      }
+    }
+  }
+
+  // ── 다중 LOT 항목을 LOT별 단일 항목으로 전개 ───────────────────────────────
+  type ExpandedItem = {
+    itemId: string
+    warehouseId?: string
+    lotId: string | null
+    issueQty: number
+    requiredQty: number
+    reservationId: string | null
+  }
+  const expandedItems: ExpandedItem[] = activeItems.flatMap((item) => {
+    if (item.lots && item.lots.length > 0) {
+      return item.lots.map((lot) => ({
+        itemId: item.itemId,
+        warehouseId: lot.warehouseId,
+        lotId: lot.lotId,
+        issueQty: lot.quantity,
+        requiredQty: item.requiredQty,
+        reservationId: item.reservationId,
+      }))
+    }
+    return [{
+      itemId: item.itemId,
+      warehouseId: item.warehouseId,
+      lotId: item.lotId ?? null,
+      issueQty: item.issueQty,
+      requiredQty: item.requiredQty,
+      reservationId: item.reservationId,
+    }]
+  })
 
   // LOT 관리 여부 일괄 조회 (트랜잭션 외부 — 읽기 전용)
+  const uniqueItemIds = Array.from(new Set(expandedItems.map((i) => i.itemId)))
   const itemRecords = await prisma.item.findMany({
-    where: { id: { in: activeItems.map((i) => i.itemId) } },
+    where: { id: { in: uniqueItemIds } },
     select: { id: true, code: true, uom: true, isLotTracked: true },
   })
   const itemMetaMap = new Map(itemRecords.map((r) => [r.id, r]))
@@ -266,14 +343,14 @@ export async function issueMaterialsForWorkOrder(
     )
   }
 
-  // txNo 사전 생성 (트랜잭션 외부) — 한 번만 count 조회하여 중복 방지
+  // txNo 사전 생성 (트랜잭션 외부) — LOT별로 전개된 expandedItems 기준
   const txNos: string[] = []
-  if (activeItems.length > 0) {
+  if (expandedItems.length > 0) {
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
     const baseCount = await prisma.inventoryTransaction.count({
       where: { tenantId, txNo: { startsWith: `ISS-${today}` } },
     })
-    for (let i = 0; i < activeItems.length; i++) {
+    for (let i = 0; i < expandedItems.length; i++) {
       txNos.push(`ISS-${today}-${String(baseCount + i + 1).padStart(4, "0")}`)
     }
   }
@@ -327,8 +404,8 @@ export async function issueMaterialsForWorkOrder(
 
       let firstTxId: string | null = null
 
-      for (let i = 0; i < activeItems.length; i++) {
-        const item = activeItems[i]
+      for (let i = 0; i < expandedItems.length; i++) {
+        const item = expandedItems[i]
         const txNo = txNos[i]
         const meta = itemMetaMap.get(item.itemId)
         let warehouseId = item.warehouseId ?? data.warehouseId
@@ -350,20 +427,27 @@ export async function issueMaterialsForWorkOrder(
             )
           }
           lotId = item.lotId
-          const lotBalances = await tx.inventoryBalance.findMany({
-            where: {
-              tenantId,
-              itemId: item.itemId,
-              lotId,
-            },
-            orderBy: { qtyAvailable: "desc" },
-          })
-          balance =
-            lotBalances.find((candidate) => candidate.warehouseId === warehouseId) ??
-            lotBalances.find((candidate) => Number(candidate.qtyOnHand) >= item.issueQty) ??
-            lotBalances[0] ??
-            null
-          warehouseId = balance?.warehouseId
+          if (warehouseId) {
+            balance = await tx.inventoryBalance.findFirst({
+              where: {
+                tenantId,
+                itemId: item.itemId,
+                lotId,
+                warehouseId,
+              },
+            })
+          } else {
+            balance = await tx.inventoryBalance.findFirst({
+              where: {
+                tenantId,
+                itemId: item.itemId,
+                lotId,
+                qtyAvailable: { gte: item.issueQty },
+              },
+              orderBy: { qtyAvailable: "desc" },
+            })
+            warehouseId = balance?.warehouseId
+          }
         }
         // 비LOT 품목: lotId = null (partial unique index가 단일 row를 보장)
 
@@ -387,6 +471,13 @@ export async function issueMaterialsForWorkOrder(
         }
 
         const resolvedWarehouseId = balance.warehouseId
+        const availableQty = Number(balance.qtyAvailable)
+        if (availableQty < item.issueQty) {
+          const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
+          throw new Error(
+            `가용재고 부족: ${meta?.code ?? item.itemId}${lotInfo} — 가용재고 ${availableQty}, 출고 요청 ${item.issueQty}`
+          )
+        }
         const newQty = Number(balance.qtyOnHand) - item.issueQty
         if (newQty < 0) {
           const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
