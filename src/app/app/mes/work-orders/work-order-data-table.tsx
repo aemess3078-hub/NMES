@@ -17,7 +17,7 @@ interface WorkOrderDataTableProps {
   data: WorkOrderWithDetails[]
   sites: { id: string; code: string; name: string; type: string }[]
   items: { id: string; code: string; name: string; itemType: string }[]
-  equipments: { id: string; code: string; name: string; equipmentType: string }[]
+  equipments: { id: string; code: string; name: string; equipmentType: string; workCenterId: string }[]
   tenantId: string
 }
 
@@ -50,6 +50,16 @@ function getOperationDateTime(operation: WorkOrderWithDetails["operations"][numb
   return formatDateTime(startedAt)
 }
 
+function getOperationEquipmentLabel(operation: WorkOrderWithDetails["operations"][number]): string {
+  if (operation.assignments.length > 1) {
+    return `${operation.assignments[0].equipment.name} 외 ${operation.assignments.length - 1}대`
+  }
+  if (operation.assignments.length === 1) {
+    return operation.assignments[0].equipment.name
+  }
+  return operation.equipment?.name ?? "-"
+}
+
 function OperationStatusBadge({ status }: { status: string }) {
   const config = operationStatusConfig[status]
   return (
@@ -75,11 +85,12 @@ function WorkOrderExpandedRow({ workOrder }: { workOrder: WorkOrderWithDetails }
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-[14px]">
+            <table className="w-full min-w-[720px] text-[14px]">
               <thead>
                 <tr className="border-b bg-slate-50 text-[13px] text-muted-foreground">
                   <th className="px-4 py-2 text-left font-medium">순서</th>
                   <th className="px-4 py-2 text-left font-medium">공정명</th>
+                  <th className="px-4 py-2 text-left font-medium">설비</th>
                   <th className="px-4 py-2 text-left font-medium">상태</th>
                   <th className="px-4 py-2 text-right font-medium">계획수량</th>
                   <th className="px-4 py-2 text-right font-medium">완료수량</th>
@@ -92,6 +103,9 @@ function WorkOrderExpandedRow({ workOrder }: { workOrder: WorkOrderWithDetails }
                     <td className="px-4 py-2.5 text-muted-foreground">{operation.seq}</td>
                     <td className="px-4 py-2.5 font-medium">
                       {displayProcessName(operation.routingOperation.name)}
+                    </td>
+                    <td className="px-4 py-2.5 text-[13px] text-muted-foreground">
+                      {getOperationEquipmentLabel(operation)}
                     </td>
                     <td className="px-4 py-2.5">
                       <OperationStatusBadge status={operation.status} />

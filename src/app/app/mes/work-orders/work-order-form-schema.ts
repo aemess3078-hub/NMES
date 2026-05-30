@@ -6,6 +6,15 @@ export const workOrderOperationFormSchema = z.object({
   equipmentId: z.string().optional().nullable(),
   seq: z.number().int().positive(),
   plannedQty: z.number().positive("계획수량은 양수여야 합니다"),
+  assignments: z
+    .array(
+      z.object({
+        equipmentId: z.string().min(1, "설비를 선택하세요"),
+        assignedQty: z.number().positive("배정수량은 0보다 커야 합니다."),
+      })
+    )
+    .optional()
+    .default([]),
 })
 
 export const workOrderFormSchema = z.object({

@@ -55,7 +55,7 @@ interface WorkOrderFormSheetProps {
   workOrder?: WorkOrderWithDetails | null
   sites: { id: string; code: string; name: string; type: string }[]
   items: { id: string; code: string; name: string; itemType: string }[]
-  equipments: { id: string; code: string; name: string; equipmentType: string }[]
+  equipments: { id: string; code: string; name: string; equipmentType: string; workCenterId: string }[]
   tenantId: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -152,6 +152,10 @@ export function WorkOrderFormSheet({
         equipmentId: op.equipmentId ?? null,
         seq: op.seq,
         plannedQty: Number(op.plannedQty),
+        assignments: op.assignments.map((assignment) => ({
+          equipmentId: assignment.equipmentId,
+          assignedQty: Number(assignment.assignedQty),
+        })),
       }))
       // edit 모드에서 기존 공정 수량은 DB 값을 유지 (수동 편집으로 취급)
       manuallyEditedOps.current.clear()
@@ -216,6 +220,7 @@ export function WorkOrderFormSheet({
           equipmentId: null,
           seq: op.seq,
           plannedQty: plannedQty,
+          assignments: [],
         }))
       )
     } else {
@@ -261,6 +266,63 @@ export function WorkOrderFormSheet({
       }
     })
   }, [watchedPlannedQty]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const watchedOperations = form.watch("operations")
+
+  const getOperationMeta = (index: number) => {
+    const operationId = form.watch(`operations.${index}.routingOperationId`)
+    const selectedOperation = availableOperations.find((op) => op.id === operationId)
+    const fallbackOperation = workOrder?.operations[index]?.routingOperation
+
+    return {
+      id: operationId,
+      name: selectedOperation?.name ?? fallbackOperation?.name ?? "-",
+      workCenterId: selectedOperation?.workCenter?.id ?? null,
+    }
+  }
+
+  const getAssignments = (index: number) =>
+    form.getValues(`operations.${index}.assignments`) ?? []
+
+  const getAssignmentTotal = (index: number) =>
+    getAssignments(index).reduce(
+      (sum, assignment) => sum + Number(assignment.assignedQty || 0),
+      0
+    )
+
+  const getAvailableEquipmentsForOperation = (index: number) => {
+    const workCenterId = getOperationMeta(index).workCenterId
+    if (!workCenterId) return equipments
+    return equipments.filter((equipment) => equipment.workCenterId === workCenterId)
+  }
+
+  const addAssignment = (operationIndex: number) => {
+    const assignments = getAssignments(operationIndex)
+    const plannedQty = Number(form.getValues(`operations.${operationIndex}.plannedQty`) || 0)
+    const assignedTotal = getAssignmentTotal(operationIndex)
+    const remainingQty = Math.max(plannedQty - assignedTotal, 0)
+
+    form.setValue(
+      `operations.${operationIndex}.assignments`,
+      [
+        ...assignments,
+        {
+          equipmentId: "",
+          assignedQty: remainingQty > 0 ? remainingQty : 1,
+        },
+      ],
+      { shouldDirty: true, shouldValidate: true }
+    )
+  }
+
+  const removeAssignment = (operationIndex: number, assignmentIndex: number) => {
+    const assignments = getAssignments(operationIndex)
+    form.setValue(
+      `operations.${operationIndex}.assignments`,
+      assignments.filter((_, index) => index !== assignmentIndex),
+      { shouldDirty: true, shouldValidate: true }
+    )
+  }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -451,6 +513,7 @@ export function WorkOrderFormSheet({
                     equipmentId: null,
                     seq: fields.length + 1,
                     plannedQty: form.getValues("plannedQty") || 1,
+                    assignments: [],
                   })
                 }
               >
@@ -563,62 +626,189 @@ export function WorkOrderFormSheet({
             )}
 
             {/* 설비 배정 섹션 (공정별 설비 선택) */}
-            {fields.length > 0 && equipments.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[13px] text-muted-foreground">설비 배정 (선택)</p>
-                <div className="rounded-md border overflow-hidden">
-                  <div className="grid grid-cols-[36px_1fr_1fr] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
-                    <span>순서</span>
-                    <span>공정</span>
-                    <span>설비</span>
-                  </div>
+            {fields.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[13px] font-medium text-muted-foreground">설비별 배정</p>
+                  <span className="text-[13px] text-muted-foreground">
+                    배정 행이 없으면 기존 단일 설비 배정을 사용합니다.
+                  </span>
+                </div>
+
+                <div className="space-y-3">
                   {fields.map((field, index) => {
-                    const opId = form.watch(`operations.${index}.routingOperationId`)
-                    const opName =
-                      availableOperations.find((op) => op.id === opId)?.name ??
-                      workOrder?.operations[index]?.routingOperation.name ??
-                      "-"
+                    const operation = getOperationMeta(index)
+                    const operationAssignments = watchedOperations[index]?.assignments ?? []
+                    const operationEquipments = getAvailableEquipmentsForOperation(index)
+                    const plannedQty = Number(watchedOperations[index]?.plannedQty || 0)
+                    const assignedTotal = operationAssignments.reduce(
+                      (sum, assignment) => sum + Number(assignment.assignedQty || 0),
+                      0
+                    )
+                    const difference = plannedQty - assignedTotal
+                    const isBalanced =
+                      operationAssignments.length === 0 ||
+                      Math.abs(difference) <= 0.000001
+                    const selectedEquipmentIds = operationAssignments
+                      .map((assignment) => assignment.equipmentId)
+                      .filter(Boolean)
+
                     return (
-                      <div
-                        key={`equip-${field.id}`}
-                        className="grid grid-cols-[36px_1fr_1fr] gap-0 items-center px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
-                      >
-                        <span className="text-[13px] text-muted-foreground">
-                          {field.seq}
-                        </span>
-                        <span className="text-[13px] pr-2 truncate">{opName}</span>
-                        <FormField
-                          control={form.control}
-                          name={`operations.${index}.equipmentId`}
-                          render={({ field: f }) => (
-                            <FormItem>
-                              <Select
-                                onValueChange={(val) =>
-                                  f.onChange(val === "__none__" ? null : val)
-                                }
-                                value={f.value ?? "__none__"}
+                      <div key={`assignment-${field.id}`} className="rounded-md border">
+                        <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-[14px] font-medium">
+                              {field.seq}. {operation.name}
+                            </p>
+                            <p className="text-[13px] text-muted-foreground">
+                              배정합계 {assignedTotal.toLocaleString()} / 계획수량 {plannedQty.toLocaleString()}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addAssignment(index)}
+                            disabled={operationEquipments.length === 0}
+                          >
+                            <Plus className="h-3.5 w-3.5 mr-1" />
+                            설비 추가
+                          </Button>
+                        </div>
+
+                        {operationEquipments.length === 0 && (
+                          <div className="px-3 py-3 text-[13px] text-muted-foreground">
+                            이 작업장에 등록된 설비가 없습니다. 설비관리에서 먼저 등록하세요.
+                          </div>
+                        )}
+
+                        {operationEquipments.length > 0 && (
+                          <div className="grid grid-cols-[120px_1fr] items-center gap-2 px-3 py-2">
+                            <span className="text-[13px] text-muted-foreground">기본 설비</span>
+                            <FormField
+                              control={form.control}
+                              name={`operations.${index}.equipmentId`}
+                              render={({ field: equipmentField }) => (
+                                <FormItem>
+                                  <Select
+                                    onValueChange={(value) =>
+                                      equipmentField.onChange(
+                                        value === "__none__" ? null : value
+                                      )
+                                    }
+                                    value={equipmentField.value ?? "__none__"}
+                                    disabled={operationAssignments.length > 0}
+                                  >
+                                    <SelectTrigger className="h-8 text-[13px]">
+                                      <SelectValue placeholder="설비 없음" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__" className="text-[13px]">
+                                        설비 없음
+                                      </SelectItem>
+                                      {operationEquipments.map((equipment) => (
+                                        <SelectItem
+                                          key={equipment.id}
+                                          value={equipment.id}
+                                          className="text-[13px]"
+                                        >
+                                          [{equipment.code}] {equipment.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+
+                        {operationAssignments.length > 0 && (
+                          <div className="divide-y">
+                            {operationAssignments.map((assignment, assignmentIndex) => (
+                              <div
+                                key={`${field.id}-${assignmentIndex}`}
+                                className="grid grid-cols-[1fr_120px_40px] items-start gap-2 px-3 py-2"
                               >
-                                <SelectTrigger className="h-8 text-[13px]">
-                                  <SelectValue placeholder="설비 없음" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__none__" className="text-[13px]">
-                                    설비 없음
-                                  </SelectItem>
-                                  {equipments.map((eq) => (
-                                    <SelectItem
-                                      key={eq.id}
-                                      value={eq.id}
-                                      className="text-[13px]"
-                                    >
-                                      [{eq.code}] {eq.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </FormItem>
-                          )}
-                        />
+                                <FormField
+                                  control={form.control}
+                                  name={`operations.${index}.assignments.${assignmentIndex}.equipmentId`}
+                                  render={({ field: assignmentField }) => (
+                                    <FormItem>
+                                      <Select
+                                        onValueChange={assignmentField.onChange}
+                                        value={assignmentField.value ?? undefined}
+                                      >
+                                        <SelectTrigger className="h-8 text-[13px]">
+                                          <SelectValue placeholder="설비 선택" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {operationEquipments.map((equipment) => {
+                                            const isDuplicate =
+                                              selectedEquipmentIds.includes(equipment.id) &&
+                                              assignmentField.value !== equipment.id
+                                            return (
+                                              <SelectItem
+                                                key={equipment.id}
+                                                value={equipment.id}
+                                                disabled={isDuplicate}
+                                                className="text-[13px]"
+                                              >
+                                                [{equipment.code}] {equipment.name}
+                                              </SelectItem>
+                                            )
+                                          })}
+                                        </SelectContent>
+                                      </Select>
+                                      <FormMessage className="text-[12px]" />
+                                    </FormItem>
+                                  )}
+                                />
+
+                                <FormField
+                                  control={form.control}
+                                  name={`operations.${index}.assignments.${assignmentIndex}.assignedQty`}
+                                  render={({ field: assignmentField }) => (
+                                    <FormItem>
+                                      <Input
+                                        type="number"
+                                        min={0.000001}
+                                        step={1}
+                                        className="h-8 text-[13px] text-right"
+                                        value={assignmentField.value ?? ""}
+                                        onChange={(event) => {
+                                          const value = event.target.value
+                                          assignmentField.onChange(
+                                            value === "" ? "" : parseFloat(value)
+                                          )
+                                        }}
+                                      />
+                                      <FormMessage className="text-[12px]" />
+                                    </FormItem>
+                                  )}
+                                />
+
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                  onClick={() => removeAssignment(index, assignmentIndex)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {operationAssignments.length > 0 && !isBalanced && (
+                          <div className="border-t px-3 py-2 text-[13px] text-amber-700">
+                            {difference > 0
+                              ? `배정수량이 ${difference.toLocaleString()} 부족합니다.`
+                              : `배정수량이 ${Math.abs(difference).toLocaleString()} 초과되었습니다.`}
+                          </div>
+                        )}
                       </div>
                     )
                   })}

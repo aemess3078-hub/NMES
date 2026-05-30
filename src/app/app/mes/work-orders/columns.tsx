@@ -60,6 +60,18 @@ function getCompletedQty(workOrder: WorkOrderWithDetails): number {
   return Number(finalOperation?.completedQty ?? 0)
 }
 
+function getOperationEquipmentLabel(
+  operation: WorkOrderWithDetails["operations"][number]
+): string {
+  if (operation.assignments.length > 1) {
+    return `${operation.assignments[0].equipment.name} 외 ${operation.assignments.length - 1}대`
+  }
+  if (operation.assignments.length === 1) {
+    return operation.assignments[0].equipment.name
+  }
+  return operation.equipment?.name ?? "설비 미배정"
+}
+
 function getMaterialIssueStatus(workOrder: WorkOrderWithDetails): {
   label: string
   className: string
@@ -228,7 +240,9 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
         return (
           <div className="text-[13px]">
             <div className="font-medium">{operation.seq}. {displayProcessName(operation.routingOperation.name)}</div>
-            <div className="text-muted-foreground">{operation.status}</div>
+            <div className="text-muted-foreground">
+              {operation.status} · {getOperationEquipmentLabel(operation)}
+            </div>
           </div>
         )
       },
