@@ -7,9 +7,10 @@ import { Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
+import { Send } from "lucide-react"
 import { getColumns } from "./columns"
 import { WorkOrderFormSheet } from "./work-order-form-sheet"
-import { deleteWorkOrder, type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
+import { deleteWorkOrder, releaseWorkOrder, type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
 interface WorkOrderDataTableProps {
@@ -182,6 +183,21 @@ export function WorkOrderDataTable({
     setFormOpen(true)
   }
 
+  const handleRelease = async (workOrder: WorkOrderWithDetails) => {
+    if (!confirm(`'${workOrder.orderNo}' 작업지시를 릴리즈(작업지시 내리기)하시겠습니까?\n작업자가 POP에서 해당 작업을 볼 수 있게 됩니다.`)) return
+    try {
+      const result = await releaseWorkOrder(workOrder.id)
+      if (!result.success) {
+        alert(result.error ?? "릴리즈 중 오류가 발생했습니다.")
+        return
+      }
+      router.refresh()
+    } catch (error) {
+      console.error("릴리즈 실패:", error)
+      alert(error instanceof Error ? error.message : "릴리즈 중 오류가 발생했습니다.")
+    }
+  }
+
   const handleDelete = async (workOrder: WorkOrderWithDetails) => {
     const allowedStatuses = ["DRAFT", "RELEASED"]
     if (!allowedStatuses.includes(workOrder.status)) {
@@ -205,6 +221,7 @@ export function WorkOrderDataTable({
   const allColumns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
+    onRelease: handleRelease,
   })
   const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 

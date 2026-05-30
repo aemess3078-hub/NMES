@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import {
+  startOperation,
   submitProductionResult,
   updateOperationStatus,
 } from "@/lib/actions/pop.actions"
@@ -56,6 +57,7 @@ export function ProductionClient({ operation }: Props) {
   const [defectQty, setDefectQty] = useState(0)
   const [reworkQty, setReworkQty] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
 
   const wo = operation.workOrder
   const status = operation.status
@@ -68,9 +70,19 @@ export function ProductionClient({ operation }: Props) {
 
   const handleStart = async () => {
     setLoading(true)
-    await updateOperationStatus(operation.id, "IN_PROGRESS")
-    router.refresh()
-    setLoading(false)
+    setStartError(null)
+    try {
+      const result = await startOperation(operation.id)
+      if (result.success) {
+        router.refresh()
+      } else {
+        setStartError(result.error ?? "작업 시작에 실패했습니다.")
+      }
+    } catch {
+      setStartError("작업 시작 중 오류가 발생했습니다.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -192,13 +204,20 @@ export function ProductionClient({ operation }: Props) {
       {/* 액션 버튼 */}
       <div className="space-y-3">
         {status === "PENDING" && (
-          <button
-            onClick={handleStart}
-            disabled={loading}
-            className="w-full h-16 text-lg font-bold bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50"
-          >
-            작업 시작
-          </button>
+          <>
+            {startError && (
+              <div className="w-full rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                {startError}
+              </div>
+            )}
+            <button
+              onClick={handleStart}
+              disabled={loading}
+              className="w-full h-16 text-lg font-bold bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50"
+            >
+              {loading ? "처리 중..." : "작업 시작"}
+            </button>
+          </>
         )}
 
         {status === "IN_PROGRESS" && (

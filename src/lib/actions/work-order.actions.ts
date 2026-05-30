@@ -597,6 +597,28 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
   revalidatePath("/app/mes/work-orders")
 }
 
+export async function releaseWorkOrder(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireRole("OPERATOR")
+    const existing = await prisma.workOrder.findUnique({
+      where: { id },
+      select: { status: true },
+    })
+    if (!existing) return { success: false, error: "작업지시를 찾을 수 없습니다." }
+    if (existing.status !== "DRAFT") {
+      return { success: false, error: "초안(DRAFT) 상태의 작업지시만 릴리즈할 수 있습니다." }
+    }
+    await prisma.workOrder.update({
+      where: { id },
+      data: { status: "RELEASED" },
+    })
+    revalidatePath("/app/mes/work-orders")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
+  }
+}
+
 export async function deleteWorkOrder(id: string) {
   await requireRole("OPERATOR")
   const existing = await prisma.workOrder.findUnique({

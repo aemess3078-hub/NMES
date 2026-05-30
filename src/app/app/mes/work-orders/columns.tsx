@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { type ColumnDef } from "@tanstack/react-table"
 import { type OperationStatus, type WorkOrderStatus } from "@prisma/client"
-import { Boxes, ChevronDown, ChevronRight, ExternalLink, Layers, Package, Wrench, type LucideIcon } from "lucide-react"
+import { Boxes, ChevronDown, ChevronRight, ExternalLink, Layers, Package, Send, Wrench, type LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,7 @@ const operationStatusPriority: Record<OperationStatus, number> = {
 type GetColumnsProps = {
   onEdit: (workOrder: WorkOrderWithDetails) => void
   onDelete: (workOrder: WorkOrderWithDetails) => void
+  onRelease: (workOrder: WorkOrderWithDetails) => void
 }
 
 function displayProcessName(processName: string): string {
@@ -81,7 +82,7 @@ function getMaterialIssueStatus(workOrder: WorkOrderWithDetails): {
   }
 }
 
-export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<WorkOrderWithDetails>[] {
+export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): ColumnDef<WorkOrderWithDetails>[] {
   return [
     {
       id: "select",
@@ -343,11 +344,26 @@ export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<Wor
       cell: ({ row }) => {
         const status = row.original.status
         const canDelete = status === "DRAFT" || status === "RELEASED"
+        const isDraft = status === "DRAFT"
         return (
-          <DataTableRowActions
-            onEdit={() => onEdit(row.original)}
-            onDelete={canDelete ? () => onDelete(row.original) : undefined}
-          />
+          <div className="flex items-center gap-1">
+            {isDraft && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[13px]"
+                onClick={(e) => { e.stopPropagation(); onRelease(row.original) }}
+              >
+                <Send className="h-3.5 w-3.5" />
+                작업지시 내리기
+              </Button>
+            )}
+            <DataTableRowActions
+              onEdit={() => onEdit(row.original)}
+              onDelete={canDelete ? () => onDelete(row.original) : undefined}
+            />
+          </div>
         )
       },
       enableSorting: false,

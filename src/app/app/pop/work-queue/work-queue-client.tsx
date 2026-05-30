@@ -222,13 +222,18 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
   async function handleStart(operationId: string) {
     setPendingId(operationId)
     clearError(operationId)
-    const result = await startOperation(operationId)
-    if (result.success) {
-      router.refresh()
-    } else {
-      setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+    try {
+      const result = await startOperation(operationId)
+      if (result.success) {
+        router.refresh()
+      } else {
+        setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+      }
+    } catch {
+      setActionErrors((prev) => ({ ...prev, [operationId]: "오류가 발생했습니다." }))
+    } finally {
+      setPendingId(null)
     }
-    setPendingId(null)
   }
 
   async function handleSubmitResult(operationId: string, row: PopWorkQueueRow) {
@@ -253,21 +258,26 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
     setPendingId(operationId)
     clearError(operationId)
 
-    const result = await submitProductionResult({
-      workOrderOperationId: operationId,
-      goodQty,
-      defectQty,
-      reworkQty,
-    })
+    try {
+      const result = await submitProductionResult({
+        workOrderOperationId: operationId,
+        goodQty,
+        defectQty,
+        reworkQty,
+      })
 
-    if (result.success) {
-      setFormValues((prev) => ({ ...prev, [operationId]: EMPTY_FORM }))
-      if (result.isCompleted) setOpenFormId(null)
-      router.refresh()
-    } else {
-      setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+      if (result.success) {
+        setFormValues((prev) => ({ ...prev, [operationId]: EMPTY_FORM }))
+        if (result.isCompleted) setOpenFormId(null)
+        router.refresh()
+      } else {
+        setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+      }
+    } catch {
+      setActionErrors((prev) => ({ ...prev, [operationId]: "오류가 발생했습니다." }))
+    } finally {
+      setPendingId(null)
     }
-    setPendingId(null)
   }
 
   const filteredRows = useMemo(() => {
