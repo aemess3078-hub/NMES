@@ -10,6 +10,11 @@ type Operation = {
   completedQty: unknown
   routingOperation: { name: string } | null
   equipment: { name: string } | null
+  assignments: {
+    id: string
+    status: string
+    equipment: { name: string } | null
+  }[]
 }
 
 type WorkOrder = {
@@ -35,7 +40,11 @@ export function WorkSelectClient({ workOrders }: Props) {
       (op) => op.status === "IN_PROGRESS" || op.status === "PENDING"
     )
     if (targetOp) {
-      router.push(`/pop/production/${targetOp.id}`)
+      const targetAssignment = targetOp.assignments?.find(
+        (assignment) => assignment.status === "IN_PROGRESS" || assignment.status === "PENDING"
+      )
+      const suffix = targetAssignment ? `?assignmentId=${targetAssignment.id}` : ""
+      router.push(`/pop/production/${targetOp.id}${suffix}`)
     }
   }
 

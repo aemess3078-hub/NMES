@@ -35,6 +35,14 @@ type WorkOrder = {
   item: Item | null
 }
 
+type Assignment = {
+  id: string
+  status: string
+  assignedQty: unknown
+  completedQty: unknown
+  equipment: Equipment | null
+}
+
 type Operation = {
   id: string
   seq: number
@@ -44,6 +52,8 @@ type Operation = {
   workOrder: WorkOrder | null
   routingOperation: RoutingOperation | null
   equipment: Equipment | null
+  assignments: Assignment[]
+  selectedAssignment: Assignment | null
   productionResults: ProductionResult[]
 }
 
@@ -60,9 +70,15 @@ export function ProductionClient({ operation }: Props) {
   const [startError, setStartError] = useState<string | null>(null)
 
   const wo = operation.workOrder
-  const status = operation.status
-  const completedQty = Number(operation.completedQty)
-  const plannedQty = Number(operation.plannedQty)
+  const selectedAssignment = operation.selectedAssignment
+  const status = selectedAssignment?.status ?? operation.status
+  const completedQty = selectedAssignment
+    ? Number(selectedAssignment.completedQty)
+    : Number(operation.completedQty)
+  const plannedQty = selectedAssignment
+    ? Number(selectedAssignment.assignedQty)
+    : Number(operation.plannedQty)
+  const equipmentName = selectedAssignment?.equipment?.name ?? operation.equipment?.name ?? "-"
   const progress =
     plannedQty > 0
       ? Math.min(100, Math.round((completedQty / plannedQty) * 100))
@@ -72,7 +88,7 @@ export function ProductionClient({ operation }: Props) {
     setLoading(true)
     setStartError(null)
     try {
-      const result = await startOperation(operation.id)
+      const result = await startOperation(operation.id, selectedAssignment?.id)
       if (result.success) {
         router.refresh()
       } else {
@@ -92,6 +108,7 @@ export function ProductionClient({ operation }: Props) {
     try {
       const result = await submitProductionResult({
         workOrderOperationId: operation.id,
+        assignmentId: selectedAssignment?.id,
         goodQty,
         defectQty,
         reworkQty,
@@ -161,10 +178,29 @@ export function ProductionClient({ operation }: Props) {
           <div>
             <span className="text-slate-500">설비</span>
             <div className="font-semibold mt-1">
-              {operation.equipment?.name ?? "—"}
+              {equipmentName}
             </div>
           </div>
         </div>
+
+        {selectedAssignment && (
+          <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-blue-50 p-4 text-center">
+            <div>
+              <p className="text-sm text-blue-700">배정수량</p>
+              <p className="mt-1 text-lg font-bold text-blue-900">{plannedQty.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-sm text-blue-700">완료수량</p>
+              <p className="mt-1 text-lg font-bold text-blue-900">{completedQty.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-sm text-blue-700">잔여수량</p>
+              <p className="mt-1 text-lg font-bold text-blue-900">
+                {Math.max(plannedQty - completedQty, 0).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="mt-4">
           <div className="flex justify-between text-sm text-slate-500 mb-1">
@@ -251,13 +287,15 @@ export function ProductionClient({ operation }: Props) {
             >
               실적 등록
             </button>
-            <button
-              onClick={handleComplete}
-              disabled={loading}
-              className="w-full h-16 text-lg font-bold bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50"
-            >
-              작업 완료
-            </button>
+            {!selectedAssignment && (
+              <button
+                onClick={handleComplete}
+                disabled={loading}
+                className="w-full h-16 text-lg font-bold bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                작업 완료
+              </button>
+            )}
           </>
         )}
 

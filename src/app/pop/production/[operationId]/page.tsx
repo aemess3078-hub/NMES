@@ -7,11 +7,15 @@ import { PopHeader } from "../../components/pop-header"
 
 type Props = {
   params: Promise<{ operationId: string }>
+  searchParams?: Promise<{ assignmentId?: string | string[] }>
 }
 
-export default async function ProductionPage({ params }: Props) {
+export default async function ProductionPage({ params, searchParams }: Props) {
   const { operationId } = await params
-  const op = await getOperationDetail(operationId)
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const rawAssignmentId = resolvedSearchParams.assignmentId
+  const assignmentId = Array.isArray(rawAssignmentId) ? rawAssignmentId[0] : rawAssignmentId
+  const op = await getOperationDetail(operationId, assignmentId)
   if (!op) notFound()
 
   return (

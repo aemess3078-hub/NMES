@@ -219,62 +219,65 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
     setActionErrors((prev) => ({ ...prev, [id]: "" }))
   }
 
-  async function handleStart(operationId: string) {
-    setPendingId(operationId)
-    clearError(operationId)
+  async function handleStart(row: PopWorkQueueRow) {
+    const rowId = row.rowId
+    setPendingId(rowId)
+    clearError(rowId)
     try {
-      const result = await startOperation(operationId)
+      const result = await startOperation(row.operationId, row.assignmentId)
       if (result.success) {
         router.refresh()
       } else {
-        setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+        setActionErrors((prev) => ({ ...prev, [rowId]: result.error ?? "오류가 발생했습니다." }))
       }
     } catch {
-      setActionErrors((prev) => ({ ...prev, [operationId]: "오류가 발생했습니다." }))
+      setActionErrors((prev) => ({ ...prev, [rowId]: "오류가 발생했습니다." }))
     } finally {
       setPendingId(null)
     }
   }
 
-  async function handleSubmitResult(operationId: string, row: PopWorkQueueRow) {
-    const form = getForm(operationId)
+  async function handleSubmitResult(row: PopWorkQueueRow) {
+    const rowId = row.rowId
+    const form = getForm(rowId)
     const goodQty = Math.max(0, Number(form.goodQty) || 0)
     const defectQty = Math.max(0, Number(form.defectQty) || 0)
     const reworkQty = Math.max(0, Number(form.reworkQty) || 0)
     const total = goodQty + defectQty + reworkQty
 
     if (total === 0) {
-      setActionErrors((prev) => ({ ...prev, [operationId]: "수량을 1 이상 입력해 주세요." }))
+      setActionErrors((prev) => ({ ...prev, [rowId]: "수량을 1 이상 입력해 주세요." }))
       return
     }
     if (row.remainingQty > 0 && total > row.remainingQty) {
       setActionErrors((prev) => ({
         ...prev,
-        [operationId]: `잔여 수량(${row.remainingQty.toLocaleString()})을 초과할 수 없습니다.`,
+        [rowId]: `잔여 수량(${row.remainingQty.toLocaleString()})을 초과할 수 없습니다.`,
       }))
       return
     }
 
-    setPendingId(operationId)
-    clearError(operationId)
+    setPendingId(rowId)
+    clearError(rowId)
 
     try {
       const result = await submitProductionResult({
-        workOrderOperationId: operationId,
+        workOrderOperationId: row.operationId,
+        assignmentId: row.assignmentId,
         goodQty,
         defectQty,
         reworkQty,
       })
 
       if (result.success) {
-        setFormValues((prev) => ({ ...prev, [operationId]: EMPTY_FORM }))
+        setFormValues((prev) => ({ ...prev, [rowId]: EMPTY_FORM }))
         if (result.isCompleted) setOpenFormId(null)
         router.refresh()
       } else {
-        setActionErrors((prev) => ({ ...prev, [operationId]: result.error ?? "오류가 발생했습니다." }))
+        setActionErrors((prev) => ({ ...prev, [rowId]: result.error ?? "오류가 발생했습니다." }))
       }
     } catch {
-      setActionErrors((prev) => ({ ...prev, [operationId]: "오류가 발생했습니다." }))
+      setActionErrors((prev) => ({ ...prev, [rowId]: "오류가 발생했습니다." }))
     } finally {
       setPendingId(null)
     }
@@ -299,6 +302,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
         row.manufacturingNo ?? "",
         row.itemCode,
         row.itemName,
+        row.equipmentName ?? "",
         displayProcessName(row.processName),
       ]
         .join(" ")
@@ -382,12 +386,12 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
               row.plannedQty > 0
                 ? Math.min(100, Math.round((row.completedQty / row.plannedQty) * 100))
                 : 0
-            const isThisPending = pendingId === row.operationId
-            const isFormOpen = openFormId === row.operationId
+            const isThisPending = pendingId === row.rowId
+            const isFormOpen = openFormId === row.rowId
 
             return (
               <article
-                key={row.operationId}
+                key={row.rowId}
                 className={`rounded-xl border bg-white p-5 shadow-sm transition-colors ${
                   row.status === "IN_PROGRESS"
                     ? "border-amber-200"
@@ -413,6 +417,11 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                       <h2 className="mt-1 text-[23px] font-bold text-slate-950">
                         {displayProcessName(row.processName)}
                       </h2>
+                      {row.equipmentName && (
+                        <p className="mt-1 text-[16px] font-semibold text-blue-700">
+                          {row.equipmentName}
+                        </p>
+                      )}
                       <p className="mt-1 text-[16px] text-slate-500">
                         [{row.itemCode}] {row.itemName}
                       </p>
@@ -489,13 +498,13 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                 {/* PENDING + 작업가능 → 작업시작 버튼 */}
                 {row.status === "PENDING" && row.canWork && (
                   <div className="mt-4 space-y-2">
-                    {actionErrors[row.operationId] && (
+                    {actionErrors[row.rowId] && (
                       <p className="text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                        {actionErrors[row.operationId]}
+                        {actionErrors[row.rowId]}
                       </p>
                     )}
                     <Button
-                      onClick={() => handleStart(row.operationId)}
+                      onClick={() => handleStart(row)}
                       disabled={isThisPending}
                       className="h-11 bg-emerald-600 hover:bg-emerald-700 text-white text-[15px] px-6"
                     >
@@ -519,15 +528,15 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                   <div className="mt-4">
                     {!isFormOpen ? (
                       <div className="space-y-2">
-                        {actionErrors[row.operationId] && (
+                        {actionErrors[row.rowId] && (
                           <p className="text-[13px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                            {actionErrors[row.operationId]}
+                            {actionErrors[row.rowId]}
                           </p>
                         )}
                         <Button
                           onClick={() => {
-                            setOpenFormId(row.operationId)
-                            clearError(row.operationId)
+                            setOpenFormId(row.rowId)
+                            clearError(row.rowId)
                           }}
                           variant="outline"
                           className="h-11 border-blue-300 text-blue-700 hover:bg-blue-50 text-[15px] px-6"
@@ -539,14 +548,14 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                     ) : (
                       <ResultForm
                         row={row}
-                        form={getForm(row.operationId)}
-                        error={actionErrors[row.operationId] ?? ""}
+                        form={getForm(row.rowId)}
+                        error={actionErrors[row.rowId] ?? ""}
                         isPending={isThisPending}
-                        onChange={(field, value) => setFormField(row.operationId, field, value)}
-                        onSubmit={() => handleSubmitResult(row.operationId, row)}
+                        onChange={(field, value) => setFormField(row.rowId, field, value)}
+                        onSubmit={() => handleSubmitResult(row)}
                         onCancel={() => {
                           setOpenFormId(null)
-                          clearError(row.operationId)
+                          clearError(row.rowId)
                         }}
                       />
                     )}

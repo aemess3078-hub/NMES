@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { OperationStatus, WorkOrderStatus } from "@prisma/client"
+import { OperationStatus, Prisma, WorkOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import {
@@ -22,32 +22,85 @@ export type PopWorkerSession = {
 
 export type SubmitResultInput = {
   workOrderOperationId: string
+  assignmentId?: string | null
   goodQty: number
   defectQty: number
   reworkQty: number
 }
 
 export type PopWorkQueueRow = {
+  rowId: string
   operationId: string
+  assignmentId: string | null
   workOrderId: string
   orderNo: string
   manufacturingNo: string | null
   itemCode: string
   itemName: string
   processName: string
+  equipmentName: string | null
   seq: number
   status: OperationStatus
+  operationStatus: OperationStatus
+  assignmentStatus: OperationStatus | null
   plannedQty: number
+  assignedQty: number | null
   completedQty: number
   remainingQty: number
   dueDate: string | null
   materialLotCount: number
   materialLotQty: number
   canWork: boolean
-  availabilityLabel: "작업가능" | "이전 공정 대기" | "진행중"
+  availabilityLabel: string
 }
 
 // ─── 1. PIN 로그인 (데모용 간이 구현) ─────────────────────────────────────────
+
+const QTY_DECIMAL_SCALE = 6
+const ZERO_QTY = BigInt(0)
+const QTY_SCALE_MULTIPLIER = BigInt("1000000")
+
+function toScaledQty(
+  value: number | string | Prisma.Decimal,
+  fieldName = "수량",
+  options: { allowZero?: boolean } = {}
+): bigint {
+  const raw = value?.toString().trim()
+  if (!raw || !/^\d+(\.\d+)?$/.test(raw)) {
+    throw new Error(`${fieldName}은 0 이상의 숫자여야 합니다.`)
+  }
+
+  const [integerPart, decimalPart = ""] = raw.split(".")
+  if (decimalPart.length > QTY_DECIMAL_SCALE) {
+    throw new Error(`${fieldName}은 소수점 ${QTY_DECIMAL_SCALE}자리까지만 입력할 수 있습니다.`)
+  }
+
+  const scaled =
+    BigInt(integerPart) * QTY_SCALE_MULTIPLIER +
+    BigInt(decimalPart.padEnd(QTY_DECIMAL_SCALE, "0"))
+
+  if (!options.allowZero && scaled <= ZERO_QTY) {
+    throw new Error(`${fieldName}은 0보다 커야 합니다.`)
+  }
+
+  return scaled
+}
+
+function sumScaledQty(values: bigint[]): bigint {
+  return values.reduce((sum, value) => sum + value, ZERO_QTY)
+}
+
+function formatScaledQty(value: bigint): string {
+  const sign = value < ZERO_QTY ? "-" : ""
+  const absolute = value < ZERO_QTY ? -value : value
+  const integerPart = absolute / QTY_SCALE_MULTIPLIER
+  const decimalPart = (absolute % QTY_SCALE_MULTIPLIER)
+    .toString()
+    .padStart(QTY_DECIMAL_SCALE, "0")
+    .replace(/0+$/, "")
+
+  return `${sign}${integerPart.toString()}${decimalPart ? `.${decimalPart}` : ""}`
+}
 
 export async function popLogin(
   pin: string,
@@ -103,6 +156,10 @@ export async function getTodayWorkOrders() {
         include: {
           routingOperation: true,
           equipment: true,
+          assignments: {
+            include: { equipment: true },
+            orderBy: { seq: "asc" },
+          },
         },
         orderBy: { seq: "asc" },
       },
@@ -126,10 +183,21 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
       status: true,
       plannedQty: true,
       completedQty: true,
-      routingOperation: {
+      equipment: {
+        select: { name: true },
+      },
+      assignments: {
         select: {
-          name: true,
+          id: true,
+          assignedQty: true,
+          completedQty: true,
+          status: true,
+          equipment: { select: { name: true } },
         },
+        orderBy: { seq: "asc" },
+      },
+      routingOperation: {
+        select: { name: true },
       },
       workOrder: {
         select: {
@@ -137,25 +205,12 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
           orderNo: true,
           manufacturingNo: true,
           dueDate: true,
-          item: {
-            select: {
-              code: true,
-              name: true,
-            },
-          },
+          item: { select: { code: true, name: true } },
           operations: {
-            select: {
-              seq: true,
-              status: true,
-            },
+            select: { seq: true, status: true },
             orderBy: { seq: "asc" },
           },
-          materialLots: {
-            select: {
-              id: true,
-              qty: true,
-            },
-          },
+          materialLots: { select: { id: true, qty: true } },
         },
       },
     },
@@ -166,22 +221,21 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
     ],
   })
 
-  return operations.map((operation) => {
+  return operations.flatMap((operation): PopWorkQueueRow[] => {
     const previousOperations = operation.workOrder.operations.filter(
       (candidate) => candidate.seq < operation.seq
     )
     const previousCompleted = previousOperations.every(
       (candidate) => candidate.status === "COMPLETED"
     )
-    const canWork = operation.status === "IN_PROGRESS" || previousCompleted
+    const operationCanWork = operation.status === "IN_PROGRESS" || previousCompleted
     const materialLotQty = operation.workOrder.materialLots.reduce(
       (sum, lot) => sum + Number(lot.qty),
       0
     )
     const plannedQty = Number(operation.plannedQty)
     const completedQty = Number(operation.completedQty)
-
-    return {
+    const baseRow = {
       operationId: operation.id,
       workOrderId: operation.workOrder.id,
       orderNo: operation.workOrder.orderNo,
@@ -190,50 +244,159 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
       itemName: operation.workOrder.item.name,
       processName: operation.routingOperation.name,
       seq: operation.seq,
-      status: operation.status,
-      plannedQty,
-      completedQty,
-      remainingQty: Math.max(plannedQty - completedQty, 0),
+      operationStatus: operation.status,
       dueDate: operation.workOrder.dueDate?.toISOString() ?? null,
       materialLotCount: operation.workOrder.materialLots.length,
       materialLotQty,
-      canWork,
+    }
+
+    if (operation.assignments.length > 0) {
+      return operation.assignments
+        .filter((assignment) => assignment.status !== "COMPLETED")
+        .map((assignment) => {
+          const assignedQty = Number(assignment.assignedQty)
+          const assignmentCompletedQty = Number(assignment.completedQty)
+          const canWork = operationCanWork && assignment.status !== "COMPLETED"
+
+          return {
+            ...baseRow,
+            rowId: assignment.id,
+            assignmentId: assignment.id,
+            equipmentName: assignment.equipment.name,
+            status: assignment.status,
+            assignmentStatus: assignment.status,
+            plannedQty: assignedQty,
+            assignedQty,
+            completedQty: assignmentCompletedQty,
+            remainingQty: Math.max(assignedQty - assignmentCompletedQty, 0),
+            canWork,
+            availabilityLabel:
+              assignment.status === "IN_PROGRESS"
+                ? "진행중"
+                : canWork
+                  ? "작업가능"
+                  : "이전 공정 대기",
+          } satisfies PopWorkQueueRow
+        })
+    }
+
+    return [{
+      ...baseRow,
+      rowId: operation.id,
+      assignmentId: null,
+      equipmentName: operation.equipment?.name ?? null,
+      status: operation.status,
+      assignmentStatus: null,
+      plannedQty,
+      assignedQty: null,
+      completedQty,
+      remainingQty: Math.max(plannedQty - completedQty, 0),
+      canWork: operationCanWork,
       availabilityLabel:
         operation.status === "IN_PROGRESS"
           ? "진행중"
-          : canWork
+          : operationCanWork
             ? "작업가능"
             : "이전 공정 대기",
-    }
+    } satisfies PopWorkQueueRow]
   })
 }
 
-// ─── 3. 공정 상세 조회 ────────────────────────────────────────────────────────
-
-export async function getOperationDetail(operationId: string) {
-  return prisma.workOrderOperation.findUnique({
+export async function getOperationDetail(operationId: string, assignmentId?: string | null) {
+  const operation = await prisma.workOrderOperation.findUnique({
     where: { id: operationId },
     include: {
       workOrder: { include: { item: true } },
       routingOperation: true,
       equipment: true,
-      productionResults: { orderBy: { startedAt: "desc" } },
+      assignments: {
+        include: { equipment: true },
+        orderBy: { seq: "asc" },
+      },
+      productionResults: {
+        where: assignmentId ? { workOrderOperationAssignmentId: assignmentId } : undefined,
+        orderBy: { startedAt: "desc" },
+      },
     },
   })
-}
 
-// ─── 4. 실적 등록 ─────────────────────────────────────────────────────────────
+  if (!operation) return null
+
+  const selectedAssignment = assignmentId
+    ? operation.assignments.find((assignment) => assignment.id === assignmentId) ?? null
+    : null
+
+  if (assignmentId && !selectedAssignment) return null
+
+  return {
+    id: operation.id,
+    seq: operation.seq,
+    status: operation.status,
+    plannedQty: Number(operation.plannedQty),
+    completedQty: Number(operation.completedQty),
+    workOrder: operation.workOrder
+      ? {
+          id: operation.workOrder.id,
+          orderNo: operation.workOrder.orderNo,
+          item: operation.workOrder.item
+            ? {
+                name: operation.workOrder.item.name,
+                code: operation.workOrder.item.code,
+              }
+            : null,
+        }
+      : null,
+    routingOperation: operation.routingOperation
+      ? { name: operation.routingOperation.name }
+      : null,
+    equipment: operation.equipment ? { name: operation.equipment.name } : null,
+    assignments: operation.assignments.map((assignment) => ({
+      id: assignment.id,
+      status: assignment.status,
+      assignedQty: Number(assignment.assignedQty),
+      completedQty: Number(assignment.completedQty),
+      equipment: { name: assignment.equipment.name },
+    })),
+    selectedAssignment: selectedAssignment
+      ? {
+          id: selectedAssignment.id,
+          status: selectedAssignment.status,
+          assignedQty: Number(selectedAssignment.assignedQty),
+          completedQty: Number(selectedAssignment.completedQty),
+          equipment: { name: selectedAssignment.equipment.name },
+        }
+      : null,
+    productionResults: operation.productionResults.map((result) => ({
+      id: result.id,
+      goodQty: Number(result.goodQty),
+      defectQty: Number(result.defectQty),
+      reworkQty: Number(result.reworkQty),
+      startedAt: result.startedAt?.toISOString() ?? null,
+    })),
+  }
+}
 
 export async function submitProductionResult(
   data: SubmitResultInput
 ): Promise<{ success: boolean; error?: string; isCompleted?: boolean }> {
-  const { workOrderOperationId, goodQty, defectQty, reworkQty } = data
+  const { workOrderOperationId, assignmentId, goodQty, defectQty, reworkQty } = data
 
   if (goodQty < 0 || defectQty < 0 || reworkQty < 0) {
     return { success: false, error: "수량은 0 이상이어야 합니다." }
   }
-  const totalQty = goodQty + defectQty + reworkQty
-  if (totalQty === 0) {
+
+  let totalScaled: bigint
+  try {
+    totalScaled = sumScaledQty([
+      toScaledQty(goodQty, "양품수량", { allowZero: true }),
+      toScaledQty(defectQty, "불량수량", { allowZero: true }),
+      toScaledQty(reworkQty, "재작업수량", { allowZero: true }),
+    ])
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "수량 형식이 올바르지 않습니다." }
+  }
+
+  if (totalScaled <= ZERO_QTY) {
     return { success: false, error: "수량을 1 이상 입력해 주세요." }
   }
 
@@ -245,30 +408,187 @@ export async function submitProductionResult(
       const op = await tx.workOrderOperation.findUnique({
         where: { id: workOrderOperationId },
         select: {
+          id: true,
+          status: true,
           completedQty: true,
           plannedQty: true,
           workOrderId: true,
           seq: true,
+          assignments: {
+            select: {
+              id: true,
+              tenantId: true,
+              workOrderOperationId: true,
+              assignedQty: true,
+              completedQty: true,
+              status: true,
+            },
+            orderBy: { seq: "asc" },
+          },
           routingOperation: {
             select: { workCenterId: true },
           },
           workOrder: {
-            select: { tenantId: true, siteId: true },
+            select: {
+              tenantId: true,
+              siteId: true,
+              operations: {
+                select: { seq: true, status: true },
+                orderBy: { seq: "asc" },
+              },
+            },
           },
         },
       })
       if (!op) throw new Error("공정을 찾을 수 없습니다.")
 
-      const currentCompleted = Number(op.completedQty)
-      const plannedQty = Number(op.plannedQty)
-      const remaining = Math.max(plannedQty - currentCompleted, 0)
-
-      if (remaining > 0 && totalQty > remaining) {
-        throw new Error(`잔여 수량(${remaining})을 초과할 수 없습니다.`)
+      const previousOperations = op.workOrder.operations.filter((candidate) => candidate.seq < op.seq)
+      if (previousOperations.length > 0 && !previousOperations.every((candidate) => candidate.status === "COMPLETED")) {
+        throw new Error("이전 공정이 완료되지 않아 실적을 등록할 수 없습니다.")
       }
 
-      const newCompletedQty = currentCompleted + totalQty
-      const shouldComplete = newCompletedQty >= plannedQty
+      if (op.status !== "IN_PROGRESS") {
+        throw new Error("작업시작 후 실적을 등록해 주세요.")
+      }
+
+      const assignment = assignmentId
+        ? op.assignments.find((candidate) => candidate.id === assignmentId) ?? null
+        : null
+
+      if (op.assignments.length > 0 && !assignmentId) {
+        throw new Error("설비배정이 있는 공정은 설비를 선택해 실적을 등록해 주세요.")
+      }
+
+      if (assignmentId) {
+        if (!assignment) throw new Error("설비배정을 찾을 수 없습니다.")
+        if (assignment.workOrderOperationId !== workOrderOperationId) {
+          throw new Error("설비배정과 공정이 일치하지 않습니다.")
+        }
+        if (assignment.tenantId !== op.workOrder.tenantId) {
+          throw new Error("설비배정의 사업장 정보가 일치하지 않습니다.")
+        }
+        if (assignment.status === "COMPLETED") {
+          throw new Error("이미 완료된 설비배정에는 실적을 추가할 수 없습니다.")
+        }
+        if (assignment.status !== "IN_PROGRESS") {
+          throw new Error("설비배정 작업시작 후 실적을 등록해 주세요.")
+        }
+
+        const assignedScaled = toScaledQty(assignment.assignedQty, "배정수량")
+        const assignmentCompletedScaled = toScaledQty(assignment.completedQty, "완료수량", { allowZero: true })
+        const newAssignmentCompletedScaled = assignmentCompletedScaled + totalScaled
+
+        if (newAssignmentCompletedScaled > assignedScaled) {
+          const remainingScaled = assignedScaled - assignmentCompletedScaled
+          throw new Error("잔여 수량(" + formatScaledQty(remainingScaled) + ")을 초과할 수 없습니다.")
+        }
+
+        const assignmentShouldComplete = newAssignmentCompletedScaled >= assignedScaled
+        const assignmentCompletedById = new Map(
+          op.assignments.map((candidate) => [
+            candidate.id,
+            candidate.id === assignment.id
+              ? newAssignmentCompletedScaled
+              : toScaledQty(candidate.completedQty, "완료수량", { allowZero: true }),
+          ])
+        )
+        const operationCompletedScaled = sumScaledQty(Array.from(assignmentCompletedById.values()))
+        const allAssignmentsCompleted = op.assignments.every((candidate) => {
+          if (candidate.id === assignment.id) return assignmentShouldComplete
+          return candidate.status === "COMPLETED"
+        })
+
+        const createdResult = await tx.productionResult.create({
+          data: {
+            workOrderOperationId,
+            workOrderOperationAssignmentId: assignment.id,
+            goodQty,
+            defectQty,
+            reworkQty,
+            startedAt: new Date(),
+            endedAt: new Date(),
+          },
+        })
+
+        await recordProductionResultQualityMovements(tx, {
+          tenantId: op.workOrder.tenantId,
+          siteId: op.workOrder.siteId,
+          workOrderId: op.workOrderId,
+          operationId: workOrderOperationId,
+          workCenterId: op.routingOperation.workCenterId,
+          productionResultId: createdResult.id,
+          defectQty,
+          reworkQty,
+        })
+
+        await tx.workOrderOperationAssignment.update({
+          where: { id: assignment.id },
+          data: {
+            completedQty: formatScaledQty(newAssignmentCompletedScaled),
+            status: assignmentShouldComplete ? "COMPLETED" : "IN_PROGRESS",
+          },
+        })
+
+        await tx.workOrderOperation.update({
+          where: { id: workOrderOperationId },
+          data: {
+            completedQty: formatScaledQty(operationCompletedScaled),
+            ...(allAssignmentsCompleted ? { status: "COMPLETED" as OperationStatus } : {}),
+          },
+        })
+
+        if (allAssignmentsCompleted) {
+          isCompleted = true
+          const allOps = await tx.workOrderOperation.findMany({
+            where: { workOrderId: op.workOrderId },
+            select: {
+              id: true,
+              seq: true,
+              status: true,
+              routingOperation: { select: { workCenterId: true } },
+            },
+            orderBy: { seq: "asc" },
+          })
+          const allCompleted = allOps.every((candidate) => candidate.status === "COMPLETED")
+          if (allCompleted) {
+            await tx.workOrder.update({
+              where: { id: op.workOrderId },
+              data: { status: "COMPLETED" },
+            })
+          }
+
+          const nextOp = allOps.find((candidate) => candidate.seq > op.seq)
+          await advanceWipUnitOnOperationComplete(tx, {
+            tenantId: op.workOrder.tenantId,
+            siteId: op.workOrder.siteId,
+            workOrderId: op.workOrderId,
+            completedOperationId: workOrderOperationId,
+            completedWorkCenterId: op.routingOperation.workCenterId,
+            nextOperation: nextOp
+              ? {
+                  id: nextOp.id,
+                  routingOperation: {
+                    workCenterId: nextOp.routingOperation.workCenterId,
+                  },
+                }
+              : null,
+            productionResultId: createdResult.id,
+          })
+        }
+
+        return
+      }
+
+      const currentCompletedScaled = toScaledQty(op.completedQty, "완료수량", { allowZero: true })
+      const plannedScaled = toScaledQty(op.plannedQty, "계획수량")
+      const newCompletedScaled = currentCompletedScaled + totalScaled
+
+      if (newCompletedScaled > plannedScaled) {
+        const remainingScaled = plannedScaled - currentCompletedScaled
+        throw new Error("잔여 수량(" + formatScaledQty(remainingScaled) + ")을 초과할 수 없습니다.")
+      }
+
+      const shouldComplete = newCompletedScaled >= plannedScaled
 
       const createdResult = await tx.productionResult.create({
         data: {
@@ -295,8 +615,8 @@ export async function submitProductionResult(
       await tx.workOrderOperation.update({
         where: { id: workOrderOperationId },
         data: {
-          completedQty: newCompletedQty,
-          ...(shouldComplete ? { status: "COMPLETED" } : {}),
+          completedQty: formatScaledQty(newCompletedScaled),
+          ...(shouldComplete ? { status: "COMPLETED" as OperationStatus } : {}),
         },
       })
 
@@ -308,13 +628,11 @@ export async function submitProductionResult(
             id: true,
             seq: true,
             status: true,
-            routingOperation: {
-              select: { workCenterId: true },
-            },
+            routingOperation: { select: { workCenterId: true } },
           },
           orderBy: { seq: "asc" },
         })
-        const allCompleted = allOps.every((o) => o.status === "COMPLETED")
+        const allCompleted = allOps.every((candidate) => candidate.status === "COMPLETED")
         if (allCompleted) {
           await tx.workOrder.update({
             where: { id: op.workOrderId },
@@ -322,8 +640,7 @@ export async function submitProductionResult(
           })
         }
 
-        const nextOp = allOps.find((o) => o.seq > op.seq)
-
+        const nextOp = allOps.find((candidate) => candidate.seq > op.seq)
         await advanceWipUnitOnOperationComplete(tx, {
           tenantId: op.workOrder.tenantId,
           siteId: op.workOrder.siteId,
@@ -344,30 +661,39 @@ export async function submitProductionResult(
     })
 
     revalidatePath("/app/pop/work-queue")
+    revalidatePath("/pop/work-select")
     return { success: true, isCompleted }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
   }
 }
 
-// ─── 4-1. 작업 시작 ────────────────────────────────────────────────────────────
-
 export async function startOperation(
-  operationId: string
+  operationId: string,
+  assignmentId?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    try { await requireRole("OPERATOR") } catch { /* POP 데모: 인증 없이도 동작 허용 */ }
+    try { await requireRole("OPERATOR") } catch { /* POP demo auth fallback */ }
     const tenantId = await getTenantId()
 
     const op = await prisma.workOrderOperation.findFirst({
       where: {
         id: operationId,
-        status: "PENDING",
+        status: { in: ["PENDING", "IN_PROGRESS"] },
         workOrder: { tenantId },
       },
       select: {
+        status: true,
         seq: true,
         workOrderId: true,
+        assignments: {
+          select: {
+            id: true,
+            tenantId: true,
+            workOrderOperationId: true,
+            status: true,
+          },
+        },
         routingOperation: {
           select: { workCenterId: true },
         },
@@ -385,41 +711,69 @@ export async function startOperation(
     })
 
     if (!op) {
-      return { success: false, error: "공정을 찾을 수 없거나 이미 시작된 공정입니다." }
+      return { success: false, error: "Operation not found or already completed." }
     }
 
     const prevOps = op.workOrder.operations.filter((o) => o.seq < op.seq)
     if (prevOps.length > 0 && !prevOps.every((o) => o.status === "COMPLETED")) {
-      return { success: false, error: "이전 공정이 완료되지 않아 작업을 시작할 수 없습니다." }
+      return { success: false, error: "Previous operation must be completed first." }
+    }
+
+    const assignment = assignmentId
+      ? op.assignments.find((candidate) => candidate.id === assignmentId) ?? null
+      : null
+
+    if (op.assignments.length > 0 && !assignmentId) {
+      return { success: false, error: "Select an equipment assignment before starting work." }
+    }
+
+    if (assignmentId) {
+      if (!assignment) {
+        return { success: false, error: "Equipment assignment not found." }
+      }
+      if (assignment.workOrderOperationId !== operationId || assignment.tenantId !== tenantId) {
+        return { success: false, error: "Equipment assignment does not match this operation." }
+      }
+      if (assignment.status === "COMPLETED") {
+        return { success: false, error: "Equipment assignment is already completed." }
+      }
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.workOrderOperation.update({
-        where: { id: operationId },
-        data: { status: "IN_PROGRESS" },
-      })
-      await tx.workOrder.update({
-        where: { id: op.workOrderId },
-        data: { status: "IN_PROGRESS" },
-      })
+      if (op.status === "PENDING") {
+        await tx.workOrderOperation.update({
+          where: { id: operationId },
+          data: { status: "IN_PROGRESS" },
+        })
+        await tx.workOrder.update({
+          where: { id: op.workOrderId },
+          data: { status: "IN_PROGRESS" },
+        })
 
-      await transitionWipUnitOnStart(tx, {
-        tenantId,
-        siteId: op.workOrder.siteId,
-        workOrderId: op.workOrderId,
-        operationId,
-        workCenterId: op.routingOperation.workCenterId,
-      })
+        await transitionWipUnitOnStart(tx, {
+          tenantId,
+          siteId: op.workOrder.siteId,
+          workOrderId: op.workOrderId,
+          operationId,
+          workCenterId: op.routingOperation.workCenterId,
+        })
+      }
+
+      if (assignment && assignment.status === "PENDING") {
+        await tx.workOrderOperationAssignment.update({
+          where: { id: assignment.id },
+          data: { status: "IN_PROGRESS" },
+        })
+      }
     })
 
     revalidatePath("/app/pop/work-queue")
+    revalidatePath("/pop/work-select")
     return { success: true }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
   }
 }
-
-// ─── 5. 오늘의 생산실적 조회 ──────────────────────────────────────────────────
 
 export async function getTodayProductionResults() {
   const today = new Date()
@@ -462,9 +816,22 @@ export async function updateOperationStatus(
 
     const op = await tx.workOrderOperation.findUnique({
       where: { id: operationId },
-      select: { workOrderId: true },
+      select: {
+        workOrderId: true,
+        assignments: {
+          select: { status: true },
+        },
+      },
     })
     if (!op) return
+
+    if (
+      status === "COMPLETED" &&
+      op.assignments.length > 0 &&
+      !op.assignments.every((assignment) => assignment.status === "COMPLETED")
+    ) {
+      throw new Error("All equipment assignments must be completed first.")
+    }
 
     if (status === "IN_PROGRESS") {
       await tx.workOrder.update({
