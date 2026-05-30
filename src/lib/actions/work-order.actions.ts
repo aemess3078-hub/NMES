@@ -602,11 +602,19 @@ export async function releaseWorkOrder(id: string): Promise<{ success: boolean; 
     await requireRole("OPERATOR")
     const existing = await prisma.workOrder.findUnique({
       where: { id },
-      select: { status: true },
+      select: {
+        status: true,
+        _count: {
+          select: { operations: true },
+        },
+      },
     })
     if (!existing) return { success: false, error: "작업지시를 찾을 수 없습니다." }
     if (existing.status !== "DRAFT") {
       return { success: false, error: "초안(DRAFT) 상태의 작업지시만 릴리즈할 수 있습니다." }
+    }
+    if (existing._count.operations === 0) {
+      return { success: false, error: "공정이 없는 작업지시는 작업대기로 전환할 수 없습니다." }
     }
     await prisma.workOrder.update({
       where: { id },

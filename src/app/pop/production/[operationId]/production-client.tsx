@@ -88,24 +88,41 @@ export function ProductionClient({ operation }: Props) {
   const handleSubmit = async () => {
     if (goodQty + defectQty + reworkQty === 0) return
     setLoading(true)
-    await submitProductionResult({
-      workOrderOperationId: operation.id,
-      goodQty,
-      defectQty,
-      reworkQty,
-    })
-    setGoodQty(0)
-    setDefectQty(0)
-    setReworkQty(0)
-    router.refresh()
-    setLoading(false)
+    setStartError(null)
+    try {
+      const result = await submitProductionResult({
+        workOrderOperationId: operation.id,
+        goodQty,
+        defectQty,
+        reworkQty,
+      })
+      if (result.success) {
+        setGoodQty(0)
+        setDefectQty(0)
+        setReworkQty(0)
+        router.refresh()
+      } else {
+        setStartError(result.error ?? "실적 등록에 실패했습니다.")
+      }
+    } catch {
+      setStartError("실적 등록 중 오류가 발생했습니다.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleComplete = async () => {
     if (!confirm("작업을 완료 처리하겠습니까?")) return
     setLoading(true)
-    await updateOperationStatus(operation.id, "COMPLETED")
-    router.push("/pop/work-select")
+    setStartError(null)
+    try {
+      await updateOperationStatus(operation.id, "COMPLETED")
+      router.push("/pop/work-select")
+    } catch {
+      setStartError("작업 완료 처리 중 오류가 발생했습니다.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const statusLabel =
@@ -222,6 +239,11 @@ export function ProductionClient({ operation }: Props) {
 
         {status === "IN_PROGRESS" && (
           <>
+            {startError && (
+              <div className="w-full rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                {startError}
+              </div>
+            )}
             <button
               onClick={handleSubmit}
               disabled={loading || goodQty + defectQty + reworkQty === 0}
