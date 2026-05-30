@@ -405,6 +405,11 @@ export async function submitProductionResult(
     let isCompleted = false
 
     await prisma.$transaction(async (tx) => {
+      // Serialize concurrent assignment completions on the same operation via row-level lock
+      if (assignmentId) {
+        await tx.$queryRaw`SELECT id FROM "WorkOrderOperation" WHERE id = ${workOrderOperationId} FOR UPDATE`
+      }
+
       const op = await tx.workOrderOperation.findUnique({
         where: { id: workOrderOperationId },
         select: {
@@ -493,10 +498,6 @@ export async function submitProductionResult(
           ])
         )
         const operationCompletedScaled = sumScaledQty(Array.from(assignmentCompletedById.values()))
-        const allAssignmentsCompleted = op.assignments.every((candidate) => {
-          if (candidate.id === assignment.id) return assignmentShouldComplete
-          return candidate.status === "COMPLETED"
-        })
 
         const createdResult = await tx.productionResult.create({
           data: {
@@ -528,6 +529,14 @@ export async function submitProductionResult(
             status: assignmentShouldComplete ? "COMPLETED" : "IN_PROGRESS",
           },
         })
+
+        // Re-query after update: lock guarantees no concurrent modifications; fresh read
+        // includes our just-applied update, replacing stale snapshot-based calculation
+        const freshAssignments = await tx.workOrderOperationAssignment.findMany({
+          where: { workOrderOperationId },
+          select: { status: true },
+        })
+        const allAssignmentsCompleted = freshAssignments.every((a) => a.status === "COMPLETED")
 
         await tx.workOrderOperation.update({
           where: { id: workOrderOperationId },
