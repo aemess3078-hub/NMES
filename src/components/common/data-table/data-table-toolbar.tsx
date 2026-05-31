@@ -1,18 +1,10 @@
 "use client"
 
 import { Table } from "@tanstack/react-table"
-import { SlidersHorizontal, X } from "lucide-react"
+import { X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { DataTableFacetedFilter } from "./data-table-faceted-filter"
 import {
   DataTableFilterableColumn,
@@ -31,9 +23,13 @@ export function DataTableToolbar<TData>({
   filterableColumns = [],
 }: DataTableToolbarProps<TData>) {
   const isFiltered = table.getState().columnFilters.length > 0
+  const hasToolbarControls =
+    searchableColumns.length > 0 || filterableColumns.length > 0 || isFiltered
+
+  if (!hasToolbarControls) return null
 
   return (
-    <div className="flex items-center justify-between py-4">
+    <div className="flex items-center py-4">
       <div className="flex flex-1 items-center space-x-2">
         {searchableColumns.length > 0 && (
           <Input
@@ -72,40 +68,6 @@ export function DataTableToolbar<TData>({
           </Button>
         )}
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto hidden h-8 lg:flex text-[13px]"
-          >
-            <SlidersHorizontal className="mr-2 h-4 w-4" />
-            보기
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-[180px]">
-          <DropdownMenuLabel className="text-[13px]">컬럼 표시</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {table
-            .getAllColumns()
-            .filter(
-              (column) =>
-                typeof column.accessorFn !== "undefined" && column.getCanHide()
-            )
-            .map((column) => {
-              return (
-                <DropdownMenuCheckboxItem
-                  key={column.id}
-                  className="text-[13px]"
-                  checked={column.getIsVisible()}
-                  onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                >
-                  {column.id}
-                </DropdownMenuCheckboxItem>
-              )
-            })}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   )
 }
