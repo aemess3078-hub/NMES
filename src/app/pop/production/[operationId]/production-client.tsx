@@ -222,9 +222,9 @@ export function ProductionClient({ operation }: Props) {
       {status === "IN_PROGRESS" && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
           <h2 className="font-bold text-lg text-slate-800">실적 입력</h2>
-          <PopQuantityInput label="양품" value={goodQty} onChange={setGoodQty} />
-          <PopQuantityInput label="불량" value={defectQty} onChange={setDefectQty} />
-          <PopQuantityInput label="재작업" value={reworkQty} onChange={setReworkQty} />
+          <PopQuantityInput label="양품" value={goodQty} onChange={setGoodQty} steps={[1, 10, 100]} />
+          <PopQuantityInput label="불량" value={defectQty} onChange={setDefectQty} steps={[1, 10]} />
+          <PopQuantityInput label="재작업" value={reworkQty} onChange={setReworkQty} steps={[1, 10]} />
         </div>
       )}
 
