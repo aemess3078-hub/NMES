@@ -9,7 +9,13 @@ import { revalidatePath } from "next/cache"
 
 export async function getPurchaseOrders(tenantId: string) {
   const rows = await prisma.purchaseOrder.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      NOT: [
+        { orderNo: { startsWith: "OS-" } },
+        { note: { contains: "[OUTSOURCING]" } },
+      ],
+    },
     include: {
       supplier: true,
       items: {
