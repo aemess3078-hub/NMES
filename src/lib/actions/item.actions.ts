@@ -2,7 +2,7 @@
 
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
-import { Prisma, ItemStatus, UOM } from "@prisma/client"
+import { Prisma, ItemStatus, UOM, LotNumberingType, ManualLotPolicy } from "@prisma/client"
 import { ItemFormValues } from "@/app/app/mes/items/item-form-schema"
 
 export type ItemWithDetails = Prisma.ItemGetPayload<{
@@ -72,6 +72,36 @@ async function resolveDefaultWarehouseId(
   return warehouse.id
 }
 
+function resolveLotNumberingSettings(data: ItemFormValues): {
+  lotNumberingType: LotNumberingType
+  lotPrefix: string | null
+  manualLotPolicy: ManualLotPolicy
+} {
+  if (!data.isLotTracked) {
+    return {
+      lotNumberingType: "DEFAULT",
+      lotPrefix: null,
+      manualLotPolicy: "ALLOWED",
+    }
+  }
+
+  const lotNumberingType = (data.lotNumberingType ?? "DEFAULT") as LotNumberingType
+  const requestedManualLotPolicy = (data.manualLotPolicy ?? "ALLOWED") as ManualLotPolicy
+  const manualLotPolicy = lotNumberingType === "MANUAL" ? "REQUIRED" : requestedManualLotPolicy
+  const lotPrefix = data.lotPrefix?.trim().toUpperCase() || null
+
+  if (lotNumberingType === "PREFIX_MONTH_SEQ") {
+    if (!lotPrefix) throw new Error("LOT_PREFIX_REQUIRED")
+    if (!/^[A-Z0-9]+$/.test(lotPrefix)) throw new Error("INVALID_LOT_PREFIX")
+  }
+
+  return {
+    lotNumberingType,
+    lotPrefix: lotNumberingType === "PREFIX_MONTH_SEQ" ? lotPrefix : null,
+    manualLotPolicy,
+  }
+}
+
 export async function getItemCategories() {
   const tenantId = await getTenantId()
   return prisma.itemCategory.findMany({
@@ -127,6 +157,7 @@ export async function createItem(data: ItemFormValues) {
     tenantId,
     data.defaultWarehouseId,
   )
+  const lotNumberingSettings = resolveLotNumberingSettings(data)
 
   return prisma.item.create({
     data: {
@@ -140,6 +171,7 @@ export async function createItem(data: ItemFormValues) {
       spec:            data.spec ?? null,
       isLotTracked:    data.isLotTracked,
       isSerialTracked: data.isSerialTracked,
+      ...lotNumberingSettings,
       status:          data.status as ItemStatus,
       defaultWarehouseId: resolvedDefaultWarehouseId,
     },
@@ -167,6 +199,7 @@ export async function updateItem(id: string, data: ItemFormValues) {
     tenantId,
     data.defaultWarehouseId,
   )
+  const lotNumberingSettings = resolveLotNumberingSettings(data)
 
   return prisma.item.update({
     where: { id },
@@ -180,6 +213,7 @@ export async function updateItem(id: string, data: ItemFormValues) {
       spec:            data.spec ?? null,
       isLotTracked:    data.isLotTracked,
       isSerialTracked: data.isSerialTracked,
+      ...lotNumberingSettings,
       status:          data.status as ItemStatus,
       defaultWarehouseId: resolvedDefaultWarehouseId,
     },

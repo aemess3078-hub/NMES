@@ -23,6 +23,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { itemFormSchema, ItemFormValues } from "./item-form-schema"
 import { createItem, updateItem, type WarehouseForItemForm } from "@/lib/actions/item.actions"
 import { ITEM_TYPE_LABELS } from "./columns"
@@ -66,6 +67,9 @@ const DEFAULT_FORM_VALUES: ItemFormValues = {
   spec:            null,
   isLotTracked:    false,
   isSerialTracked: false,
+  lotNumberingType: "DEFAULT",
+  lotPrefix:      null,
+  manualLotPolicy: "ALLOWED",
   status:          "ACTIVE",
   defaultWarehouseId: null,
 }
@@ -124,6 +128,8 @@ export function ItemFormSheet({
 
   // 품목분류 선택 감지
   const watchedCategoryId = form.watch("categoryId")
+  const isLotTracked = form.watch("isLotTracked")
+  const lotNumberingType = form.watch("lotNumberingType")
 
   const selectedCategory = useMemo(
     () => categories.find((c) => c.id === watchedCategoryId) ?? null,
@@ -150,6 +156,23 @@ export function ItemFormSheet({
     }
   }, [open, defaultValues, form])
 
+  useEffect(() => {
+    if (!isLotTracked) {
+      form.setValue("lotNumberingType", "DEFAULT")
+      form.setValue("lotPrefix", null)
+      form.setValue("manualLotPolicy", "ALLOWED")
+    }
+  }, [isLotTracked, form])
+
+  useEffect(() => {
+    if (lotNumberingType !== "PREFIX_MONTH_SEQ") {
+      form.setValue("lotPrefix", null)
+    }
+    if (lotNumberingType === "MANUAL") {
+      form.setValue("manualLotPolicy", "REQUIRED")
+    }
+  }, [lotNumberingType, form])
+
   async function onSubmit(values: ItemFormValues) {
     setIsLoading(true)
     try {
@@ -169,6 +192,10 @@ export function ItemFormSheet({
         form.setError("categoryId", { type: "manual", message: msg })
       } else if (key === "INVALID_GROUP" || key === "GROUP_CATEGORY_MISMATCH") {
         form.setError("itemGroupId", { type: "manual", message: msg })
+      } else if (key === "LOT_PREFIX_REQUIRED") {
+        form.setError("lotPrefix", { type: "manual", message: "생산 Prefix형은 Prefix를 입력해야 합니다." })
+      } else if (key === "INVALID_LOT_PREFIX") {
+        form.setError("lotPrefix", { type: "manual", message: "Prefix는 영문 대문자와 숫자만 사용할 수 있습니다." })
       } else {
         form.setError("root", { message: msg ?? (error instanceof Error ? error.message : "저장 중 오류가 발생했습니다.") })
       }
@@ -346,6 +373,68 @@ export function ItemFormSheet({
                 label="LOT 추적"
                 description="이 품목의 입출고를 LOT 단위로 추적합니다."
               />
+              {isLotTracked && (
+                <FormSelectField
+                  control={form.control}
+                  name="lotNumberingType"
+                  label="LOT/제조번호 발행방식"
+                  options={[
+                    { label: "기본 규칙 사용", value: "DEFAULT" },
+                    { label: "수동입력", value: "MANUAL" },
+                    { label: "원자재 일자형: 26A01-1", value: "RAW_DATE_SEQ" },
+                    { label: "생산 Prefix형: CA26A001", value: "PREFIX_MONTH_SEQ" },
+                  ]}
+                />
+              )}
+
+              {isLotTracked && lotNumberingType === "PREFIX_MONTH_SEQ" && (
+                <FormField
+                  control={form.control}
+                  name="lotPrefix"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-[14px]">Prefix</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="예: C, CA"
+                          value={field.value ?? ""}
+                          onChange={(event) => field.onChange(event.target.value.trim().toUpperCase())}
+                        />
+                      </FormControl>
+                      <p className="text-[13px] text-muted-foreground">
+                        생산 Prefix형은 Prefix + YY + 월문자 + 3자리 순번으로 발행됩니다. 예: CA26A001
+                      </p>
+                      <FormMessage className="text-[13px]" />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {isLotTracked && lotNumberingType === "RAW_DATE_SEQ" && (
+                <p className="text-[13px] text-muted-foreground">
+                  원자재 일자형은 YY + 월문자 + DD + -순번으로 발행됩니다. 예: 26A01-1
+                </p>
+              )}
+
+              {isLotTracked && lotNumberingType === "DEFAULT" && (
+                <p className="text-[13px] text-muted-foreground">
+                  기본 규칙 사용은 품목군/품목분류/품목유형 fallback 규칙을 따릅니다.
+                </p>
+              )}
+
+              {isLotTracked && (
+                <FormSelectField
+                  control={form.control}
+                  name="manualLotPolicy"
+                  label="수동 LOT 정책"
+                  options={[
+                    { label: "허용", value: "ALLOWED" },
+                    { label: "필수", value: "REQUIRED" },
+                    { label: "불가", value: "DISABLED" },
+                  ]}
+                />
+              )}
+
               <FormSwitchField
                 control={form.control}
                 name="isSerialTracked"

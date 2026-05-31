@@ -1,4 +1,4 @@
-import type { ItemType } from "@prisma/client"
+import type { ItemType, ManualLotPolicy } from "@prisma/client"
 
 export type CnsLotEventType =
   | "MATERIAL_RECEIPT"
@@ -14,6 +14,7 @@ export type CnsLotRule = {
   pattern: CnsLotPattern
   prefix?: string
   manualAllowed?: boolean
+  manualLotPolicy?: ManualLotPolicy
 }
 
 export type CnsLotRuleSet = Partial<Record<CnsLotEventType, CnsLotRule>>

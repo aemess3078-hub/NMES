@@ -53,6 +53,19 @@ enum ItemStatus {
   DISCONTINUED
 }
 
+enum LotNumberingType {
+  DEFAULT
+  MANUAL
+  RAW_DATE_SEQ
+  PREFIX_MONTH_SEQ
+}
+
+enum ManualLotPolicy {
+  ALLOWED
+  REQUIRED
+  DISABLED
+}
+
 enum UOM {
   EA
   KG
@@ -601,6 +614,9 @@ model Item {
   spec            String?
   isLotTracked    Boolean    @default(false)
   isSerialTracked Boolean    @default(false)
+  lotNumberingType LotNumberingType @default(DEFAULT)
+  lotPrefix      String?
+  manualLotPolicy ManualLotPolicy @default(ALLOWED)
   status          ItemStatus @default(ACTIVE)
   defaultWarehouseId String?
   createdAt       DateTime   @default(now())

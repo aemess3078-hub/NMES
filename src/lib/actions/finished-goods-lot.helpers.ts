@@ -18,6 +18,9 @@ async function getCnsItemRuleContext(
     select: {
       code: true,
       itemType: true,
+      lotNumberingType: true,
+      lotPrefix: true,
+      manualLotPolicy: true,
       itemGroup: { select: { code: true } },
       category: { select: { code: true } },
     },
@@ -28,6 +31,9 @@ async function getCnsItemRuleContext(
     itemGroupCode: item?.itemGroup?.code,
     itemCategoryCode: item?.category?.code,
     itemType: item?.itemType,
+    lotNumberingType: item?.lotNumberingType,
+    lotPrefix: item?.lotPrefix,
+    manualLotPolicy: item?.manualLotPolicy,
   }
 }
 

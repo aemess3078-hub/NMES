@@ -85,6 +85,9 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
         select: {
           code: true,
           itemType: true,
+          lotNumberingType: true,
+          lotPrefix: true,
+          manualLotPolicy: true,
           isLotTracked: true,
           uom: true,
           itemGroup: { select: { code: true } },
@@ -129,20 +132,31 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
   // isLotTracked=false → 입력값 무시, 항상 null (비LOT 출고 흐름 보존)
   // isLotTracked=true  → 사용자 입력 우선, 미입력 시 자동생성
   const manualLotNo = isLotTracked ? data.lotNo?.trim() || null : null
+  const manualLotPolicy = purchaseOrderItem.item.manualLotPolicy ?? "ALLOWED"
+  const lotNumberingType = purchaseOrderItem.item.lotNumberingType ?? "DEFAULT"
+  const shouldIgnoreManualLotNo = manualLotPolicy === "DISABLED"
+  if (isLotTracked && (lotNumberingType === "MANUAL" || manualLotPolicy === "REQUIRED") && !manualLotNo) {
+    throw new Error("LOT 번호를 직접 입력해야 하는 품목입니다.")
+  }
   const shouldAutoGenerateLotNo = isLotTracked && !manualLotNo
   const itemRuleContext: CnsItemRuleContext = {
     itemCode: purchaseOrderItem.item.code,
     itemGroupCode: purchaseOrderItem.item.itemGroup?.code,
     itemCategoryCode: purchaseOrderItem.item.category?.code,
     itemType: purchaseOrderItem.item.itemType,
+    lotNumberingType,
+    lotPrefix: purchaseOrderItem.item.lotPrefix,
+    manualLotPolicy,
   }
   // txNo 사전 생성 (트랜잭션 외부 - 기존 패턴 유지)
   const txNo = data.acceptedQty > 0 ? await generateTxNo(tenantId) : null
 
   // ── 4. 트랜잭션 처리 ───────────────────────────────────────────────────────
-  const maxAttempts = shouldAutoGenerateLotNo ? 5 : 1
+  const maxAttempts = shouldAutoGenerateLotNo || shouldIgnoreManualLotNo ? 5 : 1
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const resolvedLotNo = manualLotNo ?? (
+    const resolvedLotNo = shouldIgnoreManualLotNo
+      ? await generateReceivingLotNo(tenantId, itemRuleContext, attempt)
+      : manualLotNo ?? (
       shouldAutoGenerateLotNo
         ? await generateReceivingLotNo(tenantId, itemRuleContext, attempt)
         : null
@@ -268,7 +282,7 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
       })
       break
     } catch (error) {
-      const canRetry = shouldAutoGenerateLotNo &&
+      const canRetry = (shouldAutoGenerateLotNo || shouldIgnoreManualLotNo) &&
         (isUniqueConstraintError(error) ||
           (error instanceof Error && error.message === AUTO_LOT_COLLISION))
 

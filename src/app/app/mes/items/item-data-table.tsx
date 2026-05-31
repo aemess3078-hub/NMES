@@ -69,6 +69,9 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
         spec:            editingItem.spec ?? null,
         isLotTracked:    editingItem.isLotTracked,
         isSerialTracked: editingItem.isSerialTracked,
+        lotNumberingType: editingItem.lotNumberingType,
+        lotPrefix:       editingItem.lotPrefix ?? null,
+        manualLotPolicy: editingItem.manualLotPolicy,
         status:          editingItem.status,
         defaultWarehouseId: editingItem.defaultWarehouseId ?? null,
       }

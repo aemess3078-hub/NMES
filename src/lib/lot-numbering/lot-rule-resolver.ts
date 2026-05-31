@@ -1,4 +1,4 @@
-import type { ItemType } from "@prisma/client"
+import type { ItemType, LotNumberingType, ManualLotPolicy } from "@prisma/client"
 import {
   fallbackRules,
   itemCategoryRules,
@@ -14,10 +14,13 @@ export type CnsItemRuleContext = {
   itemGroupCode?: string | null
   itemCategoryCode?: string | null
   itemType?: ItemType | string | null
+  lotNumberingType?: LotNumberingType | string | null
+  lotPrefix?: string | null
+  manualLotPolicy?: ManualLotPolicy | string | null
 }
 
 export type ResolvedCnsLotRule = CnsLotRule & {
-  source: "ITEM" | "ITEM_GROUP" | "ITEM_CATEGORY" | "ITEM_TYPE" | "FALLBACK"
+  source: "ITEM_SETTING" | "ITEM" | "ITEM_GROUP" | "ITEM_CATEGORY" | "ITEM_TYPE" | "FALLBACK"
 }
 
 function normalizeCode(code?: string | null): string | null {
@@ -38,10 +41,43 @@ export function resolveCnsLotRule(
   context: CnsItemRuleContext,
   eventType: CnsLotEventType,
 ): ResolvedCnsLotRule {
+  const lotNumberingType = normalizeCode(context.lotNumberingType) as LotNumberingType | null
+  const lotPrefix = normalizeCode(context.lotPrefix)
+  const manualLotPolicy = normalizeCode(context.manualLotPolicy) as ManualLotPolicy | null
   const itemCode = normalizeCode(context.itemCode)
   const itemGroupCode = normalizeCode(context.itemGroupCode)
   const itemCategoryCode = normalizeCode(context.itemCategoryCode)
   const itemType = normalizeCode(context.itemType)
+
+  if (lotNumberingType && lotNumberingType !== "DEFAULT") {
+    if (lotNumberingType === "MANUAL") {
+      return {
+        pattern: "MANUAL_SUPPLIER_LOT",
+        manualAllowed: true,
+        manualLotPolicy: "REQUIRED",
+        source: "ITEM_SETTING",
+      }
+    }
+
+    if (lotNumberingType === "RAW_DATE_SEQ") {
+      return {
+        pattern: "YY_MONTH_LETTER_DD_SEQ",
+        manualAllowed: manualLotPolicy !== "DISABLED",
+        manualLotPolicy: manualLotPolicy ?? "ALLOWED",
+        source: "ITEM_SETTING",
+      }
+    }
+
+    if (lotNumberingType === "PREFIX_MONTH_SEQ") {
+      return {
+        pattern: "PREFIX_YY_MONTH_LETTER_SEQ3",
+        prefix: lotPrefix ?? undefined,
+        manualAllowed: manualLotPolicy !== "DISABLED",
+        manualLotPolicy: manualLotPolicy ?? "ALLOWED",
+        source: "ITEM_SETTING",
+      }
+    }
+  }
 
   const itemRule = getRule(itemCodeRules, itemCode, eventType)
   if (itemRule) return { ...itemRule, source: "ITEM" }

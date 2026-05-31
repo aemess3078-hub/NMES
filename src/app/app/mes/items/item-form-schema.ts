@@ -9,6 +9,9 @@ export const itemFormSchema = z.object({
   spec:            z.string().nullable().optional(),
   isLotTracked:    z.boolean().default(false),
   isSerialTracked: z.boolean().default(false),
+  lotNumberingType: z.enum(["DEFAULT", "MANUAL", "RAW_DATE_SEQ", "PREFIX_MONTH_SEQ"]).default("DEFAULT"),
+  lotPrefix:      z.string().nullable().optional(),
+  manualLotPolicy: z.enum(["ALLOWED", "REQUIRED", "DISABLED"]).default("ALLOWED"),
   status:          z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).default("ACTIVE"),
   defaultWarehouseId: z.string().nullable().optional(),
 })

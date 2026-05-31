@@ -690,6 +690,9 @@ async function getCnsItemRuleContext(
     select: {
       code: true,
       itemType: true,
+      lotNumberingType: true,
+      lotPrefix: true,
+      manualLotPolicy: true,
       itemGroup: { select: { code: true } },
       category: { select: { code: true } },
     },
@@ -700,7 +703,26 @@ async function getCnsItemRuleContext(
     itemGroupCode: item?.itemGroup?.code,
     itemCategoryCode: item?.category?.code,
     itemType: item?.itemType,
+    lotNumberingType: item?.lotNumberingType,
+    lotPrefix: item?.lotPrefix,
+    manualLotPolicy: item?.manualLotPolicy,
   }
+}
+
+async function validateManualManufacturingNoPolicy(
+  tenantId: string,
+  itemId: string,
+  manufacturingNo: string | null,
+) {
+  const item = await prisma.item.findFirst({
+    where: { id: itemId, tenantId },
+    select: { lotNumberingType: true, manualLotPolicy: true },
+  })
+  if (!item) throw new Error("INVALID_ITEM")
+  if ((item.lotNumberingType === "MANUAL" || item.manualLotPolicy === "REQUIRED") && !manufacturingNo) {
+    throw new Error("제조번호를 직접 입력해야 하는 품목입니다.")
+  }
+  return item.manualLotPolicy === "DISABLED"
 }
 
 export async function generateManufacturingNo(
@@ -721,8 +743,13 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
 
   // 제조번호: 수동 입력 우선, 미입력 시 자동 생성 (MFG-YYYYMMDD-NNN)
   const trimmed = manufacturingNo?.trim()
+  const manualDisabled = await validateManualManufacturingNoPolicy(
+    tenantId,
+    headerFields.itemId,
+    trimmed && trimmed.length > 0 ? trimmed : null,
+  )
   const finalManufacturingNo = trimmed && trimmed.length > 0
-    ? trimmed
+    ? (manualDisabled ? await generateManufacturingNo(tenantId, headerFields.itemId) : trimmed)
     : await generateManufacturingNo(tenantId, headerFields.itemId)
 
   await prisma.workOrder.create({
@@ -780,6 +807,14 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     existing.tenantId
   )
   const trimmed = manufacturingNo?.trim()
+  const manualDisabled = await validateManualManufacturingNoPolicy(
+    existing.tenantId,
+    headerFields.itemId,
+    trimmed && trimmed.length > 0 ? trimmed : null,
+  )
+  const nextManufacturingNo = trimmed && trimmed.length > 0
+    ? (manualDisabled ? await generateManufacturingNo(existing.tenantId, headerFields.itemId) : trimmed)
+    : null
 
   await prisma.$transaction([
     prisma.workOrderOperation.deleteMany({ where: { workOrderId: id } }),
@@ -787,7 +822,7 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
       where: { id },
       data: {
         ...headerFields,
-        manufacturingNo: trimmed && trimmed.length > 0 ? trimmed : null,
+        manufacturingNo: nextManufacturingNo,
         dueDate: dueDate ? new Date(dueDate) : null,
         operations: {
           create: validatedOperations.map((op) => ({
