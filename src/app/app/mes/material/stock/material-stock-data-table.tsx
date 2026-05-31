@@ -1,13 +1,12 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Search, X, AlertTriangle } from "lucide-react"
+import { Search, AlertTriangle } from "lucide-react"
 import { DataTable } from "@/components/common/data-table"
 import { getGroupedColumns } from "./columns"
-import type { GroupedMaterialStock, LotBalanceDetail } from "@/lib/actions/inventory.actions"
+import type { GroupedMaterialStock } from "@/lib/actions/inventory.actions"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Button } from "@/components/ui/button"
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "-"
@@ -16,34 +15,24 @@ function formatDate(value: string | null | undefined): string {
   return d.toISOString().slice(0, 10)
 }
 
-// ── LOT 상세 패널 ─────────────────────────────────────────────────────────────
+// ── LOT 상세 (행 아래 inline 펼침 내용) ───────────────────────────────────────
 
-function LotDetailPanel({
-  item,
-  onClose,
-}: {
-  item: GroupedMaterialStock
-  onClose: () => void
-}) {
-  const unlottedRows = item.lotBalances.filter((b) => !b.lotId && b.qtyOnHand > 0)
+function LotDetailContent({ item }: { item: GroupedMaterialStock }) {
+  // LOT 관리 품목에 한해 LOT 미지정 재고를 경고 대상으로 본다.
+  const unlottedRows = item.isLotTracked
+    ? item.lotBalances.filter((b) => !b.lotId && b.qtyOnHand > 0)
+    : []
   const lottedRows = item.lotBalances.filter((b) => b.lotId)
+  // 비LOT 품목은 lotId가 없는 것이 정상 → 창고별 재고로 그대로 표시
+  const nonLotRows = item.lotBalances
 
   return (
-    <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 shadow-sm">
-      {/* 헤더 */}
-      <div className="mb-3 flex items-start justify-between">
-        <div>
-          <p className="text-[13px] text-muted-foreground">LOT별 재고 상세</p>
-          <h3 className="mt-0.5 text-[16px] font-semibold text-foreground">
-            [{item.itemCode}] {item.itemName}
-          </h3>
-        </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+    <div className="border-l-2 border-blue-300 bg-blue-50/30 px-4 py-3">
+      <p className="mb-2 text-[13px] font-semibold text-foreground">
+        [{item.itemCode}] {item.itemName} · {item.isLotTracked ? "LOT별 재고" : "창고별 재고"}
+      </p>
 
-      {/* LOT 미지정 경고 */}
+      {/* LOT 미지정 경고 — LOT 관리 품목에만 표시 */}
       {unlottedRows.length > 0 && (
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -62,26 +51,39 @@ function LotDetailPanel({
         </div>
       )}
 
-      {/* LOT별 테이블 */}
-      {lottedRows.length > 0 ? (
+      {/* 비LOT 품목 안내 */}
+      {!item.isLotTracked && (
+        <p className="mb-2 text-[12px] text-muted-foreground">
+          LOT 관리를 사용하지 않는 품목입니다. 창고별 재고만 표시됩니다.
+        </p>
+      )}
+
+      {/* 재고 테이블 (LOT 관리: LOT별 / 비LOT: 창고별) */}
+      {(item.isLotTracked ? lottedRows : nonLotRows).length > 0 ? (
         <div className="overflow-x-auto rounded-lg border bg-white">
           <table className="w-full min-w-[700px] text-[13px]">
             <thead>
               <tr className="border-b bg-muted/30">
-                <th className="px-3 py-2 text-left font-medium text-muted-foreground">LOT 번호</th>
+                {item.isLotTracked && (
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">LOT 번호</th>
+                )}
                 <th className="px-3 py-2 text-left font-medium text-muted-foreground">창고 / 사이트</th>
                 <th className="px-3 py-2 text-right font-medium text-muted-foreground">현재고</th>
                 <th className="px-3 py-2 text-right font-medium text-muted-foreground">가용재고</th>
                 <th className="px-3 py-2 text-right font-medium text-muted-foreground">보류재고</th>
                 <th className="px-3 py-2 text-right font-medium text-muted-foreground">입고일</th>
                 <th className="px-3 py-2 text-right font-medium text-muted-foreground">최근출고</th>
-                <th className="px-3 py-2 text-right font-medium text-muted-foreground">유통기한</th>
+                {item.isLotTracked && (
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">유통기한</th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {lottedRows.map((b) => (
+              {(item.isLotTracked ? lottedRows : nonLotRows).map((b) => (
                 <tr key={b.balanceId} className="border-b last:border-0 hover:bg-muted/10">
-                  <td className="px-3 py-2 font-mono text-blue-700">{b.lotNo ?? "-"}</td>
+                  {item.isLotTracked && (
+                    <td className="px-3 py-2 font-mono text-blue-700">{b.lotNo ?? "-"}</td>
+                  )}
                   <td className="px-3 py-2">
                     <div className="font-medium">[{b.warehouseCode}] {b.warehouseName}</div>
                     <div className="text-[12px] text-muted-foreground">{b.siteName}</div>
@@ -101,17 +103,19 @@ function LotDetailPanel({
                   <td className="px-3 py-2 text-right text-muted-foreground">
                     {formatDate(b.lastIssueAt)}
                   </td>
-                  <td className="px-3 py-2 text-right text-muted-foreground">
-                    {formatDate(b.expiryDate)}
-                  </td>
+                  {item.isLotTracked && (
+                    <td className="px-3 py-2 text-right text-muted-foreground">
+                      {formatDate(b.expiryDate)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        !unlottedRows.length && (
-          <p className="py-4 text-center text-[14px] text-muted-foreground">LOT 재고 없음</p>
+        unlottedRows.length === 0 && (
+          <p className="py-3 text-center text-[14px] text-muted-foreground">재고 상세가 없습니다.</p>
         )
       )}
     </div>
@@ -128,7 +132,6 @@ export function MaterialStockDataTable({ data }: MaterialStockDataTableProps) {
   const columns = getGroupedColumns()
   const [keyword, setKeyword] = useState("")
   const [inStockOnly, setInStockOnly] = useState(true)
-  const [selectedItem, setSelectedItem] = useState<GroupedMaterialStock | null>(null)
 
   const filteredData = useMemo(() => {
     const kw = keyword.trim().toLowerCase()
@@ -157,10 +160,6 @@ export function MaterialStockDataTable({ data }: MaterialStockDataTableProps) {
     },
   ]
 
-  function handleRowClick(row: GroupedMaterialStock) {
-    setSelectedItem((prev) => (prev?.itemId === row.itemId ? null : row))
-  }
-
   return (
     <div className="space-y-4">
       {/* 툴바 */}
@@ -181,28 +180,19 @@ export function MaterialStockDataTable({ data }: MaterialStockDataTableProps) {
           />
           재고 있음만 보기
         </label>
-        {selectedItem && (
-          <span className="text-[13px] text-blue-700">
-            선택: <span className="font-mono font-medium">{selectedItem.itemCode}</span> — 행을 다시 클릭하면 닫힙니다
-          </span>
-        )}
+        <span className="text-[13px] text-muted-foreground">
+          품목 행을 클릭하면 바로 아래에 재고 상세가 펼쳐집니다.
+        </span>
       </div>
 
-      {/* 품목 그룹화 테이블 */}
+      {/* 품목 그룹화 테이블 — 행 클릭 시 inline 펼침 */}
       <DataTable
         columns={columns}
         data={filteredData}
         filterableColumns={filterableColumns}
-        onRowClick={handleRowClick}
+        expandOnRowClick
+        renderExpandedRow={(row) => <LotDetailContent item={row} />}
       />
-
-      {/* LOT 상세 패널 */}
-      {selectedItem && (
-        <LotDetailPanel
-          item={selectedItem}
-          onClose={() => setSelectedItem(null)}
-        />
-      )}
     </div>
   )
 }

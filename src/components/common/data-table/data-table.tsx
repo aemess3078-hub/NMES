@@ -41,6 +41,8 @@ interface DataTableProps<TData, TValue> {
   defaultSorting?: SortingState
   onRowClick?: (row: TData) => void
   renderExpandedRow?: (row: TData) => React.ReactNode
+  /** 행 클릭 시 해당 행의 expanded row를 토글한다(단일 열기). renderExpandedRow와 함께 사용. */
+  expandOnRowClick?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -52,6 +54,7 @@ export function DataTable<TData, TValue>({
   defaultSorting = [],
   onRowClick,
   renderExpandedRow,
+  expandOnRowClick = false,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({})
   const [expanded, setExpanded] = React.useState<ExpandedState>({})
@@ -120,8 +123,17 @@ export function DataTable<TData, TValue>({
                 <React.Fragment key={row.id}>
                   <TableRow
                     data-state={row.getIsSelected() && "selected"}
-                    onClick={() => onRowClick?.(row.original)}
-                    className={cn("group/row", onRowClick ? "cursor-pointer" : undefined)}
+                    onClick={() => {
+                      if (expandOnRowClick && renderExpandedRow) {
+                        // 단일 열기: 클릭한 행만 펼치고 나머지는 닫음
+                        table.setExpanded(row.getIsExpanded() ? {} : { [row.id]: true })
+                      }
+                      onRowClick?.(row.original)
+                    }}
+                    className={cn(
+                      "group/row",
+                      onRowClick || (expandOnRowClick && renderExpandedRow) ? "cursor-pointer" : undefined
+                    )}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id}>
