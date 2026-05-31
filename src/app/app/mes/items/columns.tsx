@@ -126,6 +126,20 @@ export function getColumns(callbacks: {
       ),
     },
     {
+      id:         "defaultWarehouse",
+      accessorFn: (row) => row.defaultWarehouse?.name ?? null,
+      header:     "기본 입고창고",
+      cell: ({ row }) => {
+        const wh = row.original.defaultWarehouse
+        if (!wh) return <span className="text-[13px] text-muted-foreground">—</span>
+        return (
+          <span className="whitespace-nowrap text-[13px]">
+            <span className="font-mono text-muted-foreground">[{wh.code}]</span> {wh.name}
+          </span>
+        )
+      },
+    },
+    {
       accessorKey: "status",
       header: ({ column }) => <DataTableColumnHeader column={column} title="상태" />,
       cell: ({ row }) => {

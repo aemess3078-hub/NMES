@@ -24,7 +24,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { itemFormSchema, ItemFormValues } from "./item-form-schema"
-import { createItem, updateItem } from "@/lib/actions/item.actions"
+import { createItem, updateItem, type WarehouseForItemForm } from "@/lib/actions/item.actions"
 import { ITEM_TYPE_LABELS } from "./columns"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,6 +51,7 @@ interface ItemFormSheetProps {
   itemId?:      string
   categories:   Category[]
   itemGroups:   ItemGroupOption[]
+  warehouses:   WarehouseForItemForm[]
   tenantId:     string
 }
 
@@ -66,6 +67,7 @@ const DEFAULT_FORM_VALUES: ItemFormValues = {
   isLotTracked:    false,
   isSerialTracked: false,
   status:          "ACTIVE",
+  defaultWarehouseId: null,
 }
 
 const UOM_OPTIONS = [
@@ -89,6 +91,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   GROUP_CATEGORY_MISMATCH: "선택한 품목군이 해당 품목분류에 속하지 않습니다.",
   NOT_FOUND:               "품목을 찾을 수 없습니다.",
   FORBIDDEN:               "권한이 없습니다.",
+  INVALID_WAREHOUSE:       "선택한 기본 입고창고를 찾을 수 없습니다.",
 }
 
 const itemTypeBadgeClass: Record<string, string> = {
@@ -108,6 +111,7 @@ export function ItemFormSheet({
   itemId,
   categories,
   itemGroups,
+  warehouses,
   tenantId: _tenantId,
 }: ItemFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -292,6 +296,44 @@ export function ItemFormSheet({
             label="규격"
             placeholder="예: t3.0 x 1000 x 2000"
             rows={2}
+          />
+
+          {/* 기본 입고창고 (선택) */}
+          <FormField
+            control={form.control}
+            name="defaultWarehouseId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[14px]">기본 입고창고</FormLabel>
+                <Select
+                  value={field.value ?? "NONE"}
+                  onValueChange={(v) => field.onChange(v === "NONE" ? null : v)}
+                >
+                  <FormControl>
+                    <SelectTrigger className="text-[14px]">
+                      <SelectValue placeholder="기본 입고창고 선택 (선택사항)" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="NONE" className="text-[14px] text-muted-foreground">
+                      미지정
+                    </SelectItem>
+                    {warehouses.map((w) => (
+                      <SelectItem key={w.id} value={w.id} className="text-[14px]">
+                        [{w.code}] {w.name}
+                        <span className="ml-1.5 text-[12px] text-muted-foreground">
+                          · {w.siteName}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[12px] text-muted-foreground">
+                  자재입고 시 이 창고가 기본 선택됩니다. 입고 사이트와 창고 사이트가 같을 때만 자동 적용됩니다.
+                </p>
+                <FormMessage className="text-[13px]" />
+              </FormItem>
+            )}
           />
 
           {/* 추적 설정 */}

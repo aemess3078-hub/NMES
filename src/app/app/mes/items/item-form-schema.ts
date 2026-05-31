@@ -10,6 +10,7 @@ export const itemFormSchema = z.object({
   isLotTracked:    z.boolean().default(false),
   isSerialTracked: z.boolean().default(false),
   status:          z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).default("ACTIVE"),
+  defaultWarehouseId: z.string().nullable().optional(),
 })
 
 export type ItemFormValues = z.infer<typeof itemFormSchema>

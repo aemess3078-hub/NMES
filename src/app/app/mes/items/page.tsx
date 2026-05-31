@@ -1,13 +1,19 @@
-import { getItems, getItemCategories, getItemGroupsForForm } from "@/lib/actions/item.actions"
+import {
+  getItems,
+  getItemCategories,
+  getItemGroupsForForm,
+  getWarehousesForItemForm,
+} from "@/lib/actions/item.actions"
 import { ItemDataTable } from "./item-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function ItemsPage() {
-  const [items, categories, itemGroups] = await Promise.all([
+  const [items, categories, itemGroups, warehouses] = await Promise.all([
     getItems(),
     getItemCategories(),
     getItemGroupsForForm(),
+    getWarehousesForItemForm(),
   ])
 
   const tenantId = items[0]?.tenantId ?? ""
@@ -29,6 +35,7 @@ export default async function ItemsPage() {
         items={items}
         categories={categories}
         itemGroups={itemGroups}
+        warehouses={warehouses}
         tenantId={tenantId}
       />
     </div>

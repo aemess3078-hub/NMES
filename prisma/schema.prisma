@@ -602,12 +602,14 @@ model Item {
   isLotTracked    Boolean    @default(false)
   isSerialTracked Boolean    @default(false)
   status          ItemStatus @default(ACTIVE)
+  defaultWarehouseId String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  tenant    Tenant        @relation(fields: [tenantId], references: [id])
-  category  ItemCategory? @relation(fields: [categoryId], references: [id])
-  itemGroup ItemGroup?    @relation(fields: [itemGroupId], references: [id])
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  category         ItemCategory? @relation(fields: [categoryId], references: [id])
+  itemGroup        ItemGroup?    @relation(fields: [itemGroupId], references: [id])
+  defaultWarehouse Warehouse?    @relation("ItemDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
 
   substitutes             ItemSubstitute[]       @relation("PrimaryItem")
   substituteOf            ItemSubstitute[]       @relation("SubstituteItem")
@@ -638,6 +640,7 @@ model Item {
   @@index([tenantId])
   @@index([categoryId])
   @@index([itemGroupId])
+  @@index([defaultWarehouseId])
 }
 
 model ItemSubstitute {
@@ -810,6 +813,7 @@ model Warehouse {
   currentWipUnits       WipUnit[]              @relation("WipUnitCurrentWarehouse")
   wipMovementsFrom      WipMovement[]          @relation("WipMovementFromWarehouse")
   wipMovementsTo        WipMovement[]          @relation("WipMovementToWarehouse")
+  defaultForItems       Item[]                 @relation("ItemDefaultWarehouse")
 
   @@unique([siteId, code])
   @@index([tenantId])

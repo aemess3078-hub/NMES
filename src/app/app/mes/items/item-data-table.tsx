@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { ItemFormSheet } from "./item-form-sheet"
-import { deleteItem, type ItemWithDetails } from "@/lib/actions/item.actions"
+import { deleteItem, type ItemWithDetails, type WarehouseForItemForm } from "@/lib/actions/item.actions"
 import { type ItemFormValues } from "./item-form-schema"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
@@ -29,10 +29,11 @@ interface ItemDataTableProps {
   items:      ItemWithDetails[]
   categories: Category[]
   itemGroups: ItemGroupOption[]
+  warehouses: WarehouseForItemForm[]
   tenantId:   string
 }
 
-export function ItemDataTable({ items, categories, itemGroups, tenantId }: ItemDataTableProps) {
+export function ItemDataTable({ items, categories, itemGroups, warehouses, tenantId }: ItemDataTableProps) {
   const router     = useRouter()
   const canMutate  = useUserRole() !== "VIEWER"
   const [formOpen,     setFormOpen]     = useState(false)
@@ -69,6 +70,7 @@ export function ItemDataTable({ items, categories, itemGroups, tenantId }: ItemD
         isLotTracked:    editingItem.isLotTracked,
         isSerialTracked: editingItem.isSerialTracked,
         status:          editingItem.status,
+        defaultWarehouseId: editingItem.defaultWarehouseId ?? null,
       }
     : undefined
 
@@ -124,6 +126,7 @@ export function ItemDataTable({ items, categories, itemGroups, tenantId }: ItemD
         itemId={editingItem?.id}
         categories={categories}
         itemGroups={itemGroups}
+        warehouses={warehouses}
         tenantId={tenantId}
       />
     </div>

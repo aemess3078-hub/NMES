@@ -6,19 +6,70 @@ import { Prisma, ItemStatus, UOM } from "@prisma/client"
 import { ItemFormValues } from "@/app/app/mes/items/item-form-schema"
 
 export type ItemWithDetails = Prisma.ItemGetPayload<{
-  include: { category: true; itemGroup: true }
+  include: {
+    category: true
+    itemGroup: true
+    defaultWarehouse: { select: { id: true; code: true; name: true; siteId: true } }
+  }
 }>
 
 // backward-compat alias
 export type ItemWithCategory = ItemWithDetails
 
+export type WarehouseForItemForm = {
+  id: string
+  code: string
+  name: string
+  siteId: string
+  siteName: string
+}
+
 export async function getItems(): Promise<ItemWithDetails[]> {
   const tenantId = await getTenantId()
   return prisma.item.findMany({
     where: { tenantId },
-    include: { category: true, itemGroup: true },
+    include: {
+      category: true,
+      itemGroup: true,
+      defaultWarehouse: { select: { id: true, code: true, name: true, siteId: true } },
+    },
     orderBy: { code: "asc" },
   })
+}
+
+export async function getWarehousesForItemForm(): Promise<WarehouseForItemForm[]> {
+  const tenantId = await getTenantId()
+  const warehouses = await prisma.warehouse.findMany({
+    where: { tenantId },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      siteId: true,
+      site: { select: { name: true } },
+    },
+    orderBy: [{ site: { name: "asc" } }, { name: "asc" }],
+  })
+  return warehouses.map((w) => ({
+    id: w.id,
+    code: w.code,
+    name: w.name,
+    siteId: w.siteId,
+    siteName: w.site.name,
+  }))
+}
+
+async function resolveDefaultWarehouseId(
+  tenantId: string,
+  defaultWarehouseId: string | null | undefined,
+): Promise<string | null> {
+  if (!defaultWarehouseId) return null
+  const warehouse = await prisma.warehouse.findFirst({
+    where: { id: defaultWarehouseId, tenantId },
+    select: { id: true },
+  })
+  if (!warehouse) throw new Error("INVALID_WAREHOUSE")
+  return warehouse.id
 }
 
 export async function getItemCategories() {
@@ -72,6 +123,10 @@ export async function createItem(data: ItemFormValues) {
     data.categoryId,
     data.itemGroupId,
   )
+  const resolvedDefaultWarehouseId = await resolveDefaultWarehouseId(
+    tenantId,
+    data.defaultWarehouseId,
+  )
 
   return prisma.item.create({
     data: {
@@ -86,6 +141,7 @@ export async function createItem(data: ItemFormValues) {
       isLotTracked:    data.isLotTracked,
       isSerialTracked: data.isSerialTracked,
       status:          data.status as ItemStatus,
+      defaultWarehouseId: resolvedDefaultWarehouseId,
     },
   })
 }
@@ -107,6 +163,10 @@ export async function updateItem(id: string, data: ItemFormValues) {
     data.categoryId,
     data.itemGroupId,
   )
+  const resolvedDefaultWarehouseId = await resolveDefaultWarehouseId(
+    tenantId,
+    data.defaultWarehouseId,
+  )
 
   return prisma.item.update({
     where: { id },
@@ -121,6 +181,7 @@ export async function updateItem(id: string, data: ItemFormValues) {
       isLotTracked:    data.isLotTracked,
       isSerialTracked: data.isSerialTracked,
       status:          data.status as ItemStatus,
+      defaultWarehouseId: resolvedDefaultWarehouseId,
     },
   })
 }

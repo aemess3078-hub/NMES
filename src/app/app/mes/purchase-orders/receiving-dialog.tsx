@@ -41,6 +41,8 @@ type ItemInspection = {
   itemName: string
   itemCode: string
   isLotTracked: boolean
+  defaultWarehouseId: string | null
+  warehouseId: string   // 품목별 입고창고 (사용자 변경 가능)
   orderedQty: number
   receivedQty: number
   pendingQty: number
@@ -73,15 +75,6 @@ export function ReceivingDialog({
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
-  const [warehouseId, setWarehouseId] = useState<string>("")
-
-  useEffect(() => {
-    if (!open || !siteId) return
-    getWarehousesForSite(siteId).then((whs) => {
-      setWarehouses(whs)
-      if (whs.length > 0) setWarehouseId(whs[0].id)
-    })
-  }, [open, siteId])
 
   const [inspections, setInspections] = useState<ItemInspection[]>(() =>
     purchaseOrder.items.map((item) => {
@@ -94,6 +87,8 @@ export function ReceivingDialog({
         itemName: item.item.name,
         itemCode: item.item.code,
         isLotTracked: item.item.isLotTracked ?? false,
+        defaultWarehouseId: item.item.defaultWarehouseId ?? null,
+        warehouseId: "",
         orderedQty,
         receivedQty,
         pendingQty,
@@ -106,6 +101,26 @@ export function ReceivingDialog({
       }
     })
   )
+
+  // 창고 로드 후 품목별 기본창고 적용 (site 일치 시 우선, 아니면 첫 창고 fallback)
+  useEffect(() => {
+    if (!open || !siteId) return
+    getWarehousesForSite(siteId).then((whs) => {
+      setWarehouses(whs)
+      const whIds = new Set(whs.map((w) => w.id))
+      const fallback = whs[0]?.id ?? ""
+      setInspections((prev) =>
+        prev.map((ins) => ({
+          ...ins,
+          warehouseId:
+            ins.defaultWarehouseId && whIds.has(ins.defaultWarehouseId)
+              ? ins.defaultWarehouseId
+              : fallback,
+        })),
+      )
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, siteId])
 
   function updateInspection(index: number, patch: Partial<ItemInspection>) {
     setInspections((prev) =>
@@ -120,10 +135,16 @@ export function ReceivingDialog({
         const received = parseFloat(ins.thisReceivedQty) || 0
         if (received <= 0) continue
 
+        if (!ins.warehouseId) {
+          alert(`[${ins.itemCode}] ${ins.itemName}\n입고 창고를 선택해 주세요.`)
+          setIsLoading(false)
+          return
+        }
+
         await createReceivingInspection({
           purchaseOrderItemId: ins.purchaseOrderItemId,
           purchaseOrderId: purchaseOrder.id,
-          warehouseId,
+          warehouseId: ins.warehouseId,
           siteId,
           receivedQty: received,
           acceptedQty: parseFloat(ins.thisAcceptedQty) || 0,
@@ -152,28 +173,16 @@ export function ReceivingDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* 입고 창고 선택 */}
-        <div className="space-y-1.5">
-          <Label className="text-[13px] font-medium">입고 창고 <span className="text-destructive">*</span></Label>
-          {warehouses.length === 0 ? (
-            <p className="text-[13px] text-destructive">
-              이 사이트에 등록된 창고가 없습니다. 로케이션 관리에서 창고를 먼저 추가해주세요.
-            </p>
-          ) : (
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
-              <SelectTrigger className="h-8 text-[13px]">
-                <SelectValue placeholder="창고 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {warehouses.map((wh) => (
-                  <SelectItem key={wh.id} value={wh.id} className="text-[13px]">
-                    [{wh.code}] {wh.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        {/* 창고 안내 — 입고창고는 품목별로 지정 */}
+        {warehouses.length === 0 ? (
+          <p className="text-[13px] text-destructive">
+            이 사이트에 등록된 창고가 없습니다. 로케이션 관리에서 창고를 먼저 추가해주세요.
+          </p>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">
+            입고 창고는 품목별로 지정합니다. 품목 기본창고가 현재 입고 사이트와 같으면 자동 선택됩니다.
+          </p>
+        )}
 
         <div className="space-y-6 py-2">
           {inspections.map((ins, index) => (
@@ -220,6 +229,36 @@ export function ReceivingDialog({
                   )}
                 </div>
               )}
+
+              {/* 품목별 입고창고 */}
+              <div className="space-y-1.5">
+                <Label className="text-[13px]">
+                  입고 창고 <span className="text-destructive">*</span>
+                  {ins.defaultWarehouseId &&
+                    warehouses.some((w) => w.id === ins.defaultWarehouseId) &&
+                    ins.warehouseId === ins.defaultWarehouseId && (
+                      <span className="ml-1.5 text-[11px] font-normal text-blue-600">
+                        품목 기본창고 적용됨
+                      </span>
+                    )}
+                </Label>
+                <Select
+                  value={ins.warehouseId}
+                  onValueChange={(v) => updateInspection(index, { warehouseId: v })}
+                  disabled={warehouses.length === 0}
+                >
+                  <SelectTrigger className="h-8 text-[13px]">
+                    <SelectValue placeholder="창고 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((wh) => (
+                      <SelectItem key={wh.id} value={wh.id} className="text-[13px]">
+                        [{wh.code}] {wh.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* 입력 폼 */}
               <div className="grid grid-cols-3 gap-3">
@@ -311,7 +350,7 @@ export function ReceivingDialog({
           <Button variant="outline" onClick={onClose} disabled={isLoading}>
             취소
           </Button>
-          <Button onClick={handleSave} disabled={isLoading || !warehouseId}>
+          <Button onClick={handleSave} disabled={isLoading || warehouses.length === 0}>
             {isLoading ? "저장 중..." : "저장"}
           </Button>
         </DialogFooter>
