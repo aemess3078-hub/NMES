@@ -12,6 +12,13 @@ import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
 
+const operationStatusLabels: Record<string, string> = {
+  PENDING: "대기",
+  IN_PROGRESS: "진행중",
+  COMPLETED: "완료",
+  SKIPPED: "건너뜀",
+}
+
 const itemTypeBadge: Record<string, { label: string; className: string; Icon: LucideIcon }> = {
   FINISHED: { label: "완제품", className: "border-blue-200 bg-blue-50 text-blue-700", Icon: Package },
   SEMI_FINISHED: { label: "반제품", className: "border-purple-200 bg-purple-50 text-purple-700", Icon: Layers },
@@ -170,7 +177,7 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
           return <span className="text-[14px] text-muted-foreground">-</span>
         }
         return (
-          <span className="font-mono text-[13px] text-blue-700">{value}</span>
+          <span className="whitespace-nowrap font-mono text-[13px] text-blue-700">{value}</span>
         )
       },
     },
@@ -240,8 +247,8 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
         return (
           <div className="text-[13px]">
             <div className="font-medium">{operation.seq}. {displayProcessName(operation.routingOperation.name)}</div>
-            <div className="text-muted-foreground">
-              {operation.status} · {getOperationEquipmentLabel(operation)}
+            <div className="whitespace-nowrap text-muted-foreground">
+              {operationStatusLabels[operation.status] ?? operation.status} · {getOperationEquipmentLabel(operation)}
             </div>
           </div>
         )
@@ -257,7 +264,7 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
         const status = getMaterialIssueStatus(row.original)
         return (
           <div>
-            <Badge variant="outline" className={`text-[13px] ${status.className}`}>
+            <Badge variant="outline" className={`shrink-0 whitespace-nowrap text-[13px] ${status.className}`}>
               {status.label}
             </Badge>
             <div className="mt-1 text-[12px] text-muted-foreground">{status.detail}</div>
@@ -276,7 +283,7 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
         if (!val) return <span className="text-[14px] text-muted-foreground">-</span>
         const d = new Date(val)
         const formatted = `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}`
-        return <span className="text-[13px] font-mono text-muted-foreground">{formatted}</span>
+        return <span className="whitespace-nowrap font-mono text-[13px] text-muted-foreground">{formatted}</span>
       },
     },
     {
@@ -296,7 +303,7 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
         const isPast = date < today
         const formatted = date.toISOString().split("T")[0]
         return (
-          <span className={`text-[14px] ${isPast ? "font-medium text-red-600" : ""}`}>
+          <span className={`whitespace-nowrap text-[14px] ${isPast ? "font-medium text-red-600" : ""}`}>
             {formatted}
           </span>
         )
@@ -311,34 +318,34 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
         const status = row.getValue("status") as WorkOrderStatus
         if (status === "DRAFT") {
           return (
-            <Badge variant="secondary" className="text-[13px]">
+            <Badge variant="secondary" className="whitespace-nowrap text-[13px]">
               {workOrderStatusLabels[status]}
             </Badge>
           )
         }
         if (status === "RELEASED") {
           return (
-            <Badge variant="outline" className="text-[13px]">
+            <Badge variant="outline" className="whitespace-nowrap text-[13px]">
               {workOrderStatusLabels[status]}
             </Badge>
           )
         }
         if (status === "IN_PROGRESS") {
           return (
-            <Badge className="border-amber-200 bg-amber-100 text-[13px] text-amber-800 hover:bg-amber-100">
+            <Badge className="whitespace-nowrap border-amber-200 bg-amber-100 text-[13px] text-amber-800 hover:bg-amber-100">
               {workOrderStatusLabels[status]}
             </Badge>
           )
         }
         if (status === "COMPLETED") {
           return (
-            <Badge className="border-green-200 bg-green-100 text-[13px] text-green-800 hover:bg-green-100">
+            <Badge className="whitespace-nowrap border-green-200 bg-green-100 text-[13px] text-green-800 hover:bg-green-100">
               {workOrderStatusLabels[status]}
             </Badge>
           )
         }
         return (
-          <Badge variant="destructive" className="text-[13px]">
+          <Badge variant="destructive" className="whitespace-nowrap text-[13px]">
             {workOrderStatusLabels[status]}
           </Badge>
         )
@@ -380,7 +387,7 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50 text-[13px]"
+                className="h-8 gap-1.5 whitespace-nowrap border-blue-200 text-blue-700 hover:bg-blue-50 text-[13px]"
                 onClick={(e) => { e.stopPropagation(); onRelease(row.original) }}
               >
                 <Send className="h-3.5 w-3.5" />

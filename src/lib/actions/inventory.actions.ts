@@ -133,6 +133,126 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
   })
 }
 
+// ─── 품목 기준 그룹화 재고 ─────────────────────────────────────────────────────
+
+export type LotBalanceDetail = {
+  balanceId: string
+  lotId: string | null
+  lotNo: string | null
+  warehouseId: string
+  warehouseCode: string
+  warehouseName: string
+  siteName: string
+  qtyOnHand: number
+  qtyAvailable: number
+  qtyHold: number
+  manufactureDate: string | null
+  expiryDate: string | null
+  lastReceiptAt: string | null
+  lastIssueAt: string | null
+}
+
+export type GroupedMaterialStock = {
+  itemId: string
+  itemCode: string
+  itemName: string
+  itemType: string
+  itemSpec: string | null
+  uom: string
+  isLotTracked: boolean
+  totalQtyOnHand: number
+  totalQtyAvailable: number
+  totalQtyHold: number
+  lotCount: number           // distinct non-null lotId count
+  warehouseCount: number     // distinct warehouseId count
+  hasUnlottedStock: boolean  // isLotTracked=true AND lotId=null row with qty > 0
+  lotBalances: LotBalanceDetail[]
+}
+
+export async function getGroupedMaterialInventoryBalances(): Promise<GroupedMaterialStock[]> {
+  const balances = await getMaterialInventoryBalances()
+
+  type Accumulator = {
+    group: GroupedMaterialStock
+    lotIdSet: Set<string>
+    warehouseIdSet: Set<string>
+  }
+  const groupMap = new Map<string, Accumulator>()
+
+  for (const balance of balances) {
+    const lotDetail: LotBalanceDetail = {
+      balanceId: balance.id,
+      lotId: balance.lotId,
+      lotNo: balance.lot?.lotNo ?? null,
+      warehouseId: balance.warehouseId,
+      warehouseCode: balance.warehouse.code,
+      warehouseName: balance.warehouse.name,
+      siteName: balance.warehouse.site.name,
+      qtyOnHand: balance.qtyOnHand,
+      qtyAvailable: balance.qtyAvailable,
+      qtyHold: balance.qtyHold,
+      manufactureDate: balance.lot?.manufactureDate instanceof Date
+        ? balance.lot.manufactureDate.toISOString()
+        : null,
+      expiryDate: balance.lot?.expiryDate instanceof Date
+        ? balance.lot.expiryDate.toISOString()
+        : null,
+      lastReceiptAt: balance.lastReceiptAt instanceof Date
+        ? balance.lastReceiptAt.toISOString()
+        : null,
+      lastIssueAt: balance.lastIssueAt instanceof Date
+        ? balance.lastIssueAt.toISOString()
+        : null,
+    }
+
+    const isUnlotted = (balance.item.isLotTracked ?? false) && !balance.lotId && balance.qtyOnHand > 0
+
+    const existing = groupMap.get(balance.itemId)
+    if (existing) {
+      existing.group.totalQtyOnHand += balance.qtyOnHand
+      existing.group.totalQtyAvailable += balance.qtyAvailable
+      existing.group.totalQtyHold += balance.qtyHold
+      if (balance.lotId) existing.lotIdSet.add(balance.lotId)
+      existing.warehouseIdSet.add(balance.warehouseId)
+      if (isUnlotted) existing.group.hasUnlottedStock = true
+      existing.group.lotBalances.push(lotDetail)
+    } else {
+      const lotIdSet = new Set<string>()
+      const warehouseIdSet = new Set<string>()
+      if (balance.lotId) lotIdSet.add(balance.lotId)
+      warehouseIdSet.add(balance.warehouseId)
+      groupMap.set(balance.itemId, {
+        group: {
+          itemId: balance.itemId,
+          itemCode: balance.item.code,
+          itemName: balance.item.name,
+          itemType: balance.item.itemType,
+          itemSpec: balance.item.spec ?? null,
+          uom: balance.item.uom,
+          isLotTracked: balance.item.isLotTracked ?? false,
+          totalQtyOnHand: balance.qtyOnHand,
+          totalQtyAvailable: balance.qtyAvailable,
+          totalQtyHold: balance.qtyHold,
+          lotCount: 0,
+          warehouseCount: 0,
+          hasUnlottedStock: isUnlotted,
+          lotBalances: [lotDetail],
+        },
+        lotIdSet,
+        warehouseIdSet,
+      })
+    }
+  }
+
+  return Array.from(groupMap.values())
+    .map(({ group, lotIdSet, warehouseIdSet }) => {
+      group.lotCount = lotIdSet.size
+      group.warehouseCount = warehouseIdSet.size
+      return group
+    })
+    .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
+}
+
 export async function getWarehousesBySite(siteId: string) {
   return prisma.warehouse.findMany({
     where: { siteId },

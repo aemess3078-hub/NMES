@@ -1,27 +1,24 @@
-import {
-  getMaterialInventoryBalances,
-  getSitesForInventory,
-} from "@/lib/actions/inventory.actions"
+import { getGroupedMaterialInventoryBalances } from "@/lib/actions/inventory.actions"
 import { MaterialStockDataTable } from "./material-stock-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function MaterialStockPage() {
-  const [balances, sites] = await Promise.all([
-    getMaterialInventoryBalances(),
-    getSitesForInventory(),
-  ])
+  const groups = await getGroupedMaterialInventoryBalances()
 
-  const totalLines = balances.length
-  const lotLines = balances.filter((balance) => balance.lotId).length
-  const totalOnHand = balances.reduce((sum, balance) => sum + Number(balance.qtyOnHand), 0)
-  const totalAvailable = balances.reduce((sum, balance) => sum + Number(balance.qtyAvailable), 0)
-  const distinctItems = new Set(balances.map((balance) => balance.itemId)).size
-  const unlottedRows = balances.filter(
-    (balance) => balance.item.isLotTracked === true && !balance.lotId && Number(balance.qtyOnHand) > 0,
+  const totalItems = groups.length
+  const totalLines = groups.reduce((s, g) => s + g.lotBalances.length, 0)
+  const lotCount = groups.reduce((s, g) => s + g.lotCount, 0)
+  const totalOnHand = groups.reduce((s, g) => s + g.totalQtyOnHand, 0)
+  const totalAvailable = groups.reduce((s, g) => s + g.totalQtyAvailable, 0)
+  const unlottedLines = groups.reduce(
+    (s, g) => s + g.lotBalances.filter((b) => !b.lotId).length,
+    0,
   )
-  const unlottedLines = unlottedRows.length
-  const unlottedOnHand = unlottedRows.reduce((sum, balance) => sum + Number(balance.qtyOnHand), 0)
+  const unlottedOnHand = groups.reduce(
+    (s, g) => s + g.lotBalances.filter((b) => !b.lotId).reduce((ls, b) => ls + b.qtyOnHand, 0),
+    0,
+  )
 
   return (
     <div className="space-y-6 p-6">
@@ -31,13 +28,14 @@ export default async function MaterialStockPage() {
         </h1>
         <p className="mt-1 text-[15px] text-muted-foreground">
           의료기기 제조에 투입되는 원자재와 소모품의 LOT별 현재고를 확인합니다.
+          품목 행을 클릭하면 LOT별 상세 재고를 확인할 수 있습니다.
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-        <SummaryCard label="원자재 품목" value={distinctItems.toLocaleString()} suffix="종" />
+        <SummaryCard label="원자재 품목" value={totalItems.toLocaleString()} suffix="종" />
         <SummaryCard label="재고 라인" value={totalLines.toLocaleString()} suffix="건" />
-        <SummaryCard label="LOT 라인" value={lotLines.toLocaleString()} suffix="건" />
+        <SummaryCard label="관리 LOT" value={lotCount.toLocaleString()} suffix="개" />
         <SummaryCard label="총 현재고" value={totalOnHand.toLocaleString()} />
         <SummaryCard label="총 가용재고" value={totalAvailable.toLocaleString()} accent />
         <SummaryCard
@@ -49,7 +47,7 @@ export default async function MaterialStockPage() {
         />
       </div>
 
-      <MaterialStockDataTable data={balances} sites={sites} />
+      <MaterialStockDataTable data={groups} />
     </div>
   )
 }
