@@ -46,6 +46,51 @@ export async function getPurchaseOrders(tenantId: string) {
   }))
 }
 
+// 자재입고 대기 목록 전용 조회
+//  - 현재 site의 발주만 (다른 site 발주는 입고 site 창고와 불일치하여 서버 검증에서 거부됨)
+//  - 입고 대기 상태(ORDERED / PARTIAL_RECEIVED)만
+//  - 외주발주(OS- / [OUTSOURCING]) 제외 — getPurchaseOrders와 동일 정책
+export async function getPendingPurchaseOrdersForReceipt(tenantId: string, siteId: string) {
+  const rows = await prisma.purchaseOrder.findMany({
+    where: {
+      tenantId,
+      siteId,
+      status: { in: ["ORDERED", "PARTIAL_RECEIVED"] },
+      NOT: [
+        { orderNo: { startsWith: "OS-" } },
+        { note: { contains: "[OUTSOURCING]" } },
+      ],
+    },
+    include: {
+      supplier: true,
+      items: {
+        include: {
+          item: true,
+          receivingInspections: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+  return rows.map((o) => ({
+    ...o,
+    totalAmount: o.totalAmount !== null ? Number(o.totalAmount) : null,
+    items: o.items.map((item) => ({
+      ...item,
+      qty:          Number(item.qty),
+      unitPrice:    Number(item.unitPrice),
+      receivedQty:  Number(item.receivedQty),
+      stockAtOrder: Number(item.stockAtOrder),
+      receivingInspections: item.receivingInspections.map((ri) => ({
+        ...ri,
+        receivedQty:  Number(ri.receivedQty),
+        acceptedQty:  Number(ri.acceptedQty),
+        rejectedQty:  Number(ri.rejectedQty),
+      })),
+    })),
+  }))
+}
+
 export async function getSuppliers(tenantId: string) {
   return prisma.businessPartner.findMany({
     where: { tenantId, partnerType: { in: ["SUPPLIER", "BOTH"] } },
