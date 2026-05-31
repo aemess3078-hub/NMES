@@ -51,6 +51,23 @@ function displayProcessName(processName: string): string {
   return processName.includes("후처리") ? "후처리공정" : processName
 }
 
+function formatKstDateTime(value: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(value))
+
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? ""
+
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")} ${getPart("hour")}:${getPart("minute")}`
+}
+
 function getCurrentOperation(workOrder: WorkOrderWithDetails) {
   if (workOrder.operations.length === 0) return null
 
@@ -283,8 +300,7 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
       cell: ({ row }) => {
         const val = row.original.createdAt
         if (!val) return <span className="text-[14px] text-muted-foreground">-</span>
-        const d = new Date(val)
-        const formatted = `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}`
+        const formatted = formatKstDateTime(val)
         return <span className="whitespace-nowrap font-mono text-[13px] text-muted-foreground">{formatted}</span>
       },
     },
