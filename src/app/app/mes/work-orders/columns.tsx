@@ -190,20 +190,22 @@ export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): Co
       cell: ({ row }) => {
         const badge = itemTypeBadge[row.original.item.itemType]
         return (
-          <div className="text-[14px]">
-            <div className="flex items-center gap-1.5">
-              <span className="font-medium">{row.original.item.name}</span>
+          <div className="min-w-0 text-[14px]">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate break-keep font-medium">{row.original.item.name}</span>
               {badge && (
-                <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}>
-                  <badge.Icon className="h-2.5 w-2.5" />
+                <span className={`inline-flex w-auto min-w-fit shrink-0 items-center gap-0.5 whitespace-nowrap break-keep rounded-full border px-1.5 py-0.5 text-[11px] font-medium leading-none ${badge.className}`}>
+                  <badge.Icon className="h-2.5 w-2.5 shrink-0" />
                   {badge.label}
                 </span>
               )}
             </div>
-            <div className="font-mono text-[13px] text-muted-foreground">{row.original.item.code}</div>
+            <div className="truncate font-mono text-[13px] text-muted-foreground">{row.original.item.code}</div>
           </div>
         )
       },
+      size: 260,
+      minSize: 220,
     },
     {
       id: "plannedQty",
