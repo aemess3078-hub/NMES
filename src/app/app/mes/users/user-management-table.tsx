@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { UserRole } from "@prisma/client"
-import { Shield, UserCheck, UserX, ChevronDown } from "lucide-react"
+import { Shield, UserCheck, UserX, ChevronDown, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -18,8 +18,17 @@ import {
   updateUserRole,
   deactivateUser,
   reactivateUser,
+  deleteUserPermanently,
 } from "@/lib/actions/user-management.actions"
 import type { TenantUserRow } from "@/lib/actions/user-management.actions"
+
+type UserFilter = "ACTIVE" | "ALL" | "INACTIVE"
+
+const FILTER_OPTIONS: { label: string; value: UserFilter }[] = [
+  { label: "활성 사용자", value: "ACTIVE" },
+  { label: "비활성/퇴사 포함", value: "ALL" },
+  { label: "비활성/퇴사만", value: "INACTIVE" },
+]
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -59,6 +68,34 @@ export function UserManagementTable({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<UserFilter>("ACTIVE")
+
+  const filteredUsers = useMemo(() => {
+    if (filter === "ACTIVE") return users.filter((u) => u.isActive)
+    if (filter === "INACTIVE") return users.filter((u) => !u.isActive)
+    return users
+  }, [users, filter])
+
+  const activeCount = useMemo(() => users.filter((u) => u.isActive).length, [users])
+  const inactiveCount = users.length - activeCount
+
+  function handleDeletePermanently(tenantUserId: string) {
+    if (
+      !confirm(
+        "영구삭제는 복구할 수 없습니다. 단, 업무 이력이 있는 사용자는 삭제되지 않습니다.\n\n계속하시겠습니까?",
+      )
+    )
+      return
+    setError(null)
+    startTransition(async () => {
+      const result = await deleteUserPermanently(tenantUserId)
+      if (result.success) {
+        router.refresh()
+      } else {
+        setError(result.error ?? "영구삭제에 실패했습니다.")
+      }
+    })
+  }
 
   function handleRoleChange(tenantUserId: string, newRole: UserRole) {
     setError(null)
@@ -73,7 +110,12 @@ export function UserManagementTable({
   }
 
   function handleDeactivate(tenantUserId: string) {
-    if (!confirm("이 사용자를 비활성화하시겠습니까?")) return
+    if (
+      !confirm(
+        "퇴사처리 시 로그인할 수 없으며 기본 사용자 목록에서 숨겨집니다. 기존 업무 이력은 유지됩니다.\n\n계속하시겠습니까?",
+      )
+    )
+      return
     setError(null)
     startTransition(async () => {
       const result = await deactivateUser(tenantUserId)
@@ -97,16 +139,35 @@ export function UserManagementTable({
     })
   }
 
-  if (users.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
-        등록된 사용자가 없습니다.
-      </div>
-    )
-  }
-
   return (
     <>
+      {/* 필터 바 */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        {FILTER_OPTIONS.map((opt) => (
+          <Button
+            key={opt.value}
+            type="button"
+            size="sm"
+            variant={filter === opt.value ? "default" : "outline"}
+            className="h-8 text-[13px]"
+            onClick={() => setFilter(opt.value)}
+          >
+            {opt.label}
+            {opt.value === "ACTIVE" && ` (${activeCount})`}
+            {opt.value === "INACTIVE" && ` (${inactiveCount})`}
+          </Button>
+        ))}
+      </div>
+
+      {filteredUsers.length === 0 ? (
+        <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
+          {filter === "ACTIVE"
+            ? "활성 사용자가 없습니다."
+            : filter === "INACTIVE"
+              ? "비활성/퇴사 사용자가 없습니다."
+              : "등록된 사용자가 없습니다."}
+        </div>
+      ) : (
       <div className="border rounded-xl overflow-hidden shadow-sm">
         <table className="w-full border-collapse">
           <thead>
@@ -122,7 +183,7 @@ export function UserManagementTable({
             </tr>
           </thead>
           <tbody>
-            {users.map((user, idx) => {
+            {filteredUsers.map((user, idx) => {
               const isSelf = user.profileId === currentUserId
               const isOwner = user.role === "OWNER"
 
@@ -202,7 +263,7 @@ export function UserManagementTable({
                             onClick={() => handleDeactivate(user.id)}
                           >
                             <UserX className="w-3.5 h-3.5 mr-1.5" />
-                            탈퇴처리
+                            퇴사처리 (목록에서 숨김)
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem
@@ -213,6 +274,15 @@ export function UserManagementTable({
                             재활성화
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-[13px] text-destructive focus:text-destructive"
+                          disabled={isSelf || isOwner}
+                          onClick={() => handleDeletePermanently(user.id)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                          영구삭제
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
@@ -222,6 +292,7 @@ export function UserManagementTable({
           </tbody>
         </table>
       </div>
+      )}
 
       {error && (
         <p className="text-[13px] text-destructive bg-destructive/10 rounded-lg px-4 py-2 mt-2">
