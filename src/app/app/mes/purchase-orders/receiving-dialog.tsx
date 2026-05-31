@@ -219,12 +219,12 @@ export function ReceivingDialog({
                     type="text"
                     value={ins.lotNo}
                     onChange={(e) => updateInspection(index, { lotNo: e.target.value })}
-                    placeholder="비워두면 LOT-YYYYMMDD-NNN 형식으로 자동 발행됩니다"
+                    placeholder="자동 생성 예: 26A01-1 / 공급사 LOT 직접 입력 가능"
                     className="h-8 text-[13px] font-mono"
                   />
                   {!ins.lotNo && (
                     <p className="text-[12px] text-muted-foreground">
-                      미입력 시 LOT-YYYYMMDD-NNN 형식으로 자동 발행됩니다.
+                      미입력 시 26A01-1 형식으로 자동 발행됩니다. 공급사 LOT가 있으면 직접 입력할 수 있습니다.
                     </p>
                   )}
                 </div>

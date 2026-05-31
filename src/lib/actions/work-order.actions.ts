@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
+import { generateCnsManufacturingNo } from "@/lib/lot-numbering/lot-number-generator"
+import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { WorkOrderStatus, OperationStatus, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { computeWipReceiptStatus } from "./wip-receipt.helpers"
@@ -676,34 +678,38 @@ export async function generateOrderNo(tenantId: string): Promise<string> {
   return `${prefix}${String(nextSeq).padStart(3, "0")}`
 }
 
-// 제조번호 자동 생성: MFG-YYYYMMDD-NNN (수동 입력이 없을 때만 사용)
-export async function generateManufacturingNo(tenantId: string): Promise<string> {
-  const now = new Date()
-  const ymd =
-    now.getFullYear().toString() +
-    String(now.getMonth() + 1).padStart(2, "0") +
-    String(now.getDate()).padStart(2, "0")
-  const prefix = `MFG-${ymd}-`
+// 제조번호 자동 생성: CNS prefix + YY + month letter(A-L) + 3-digit sequence.
+async function getCnsItemRuleContext(
+  tenantId: string,
+  itemId?: string | null,
+): Promise<CnsItemRuleContext> {
+  if (!itemId) return {}
 
-  const latest = await prisma.workOrder.findFirst({
-    where: {
-      tenantId,
-      manufacturingNo: { startsWith: prefix },
+  const item = await prisma.item.findFirst({
+    where: { id: itemId, tenantId },
+    select: {
+      code: true,
+      itemType: true,
+      itemGroup: { select: { code: true } },
+      category: { select: { code: true } },
     },
-    orderBy: { manufacturingNo: "desc" },
-    select: { manufacturingNo: true },
   })
 
-  let nextSeq = 1
-  if (latest?.manufacturingNo) {
-    const parts = latest.manufacturingNo.split("-")
-    const lastSeq = parseInt(parts[parts.length - 1], 10)
-    if (!isNaN(lastSeq)) {
-      nextSeq = lastSeq + 1
-    }
+  return {
+    itemCode: item?.code,
+    itemGroupCode: item?.itemGroup?.code,
+    itemCategoryCode: item?.category?.code,
+    itemType: item?.itemType,
   }
+}
 
-  return `${prefix}${String(nextSeq).padStart(3, "0")}`
+export async function generateManufacturingNo(
+  tenantId: string,
+  itemId?: string | null,
+  sequenceOffset = 0,
+): Promise<string> {
+  const itemContext = await getCnsItemRuleContext(tenantId, itemId)
+  return generateCnsManufacturingNo(prisma, tenantId, itemContext, new Date(), sequenceOffset)
 }
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
@@ -717,7 +723,7 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
   const trimmed = manufacturingNo?.trim()
   const finalManufacturingNo = trimmed && trimmed.length > 0
     ? trimmed
-    : await generateManufacturingNo(tenantId)
+    : await generateManufacturingNo(tenantId, headerFields.itemId)
 
   await prisma.workOrder.create({
     data: {

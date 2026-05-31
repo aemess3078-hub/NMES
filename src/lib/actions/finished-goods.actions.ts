@@ -365,9 +365,8 @@ export async function createFinishedGoodsReceiptAction(
         )
       }
 
-      // 6. LOT 발번 — 부분입고 다회차마다 신규 Lot 발번 (의료기기 추적성)
-      //    FINISHED: FG-{manufacturingNo} 또는 FG-{orderNo}
-      //    SEMI_FINISHED: SF-{orderNo} (반제품은 제조번호 공식 키 미사용)
+      // 6. LOT 발번 — WorkOrder.manufacturingNo를 우선 사용하고,
+      //    제조번호가 없는 예외 상황에서는 CNS resolver로 발번한다.
       const lot = await createFinishedGoodsLot(tx, {
         tenantId,
         workOrder: {

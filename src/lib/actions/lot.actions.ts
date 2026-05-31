@@ -1,8 +1,8 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { generateCnsMaterialReceiptLotNo } from "@/lib/lot-numbering/lot-number-generator"
 import { revalidatePath } from "next/cache"
-import { generateNumber } from "./numbering-rule.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,13 +133,19 @@ export async function updateLotStatus(id: string, status: string) {
 export async function generateLotNo(itemId: string, tenantId: string): Promise<string> {
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { code: true, itemType: true },
+    select: {
+      code: true,
+      itemType: true,
+      itemGroup: { select: { code: true } },
+      category: { select: { code: true } },
+    },
   })
-  const context = {
-    ITEM_CODE: item?.code,
-    ITEM_TYPE: item?.itemType,
-  }
-  return generateNumber(tenantId, "LOT", context as any)
+  return generateCnsMaterialReceiptLotNo(prisma, tenantId, {
+    itemCode: item?.code,
+    itemGroupCode: item?.itemGroup?.code,
+    itemCategoryCode: item?.category?.code,
+    itemType: item?.itemType,
+  })
 }
 
 // ─── 재귀 정추적 헬퍼 ─────────────────────────────────────────────────────────

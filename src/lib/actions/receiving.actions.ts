@@ -2,7 +2,9 @@
 
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
-import { ReceivingInspectionResult } from "@prisma/client"
+import { generateCnsMaterialReceiptLotNo } from "@/lib/lot-numbering/lot-number-generator"
+import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
+import { Prisma, ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
 export type CreateReceivingInspectionInput = {
@@ -31,18 +33,22 @@ export async function getWarehousesForSite(siteId: string) {
   })
 }
 
-/** 원자재 LOT 번호 자동생성 헬퍼 (LOT-YYYYMMDD-NNN 형식)
- * 나중에 고객사별 규칙으로 교체 가능하도록 독립 함수로 분리.
- * 주의: 동시 입고 시 동일 번호 가능성 있음 → 후속 lock 보완 필요.
+/** 원자재 LOT 번호 자동생성 헬퍼.
+ * CNS quick rule: YY + month letter(A-L) + DD + "-" + daily sequence.
+ * 수동 LOT 입력은 createReceivingInspection에서 우선 처리한다.
  */
-export async function generateReceivingLotNo(tenantId: string): Promise<string> {
-  const today = new Date()
-  const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, "")
-  const prefix = `LOT-${yyyymmdd}-`
-  const count = await prisma.lot.count({
-    where: { tenantId, lotNo: { startsWith: prefix } },
-  })
-  return `${prefix}${String(count + 1).padStart(3, "0")}`
+export async function generateReceivingLotNo(
+  tenantId: string,
+  itemContext: CnsItemRuleContext = {},
+  sequenceOffset = 0,
+): Promise<string> {
+  return generateCnsMaterialReceiptLotNo(prisma, tenantId, itemContext, new Date(), sequenceOffset)
+}
+
+const AUTO_LOT_COLLISION = "AUTO_LOT_COLLISION"
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
 }
 
 async function generateTxNo(tenantId: string): Promise<string> {
@@ -75,7 +81,16 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
     where: { id: data.purchaseOrderItemId },
     include: {
       purchaseOrder: { select: { siteId: true } },
-      item: { select: { isLotTracked: true, uom: true } },
+      item: {
+        select: {
+          code: true,
+          itemType: true,
+          isLotTracked: true,
+          uom: true,
+          itemGroup: { select: { code: true } },
+          category: { select: { code: true } },
+        },
+      },
     },
   })
 
@@ -113,16 +128,28 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
   // ── 3. LOT 번호 결정 ───────────────────────────────────────────────────────
   // isLotTracked=false → 입력값 무시, 항상 null (비LOT 출고 흐름 보존)
   // isLotTracked=true  → 사용자 입력 우선, 미입력 시 자동생성
-  let resolvedLotNo: string | null = null
-  if (isLotTracked) {
-    resolvedLotNo = data.lotNo?.trim() || await generateReceivingLotNo(tenantId)
+  const manualLotNo = isLotTracked ? data.lotNo?.trim() || null : null
+  const shouldAutoGenerateLotNo = isLotTracked && !manualLotNo
+  const itemRuleContext: CnsItemRuleContext = {
+    itemCode: purchaseOrderItem.item.code,
+    itemGroupCode: purchaseOrderItem.item.itemGroup?.code,
+    itemCategoryCode: purchaseOrderItem.item.category?.code,
+    itemType: purchaseOrderItem.item.itemType,
   }
-
   // txNo 사전 생성 (트랜잭션 외부 - 기존 패턴 유지)
   const txNo = data.acceptedQty > 0 ? await generateTxNo(tenantId) : null
 
   // ── 4. 트랜잭션 처리 ───────────────────────────────────────────────────────
-  await prisma.$transaction(async (tx) => {
+  const maxAttempts = shouldAutoGenerateLotNo ? 5 : 1
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const resolvedLotNo = manualLotNo ?? (
+      shouldAutoGenerateLotNo
+        ? await generateReceivingLotNo(tenantId, itemRuleContext, attempt)
+        : null
+    )
+
+    try {
+      await prisma.$transaction(async (tx) => {
     // 4-1. LOT 조회 또는 생성
     let lotId: string | null = null
     if (resolvedLotNo) {
@@ -134,6 +161,9 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
           throw new Error(
             `LOT 번호 '${resolvedLotNo}'는 다른 품목에 이미 사용 중입니다. 다른 번호를 입력해주세요.`
           )
+        }
+        if (shouldAutoGenerateLotNo) {
+          throw new Error(AUTO_LOT_COLLISION)
         }
         lotId = existingLot.id
       } else {
@@ -235,7 +265,24 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
         data: { status: "PARTIAL_RECEIVED" },
       })
     }
-  })
+      })
+      break
+    } catch (error) {
+      const canRetry = shouldAutoGenerateLotNo &&
+        (isUniqueConstraintError(error) ||
+          (error instanceof Error && error.message === AUTO_LOT_COLLISION))
+
+      if (canRetry && attempt < maxAttempts - 1) {
+        continue
+      }
+
+      if (canRetry) {
+        throw new Error("LOT 자동발행 중 번호 충돌이 반복되었습니다. 다시 시도해 주세요.")
+      }
+
+      throw error
+    }
+  }
 
   revalidatePath("/app/mes/purchase-orders")
   revalidatePath("/app/mes/material-receipt")
