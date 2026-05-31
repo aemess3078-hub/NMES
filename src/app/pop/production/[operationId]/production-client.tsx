@@ -47,6 +47,7 @@ type Operation = {
   id: string
   seq: number
   status: string
+  materialIssuanceReady: boolean
   plannedQty: unknown
   completedQty: unknown
   workOrder: WorkOrder | null
@@ -79,6 +80,7 @@ export function ProductionClient({ operation }: Props) {
     ? Number(selectedAssignment.assignedQty)
     : Number(operation.plannedQty)
   const equipmentName = selectedAssignment?.equipment?.name ?? operation.equipment?.name ?? "-"
+  const materialBlocked = !operation.materialIssuanceReady
   const progress =
     plannedQty > 0
       ? Math.min(100, Math.round((completedQty / plannedQty) * 100))
@@ -218,8 +220,15 @@ export function ProductionClient({ operation }: Props) {
         </div>
       </div>
 
-      {/* 수량 입력 (IN_PROGRESS일 때만) */}
-      {status === "IN_PROGRESS" && (
+      {/* 자재출고 미완료 안내 */}
+      {materialBlocked && status !== "COMPLETED" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-[15px] text-amber-800">
+          자재출고가 완료되지 않아 작업을 시작할 수 없습니다. 먼저 자재출고를 처리해 주세요.
+        </div>
+      )}
+
+      {/* 수량 입력 (IN_PROGRESS일 때만, 자재출고 완료 시) */}
+      {status === "IN_PROGRESS" && !materialBlocked && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
           <h2 className="font-bold text-lg text-slate-800">실적 입력</h2>
           <PopQuantityInput label="양품" value={goodQty} onChange={setGoodQty} steps={[1, 10, 100]} />
@@ -256,7 +265,7 @@ export function ProductionClient({ operation }: Props) {
 
       {/* 액션 버튼 */}
       <div className="space-y-3">
-        {status === "PENDING" && (
+        {status === "PENDING" && !materialBlocked && (
           <>
             {startError && (
               <div className="w-full rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -273,7 +282,7 @@ export function ProductionClient({ operation }: Props) {
           </>
         )}
 
-        {status === "IN_PROGRESS" && (
+        {status === "IN_PROGRESS" && !materialBlocked && (
           <>
             {startError && (
               <div className="w-full rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">

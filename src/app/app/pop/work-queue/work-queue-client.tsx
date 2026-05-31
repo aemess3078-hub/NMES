@@ -81,6 +81,14 @@ function AvailabilityBadge({ row }: { row: PopWorkQueueRow }) {
     )
   }
 
+  if (!row.materialIssuanceReady) {
+    return (
+      <Badge variant="outline" className="border-amber-300 bg-amber-50 px-3 py-1 text-[14px] text-amber-800">
+        자재출고 대기
+      </Badge>
+    )
+  }
+
   if (row.canWork) {
     return (
       <Badge className="bg-emerald-500 px-3 py-1 text-[14px] text-white hover:bg-emerald-500">
@@ -495,6 +503,16 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
 
                 {/* ── 액션 영역 ── */}
 
+                {/* 자재출고 미완료 → 작업시작/실적등록 차단 안내 */}
+                {!row.materialIssuanceReady && row.status !== "COMPLETED" && (
+                  <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                    <PackageCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p className="text-[14px] text-amber-800">
+                      자재출고가 완료되지 않아 작업을 시작할 수 없습니다. 먼저 자재출고를 처리해 주세요.
+                    </p>
+                  </div>
+                )}
+
                 {/* PENDING + 작업가능 → 작업시작 버튼 */}
                 {row.status === "PENDING" && row.canWork && (
                   <div className="mt-4 space-y-2">
@@ -523,8 +541,8 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                   </div>
                 )}
 
-                {/* IN_PROGRESS → 실적등록 버튼 + 인라인 폼 */}
-                {row.status === "IN_PROGRESS" && (
+                {/* IN_PROGRESS → 실적등록 버튼 + 인라인 폼 (자재출고 완료 시에만) */}
+                {row.status === "IN_PROGRESS" && row.materialIssuanceReady && (
                   <div className="mt-4">
                     {!isFormOpen ? (
                       <div className="space-y-2">

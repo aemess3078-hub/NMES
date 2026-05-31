@@ -52,6 +52,7 @@ export type PopWorkQueueRow = {
   materialLotQty: number
   canWork: boolean
   availabilityLabel: string
+  materialIssuanceReady: boolean
 }
 
 // ─── 1. PIN 로그인 (데모용 간이 구현) ─────────────────────────────────────────
@@ -168,6 +169,30 @@ export async function getTodayWorkOrders() {
   })
 }
 
+// 자재출고 미완료 안내 문구 (UI/서버 가드 공통)
+const MATERIAL_NOT_ISSUED_MESSAGE =
+  "자재출고가 완료되지 않아 작업을 시작할 수 없습니다. 먼저 자재출고를 처리해 주세요."
+
+// 작업지시 자재출고 완료 여부 판정
+//  - 원본 WipUnit(parentWipUnitId=null, sourceProductionResultId=null)은
+//    자재출고 시에만 생성되므로, 그 존재 자체가 "자재출고 완료" 신호다.
+//  - 후속 공정(후처리/포장 등)은 같은 WipUnit이 계속 흐르므로 자동 충족된다.
+async function workOrderHasMaterialIssuance(
+  tenantId: string,
+  workOrderId: string
+): Promise<boolean> {
+  const wipUnit = await prisma.wipUnit.findFirst({
+    where: {
+      tenantId,
+      workOrderId,
+      parentWipUnitId: null,
+      sourceProductionResultId: null,
+    },
+    select: { id: true },
+  })
+  return Boolean(wipUnit)
+}
+
 export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueueRow[]> {
   const operations = await prisma.workOrderOperation.findMany({
     where: {
@@ -221,6 +246,23 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
     ],
   })
 
+  // 자재출고 완료(원본 WipUnit 존재) 작업지시 집합을 1회 조회
+  const workOrderIds = Array.from(new Set(operations.map((o) => o.workOrder.id)))
+  const issuedWorkOrderIds = new Set(
+    (
+      await prisma.wipUnit.findMany({
+        where: {
+          tenantId,
+          workOrderId: { in: workOrderIds },
+          parentWipUnitId: null,
+          sourceProductionResultId: null,
+        },
+        select: { workOrderId: true },
+        distinct: ["workOrderId"],
+      })
+    ).map((w) => w.workOrderId)
+  )
+
   return operations.flatMap((operation): PopWorkQueueRow[] => {
     const previousOperations = operation.workOrder.operations.filter(
       (candidate) => candidate.seq < operation.seq
@@ -228,7 +270,9 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
     const previousCompleted = previousOperations.every(
       (candidate) => candidate.status === "COMPLETED"
     )
-    const operationCanWork = operation.status === "IN_PROGRESS" || previousCompleted
+    const materialIssuanceReady = issuedWorkOrderIds.has(operation.workOrder.id)
+    const operationCanWork =
+      (operation.status === "IN_PROGRESS" || previousCompleted) && materialIssuanceReady
     const materialLotQty = operation.workOrder.materialLots.reduce(
       (sum, lot) => sum + Number(lot.qty),
       0
@@ -270,12 +314,15 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
             completedQty: assignmentCompletedQty,
             remainingQty: Math.max(assignedQty - assignmentCompletedQty, 0),
             canWork,
+            materialIssuanceReady,
             availabilityLabel:
               assignment.status === "IN_PROGRESS"
                 ? "진행중"
-                : canWork
-                  ? "작업가능"
-                  : "이전 공정 대기",
+                : !materialIssuanceReady
+                  ? "자재출고 대기"
+                  : canWork
+                    ? "작업가능"
+                    : "이전 공정 대기",
           } satisfies PopWorkQueueRow
         })
     }
@@ -292,12 +339,15 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
       completedQty,
       remainingQty: Math.max(plannedQty - completedQty, 0),
       canWork: operationCanWork,
+      materialIssuanceReady,
       availabilityLabel:
         operation.status === "IN_PROGRESS"
           ? "진행중"
-          : operationCanWork
-            ? "작업가능"
-            : "이전 공정 대기",
+          : !materialIssuanceReady
+            ? "자재출고 대기"
+            : operationCanWork
+              ? "작업가능"
+              : "이전 공정 대기",
     } satisfies PopWorkQueueRow]
   })
 }
@@ -328,10 +378,15 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
 
   if (assignmentId && !selectedAssignment) return null
 
+  const materialIssuanceReady = operation.workOrder
+    ? await workOrderHasMaterialIssuance(operation.workOrder.tenantId, operation.workOrder.id)
+    : true
+
   return {
     id: operation.id,
     seq: operation.seq,
     status: operation.status,
+    materialIssuanceReady,
     plannedQty: Number(operation.plannedQty),
     completedQty: Number(operation.completedQty),
     workOrder: operation.workOrder
@@ -450,6 +505,19 @@ export async function submitProductionResult(
       const previousOperations = op.workOrder.operations.filter((candidate) => candidate.seq < op.seq)
       if (previousOperations.length > 0 && !previousOperations.every((candidate) => candidate.status === "COMPLETED")) {
         throw new Error("이전 공정이 완료되지 않아 실적을 등록할 수 없습니다.")
+      }
+
+      // 자재출고 완료(원본 WipUnit 존재) 전에는 실적등록 차단 (우회 입력 방지)
+      const hasIssuance = await tx.wipUnit.findFirst({
+        where: {
+          workOrderId: op.workOrderId,
+          parentWipUnitId: null,
+          sourceProductionResultId: null,
+        },
+        select: { id: true },
+      })
+      if (!hasIssuance) {
+        throw new Error(MATERIAL_NOT_ISSUED_MESSAGE)
       }
 
       if (op.status !== "IN_PROGRESS") {
@@ -726,6 +794,11 @@ export async function startOperation(
     const prevOps = op.workOrder.operations.filter((o) => o.seq < op.seq)
     if (prevOps.length > 0 && !prevOps.every((o) => o.status === "COMPLETED")) {
       return { success: false, error: "Previous operation must be completed first." }
+    }
+
+    // 자재출고 완료(원본 WipUnit 존재) 전에는 작업시작 차단
+    if (!(await workOrderHasMaterialIssuance(tenantId, op.workOrderId))) {
+      return { success: false, error: MATERIAL_NOT_ISSUED_MESSAGE }
     }
 
     const assignment = assignmentId
