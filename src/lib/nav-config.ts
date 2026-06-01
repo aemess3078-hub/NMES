@@ -173,13 +173,14 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-lms-stats-capacity', parentId: 'nav-lms-statistics', label: '능력', icon: 'Gauge', href: '/app/lms/statistics/capacity', displayOrder: 2, children: [] },
         ],
       },
-      // 4. 설비연동 설정
+      // 4. 설비연동 설정 (개발자 전용)
       {
         id: 'nav-lms-integration',
         parentId: 'section-lms',
         label: '설비연동 설정',
         icon: 'Cable',
         displayOrder: 40,
+        developerOnly: true,
         children: [
           { id: 'nav-gateways', parentId: 'nav-lms-integration', label: 'Edge Gateway', icon: 'Wifi', href: '/app/mes/gateways', displayOrder: 1, children: [] },
           { id: 'nav-equipment-connections', parentId: 'nav-lms-integration', label: '설비 연결 설정', icon: 'Cable', href: '/app/mes/equipment-connections', displayOrder: 2, children: [] },
@@ -205,6 +206,7 @@ export const MES_NAV: NavItem[] = [
         label: '시스템관리',
         icon: 'Settings',
         displayOrder: 10,
+        developerOnly: true,
         children: [
           { id: 'nav-common-codes', parentId: 'nav-sysadmin', label: '공통코드 관리', icon: 'BookOpen', href: '/app/mes/common-codes', displayOrder: 1, children: [] },
           { id: 'nav-features', parentId: 'nav-sysadmin', label: '기능 관리', icon: 'Puzzle', href: '/app/mes/features', displayOrder: 2, children: [] },

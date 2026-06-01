@@ -103,6 +103,26 @@ export async function getCurrentUserId(): Promise<string> {
   return payload.profileId;
 }
 
+// ─── Developer identity ───────────────────────────────────────────────────────
+// 동기 순수 함수 isDeveloperUser 는 'use server' 제약을 피하기 위해
+// src/lib/developer.ts 에 분리되어 있다. 여기서는 async 가드만 제공한다.
+
+import { isDeveloperUser } from '@/lib/developer'
+
+/**
+ * 서버 액션에서 사용하는 개발자 전용 가드.
+ * 개발자가 아니면 FORBIDDEN 에러를 던진다.
+ * 페이지(Server Component)에서는 notFound()를 직접 호출하는 방식을 권장.
+ */
+export async function requireDeveloper(
+  user?: CurrentUser | null,
+): Promise<CurrentUser> {
+  const currentUser = user ?? (await getCurrentUser())
+  if (!currentUser) throw new Error('UNAUTHORIZED')
+  if (!isDeveloperUser(currentUser)) throw new Error('FORBIDDEN')
+  return currentUser
+}
+
 // ─── requireRole ─────────────────────────────────────────────────────────────
 
 const ROLE_HIERARCHY: Record<UserRole, number> = {

@@ -1,11 +1,16 @@
+import { notFound } from "next/navigation"
 import { cookies } from "next/headers"
 import { getNumberingRules, getCodeGroupsForBuilder } from "@/lib/actions/numbering-rule.actions"
 import { NumberingRuleBuilder } from "./numbering-rule-builder"
 import type { Token } from "@/lib/types/numbering-rule"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 
 export const dynamic = "force-dynamic"
 
 export default async function NumberingRulesPage() {
+  const user = await getCurrentUser()
+  if (!isDeveloperUser(user)) notFound()
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 

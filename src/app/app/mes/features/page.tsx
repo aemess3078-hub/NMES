@@ -1,10 +1,15 @@
 export const dynamic = "force-dynamic"
 
+import { notFound } from "next/navigation"
 import { getCatalogWithStatus } from "@/lib/actions/feature.actions"
 import { FeatureCatalogClient } from "./feature-catalog-client"
 import { cookies } from "next/headers"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 
 export default async function FeaturesPage() {
+  const user = await getCurrentUser()
+  if (!isDeveloperUser(user)) notFound()
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
   const catalog = await getCatalogWithStatus(tenantId)

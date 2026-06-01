@@ -13,4 +13,5 @@ export interface NavItem {
   displayOrder: number;
   comingSoon?: boolean; // true → 준비중 배지 표시, 클릭 비활성화
   minRole?: 'VIEWER' | 'OPERATOR' | 'MANAGER' | 'ADMIN' | 'OWNER'; // role gate
+  developerOnly?: boolean; // true → loginId='admin' 개발자 계정에만 표시
 }

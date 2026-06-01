@@ -1,11 +1,16 @@
 export const dynamic = "force-dynamic"
 
+import { notFound } from "next/navigation"
 import { getCodeGroups } from "@/lib/actions/common-code.actions"
 import { CommonCodeManager } from "./common-code-manager"
 import { cookies } from "next/headers"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 
 export default async function CommonCodesPage() {
+  const user = await getCurrentUser()
+  if (!isDeveloperUser(user)) notFound()
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
   const enabled = await isFeatureEnabled(tenantId, "COMMON_CODE")

@@ -1,10 +1,15 @@
+import { notFound } from "next/navigation"
 import { cookies } from "next/headers"
 import { getGateways, getSitesForGateway } from "@/lib/actions/equipment-integration.actions"
 import { GatewayDataTable } from "./gateway-data-table"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 
 export const dynamic = "force-dynamic"
 
 export default async function GatewaysPage() {
+  const user = await getCurrentUser()
+  if (!isDeveloperUser(user)) notFound()
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
