@@ -256,6 +256,16 @@ async function generateReceiptTxNo(tenantId: string): Promise<string> {
   return `RCP-${today}-${String(count + 1).padStart(4, "0")}`
 }
 
+function isPrismaTransactionTimeoutError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    message.includes("Transaction already closed") ||
+    message.includes("timeout for this transaction") ||
+    message.includes("Transaction API error") ||
+    message.includes("P2028")
+  )
+}
+
 export async function createFinishedGoodsReceiptAction(
   data: CreateReceiptInput,
   requestedTenantId?: string
@@ -274,6 +284,7 @@ export async function createFinishedGoodsReceiptAction(
     }
 
     let createdLotNo: string | null = null
+    const txNo = await generateReceiptTxNo(tenantId)
 
     await prisma.$transaction(async (tx) => {
       // 1. WorkOrder 재조회 (입고 가능 수량 / WipUnit 상태 / 완제품 LOT 발번 정보)
@@ -472,7 +483,6 @@ export async function createFinishedGoodsReceiptAction(
       // 9. InventoryTransaction (RECEIPT) 생성 — lotId 연결
       //    NOTE: 기존 코드가 toLocationId 에 warehouseId 를 넣어왔다 (schema 관계상 Warehouse 매핑).
       //    명명 혼란이 있으나 이번 Phase 에서는 호환성 유지 위해 동일 동작 유지.
-      const txNo = await generateReceiptTxNo(tenantId)
       await tx.inventoryTransaction.create({
         data: {
           tenantId,
@@ -523,6 +533,9 @@ export async function createFinishedGoodsReceiptAction(
           },
         })
       }
+    }, {
+      maxWait: 10000,
+      timeout: 15000,
     })
 
     revalidatePath("/app/mes/finished-goods-receipt")
@@ -531,6 +544,13 @@ export async function createFinishedGoodsReceiptAction(
     revalidatePath("/app/mes/manufacturing-traceability")
     return { ok: true, lotNo: createdLotNo ?? undefined }
   } catch (e) {
+    if (isPrismaTransactionTimeoutError(e)) {
+      console.error("[finished-goods] createFinishedGoodsReceiptAction transaction timeout", e)
+      return {
+        ok: false,
+        error: "입고 처리 시간이 초과되었습니다. 중복 입고 방지를 위해 입고 이력을 확인한 뒤 다시 시도해 주세요.",
+      }
+    }
     return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
   }
 }
