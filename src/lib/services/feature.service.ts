@@ -145,5 +145,9 @@ export async function getEnabledMenuCodes(tenantId: string): Promise<string[]> {
     menuCodes.add("outsourcing")
   }
 
+  if (tenantFeatures.some((tf) => tf.feature.code === "PRODUCTION_RESULT")) {
+    menuCodes.add("finished-goods-receipt")
+  }
+
   return Array.from(menuCodes)
 }

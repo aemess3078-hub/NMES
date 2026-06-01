@@ -49,6 +49,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-prod-plan-output', parentId: 'nav-production', label: '생산계획별생산현황', icon: 'CalendarDays', href: '/app/mes/production-plan', displayOrder: 2, children: [] },
           { id: 'nav-work-orders', parentId: 'nav-production', label: '작업지시', icon: 'ClipboardList', href: '/app/mes/work-orders', displayOrder: 3, children: [] },
           { id: 'nav-production-results', parentId: 'nav-production', label: '작업일지', icon: 'FileText', href: '/app/mes/production-results', displayOrder: 4, children: [] },
+          { id: 'nav-finished-goods-receipt', parentId: 'nav-production', label: '완제품입고', icon: 'PackagePlus', href: '/app/mes/finished-goods-receipt', displayOrder: 4.5, children: [] },
           { id: 'nav-outsourcing', parentId: 'nav-production', label: '외주관리', icon: 'Truck', href: '/app/mes/production/outsourcing', displayOrder: 5, children: [] },
         ],
       },
