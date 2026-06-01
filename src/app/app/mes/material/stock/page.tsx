@@ -11,14 +11,13 @@ export default async function MaterialStockPage() {
   const lotCount = groups.reduce((s, g) => s + g.lotCount, 0)
   const totalOnHand = groups.reduce((s, g) => s + g.totalQtyOnHand, 0)
   const totalAvailable = groups.reduce((s, g) => s + g.totalQtyAvailable, 0)
-  const unlottedLines = groups.reduce(
-    (s, g) => s + g.lotBalances.filter((b) => !b.lotId).length,
-    0,
+  const unlottedDeadStockBalances = groups.flatMap((g) =>
+    g.isLotTracked
+      ? g.lotBalances.filter((b) => !b.lotId && b.qtyOnHand > 0)
+      : [],
   )
-  const unlottedOnHand = groups.reduce(
-    (s, g) => s + g.lotBalances.filter((b) => !b.lotId).reduce((ls, b) => ls + b.qtyOnHand, 0),
-    0,
-  )
+  const unlottedLines = unlottedDeadStockBalances.length
+  const unlottedOnHand = unlottedDeadStockBalances.reduce((s, b) => s + b.qtyOnHand, 0)
 
   return (
     <div className="space-y-6 p-6">
