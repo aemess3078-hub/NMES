@@ -26,7 +26,7 @@ export function getColumns(callbacks: {
   onEdit: (bom: BOMWithDetails) => void
   onDelete: (bom: BOMWithDetails) => void
   onSelect: (bom: BOMWithDetails) => void
-  selectedId?: string
+  selectedId?: string | null
 }): ColumnDef<BOMWithDetails>[] {
   return [
     {
@@ -61,7 +61,10 @@ export function getColumns(callbacks: {
         const isSelected = callbacks.selectedId === row.original.id
         return (
           <button
-            onClick={() => callbacks.onSelect(row.original)}
+            onClick={(event) => {
+              event.stopPropagation()
+              callbacks.onSelect(row.original)
+            }}
             className={`font-mono text-[13px] font-semibold px-2 py-0.5 rounded transition-colors ${
               isSelected
                 ? "bg-primary text-primary-foreground"

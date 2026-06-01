@@ -47,10 +47,10 @@ export function BomDataTable({
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingBom, setEditingBom] = useState<BOMWithDetails | null>(null)
-  const [selectedBom, setSelectedBom] = useState<BOMWithDetails | null>(null)
+  const [expandedBomId, setExpandedBomId] = useState<string | null>(null)
 
   const handleSelect = (bom: BOMWithDetails) => {
-    setSelectedBom((prev) => (prev?.id === bom.id ? null : bom))
+    setExpandedBomId((prev) => (prev === bom.id ? null : bom.id))
   }
 
   const handleEdit = (bom: BOMWithDetails) => {
@@ -73,7 +73,7 @@ export function BomDataTable({
     onEdit: handleEdit,
     onDelete: handleDelete,
     onSelect: handleSelect,
-    selectedId: selectedBom?.id,
+    selectedId: expandedBomId,
   })
   const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
@@ -132,15 +132,17 @@ export function BomDataTable({
             ],
           },
         ]}
+        getRowId={(row) => row.id}
+        expandedRowId={expandedBomId}
+        onExpandedRowIdChange={setExpandedBomId}
+        expandOnRowClick
+        renderExpandedRow={(bom) => (
+          <BomDetailPanel
+            bom={bom}
+            onClose={() => setExpandedBomId(null)}
+          />
+        )}
       />
-
-      {/* BOM 구조 상세 패널 */}
-      {selectedBom && (
-        <BomDetailPanel
-          bom={selectedBom}
-          onClose={() => setSelectedBom(null)}
-        />
-      )}
 
       <BomFormSheet
         open={formOpen}

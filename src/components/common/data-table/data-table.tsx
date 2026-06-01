@@ -6,6 +6,7 @@ import {
   ColumnDef,
   ColumnFiltersState,
   ExpandedState,
+  type Row,
   SortingState,
   VisibilityState,
   flexRender,
@@ -43,6 +44,15 @@ interface DataTableProps<TData, TValue> {
   renderExpandedRow?: (row: TData) => React.ReactNode
   /** 행 클릭 시 해당 행의 expanded row를 토글한다(단일 열기). renderExpandedRow와 함께 사용. */
   expandOnRowClick?: boolean
+  getRowId?: (originalRow: TData, index: number, parent?: Row<TData>) => string
+  expandedRowId?: string | null
+  onExpandedRowIdChange?: (rowId: string | null) => void
+}
+
+function isInteractiveElement(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    ? Boolean(target.closest("button,a,input,select,textarea,[role='button'],[role='menuitem']"))
+    : false
 }
 
 export function DataTable<TData, TValue>({
@@ -55,19 +65,31 @@ export function DataTable<TData, TValue>({
   onRowClick,
   renderExpandedRow,
   expandOnRowClick = false,
+  getRowId,
+  expandedRowId,
+  onExpandedRowIdChange,
 }: DataTableProps<TData, TValue>) {
   const [rowSelection, setRowSelection] = React.useState({})
-  const [expanded, setExpanded] = React.useState<ExpandedState>({})
+  const [internalExpanded, setInternalExpanded] = React.useState<ExpandedState>({})
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({})
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
     []
   )
   const [sorting, setSorting] = React.useState<SortingState>(defaultSorting)
+  const isExpandedControlled = expandedRowId !== undefined
+  const expanded = React.useMemo<ExpandedState>(
+    () => {
+      if (!isExpandedControlled) return internalExpanded
+      return expandedRowId ? { [expandedRowId]: true } : {}
+    },
+    [expandedRowId, internalExpanded, isExpandedControlled]
+  )
 
   const table = useReactTable({
     data,
     columns,
+    getRowId,
     state: {
       sorting,
       columnVisibility,
@@ -78,7 +100,7 @@ export function DataTable<TData, TValue>({
     enableRowSelection: true,
     getRowCanExpand: () => Boolean(renderExpandedRow),
     onRowSelectionChange: setRowSelection,
-    onExpandedChange: setExpanded,
+    onExpandedChange: isExpandedControlled ? undefined : setInternalExpanded,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
@@ -123,16 +145,22 @@ export function DataTable<TData, TValue>({
                 <React.Fragment key={row.id}>
                   <TableRow
                     data-state={row.getIsSelected() && "selected"}
-                    onClick={() => {
+                    onClick={(event) => {
+                      if (isInteractiveElement(event.target)) return
                       if (expandOnRowClick && renderExpandedRow) {
                         // 단일 열기: 클릭한 행만 펼치고 나머지는 닫음
-                        table.setExpanded(row.getIsExpanded() ? {} : { [row.id]: true })
+                        if (isExpandedControlled) {
+                          onExpandedRowIdChange?.(row.getIsExpanded() ? null : row.id)
+                        } else {
+                          table.setExpanded(row.getIsExpanded() ? {} : { [row.id]: true })
+                        }
                       }
                       onRowClick?.(row.original)
                     }}
                     className={cn(
                       "group/row",
-                      onRowClick || (expandOnRowClick && renderExpandedRow) ? "cursor-pointer" : undefined
+                      onRowClick || (expandOnRowClick && renderExpandedRow) ? "cursor-pointer" : undefined,
+                      row.getIsExpanded() ? "bg-slate-50/70 hover:bg-slate-50" : undefined
                     )}
                   >
                     {row.getVisibleCells().map((cell) => (
