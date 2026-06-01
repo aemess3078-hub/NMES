@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -65,6 +65,7 @@ import {
   Handshake,
   LifeBuoy,
   MessageSquare,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -131,6 +132,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Handshake,
   LifeBuoy,
   MessageSquare,
+  UserCog,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
@@ -279,6 +281,10 @@ export function Sidebar({ navItems, userName, userEmail }: SidebarProps) {
             </p>
           </div>
         </div>
+        <Link href="/app/mes/profile" className="w-full flex items-center gap-1.5 rounded px-2 py-1 text-[14px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors mt-0.5">
+          <UserCog className="h-3 w-3 opacity-60" />
+          내 계정정보
+        </Link>
         <button
           onClick={handleLogout}
           disabled={isLoggingOut}
