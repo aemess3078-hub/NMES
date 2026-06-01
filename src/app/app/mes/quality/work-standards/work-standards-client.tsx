@@ -10,6 +10,7 @@ import {
   Pencil,
   Trash2,
   Plus,
+  FileUp,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -89,19 +90,39 @@ export function WorkStandardsClient({ data }: Props) {
     },
     {
       accessorKey: "fileUrl",
-      header: "파일/URL",
+      header: "파일",
       cell: ({ row }) => {
         const url = row.original.fileUrl
-        if (!url) return <span className="text-[13px] text-muted-foreground">-</span>
+        if (!url) {
+          return (
+            <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+              <FileX className="h-3.5 w-3.5" />
+              파일 없음
+            </span>
+          )
+        }
+        // Supabase Storage URL 또는 .pdf 확장자면 "PDF 보기", 그 외엔 "열기"
+        const isPdf =
+          url.toLowerCase().endsWith(".pdf") ||
+          url.includes("/storage/v1/object/")
         return (
           <a
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[13px] text-blue-600 hover:underline"
+            className="inline-flex items-center gap-1 text-[13px] text-blue-600 hover:underline whitespace-nowrap"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            열기
+            {isPdf ? (
+              <>
+                <FileText className="h-3.5 w-3.5 text-red-500" />
+                PDF 보기
+              </>
+            ) : (
+              <>
+                <ExternalLink className="h-3.5 w-3.5" />
+                열기
+              </>
+            )}
           </a>
         )
       },
@@ -158,7 +179,7 @@ export function WorkStandardsClient({ data }: Props) {
           value={summary.sop}
         />
         <SummaryCard
-          icon={<Link2 className="h-5 w-5 text-green-600" />}
+          icon={<FileUp className="h-5 w-5 text-green-600" />}
           iconBg="bg-green-50"
           label="파일 있음"
           value={summary.withUrl}
