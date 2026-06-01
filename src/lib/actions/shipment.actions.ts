@@ -325,7 +325,7 @@ export type CreateShipmentItemInput = {
   salesOrderItemId: string
   itemId: string
   qty: number
-  lotId: string
+  lotId?: string
 }
 
 export type CreateShipmentInput = {
@@ -375,9 +375,6 @@ export async function createShipment(
     })
 
     for (const item of data.items) {
-      if (!item.lotId) {
-        throw new Error("출하할 완제품 LOT를 선택하세요.")
-      }
       if (item.qty <= 0) {
         throw new Error("출하 수량은 0보다 커야 합니다.")
       }
@@ -387,7 +384,7 @@ export async function createShipment(
           id: item.salesOrderItemId,
           salesOrderId: data.salesOrderId,
         },
-        include: { item: { select: { code: true, name: true } } },
+        include: { item: { select: { code: true, name: true, isLotTracked: true } } },
       })
       if (!salesOrderItem) {
         throw new Error("수주 품목을 찾을 수 없습니다.")
@@ -405,86 +402,143 @@ export async function createShipment(
         )
       }
 
-      const lot = await tx.lot.findFirst({
-        where: {
-          id: item.lotId,
-          tenantId,
-          status: "ACTIVE",
-        },
-        select: { id: true, lotNo: true, itemId: true },
-      })
-      if (!lot) {
-        throw new Error("출하할 완제품 LOT를 찾을 수 없습니다.")
-      }
-      if (lot.itemId !== item.itemId) {
-        throw new Error(`LOT(${lot.lotNo}) 품목과 출하 품목이 일치하지 않습니다.`)
-      }
+      const isLotTracked = salesOrderItem.item.isLotTracked
 
-      const balance = await tx.inventoryBalance.findFirst({
-        where: {
-          tenantId,
-          siteId,
-          warehouseId,
-          itemId: item.itemId,
-          lotId: lot.id,
-        },
-      })
-      if (!balance) {
-        throw new Error(`LOT(${lot.lotNo})의 출하 가능 재고가 없습니다.`)
-      }
-      const qtyOnHand = Number(balance.qtyOnHand)
-      const qtyAvailable = Number(balance.qtyAvailable)
-      if (qtyAvailable < item.qty || qtyOnHand < item.qty) {
-        throw new Error(
-          `LOT(${lot.lotNo}) 출하 가능 수량(${qtyAvailable})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
-        )
-      }
+      if (isLotTracked) {
+        if (!item.lotId) {
+          throw new Error(`[${salesOrderItem.item.code}] LOT 관리 품목은 LOT를 선택해야 합니다.`)
+        }
 
-      const shipmentItem = await tx.shipmentItem.create({
-        data: {
-          shipmentOrderId: shipment.id,
-          salesOrderItemId: item.salesOrderItemId,
-          itemId: item.itemId,
-          qty: item.qty,
-          lotId: lot.id,
-        },
-      })
+        const lot = await tx.lot.findFirst({
+          where: { id: item.lotId, tenantId, status: "ACTIVE" },
+          select: { id: true, lotNo: true, itemId: true },
+        })
+        if (!lot) {
+          throw new Error("출하할 완제품 LOT를 찾을 수 없습니다.")
+        }
+        if (lot.itemId !== item.itemId) {
+          throw new Error(`LOT(${lot.lotNo}) 품목과 출하 품목이 일치하지 않습니다.`)
+        }
 
-      const txNo = generateShipmentIssueTxNo()
-      await tx.inventoryTransaction.create({
-        data: {
-          tenantId,
-          itemId: item.itemId,
-          lotId: lot.id,
-          fromLocationId: warehouseId,
-          txNo,
-          txType: "ISSUE",
-          qty: item.qty,
-          refType: "SHIPMENT_ITEM",
-          refId: shipmentItem.id,
-          note: `출하 처리 (${shipmentNo})`,
-          txAt: new Date(),
-        },
-      })
+        const balance = await tx.inventoryBalance.findFirst({
+          where: { tenantId, siteId, warehouseId, itemId: item.itemId, lotId: lot.id },
+        })
+        if (!balance) {
+          throw new Error(`LOT(${lot.lotNo})의 출하 가능 재고가 없습니다.`)
+        }
+        const qtyOnHand = Number(balance.qtyOnHand)
+        const qtyAvailable = Number(balance.qtyAvailable)
+        if (qtyAvailable < item.qty || qtyOnHand < item.qty) {
+          throw new Error(
+            `LOT(${lot.lotNo}) 출하 가능 수량(${qtyAvailable})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
+          )
+        }
 
-      const updatedBalance = await tx.inventoryBalance.updateMany({
-        where: {
-          id: balance.id,
-          tenantId,
-          siteId,
-          warehouseId,
-          itemId: item.itemId,
-          lotId: lot.id,
-          qtyOnHand: { gte: item.qty },
-          qtyAvailable: { gte: item.qty },
-        },
-        data: {
-          qtyOnHand: { decrement: item.qty },
-          qtyAvailable: { decrement: item.qty },
-        },
-      })
-      if (updatedBalance.count !== 1) {
-        throw new Error(`LOT(${lot.lotNo})의 가용 재고가 부족합니다. 다시 조회 후 시도하세요.`)
+        const shipmentItem = await tx.shipmentItem.create({
+          data: {
+            shipmentOrderId: shipment.id,
+            salesOrderItemId: item.salesOrderItemId,
+            itemId: item.itemId,
+            qty: item.qty,
+            lotId: lot.id,
+          },
+        })
+
+        const txNo = generateShipmentIssueTxNo()
+        await tx.inventoryTransaction.create({
+          data: {
+            tenantId,
+            itemId: item.itemId,
+            lotId: lot.id,
+            fromLocationId: warehouseId,
+            txNo,
+            txType: "ISSUE",
+            qty: item.qty,
+            refType: "SHIPMENT_ITEM",
+            refId: shipmentItem.id,
+            note: `출하 처리 (${shipmentNo})`,
+            txAt: new Date(),
+          },
+        })
+
+        const updatedBalance = await tx.inventoryBalance.updateMany({
+          where: {
+            id: balance.id,
+            tenantId,
+            siteId,
+            warehouseId,
+            itemId: item.itemId,
+            lotId: lot.id,
+            qtyOnHand: { gte: item.qty },
+            qtyAvailable: { gte: item.qty },
+          },
+          data: {
+            qtyOnHand: { decrement: item.qty },
+            qtyAvailable: { decrement: item.qty },
+          },
+        })
+        if (updatedBalance.count !== 1) {
+          throw new Error(`LOT(${lot.lotNo})의 가용 재고가 부족합니다. 다시 조회 후 시도하세요.`)
+        }
+      } else {
+        // 비LOT 품목: lotId 없이 처리
+        const balance = await tx.inventoryBalance.findFirst({
+          where: { tenantId, siteId, warehouseId, itemId: item.itemId, lotId: null },
+        })
+        if (!balance) {
+          throw new Error(`[${salesOrderItem.item.code}] 선택한 창고에 출하 가능한 재고가 없습니다.`)
+        }
+        const qtyAvailable = Number(balance.qtyAvailable)
+        if (qtyAvailable < item.qty) {
+          throw new Error(
+            `[${salesOrderItem.item.code}] 출하 가능 수량(${qtyAvailable})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
+          )
+        }
+
+        const shipmentItem = await tx.shipmentItem.create({
+          data: {
+            shipmentOrderId: shipment.id,
+            salesOrderItemId: item.salesOrderItemId,
+            itemId: item.itemId,
+            qty: item.qty,
+          },
+        })
+
+        const txNo = generateShipmentIssueTxNo()
+        await tx.inventoryTransaction.create({
+          data: {
+            tenantId,
+            itemId: item.itemId,
+            lotId: null,
+            fromLocationId: warehouseId,
+            txNo,
+            txType: "ISSUE",
+            qty: item.qty,
+            refType: "SHIPMENT_ITEM",
+            refId: shipmentItem.id,
+            note: `출하 처리 (${shipmentNo})`,
+            txAt: new Date(),
+          },
+        })
+
+        const updatedBalance = await tx.inventoryBalance.updateMany({
+          where: {
+            id: balance.id,
+            tenantId,
+            siteId,
+            warehouseId,
+            itemId: item.itemId,
+            lotId: null,
+            qtyAvailable: { gte: item.qty },
+          },
+          data: {
+            qtyOnHand: { decrement: item.qty },
+            qtyAvailable: { decrement: item.qty },
+          },
+        })
+        if (updatedBalance.count !== 1) {
+          throw new Error(`[${salesOrderItem.item.code}] 재고가 부족합니다. 다시 조회 후 시도하세요.`)
+        }
       }
 
       await tx.salesOrderItem.update({
@@ -527,7 +581,11 @@ export async function deleteShipment(id: string) {
   await requireRole("OPERATOR")
   const shipment = await prisma.shipmentOrder.findUniqueOrThrow({
     where: { id },
-    include: { items: true },
+    include: {
+      items: {
+        include: { item: { select: { isLotTracked: true } } },
+      },
+    },
   })
   if (shipment.status !== "PLANNED") {
     throw new Error("PLANNED 상태의 출하만 삭제할 수 있습니다.")
@@ -537,25 +595,53 @@ export async function deleteShipment(id: string) {
     const shipmentItemIds = shipment.items.map((item) => item.id)
 
     for (const item of shipment.items) {
-      if (item.lotId && shipment.warehouseId) {
-        const balance = await tx.inventoryBalance.findFirst({
-          where: {
-            tenantId: shipment.tenantId,
-            siteId: shipment.siteId,
-            warehouseId: shipment.warehouseId,
-            itemId: item.itemId,
-            lotId: item.lotId,
-          },
-        })
-        if (balance) {
-          const qty = Number(item.qty)
-          await tx.inventoryBalance.update({
-            where: { id: balance.id },
-            data: {
-              qtyOnHand: Number(balance.qtyOnHand) + qty,
-              qtyAvailable: Number(balance.qtyAvailable) + qty,
+      if (shipment.warehouseId) {
+        const isLotTracked = item.item.isLotTracked
+
+        if (isLotTracked) {
+          // LOT 관리 품목: lotId 기준으로 재고 복구
+          if (item.lotId) {
+            const balance = await tx.inventoryBalance.findFirst({
+              where: {
+                tenantId: shipment.tenantId,
+                siteId: shipment.siteId,
+                warehouseId: shipment.warehouseId,
+                itemId: item.itemId,
+                lotId: item.lotId,
+              },
+            })
+            if (balance) {
+              const qty = Number(item.qty)
+              await tx.inventoryBalance.update({
+                where: { id: balance.id },
+                data: {
+                  qtyOnHand: Number(balance.qtyOnHand) + qty,
+                  qtyAvailable: Number(balance.qtyAvailable) + qty,
+                },
+              })
+            }
+          }
+        } else {
+          // 비LOT 품목: lotId=null 기준으로 재고 복구
+          const balance = await tx.inventoryBalance.findFirst({
+            where: {
+              tenantId: shipment.tenantId,
+              siteId: shipment.siteId,
+              warehouseId: shipment.warehouseId,
+              itemId: item.itemId,
+              lotId: null,
             },
           })
+          if (balance) {
+            const qty = Number(item.qty)
+            await tx.inventoryBalance.update({
+              where: { id: balance.id },
+              data: {
+                qtyOnHand: Number(balance.qtyOnHand) + qty,
+                qtyAvailable: Number(balance.qtyAvailable) + qty,
+              },
+            })
+          }
         }
       }
 

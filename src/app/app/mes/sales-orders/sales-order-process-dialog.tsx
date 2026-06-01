@@ -19,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Loader2, PackageMinus, Factory, CheckCircle2, AlertTriangle } from "lucide-react"
+import { Loader2, PackageMinus, Factory, CheckCircle2, AlertTriangle, Info } from "lucide-react"
 import {
   checkInventoryForSalesOrder,
   requestProductionFromSalesOrder,
@@ -29,6 +29,7 @@ import {
   createShipment,
   getAvailableFinishedGoodsLots,
   getWarehouses,
+  type AvailableFinishedGoodsLot,
 } from "@/lib/actions/shipment.actions"
 import type { SalesOrderRow } from "./columns"
 
@@ -53,61 +54,100 @@ export function SalesOrderProcessDialog({
   const [stockStatus, setStockStatus] = useState<ItemStockStatus[]>([])
   const [warehouses, setWarehouses] = useState<{ id: string; name: string; code: string }[]>([])
   const [warehouseId, setWarehouseId] = useState("")
+  const [lotSelections, setLotSelections] = useState<Record<string, string>>({})
+  const [availableLots, setAvailableLots] = useState<Record<string, AvailableFinishedGoodsLot[]>>({})
+  const [lotsLoading, setLotsLoading] = useState(false)
+  const [shipmentError, setShipmentError] = useState<string | null>(null)
 
+  // 다이얼로그 오픈 시 재고 + 창고 목록 로드, 기본 창고 자동 선택
   useEffect(() => {
     if (!open || !salesOrder) return
     setLoading(true)
+    setWarehouseId("")
+    setLotSelections({})
+    setAvailableLots({})
+    setShipmentError(null)
     Promise.all([
       checkInventoryForSalesOrder(salesOrder.id, tenantId),
       getWarehouses(tenantId),
     ]).then(([stock, whs]) => {
       setStockStatus(stock)
       setWarehouses(whs)
+      // 출하 가능한 첫 번째 품목의 defaultWarehouseId를 자동 선택
+      const shippable = stock.filter((s) => s.shippableQty > 0)
+      const defaultWhId = shippable.find((s) => s.defaultWarehouseId)?.defaultWarehouseId ?? null
+      if (defaultWhId && whs.some((wh) => wh.id === defaultWhId)) {
+        setWarehouseId(defaultWhId)
+      }
       setLoading(false)
     })
   }, [open, salesOrder, tenantId])
+
+  // 창고 변경 시 LOT 목록 로드 (LOT 관리 품목만)
+  useEffect(() => {
+    if (!open || !warehouseId) {
+      setAvailableLots({})
+      setLotSelections({})
+      return
+    }
+    const lotTrackedIds = stockStatus
+      .filter((s) => s.shippableQty > 0 && s.isLotTracked)
+      .map((s) => s.itemId)
+    if (lotTrackedIds.length === 0) return
+
+    let cancelled = false
+    setLotsLoading(true)
+    setLotSelections({})
+    setShipmentError(null)
+    getAvailableFinishedGoodsLots(tenantId, siteId, warehouseId, lotTrackedIds)
+      .then((lots) => { if (!cancelled) setAvailableLots(lots) })
+      .catch(() => { if (!cancelled) setAvailableLots({}) })
+      .finally(() => { if (!cancelled) setLotsLoading(false) })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- stockStatus를 deps에 포함하면 초기 로드 시 무한 재호출 위험. warehouseId 변경 시에만 LOT 목록을 새로 불러오는 것이 의도된 동작
+  }, [open, warehouseId, tenantId, siteId])
 
   if (!salesOrder) return null
 
   const shippableItems = stockStatus.filter((s) => s.shippableQty > 0)
   const shortageItems = stockStatus.filter((s) => s.shortageQty > 0)
   const allFulfilled = stockStatus.length > 0 && stockStatus.every((s) => s.shortageQty === 0)
+  const lotTrackedShippable = shippableItems.filter((s) => s.isLotTracked)
+  const allLotsSelected = lotTrackedShippable.every((s) => !!lotSelections[s.itemId])
+  const canShip = !!warehouseId && allLotsSelected
+
+  const handleWarehouseChange = (id: string) => {
+    setWarehouseId(id)
+    setShipmentError(null)
+  }
+
+  const handleLotChange = (itemId: string, lotId: string) => {
+    setLotSelections((prev) => ({ ...prev, [itemId]: lotId }))
+    setShipmentError(null)
+  }
 
   const handleShipment = () => {
-    if (!warehouseId) {
-      alert("출하 창고를 선택하세요.")
-      return
-    }
+    if (!canShip) return
+    setShipmentError(null)
     startTransition(async () => {
-      const availableLotsByItem = await getAvailableFinishedGoodsLots(
-        tenantId,
-        siteId,
-        warehouseId,
-        shippableItems.map((item) => item.itemId),
-      )
-      const shipmentItems = []
-      for (const item of shippableItems) {
-        const lots = availableLotsByItem[item.itemId] ?? []
-        if (lots.length !== 1 || lots[0].qtyAvailable < item.shippableQty) {
-          alert("완제품 LOT를 명확히 선택해야 합니다. 출하관리 화면에서 LOT를 선택해 출하를 등록하세요.")
-          return
-        }
-        shipmentItems.push({
-          salesOrderItemId: item.salesOrderItemId,
-          itemId: item.itemId,
-          qty: item.shippableQty,
-          lotId: lots[0].lotId,
+      const shipmentItems = shippableItems.map((item) => ({
+        salesOrderItemId: item.salesOrderItemId,
+        itemId: item.itemId,
+        qty: item.shippableQty,
+        ...(item.isLotTracked ? { lotId: lotSelections[item.itemId] } : {}),
+      }))
+      try {
+        await createShipment(tenantId, siteId, {
+          salesOrderId: salesOrder.id,
+          plannedDate: new Date(),
+          warehouseId,
+          items: shipmentItems,
         })
+        router.refresh()
+        onOpenChange(false)
+      } catch (e) {
+        setShipmentError(e instanceof Error ? e.message : "출하요청 생성 중 오류가 발생했습니다.")
       }
-
-      await createShipment(tenantId, siteId, {
-        salesOrderId: salesOrder.id,
-        plannedDate: new Date(),
-        warehouseId,
-        items: shipmentItems,
-      })
-      router.refresh()
-      onOpenChange(false)
     })
   }
 
@@ -179,7 +219,12 @@ export function SalesOrderProcessDialog({
                   >
                     <div className="py-2.5 px-3">
                       <div className="text-[14px] font-medium">{s.itemName}</div>
-                      <div className="text-[12px] text-muted-foreground font-mono">{s.itemCode} · {s.uom}</div>
+                      <div className="text-[12px] text-muted-foreground font-mono">
+                        {s.itemCode} · {s.uom}
+                        {s.isLotTracked && (
+                          <span className="ml-1 text-blue-600">· LOT</span>
+                        )}
+                      </div>
                     </div>
                     <div className="py-2.5 px-3 text-[14px] text-right">{s.orderedQty.toLocaleString()}</div>
                     <div className="py-2.5 px-3 text-[14px] text-right text-muted-foreground">{s.shippedQty.toLocaleString()}</div>
@@ -199,9 +244,9 @@ export function SalesOrderProcessDialog({
             )}
           </div>
 
-          {/* S3: 출하요청 생성 */}
+          {/* 출하요청 생성 */}
           {!loading && shippableItems.length > 0 && (
-            <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 space-y-3">
+            <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                 <span className="text-[14px] font-medium text-green-800">
@@ -211,9 +256,11 @@ export function SalesOrderProcessDialog({
                   {shippableItems.length}개 품목
                 </Badge>
               </div>
+
+              {/* 출하 창고 선택 */}
               <div className="space-y-1.5">
                 <Label className="text-[14px]">출하 창고</Label>
-                <Select value={warehouseId} onValueChange={setWarehouseId}>
+                <Select value={warehouseId} onValueChange={handleWarehouseChange}>
                   <SelectTrigger className="text-[14px] max-w-xs">
                     <SelectValue placeholder="창고 선택" />
                   </SelectTrigger>
@@ -226,19 +273,107 @@ export function SalesOrderProcessDialog({
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                size="sm"
-                className="gap-1.5 bg-green-700 hover:bg-green-800"
-                onClick={handleShipment}
-                disabled={isPending || !warehouseId}
-              >
-                <PackageMinus className="h-3.5 w-3.5" />
-                출하요청 생성
-              </Button>
+
+              {/* LOT 관리 품목 — LOT 선택 */}
+              {lotTrackedShippable.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-[14px]">LOT 선택</Label>
+                  {!warehouseId ? (
+                    <div className="flex items-center gap-1.5 text-[13px] text-amber-700">
+                      <Info className="h-3.5 w-3.5 flex-shrink-0" />
+                      출하 창고를 먼저 선택하면 LOT 목록이 표시됩니다.
+                    </div>
+                  ) : lotsLoading ? (
+                    <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      LOT 목록 조회 중...
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {lotTrackedShippable.map((item) => {
+                        const lots = availableLots[item.itemId] ?? []
+                        const selectedLotId = lotSelections[item.itemId] ?? ""
+                        const selectedLot = lots.find((l) => l.lotId === selectedLotId)
+                        const isInsufficient = selectedLot && selectedLot.qtyAvailable < item.shippableQty
+
+                        return (
+                          <div key={item.itemId} className="rounded-md border bg-white p-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[13px] font-medium">{item.itemName}</span>
+                              <span className="text-[12px] text-muted-foreground">
+                                출하 수량: {item.shippableQty.toLocaleString()} {item.uom}
+                              </span>
+                            </div>
+
+                            {lots.length === 0 ? (
+                              <div className="flex items-center gap-1.5 text-[13px] text-red-600">
+                                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                                선택한 창고에 출하 가능한 LOT가 없습니다. 다른 창고를 선택하거나 출하관리 화면을 이용하세요.
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <Select value={selectedLotId} onValueChange={(v) => handleLotChange(item.itemId, v)}>
+                                  <SelectTrigger className="text-[13px] h-8 flex-1">
+                                    <SelectValue placeholder="LOT 선택" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {lots.map((lot) => (
+                                      <SelectItem key={lot.lotId} value={lot.lotId} className="text-[13px]">
+                                        <span className="font-mono">{lot.lotNo}</span>
+                                        <span className="ml-2 text-muted-foreground">
+                                          · 가용 {lot.qtyAvailable.toLocaleString()} {item.uom}
+                                          {lot.locationName ? ` · ${lot.locationName}` : ""}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {selectedLot && (
+                                  <span className={`text-[12px] whitespace-nowrap ${isInsufficient ? "text-red-600" : "text-green-700"}`}>
+                                    가용 {selectedLot.qtyAvailable.toLocaleString()}
+                                    {isInsufficient && " (부족)"}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 오류 메시지 */}
+              {shipmentError && (
+                <div className="flex items-start gap-1.5 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-[13px] text-red-700">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                  {shipmentError}
+                </div>
+              )}
+
+              {/* 버튼 및 안내 */}
+              <div className="space-y-1.5">
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-green-700 hover:bg-green-800"
+                  onClick={handleShipment}
+                  disabled={isPending || !canShip}
+                >
+                  {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackageMinus className="h-3.5 w-3.5" />}
+                  출하요청 생성
+                </Button>
+                {!warehouseId && (
+                  <p className="text-[13px] text-amber-700">출하 창고를 선택하세요.</p>
+                )}
+                {warehouseId && !allLotsSelected && lotTrackedShippable.length > 0 && (
+                  <p className="text-[13px] text-amber-700">LOT 관리 품목의 LOT를 모두 선택해야 출하요청을 생성할 수 있습니다.</p>
+                )}
+              </div>
             </div>
           )}
 
-          {/* S4: 생산의뢰 생성 */}
+          {/* 생산의뢰 생성 */}
           {!loading && shortageItems.length > 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -264,7 +399,7 @@ export function SalesOrderProcessDialog({
             </div>
           )}
 
-          {/* 이미 처리 완료 */}
+          {/* 처리 완료 */}
           {!loading && stockStatus.length > 0 && shippableItems.length === 0 && shortageItems.length === 0 && (
             <div className="flex items-center gap-2 rounded-md bg-muted/50 p-3">
               <CheckCircle2 className="h-4 w-4 text-green-600" />

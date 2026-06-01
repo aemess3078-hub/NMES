@@ -233,6 +233,8 @@ export type ItemStockStatus = {
   availableStock: number   // 전체 창고 합산 가용재고
   shippableQty: number     // min(remainingQty, availableStock)
   shortageQty: number      // max(0, remainingQty - availableStock)
+  isLotTracked: boolean
+  defaultWarehouseId: string | null
 }
 
 export async function checkInventoryForSalesOrder(
@@ -242,7 +244,7 @@ export async function checkInventoryForSalesOrder(
   const order = await prisma.salesOrder.findUniqueOrThrow({
     where: { id: salesOrderId },
     include: {
-      items: { include: { item: { select: { id: true, code: true, name: true, uom: true } } } },
+      items: { include: { item: { select: { id: true, code: true, name: true, uom: true, isLotTracked: true, defaultWarehouseId: true } } } },
     },
   })
 
@@ -277,6 +279,8 @@ export async function checkInventoryForSalesOrder(
       availableStock,
       shippableQty,
       shortageQty,
+      isLotTracked: soi.item.isLotTracked,
+      defaultWarehouseId: soi.item.defaultWarehouseId,
     }
   })
 }
