@@ -37,6 +37,7 @@ interface ColOptions {
   onApprove: (ecn: ECNWithDetails) => void
   onReject: (ecn: ECNWithDetails) => void
   onImplement: (ecn: ECNWithDetails) => void
+  isAdmin?: boolean
 }
 
 export function getColumns(options: ColOptions): ColumnDef<ECNWithDetails>[] {
@@ -129,11 +130,13 @@ export function getColumns(options: ColOptions): ColumnDef<ECNWithDetails>[] {
       id: "actions",
       cell: ({ row }) => {
         const ecn = row.original
+        const { isAdmin = false } = options
         const canEdit = ["DRAFT", "SUBMITTED"].includes(ecn.status)
         const canDelete = ecn.status === "DRAFT"
         const canSubmit = ecn.status === "DRAFT"
-        const canApprove = ["SUBMITTED", "REVIEWING"].includes(ecn.status)
-        const canImplement = ecn.status === "APPROVED"
+        // 승인/반려/적용은 관리자(MANAGER 이상)만 가능
+        const canApprove = isAdmin && ["SUBMITTED", "REVIEWING"].includes(ecn.status)
+        const canImplement = isAdmin && ecn.status === "APPROVED"
 
         return (
           <DropdownMenu>

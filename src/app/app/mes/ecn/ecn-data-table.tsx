@@ -21,9 +21,10 @@ interface Props {
   items: { id: string; code: string; name: string; itemType: string }[]
   tenantId: string
   userId: string
+  isAdmin: boolean
 }
 
-export function ECNDataTable({ ecns, items, tenantId, userId }: Props) {
+export function ECNDataTable({ ecns, items, tenantId, userId, isAdmin }: Props) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
@@ -93,6 +94,7 @@ export function ECNDataTable({ ecns, items, tenantId, userId }: Props) {
     onApprove: handleApprove,
     onReject: handleReject,
     onImplement: handleImplement,
+    isAdmin,
   })
 
   return (

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { ECNStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireRole } from "@/lib/auth"
 
 export type ECNDetail = {
   id: string
@@ -56,8 +57,21 @@ async function generateECNNo(tenantId: string): Promise<string> {
   return `${prefix}${String(seq).padStart(3, "0")}`
 }
 
-export async function getECNs(): Promise<ECNWithDetails[]> {
+/**
+ * 변경관리 목록 조회
+ * - ADMIN/MANAGER/OWNER: 같은 tenant의 전체 ECN 조회
+ * - OPERATOR/VIEWER: 본인이 요청한 ECN만 조회
+ */
+export async function getECNs(
+  tenantId: string,
+  profileId: string,
+  isAdmin: boolean,
+): Promise<ECNWithDetails[]> {
   const results = await prisma.engineeringChange.findMany({
+    where: {
+      tenantId,
+      ...(isAdmin ? {} : { requestedBy: profileId }),
+    },
     include: ECN_INCLUDE,
     orderBy: { createdAt: "desc" },
   })
@@ -72,9 +86,9 @@ export async function getECNById(id: string): Promise<ECNWithDetails | null> {
   return result as any
 }
 
-export async function getItemsForECN() {
+export async function getItemsForECN(tenantId: string) {
   return prisma.item.findMany({
-    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] }, status: "ACTIVE" },
+    where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] }, status: "ACTIVE" },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { name: "asc" },
   })
@@ -210,6 +224,7 @@ export async function submitECN(id: string) {
 }
 
 export async function approveECN(id: string, approvedBy: string) {
+  await requireRole("MANAGER")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   if (!["SUBMITTED", "REVIEWING"].includes(current.status)) {
     throw new Error("제출 또는 검토 상태의 ECN만 승인할 수 있습니다")
@@ -222,6 +237,7 @@ export async function approveECN(id: string, approvedBy: string) {
 }
 
 export async function rejectECN(id: string, approvedBy: string) {
+  await requireRole("MANAGER")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   if (!["SUBMITTED", "REVIEWING"].includes(current.status)) {
     throw new Error("제출 또는 검토 상태의 ECN만 반려할 수 있습니다")
@@ -234,6 +250,7 @@ export async function rejectECN(id: string, approvedBy: string) {
 }
 
 export async function implementECN(id: string) {
+  await requireRole("ADMIN")
   const ecn = await prisma.engineeringChange.findUniqueOrThrow({
     where: { id },
     include: { details: true },
