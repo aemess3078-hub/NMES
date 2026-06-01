@@ -73,17 +73,17 @@ export function UserManagementTable({
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<UserFilter>("ACTIVE")
 
-  // OWNER 계정은 일반 사용자 목록에 표시하지 않음 (관리자·매니저·작업자·조회자만 표시)
-  const nonOwnerUsers = useMemo(() => users.filter((u) => u.role !== "OWNER"), [users])
+  // canResetPassword=false(ADMIN 이하)는 활성 사용자만 고정 표시
+  const effectiveFilter = canResetPassword ? filter : "ACTIVE"
 
   const filteredUsers = useMemo(() => {
-    if (filter === "ACTIVE") return nonOwnerUsers.filter((u) => u.isActive)
-    if (filter === "INACTIVE") return nonOwnerUsers.filter((u) => !u.isActive)
-    return nonOwnerUsers
-  }, [nonOwnerUsers, filter])
+    if (effectiveFilter === "ACTIVE") return users.filter((u) => u.isActive)
+    if (effectiveFilter === "INACTIVE") return users.filter((u) => !u.isActive)
+    return users
+  }, [users, effectiveFilter])
 
-  const activeCount = useMemo(() => nonOwnerUsers.filter((u) => u.isActive).length, [nonOwnerUsers])
-  const inactiveCount = nonOwnerUsers.length - activeCount
+  const activeCount = useMemo(() => users.filter((u) => u.isActive).length, [users])
+  const inactiveCount = users.length - activeCount
 
   function handleDeletePermanently(tenantUserId: string) {
     if (
@@ -165,23 +165,31 @@ export function UserManagementTable({
 
   return (
     <>
-      {/* 필터 바 */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        {FILTER_OPTIONS.map((opt) => (
-          <Button
-            key={opt.value}
-            type="button"
-            size="sm"
-            variant={filter === opt.value ? "default" : "outline"}
-            className="h-8 text-[13px]"
-            onClick={() => setFilter(opt.value)}
-          >
-            {opt.label}
-            {opt.value === "ACTIVE" && ` (${activeCount})`}
-            {opt.value === "INACTIVE" && ` (${inactiveCount})`}
-          </Button>
-        ))}
-      </div>
+      {/* 필터 바 — full-access(OWNER/test)만 전체 필터 사용 가능 */}
+      {canResetPassword ? (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {FILTER_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              type="button"
+              size="sm"
+              variant={filter === opt.value ? "default" : "outline"}
+              className="h-8 text-[13px]"
+              onClick={() => setFilter(opt.value)}
+            >
+              {opt.label}
+              {opt.value === "ACTIVE" && ` (${activeCount})`}
+              {opt.value === "INACTIVE" && ` (${inactiveCount})`}
+            </Button>
+          ))}
+        </div>
+      ) : (
+        <div className="mb-3">
+          <span className="text-[13px] text-muted-foreground">
+            활성 사용자 ({activeCount}명)
+          </span>
+        </div>
+      )}
 
       {filteredUsers.length === 0 ? (
         <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
