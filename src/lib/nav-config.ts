@@ -240,22 +240,13 @@ export const MES_NAV: NavItem[] = [
     displayOrder: 4,
     children: [
       {
-        id: 'nav-support-section',
+        id: 'nav-support-requests',
         parentId: 'section-support',
-        label: '요청/지원',
-        icon: 'MessageSquare',
-        displayOrder: 10,
-        children: [
-          {
-            id: 'nav-support-requests',
-            parentId: 'nav-support-section',
-            label: '요청사항 등록',
-            icon: 'ClipboardList',
-            href: '/app/mes/support-requests',
-            displayOrder: 1,
-            children: [],
-          },
-        ],
+        label: '요청사항',
+        icon: 'ClipboardList',
+        href: '/app/mes/support-requests',
+        displayOrder: 1,
+        children: [],
       },
     ],
   },
