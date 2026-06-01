@@ -253,6 +253,119 @@ export async function getGroupedMaterialInventoryBalances(): Promise<GroupedMate
     .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
 }
 
+// ─── 전체 품목 기준 그룹화 재고 ───────────────────────────────────────────────
+
+export type InventoryLotBalanceDetail = {
+  balanceId: string
+  lotId: string | null
+  lotNo: string | null
+  warehouseId: string
+  warehouseCode: string
+  warehouseName: string
+  siteId: string
+  siteName: string
+  qtyOnHand: number
+  qtyAvailable: number
+  qtyHold: number
+}
+
+export type GroupedInventoryStock = {
+  itemId: string
+  itemCode: string
+  itemName: string
+  itemType: string
+  itemSpec: string | null
+  uom: string
+  isLotTracked: boolean
+  totalQtyOnHand: number
+  totalQtyAvailable: number
+  totalQtyHold: number
+  lotCount: number
+  warehouseCount: number
+  hasUnlottedStock: boolean
+  balances: InventoryLotBalanceDetail[]
+}
+
+export async function getGroupedInventoryBalances(): Promise<GroupedInventoryStock[]> {
+  const rows = await prisma.inventoryBalance.findMany({
+    include: {
+      warehouse: { include: { site: true } },
+      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true } },
+      lot: { select: { id: true, lotNo: true } },
+    },
+    orderBy: { item: { code: "asc" } },
+  })
+
+  type Acc = { group: GroupedInventoryStock; lotIdSet: Set<string>; warehouseIdSet: Set<string> }
+  const groupMap = new Map<string, Acc>()
+
+  for (const b of rows) {
+    const qtyOnHand = Number(b.qtyOnHand)
+    const qtyAvailable = Number(b.qtyAvailable)
+    const qtyHold = Number(b.qtyHold)
+    const isLotTracked = b.item.isLotTracked ?? false
+    const isUnlotted = isLotTracked && !b.lotId && qtyOnHand > 0
+
+    const balanceDetail: InventoryLotBalanceDetail = {
+      balanceId: b.id,
+      lotId: b.lotId,
+      lotNo: b.lot?.lotNo ?? null,
+      warehouseId: b.warehouseId,
+      warehouseCode: b.warehouse.code,
+      warehouseName: b.warehouse.name,
+      siteId: b.warehouse.siteId,
+      siteName: b.warehouse.site.name,
+      qtyOnHand,
+      qtyAvailable,
+      qtyHold,
+    }
+
+    const existing = groupMap.get(b.itemId)
+    if (existing) {
+      existing.group.totalQtyOnHand += qtyOnHand
+      existing.group.totalQtyAvailable += qtyAvailable
+      existing.group.totalQtyHold += qtyHold
+      if (b.lotId) existing.lotIdSet.add(b.lotId)
+      existing.warehouseIdSet.add(b.warehouseId)
+      if (isUnlotted) existing.group.hasUnlottedStock = true
+      existing.group.balances.push(balanceDetail)
+    } else {
+      const lotIdSet = new Set<string>()
+      const warehouseIdSet = new Set<string>()
+      if (b.lotId) lotIdSet.add(b.lotId)
+      warehouseIdSet.add(b.warehouseId)
+      groupMap.set(b.itemId, {
+        group: {
+          itemId: b.itemId,
+          itemCode: b.item.code,
+          itemName: b.item.name,
+          itemType: b.item.itemType,
+          itemSpec: b.item.spec ?? null,
+          uom: b.item.uom,
+          isLotTracked,
+          totalQtyOnHand: qtyOnHand,
+          totalQtyAvailable: qtyAvailable,
+          totalQtyHold: qtyHold,
+          lotCount: 0,
+          warehouseCount: 0,
+          hasUnlottedStock: isUnlotted,
+          balances: [balanceDetail],
+        },
+        lotIdSet,
+        warehouseIdSet,
+      })
+    }
+  }
+
+  return Array.from(groupMap.values())
+    .map(({ group, lotIdSet, warehouseIdSet }) => {
+      group.lotCount = lotIdSet.size
+      group.warehouseCount = warehouseIdSet.size
+      return group
+    })
+    .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
+}
+
 export async function getWarehousesBySite(siteId: string) {
   return prisma.warehouse.findMany({
     where: { siteId },

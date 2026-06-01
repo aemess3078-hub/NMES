@@ -1,6 +1,6 @@
 import { cookies } from "next/headers"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
-import { getInventoryBalances, getSitesForInventory } from "@/lib/actions/inventory.actions"
+import { getGroupedInventoryBalances, getSitesForInventory } from "@/lib/actions/inventory.actions"
 import { InventoryDataTable } from "./inventory-data-table"
 
 export const dynamic = "force-dynamic"
@@ -18,8 +18,8 @@ export default async function InventoryPage() {
     )
   }
 
-  const [balances, sites] = await Promise.all([
-    getInventoryBalances(),
+  const [groups, sites] = await Promise.all([
+    getGroupedInventoryBalances(),
     getSitesForInventory(),
   ])
 
@@ -31,11 +31,11 @@ export default async function InventoryPage() {
             재고현황
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
-            창고별 품목 재고현황을 조회합니다.
+            전체 품목의 재고현황을 조회합니다. 품목 행을 클릭하면 LOT/창고별 상세 재고가 펼쳐집니다.
           </p>
         </div>
       </div>
-      <InventoryDataTable data={balances} sites={sites} />
+      <InventoryDataTable data={groups} sites={sites} />
     </div>
   )
 }
