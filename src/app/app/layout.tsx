@@ -55,7 +55,7 @@ export default async function AppLayout({
   const isDev = isDeveloperUser(user)
   function filterNav(items: NavItem[], codes: string[]): NavItem[] {
     return items.reduce<NavItem[]>((acc, item) => {
-      // 개발자 전용 메뉴: loginId='admin' 계정에만 표시
+      // 개발자 전용 메뉴: loginId='test' 계정에만 표시
       if (item.developerOnly && !isDev) return acc
       if (item.minRole && ROLE_HIERARCHY[userRole] < ROLE_HIERARCHY[item.minRole]) {
         return acc

@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
-import { Loader2, Monitor, Factory, Eye, EyeOff } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Loader2, Monitor, Factory, Eye, EyeOff, LockKeyhole } from "lucide-react"
 import { popLogin } from "@/lib/actions/pop.actions"
 import { PopNumberPad } from "@/app/pop/components/pop-number-pad"
 import { CnsLogo } from "@/components/cns-logo"
@@ -72,15 +80,14 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
-  const [infoMessage, setInfoMessage] = useState("")
   const [loading, setLoading] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (loading) return
     setLoading(true)
     setError("")
-    setInfoMessage("")
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -106,16 +113,10 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
 
       setError(data.message ?? "로그인에 실패했습니다.")
     } catch {
-      // fetch 자체가 실패한 경우 (네트워크 단절 등)
       setError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.")
     } finally {
       setLoading(false)
     }
-  }
-
-  function handleForgotPassword() {
-    setInfoMessage("비밀번호 찾기 기능은 준비 중입니다. 관리자에게 문의하세요.")
-    setError("")
   }
 
   return (
@@ -183,11 +184,6 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
             {error}
           </p>
         )}
-        {infoMessage && (
-          <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-            {infoMessage}
-          </p>
-        )}
 
         <Button
           type="submit"
@@ -214,12 +210,45 @@ function SystemLoginForm({ onBack }: { onBack: () => void }) {
         </a>
         <button
           type="button"
-          onClick={handleForgotPassword}
+          onClick={() => setForgotOpen(true)}
           className="text-sm text-slate-400 hover:text-slate-600 transition-colors"
         >
           비밀번호를 잊으셨나요?
         </button>
       </div>
+
+      {/* 비밀번호 찾기 안내 다이얼로그 */}
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <div className="flex items-center gap-2 mb-1">
+              <LockKeyhole className="h-5 w-5 text-blue-500" />
+              <DialogTitle>비밀번호를 잊으셨나요?</DialogTitle>
+            </div>
+            <DialogDescription asChild>
+              <div className="space-y-3 text-[14px] text-slate-600 pt-1">
+                <p>
+                  비밀번호 초기화는{" "}
+                  <span className="font-semibold text-slate-800">회사 OWNER 계정 담당자</span>에게
+                  구두·전화·카톡으로 요청해 주세요.
+                </p>
+                <p className="text-[13px] text-slate-500">
+                  초기화 후 임시 비밀번호로 로그인하면 새 비밀번호로 변경하는 화면이 자동으로 표시됩니다.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="default"
+              className="w-full"
+              onClick={() => setForgotOpen(false)}
+            >
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

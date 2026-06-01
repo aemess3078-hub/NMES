@@ -4,8 +4,8 @@ import { verifyPassword, hashPassword } from '@/lib/password'
 import { verifyAuthToken, NMES_SESSION_COOKIE } from '@/lib/jwt'
 
 const PASSWORD_MIN_LENGTH = 8
-// 영문 + 숫자 + 특수문자 조합
 const PASSWORD_STRENGTH_RE = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/
+const RESET_PASSWORD = 'Cns@123'
 
 export async function POST(req: NextRequest) {
   const token = req.cookies.get(NMES_SESSION_COOKIE)?.value ?? null
@@ -48,6 +48,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  if (newPassword === RESET_PASSWORD) {
+    return NextResponse.json(
+      { success: false, message: '임시 비밀번호는 새 비밀번호로 사용할 수 없습니다. 다른 비밀번호를 입력해 주세요.' },
+      { status: 400 },
+    )
+  }
+
   const credential = await prisma.userCredential.findUnique({
     where: { profileId: payload.profileId },
     select: { id: true, passwordHash: true, isLocked: true },
@@ -78,6 +85,17 @@ export async function POST(req: NextRequest) {
       lockedAt: null,
     },
   })
+
+  await prisma.auditLog.create({
+    data: {
+      tenantId: payload.tenantId,
+      actorId: payload.profileId,
+      entityType: 'UserCredential',
+      entityId: credential.id,
+      action: 'UPDATE',
+      afterData: { passwordChanged: true, mustChangePw: false },
+    },
+  }).catch(() => {})
 
   return NextResponse.json({ success: true, message: '비밀번호가 변경되었습니다.' })
 }

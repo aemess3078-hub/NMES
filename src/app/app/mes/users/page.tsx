@@ -119,7 +119,11 @@ export default async function UsersPage() {
               {usersError}
             </div>
           ) : (
-            <UserManagementTable users={usersData} currentUserId={currentUser.id} />
+            <UserManagementTable
+              users={usersData}
+              currentUserId={currentUser.id}
+              canResetPassword={fullAccess}
+            />
           )}
         </TabsContent>
 

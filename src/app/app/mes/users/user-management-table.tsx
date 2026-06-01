@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { UserRole } from "@prisma/client"
-import { Shield, UserCheck, UserX, ChevronDown, Trash2 } from "lucide-react"
+import { Shield, UserCheck, UserX, ChevronDown, Trash2, KeyRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -19,6 +19,7 @@ import {
   deactivateUser,
   reactivateUser,
   deleteUserPermanently,
+  resetUserPassword,
 } from "@/lib/actions/user-management.actions"
 import type { TenantUserRow } from "@/lib/actions/user-management.actions"
 
@@ -61,9 +62,11 @@ const ROLE_COLORS: Record<UserRole, string> = {
 export function UserManagementTable({
   users,
   currentUserId,
+  canResetPassword = false,
 }: {
   users: TenantUserRow[]
   currentUserId: string
+  canResetPassword?: boolean
 }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -135,6 +138,24 @@ export function UserManagementTable({
         router.refresh()
       } else {
         setError(result.error ?? "재활성화에 실패했습니다.")
+      }
+    })
+  }
+
+  function handleResetPassword(tenantUserId: string, userName: string) {
+    if (
+      !confirm(
+        `${userName} 계정의 비밀번호를 초기화합니다.\n초기화된 비밀번호: Cns@123\n\n해당 계정은 다음 로그인 시 비밀번호를 변경해야 합니다.\n\n계속하시겠습니까?`,
+      )
+    )
+      return
+    setError(null)
+    startTransition(async () => {
+      const result = await resetUserPassword(tenantUserId)
+      if (result.success) {
+        router.refresh()
+      } else {
+        setError(result.error ?? "비밀번호 초기화에 실패했습니다.")
       }
     })
   }
@@ -273,6 +294,19 @@ export function UserManagementTable({
                             <UserCheck className="w-3.5 h-3.5 mr-1.5" />
                             재활성화
                           </DropdownMenuItem>
+                        )}
+                        {canResetPassword && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-[13px] text-amber-600 focus:text-amber-600"
+                              disabled={isSelf}
+                              onClick={() => handleResetPassword(user.id, user.name)}
+                            >
+                              <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                              비밀번호 초기화
+                            </DropdownMenuItem>
+                          </>
                         )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

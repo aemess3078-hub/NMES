@@ -3,9 +3,12 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUser, requireRole } from "@/lib/auth"
 import { canAccessFullUserManagement } from "@/lib/developer"
+import { hashPassword } from "@/lib/password"
 import { UserRole, type AuditAction, type LoginEventType, type LoginFailReason, type Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
+
+const RESET_PASSWORD = 'Cns@123'
 
 async function requireFullUserManagementAccess() {
   const user = await getCurrentUser()
@@ -624,6 +627,68 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
         action: "UPDATE",
         beforeData: { isActive: false, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
         afterData: { isActive: true, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+      },
+    })
+
+    revalidatePath("/app/mes/users")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: getErrorMessage(e) }
+  }
+}
+
+// ─── 비밀번호 초기화 (test/OWNER 전용) ────────────────────────────────────────
+
+export async function resetUserPassword(
+  tenantUserId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const tenantId = await getTenantId()
+    const actor = await requireFullUserManagementAccess()
+
+    const tenantUser = await prisma.tenantUser.findFirst({
+      where: { id: tenantUserId, tenantId },
+      include: { profile: { include: { userCredential: { select: { id: true } } } } },
+    })
+    if (!tenantUser) return { success: false, error: "사용자를 찾을 수 없습니다." }
+    if (isDemoSeedEmail(tenantUser.profile.email)) {
+      return { success: false, error: "Seed/demo 계정은 운영 UI에서 관리할 수 없습니다." }
+    }
+    if (tenantUser.profileId === actor.id) {
+      return { success: false, error: "본인 계정의 비밀번호는 초기화할 수 없습니다." }
+    }
+
+    const credential = tenantUser.profile.userCredential
+    if (!credential) return { success: false, error: "계정 인증 정보가 없습니다." }
+
+    const newHash = await hashPassword(RESET_PASSWORD)
+
+    await prisma.userCredential.update({
+      where: { id: credential.id },
+      data: {
+        passwordHash: newHash,
+        mustChangePw: true,
+        isLocked: false,
+        failCount: 0,
+        lockedAt: null,
+      },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "UserCredential",
+        entityId: credential.id,
+        action: "UPDATE",
+        beforeData: { targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        afterData: {
+          targetUserName: tenantUser.profile.name,
+          targetUserEmail: tenantUser.profile.email,
+          passwordReset: true,
+          mustChangePw: true,
+        },
       },
     })
 
