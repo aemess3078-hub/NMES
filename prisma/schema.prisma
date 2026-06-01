@@ -406,6 +406,7 @@ model Tenant {
   loginHistories                LoginHistory[]
   itemGroups                    ItemGroup[]
   workOrderOperationAssignments WorkOrderOperationAssignment[]
+  supportRequests               SupportRequest[]
 }
 
 model Profile {
@@ -435,6 +436,8 @@ model Profile {
   dailyChecks          EquipmentDailyCheck[]    @relation("DailyCheckChecker")
   userCredential       UserCredential?
   loginHistories       LoginHistory[]
+  supportAuthored      SupportRequest[]         @relation("SupportAuthor")
+  supportHandled       SupportRequest[]         @relation("SupportHandler")
 }
 
 model Site {
@@ -2140,6 +2143,30 @@ enum CheckResult {
   NA
 }
 
+// ─── Support Request Enums ────────────────────────────────────────────────────
+
+enum SupportType {
+  BUG_REPORT
+  FEATURE_REQUEST
+  IMPROVEMENT
+  OTHER
+}
+
+enum SupportStatus {
+  OPEN
+  IN_PROGRESS
+  ANSWERED
+  ON_HOLD
+  COMPLETED
+}
+
+enum SupportPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 model EquipmentProblemType {
   id          String   @id @default(cuid())
   tenantId    String
@@ -2252,4 +2279,34 @@ model LoginHistory {
   @@index([tenantId])
   @@index([profileId])
   @@index([loginId, createdAt])
+}
+
+// ─── Support Request ──────────────────────────────────────────────────────────
+
+model SupportRequest {
+  id          String          @id @default(cuid())
+  tenantId    String
+  authorId    String
+  type        SupportType
+  priority    SupportPriority @default(NORMAL)
+  title       String
+  content     String          @db.Text
+  status      SupportStatus   @default(OPEN)
+  imageUrl    String?
+  answer      String?         @db.Text
+  adminNote   String?         @db.Text
+  handledById String?
+  handledAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  author    Profile  @relation("SupportAuthor", fields: [authorId], references: [id])
+  handledBy Profile? @relation("SupportHandler", fields: [handledById], references: [id])
+
+  @@index([tenantId])
+  @@index([authorId])
+  @@index([status])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
 }

@@ -228,4 +228,35 @@ export const MES_NAV: NavItem[] = [
       },
     ],
   },
+
+  // ═══════════════════════════════════════════════════════════════
+  // 요청/지원
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: 'section-support',
+    parentId: null,
+    label: '요청/지원',
+    icon: 'LifeBuoy',
+    displayOrder: 4,
+    children: [
+      {
+        id: 'nav-support-section',
+        parentId: 'section-support',
+        label: '요청/지원',
+        icon: 'MessageSquare',
+        displayOrder: 10,
+        children: [
+          {
+            id: 'nav-support-requests',
+            parentId: 'nav-support-section',
+            label: '요청사항 등록',
+            icon: 'ClipboardList',
+            href: '/app/mes/support-requests',
+            displayOrder: 1,
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
 ];

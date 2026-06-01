@@ -149,5 +149,8 @@ export async function getEnabledMenuCodes(tenantId: string): Promise<string[]> {
     menuCodes.add("finished-goods-receipt")
   }
 
+  // 요청/지원 메뉴는 모든 테넌트에서 항상 활성화
+  menuCodes.add("support-requests")
+
   return Array.from(menuCodes)
 }
