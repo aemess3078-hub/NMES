@@ -67,7 +67,7 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="사용자 / 대상 / 메뉴 / 대상ID 검색"
+            placeholder="사용자 / 작업 대상 / 이메일 / 메뉴 검색"
             className="h-9 w-[280px] pl-9 text-[14px]"
           />
         </form>
@@ -119,7 +119,7 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
         <table className="w-full min-w-[900px] border-collapse">
           <thead>
             <tr className="border-b bg-muted/30">
-              {["일시", "사용자", "동작", "대상", "대상 ID", "메뉴", "IP"].map((h) => (
+              {["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   {h}
                 </th>
@@ -149,9 +149,17 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
                         {cfg.label}
                       </Badge>
                     </td>
-                    <td className="px-4 py-2.5 text-[13px] whitespace-nowrap">{r.entityType}</td>
-                    <td className="px-4 py-2.5 text-[12px] font-mono text-muted-foreground max-w-[200px] truncate" title={r.entityId}>
-                      {r.entityId}
+                    <td className="px-4 py-2.5 text-[13px] text-muted-foreground whitespace-nowrap">
+                      {r.entityType}
+                    </td>
+                    <td className="px-4 py-2.5 text-[13px] max-w-[280px]">
+                      <span className="block truncate" title={r.targetLabel || r.entityId}>
+                        {r.targetLabel || (
+                          <span className="text-muted-foreground font-mono text-[12px]">
+                            {r.entityId ? `ID: ${r.entityId.slice(0, 12)}…` : "—"}
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="px-4 py-2.5 text-[13px] text-muted-foreground whitespace-nowrap">
                       {r.menuName ?? "—"}

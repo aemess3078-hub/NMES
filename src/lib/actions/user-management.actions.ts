@@ -112,8 +112,8 @@ export async function updateUserRole(
         entityType: "TenantUser",
         entityId: tenantUserId,
         action: "UPDATE",
-        beforeData: { role: beforeRole },
-        afterData: { role: newRole, email: tenantUser.profile.email },
+        beforeData: { role: beforeRole, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        afterData: { role: newRole, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
       },
     })
 
@@ -161,8 +161,8 @@ export async function deactivateUser(tenantUserId: string): Promise<{ success: b
         entityType: "TenantUser",
         entityId: tenantUserId,
         action: "UPDATE",
-        beforeData: { isActive: true },
-        afterData: { isActive: false, email: tenantUser.profile.email },
+        beforeData: { isActive: true, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        afterData: { isActive: false, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
       },
     })
 
@@ -384,6 +384,7 @@ export type AuditLogRow = {
   actorLabel: string | null
   entityType: string
   entityId: string
+  targetLabel: string        // 사람이 읽을 수 있는 작업 대상 설명
   action: AuditAction
   menuName: string | null
   ipAddress: string | null
@@ -396,6 +397,92 @@ export type AuditLogFilter = {
   action?: AuditAction | "ALL"
   entityType?: string
   days?: number
+}
+
+/**
+ * AuditLog 한 행의 entityType / metadata를 바탕으로
+ * 사람이 읽을 수 있는 작업 대상 레이블을 생성한다.
+ *
+ * 우선순위:
+ *   1) beforeData / afterData 에 있는 이름·이메일 (삭제된 사용자도 표시 가능)
+ *   2) 현재 DB에서 조회한 TenantUser / Profile 정보 (batch로 미리 조회)
+ *   3) entityId 앞 8자리 + "확인 불가" fallback
+ */
+function buildTargetLabel(
+  entityType: string,
+  entityId: string,
+  action: string,
+  beforeData: Record<string, unknown> | null,
+  afterData: Record<string, unknown> | null,
+  tuMap: Map<string, { name: string; email: string }>,
+  profileMap: Map<string, { name: string; email: string }>,
+): string {
+  const after = afterData ?? {}
+  const before = beforeData ?? {}
+
+  if (entityType === "TenantUser" || entityType === "Profile") {
+    // 메타데이터에서 이름/이메일 우선 추출
+    const emailFromMeta =
+      (after.targetUserEmail as string | undefined) ??
+      (after.email as string | undefined) ??
+      (before.targetUserEmail as string | undefined) ??
+      (before.email as string | undefined) ??
+      null
+    const nameFromMeta =
+      (after.targetUserName as string | undefined) ??
+      (after.name as string | undefined) ??
+      (before.targetUserName as string | undefined) ??
+      (before.name as string | undefined) ??
+      null
+
+    // DB 조회 fallback (메타데이터 없거나 구 로그인 경우)
+    const dbInfo =
+      entityType === "TenantUser" ? tuMap.get(entityId) : profileMap.get(entityId)
+
+    const email = emailFromMeta ?? dbInfo?.email
+    const name = nameFromMeta ?? dbInfo?.name
+
+    if (!email && !name) {
+      if (!entityId) return "대상 정보 없음"
+      return `삭제된 사용자 (ID: ${entityId.slice(0, 8)}…)`
+    }
+
+    const displayName = name || email?.split("@")[0] || ""
+    let label = displayName
+    if (email && email !== displayName) label += ` / ${email}`
+
+    // 역할 변경 주석
+    if (action === "UPDATE") {
+      const beforeRole = before.role as string | undefined
+      const afterRole = after.role as string | undefined
+      if (beforeRole && afterRole && beforeRole !== afterRole) {
+        label += ` (${beforeRole} → ${afterRole})`
+      }
+      // 활성화/비활성화 주석
+      const afterActive = after.isActive
+      if (typeof afterActive === "boolean") {
+        label += afterActive ? " [재활성화]" : " [비활성화]"
+      }
+    }
+    if (action === "DELETE") {
+      label += " [삭제됨]"
+    }
+
+    return label
+  }
+
+  // EngineeringChange (변경관리 ECN)
+  if (entityType === "EngineeringChange") {
+    const ecnNo =
+      (after.ecnNo as string | undefined) ?? (before.ecnNo as string | undefined)
+    if (ecnNo) return `ECN: ${ecnNo}`
+    if (!entityId) return "—"
+    return `변경요청 (ID: ${entityId.slice(0, 8)}…)`
+  }
+
+  // 기타 엔티티 — entityType + id 앞 8자리
+  if (!entityId) return "—"
+  return `${entityType} (ID: ${entityId.slice(0, 8)}…)`
 }
 
 export async function getAuditLogs(
@@ -423,28 +510,83 @@ export async function getAuditLogs(
       { actorLabel: { contains: q, mode: "insensitive" } },
       { menuName: { contains: q, mode: "insensitive" } },
       { actor: { name: { contains: q, mode: "insensitive" } } },
+      // afterData / beforeData JSON 내 이메일·이름 검색 (Postgres JSON path)
+      { afterData: { path: ["targetUserEmail"], string_contains: q } },
+      { afterData: { path: ["email"], string_contains: q } },
+      { afterData: { path: ["targetUserName"], string_contains: q } },
+      { beforeData: { path: ["targetUserEmail"], string_contains: q } },
+      { beforeData: { path: ["targetUserName"], string_contains: q } },
     ]
   }
 
   const rows = await prisma.auditLog.findMany({
     where,
-    include: { actor: { select: { name: true } } },
+    select: {
+      id: true,
+      actorLabel: true,
+      entityType: true,
+      entityId: true,
+      action: true,
+      menuName: true,
+      ipAddress: true,
+      userAgent: true,
+      actedAt: true,
+      beforeData: true,
+      afterData: true,
+      actor: { select: { name: true } },
+    },
     orderBy: { actedAt: "desc" },
     take: 500,
   })
 
-  return rows.map((r) => ({
-    id: r.id,
-    actorName: r.actor?.name ?? null,
-    actorLabel: r.actorLabel,
-    entityType: r.entityType,
-    entityId: r.entityId,
-    action: r.action,
-    menuName: r.menuName,
-    ipAddress: r.ipAddress,
-    userAgent: r.userAgent,
-    actedAt: r.actedAt.toISOString(),
-  }))
+  // ─── Batch lookup: TenantUser → Profile (N+1 방지) ─────────────────────────
+  const tuIds = Array.from(new Set(
+    rows.filter((r) => r.entityType === "TenantUser").map((r) => r.entityId)
+  ))
+  const profileIds = Array.from(new Set(
+    rows.filter((r) => r.entityType === "Profile").map((r) => r.entityId)
+  ))
+
+  const [tuRows, profileRows] = await Promise.all([
+    tuIds.length > 0
+      ? prisma.tenantUser.findMany({
+          where: { id: { in: tuIds } },
+          select: { id: true, profile: { select: { name: true, email: true } } },
+        })
+      : Promise.resolve([] as { id: string; profile: { name: string; email: string } }[]),
+    profileIds.length > 0
+      ? prisma.profile.findMany({
+          where: { id: { in: profileIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : Promise.resolve([] as { id: string; name: string; email: string }[]),
+  ])
+
+  const tuMap = new Map<string, { name: string; email: string }>(
+    tuRows.map((tu) => [tu.id, { name: tu.profile.name || "", email: tu.profile.email }])
+  )
+  const profileMap = new Map<string, { name: string; email: string }>(
+    profileRows.map((p) => [p.id, { name: p.name || "", email: p.email }])
+  )
+  // ──────────────────────────────────────────────────────────────────────────
+
+  return rows.map((r) => {
+    const before = r.beforeData as Record<string, unknown> | null
+    const after = r.afterData as Record<string, unknown> | null
+    return {
+      id: r.id,
+      actorName: r.actor?.name ?? null,
+      actorLabel: r.actorLabel,
+      entityType: r.entityType,
+      entityId: r.entityId,
+      targetLabel: buildTargetLabel(r.entityType, r.entityId, r.action, before, after, tuMap, profileMap),
+      action: r.action,
+      menuName: r.menuName,
+      ipAddress: r.ipAddress,
+      userAgent: r.userAgent,
+      actedAt: r.actedAt.toISOString(),
+    }
+  })
 }
 
 // ─── 재활성화 ─────────────────────────────────────────────────────────────────
@@ -472,8 +614,8 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
         entityType: "TenantUser",
         entityId: tenantUserId,
         action: "UPDATE",
-        beforeData: { isActive: false },
-        afterData: { isActive: true, email: tenantUser.profile.email },
+        beforeData: { isActive: false, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        afterData: { isActive: true, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
       },
     })
 
