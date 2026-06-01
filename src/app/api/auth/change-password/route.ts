@@ -34,6 +34,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  if (newPassword === RESET_PASSWORD) {
+    return NextResponse.json(
+      { success: false, message: '임시 비밀번호는 새 비밀번호로 사용할 수 없습니다. 다른 비밀번호를 입력해 주세요.' },
+      { status: 400 },
+    )
+  }
+
   if (newPassword.length < PASSWORD_MIN_LENGTH) {
     return NextResponse.json(
       { success: false, message: `새 비밀번호는 최소 ${PASSWORD_MIN_LENGTH}자 이상이어야 합니다.` },
@@ -44,13 +51,6 @@ export async function POST(req: NextRequest) {
   if (!PASSWORD_STRENGTH_RE.test(newPassword)) {
     return NextResponse.json(
       { success: false, message: '새 비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다.' },
-      { status: 400 },
-    )
-  }
-
-  if (newPassword === RESET_PASSWORD) {
-    return NextResponse.json(
-      { success: false, message: '임시 비밀번호는 새 비밀번호로 사용할 수 없습니다. 다른 비밀번호를 입력해 주세요.' },
       { status: 400 },
     )
   }

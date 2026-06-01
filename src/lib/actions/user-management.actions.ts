@@ -663,33 +663,35 @@ export async function resetUserPassword(
 
     const newHash = await hashPassword(RESET_PASSWORD)
 
-    await prisma.userCredential.update({
-      where: { id: credential.id },
-      data: {
-        passwordHash: newHash,
-        mustChangePw: true,
-        isLocked: false,
-        failCount: 0,
-        lockedAt: null,
-      },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "UserCredential",
-        entityId: credential.id,
-        action: "UPDATE",
-        beforeData: { targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
-        afterData: {
-          targetUserName: tenantUser.profile.name,
-          targetUserEmail: tenantUser.profile.email,
-          passwordReset: true,
+    await prisma.$transaction(async (tx) => {
+      await tx.userCredential.update({
+        where: { id: credential.id },
+        data: {
+          passwordHash: newHash,
           mustChangePw: true,
+          isLocked: false,
+          failCount: 0,
+          lockedAt: null,
         },
-      },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actor.id,
+          actorLabel: actor.name,
+          entityType: "UserCredential",
+          entityId: credential.id,
+          action: "UPDATE",
+          beforeData: { targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+          afterData: {
+            targetUserName: tenantUser.profile.name,
+            targetUserEmail: tenantUser.profile.email,
+            passwordReset: true,
+            mustChangePw: true,
+          },
+        },
+      })
     })
 
     revalidatePath("/app/mes/users")
