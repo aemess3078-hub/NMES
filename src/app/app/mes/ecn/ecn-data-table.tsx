@@ -15,20 +15,23 @@ import {
   rejectECN,
   implementECN,
 } from "@/lib/actions/ecn.actions"
+import type { UserRole } from "@prisma/client"
 
 interface Props {
   ecns: ECNWithDetails[]
   items: { id: string; code: string; name: string; itemType: string }[]
   tenantId: string
   userId: string
+  userRole: UserRole
   isAdmin: boolean
 }
 
-export function ECNDataTable({ ecns, items, tenantId, userId, isAdmin }: Props) {
+export function ECNDataTable({ ecns, items, tenantId, userId, userRole, isAdmin }: Props) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingECN, setEditingECN] = useState<ECNWithDetails | null>(null)
+  const canCreate = userRole !== "VIEWER"
 
   const handleEdit = (ecn: ECNWithDetails) => {
     setEditingECN(ecn)
@@ -95,11 +98,13 @@ export function ECNDataTable({ ecns, items, tenantId, userId, isAdmin }: Props) 
     onReject: handleReject,
     onImplement: handleImplement,
     isAdmin,
+    userId,
+    userRole,
   })
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      {canCreate && <div className="flex justify-end">
         <Button
           onClick={() => {
             setEditingECN(null)
@@ -110,7 +115,7 @@ export function ECNDataTable({ ecns, items, tenantId, userId, isAdmin }: Props) 
           <Plus className="mr-2 h-4 w-4" />
           ECN 등록
         </Button>
-      </div>
+      </div>}
 
       <DataTable
         columns={columns}

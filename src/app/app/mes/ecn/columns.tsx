@@ -2,6 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { ECNWithDetails } from "@/lib/actions/ecn.actions"
+import type { UserRole } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MoreHorizontal } from "lucide-react"
@@ -38,6 +39,8 @@ interface ColOptions {
   onReject: (ecn: ECNWithDetails) => void
   onImplement: (ecn: ECNWithDetails) => void
   isAdmin?: boolean
+  userId: string
+  userRole: UserRole
 }
 
 export function getColumns(options: ColOptions): ColumnDef<ECNWithDetails>[] {
@@ -130,13 +133,15 @@ export function getColumns(options: ColOptions): ColumnDef<ECNWithDetails>[] {
       id: "actions",
       cell: ({ row }) => {
         const ecn = row.original
-        const { isAdmin = false } = options
-        const canEdit = ["DRAFT", "SUBMITTED"].includes(ecn.status)
-        const canDelete = ecn.status === "DRAFT"
-        const canSubmit = ecn.status === "DRAFT"
+        const { isAdmin = false, userId, userRole } = options
+        const isOwnECN = ecn.requestedBy === userId
+        const canOwnMutation = userRole === "OPERATOR" && isOwnECN
+        const canEdit = isAdmin || (canOwnMutation && ["DRAFT", "SUBMITTED"].includes(ecn.status))
+        const canDelete = isAdmin || (canOwnMutation && ["DRAFT", "SUBMITTED", "REVIEWING"].includes(ecn.status))
+        const canSubmit = ecn.status === "DRAFT" && (isAdmin || canOwnMutation)
         // 승인/반려/적용은 관리자(MANAGER 이상)만 가능
         const canApprove = isAdmin && ["SUBMITTED", "REVIEWING"].includes(ecn.status)
-        const canImplement = isAdmin && ecn.status === "APPROVED"
+        const canImplement = ["OWNER", "ADMIN"].includes(userRole) && ecn.status === "APPROVED"
 
         return (
           <DropdownMenu>

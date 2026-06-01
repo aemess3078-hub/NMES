@@ -42,6 +42,7 @@ export default async function ECNPage() {
         items={items}
         tenantId={tenantId}
         userId={user.profileId}
+        userRole={user.role}
         isAdmin={isAdmin}
       />
     </div>

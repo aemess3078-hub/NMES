@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { ECNStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { requireRole } from "@/lib/auth"
+import { getCurrentUser, requireRole, type CurrentUser } from "@/lib/auth"
 
 export type ECNDetail = {
   id: string
@@ -44,6 +44,32 @@ const ECN_INCLUDE = {
   approver: { select: { id: true, name: true, email: true } },
   details: true,
 } as const
+
+const MANAGER_ROLES = new Set(["OWNER", "ADMIN", "MANAGER"])
+const OPERATOR_DELETE_STATUSES: ECNStatus[] = ["DRAFT", "SUBMITTED", "REVIEWING"]
+const OPERATOR_UPDATE_STATUSES: ECNStatus[] = ["DRAFT", "SUBMITTED"]
+
+function isManagerRole(user: CurrentUser) {
+  return MANAGER_ROLES.has(user.role)
+}
+
+async function requireECNUser(): Promise<CurrentUser> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("인증이 필요합니다.")
+  return user
+}
+
+function assertSameTenant(ecn: { tenantId: string }, user: CurrentUser) {
+  if (ecn.tenantId !== user.tenantId) {
+    throw new Error("권한이 없습니다.")
+  }
+}
+
+function assertOwner(ecn: { requestedBy: string }, user: CurrentUser, message: string) {
+  if (ecn.requestedBy !== user.profileId) {
+    throw new Error(message)
+  }
+}
 
 async function generateECNNo(tenantId: string): Promise<string> {
   const year = new Date().getFullYear()
@@ -145,6 +171,11 @@ export type CreateECNInput = {
 }
 
 export async function createECN(data: CreateECNInput, tenantId: string, requestedBy: string) {
+  const user = await requireRole("OPERATOR")
+  if (tenantId !== user.tenantId || requestedBy !== user.profileId) {
+    throw new Error("권한이 없습니다.")
+  }
+
   const ecnNo = await generateECNNo(tenantId)
   await prisma.engineeringChange.create({
     data: {
@@ -172,10 +203,18 @@ export async function createECN(data: CreateECNInput, tenantId: string, requeste
 }
 
 export async function updateECN(id: string, data: CreateECNInput) {
+  const user = await requireECNUser()
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
-  if (!["DRAFT", "SUBMITTED"].includes(current.status)) {
-    throw new Error("초안 또는 제출 상태의 ECN만 수정할 수 있습니다")
+  assertSameTenant(current, user)
+
+  if (!isManagerRole(user)) {
+    if (user.role === "VIEWER") throw new Error("권한이 없습니다.")
+    assertOwner(current, user, "본인이 작성한 변경요청만 수정할 수 있습니다.")
+    if (!OPERATOR_UPDATE_STATUSES.includes(current.status)) {
+      throw new Error("이미 처리된 변경요청은 수정할 수 없습니다.")
+    }
   }
+
   await prisma.$transaction([
     prisma.engineeringChangeDetail.deleteMany({ where: { engineeringChangeId: id } }),
     prisma.engineeringChange.update({
@@ -202,10 +241,18 @@ export async function updateECN(id: string, data: CreateECNInput) {
 }
 
 export async function deleteECN(id: string) {
+  const user = await requireECNUser()
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
-  if (current.status !== "DRAFT") {
-    throw new Error("초안(DRAFT) 상태의 ECN만 삭제할 수 있습니다")
+  assertSameTenant(current, user)
+
+  if (!isManagerRole(user)) {
+    if (user.role === "VIEWER") throw new Error("권한이 없습니다.")
+    assertOwner(current, user, "본인이 작성한 변경요청만 삭제할 수 있습니다.")
+    if (!OPERATOR_DELETE_STATUSES.includes(current.status)) {
+      throw new Error("이미 처리된 변경요청은 삭제할 수 없습니다.")
+    }
   }
+
   await prisma.$transaction([
     prisma.engineeringChangeDetail.deleteMany({ where: { engineeringChangeId: id } }),
     prisma.engineeringChange.delete({ where: { id } }),
@@ -214,8 +261,18 @@ export async function deleteECN(id: string) {
 }
 
 export async function submitECN(id: string) {
+  const user = await requireECNUser()
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
-  if (current.status !== "DRAFT") throw new Error("초안 상태의 ECN만 제출할 수 있습니다")
+  assertSameTenant(current, user)
+
+  if (!isManagerRole(user)) {
+    if (user.role === "VIEWER") throw new Error("권한이 없습니다.")
+    assertOwner(current, user, "본인이 작성한 변경요청만 제출할 수 있습니다.")
+  }
+  if (current.status !== "DRAFT") {
+    throw new Error("이미 제출 또는 처리된 변경요청은 다시 제출할 수 없습니다.")
+  }
+
   await prisma.engineeringChange.update({
     where: { id },
     data: { status: "SUBMITTED" },
@@ -224,32 +281,45 @@ export async function submitECN(id: string) {
 }
 
 export async function approveECN(id: string, approvedBy: string) {
-  await requireRole("MANAGER")
+  void approvedBy
+  const user = await requireRole("MANAGER")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
+  assertSameTenant(current, user)
+
   if (!["SUBMITTED", "REVIEWING"].includes(current.status)) {
-    throw new Error("제출 또는 검토 상태의 ECN만 승인할 수 있습니다")
+    throw new Error("제출 또는 검토 상태의 변경요청만 승인할 수 있습니다.")
   }
   await prisma.engineeringChange.update({
     where: { id },
-    data: { status: "APPROVED", approvedBy, approvedAt: new Date() },
+    data: { status: "APPROVED", approvedBy: user.profileId, approvedAt: new Date() },
   })
   revalidatePath("/app/mes/ecn")
 }
 
 export async function rejectECN(id: string, approvedBy: string) {
-  await requireRole("MANAGER")
+  void approvedBy
+  const user = await requireRole("MANAGER")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
+  assertSameTenant(current, user)
+
   if (!["SUBMITTED", "REVIEWING"].includes(current.status)) {
-    throw new Error("제출 또는 검토 상태의 ECN만 반려할 수 있습니다")
+    throw new Error("제출 또는 검토 상태의 변경요청만 반려할 수 있습니다.")
   }
   await prisma.engineeringChange.update({
     where: { id },
-    data: { status: "REJECTED", approvedBy, approvedAt: new Date() },
+    data: { status: "REJECTED", approvedBy: user.profileId, approvedAt: new Date() },
   })
   revalidatePath("/app/mes/ecn")
 }
 
 export async function implementECN(id: string) {
+  const user = await requireRole("ADMIN")
+  const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
+  assertSameTenant(current, user)
+  await implementECNLegacy(id)
+}
+
+async function implementECNLegacy(id: string) {
   await requireRole("ADMIN")
   const ecn = await prisma.engineeringChange.findUniqueOrThrow({
     where: { id },
