@@ -450,11 +450,11 @@ export function WorkOrderFormSheet({
             <FormTextField
               control={form.control}
               name="manufacturingNo"
-              label="제조번호 (의료기기)"
-              placeholder="예: MFG-20260521-001"
+              label="제조번호"
+              placeholder="미입력 시 자동 발행"
               description={
                 mode === "create"
-                  ? "미입력 시 MFG-YYYYMMDD-순번 형식으로 자동 발행됩니다."
+                  ? "비워두면 품목 설정에 따라 자동 발행됩니다. 직접 입력도 가능합니다."
                   : "이미 발행된 제조번호를 비우면 추적성 조회가 어려워질 수 있습니다."
               }
             />
