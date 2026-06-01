@@ -73,14 +73,17 @@ export function UserManagementTable({
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<UserFilter>("ACTIVE")
 
-  const filteredUsers = useMemo(() => {
-    if (filter === "ACTIVE") return users.filter((u) => u.isActive)
-    if (filter === "INACTIVE") return users.filter((u) => !u.isActive)
-    return users
-  }, [users, filter])
+  // OWNER 계정은 일반 사용자 목록에 표시하지 않음 (관리자·매니저·작업자·조회자만 표시)
+  const nonOwnerUsers = useMemo(() => users.filter((u) => u.role !== "OWNER"), [users])
 
-  const activeCount = useMemo(() => users.filter((u) => u.isActive).length, [users])
-  const inactiveCount = users.length - activeCount
+  const filteredUsers = useMemo(() => {
+    if (filter === "ACTIVE") return nonOwnerUsers.filter((u) => u.isActive)
+    if (filter === "INACTIVE") return nonOwnerUsers.filter((u) => !u.isActive)
+    return nonOwnerUsers
+  }, [nonOwnerUsers, filter])
+
+  const activeCount = useMemo(() => nonOwnerUsers.filter((u) => u.isActive).length, [nonOwnerUsers])
+  const inactiveCount = nonOwnerUsers.length - activeCount
 
   function handleDeletePermanently(tenantUserId: string) {
     if (
