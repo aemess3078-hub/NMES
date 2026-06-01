@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { PlanStatus, PlanType } from "@prisma/client"
+import { PlanStatus, PlanType, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,6 +67,85 @@ export type CreatePlanInput = {
   status: PlanStatus
   note?: string | null
   items: PlanItemInput[]
+}
+
+type ProductionPlanSyncTx = Prisma.TransactionClient
+
+const FINAL_PLAN_STATUSES: PlanStatus[] = ["COMPLETED", "CANCELLED"]
+
+export async function syncProductionPlanStatusFromWorkOrders(
+  tx: ProductionPlanSyncTx,
+  productionPlanId: string,
+  tenantId?: string
+) {
+  const plan = await tx.productionPlan.findFirst({
+    where: {
+      id: productionPlanId,
+      ...(tenantId ? { tenantId } : {}),
+    },
+    select: {
+      id: true,
+      status: true,
+      items: {
+        select: {
+          workOrders: {
+            select: { status: true },
+          },
+        },
+      },
+    },
+  })
+
+  if (!plan || FINAL_PLAN_STATUSES.includes(plan.status)) return
+
+  const workOrders = plan.items.flatMap((item) => item.workOrders)
+  const effectiveWorkOrders = workOrders.filter(
+    (workOrder) => workOrder.status !== "CANCELLED"
+  )
+
+  if (effectiveWorkOrders.length === 0) return
+
+  const allCompleted = effectiveWorkOrders.every(
+    (workOrder) => workOrder.status === "COMPLETED"
+  )
+
+  if (allCompleted && ["CONFIRMED", "IN_PROGRESS"].includes(plan.status)) {
+    await tx.productionPlan.update({
+      where: { id: plan.id },
+      data: { status: "COMPLETED" },
+    })
+    return
+  }
+
+  if (plan.status === "CONFIRMED") {
+    await tx.productionPlan.update({
+      where: { id: plan.id },
+      data: { status: "IN_PROGRESS" },
+    })
+  }
+}
+
+export async function syncProductionPlanStatusForWorkOrder(
+  tx: ProductionPlanSyncTx,
+  workOrderId: string,
+  tenantId?: string
+) {
+  const workOrder = await tx.workOrder.findFirst({
+    where: {
+      id: workOrderId,
+      ...(tenantId ? { tenantId } : {}),
+    },
+    select: {
+      productionPlanItem: {
+        select: { planId: true },
+      },
+    },
+  })
+
+  const productionPlanId = workOrder?.productionPlanItem?.planId
+  if (!productionPlanId) return
+
+  await syncProductionPlanStatusFromWorkOrders(tx, productionPlanId, tenantId)
 }
 
 // ─── Query Functions ──────────────────────────────────────────────────────────

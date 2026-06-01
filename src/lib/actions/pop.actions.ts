@@ -9,6 +9,7 @@ import {
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
 } from "@/lib/actions/wip-traceability.helpers"
+import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-plan.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -632,6 +633,11 @@ export async function submitProductionResult(
               where: { id: op.workOrderId },
               data: { status: "COMPLETED" },
             })
+            await syncProductionPlanStatusForWorkOrder(
+              tx,
+              op.workOrderId,
+              op.workOrder.tenantId
+            )
           }
 
           const nextOp = allOps.find((candidate) => candidate.seq > op.seq)
@@ -715,6 +721,11 @@ export async function submitProductionResult(
             where: { id: op.workOrderId },
             data: { status: "COMPLETED" },
           })
+          await syncProductionPlanStatusForWorkOrder(
+            tx,
+            op.workOrderId,
+            op.workOrder.tenantId
+          )
         }
 
         const nextOp = allOps.find((candidate) => candidate.seq > op.seq)
@@ -739,6 +750,7 @@ export async function submitProductionResult(
 
     revalidatePath("/app/pop/work-queue")
     revalidatePath("/pop/work-select")
+    revalidatePath("/app/mes/production-plan")
     return { success: true, isCompleted }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
@@ -831,6 +843,7 @@ export async function startOperation(
           where: { id: op.workOrderId },
           data: { status: "IN_PROGRESS" },
         })
+        await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, tenantId)
 
         await transitionWipUnitOnStart(tx, {
           tenantId,
@@ -851,6 +864,7 @@ export async function startOperation(
 
     revalidatePath("/app/pop/work-queue")
     revalidatePath("/pop/work-select")
+    revalidatePath("/app/mes/production-plan")
     return { success: true }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
@@ -896,13 +910,14 @@ export async function updateOperationStatus(
       data: { status },
     })
 
-    const op = await tx.workOrderOperation.findUnique({
-      where: { id: operationId },
-      select: {
-        workOrderId: true,
-        assignments: {
-          select: { status: true },
-        },
+      const op = await tx.workOrderOperation.findUnique({
+        where: { id: operationId },
+        select: {
+          workOrderId: true,
+          workOrder: { select: { tenantId: true } },
+          assignments: {
+            select: { status: true },
+          },
       },
     })
     if (!op) return
@@ -915,24 +930,27 @@ export async function updateOperationStatus(
       throw new Error("All equipment assignments must be completed first.")
     }
 
-    if (status === "IN_PROGRESS") {
-      await tx.workOrder.update({
-        where: { id: op.workOrderId },
-        data: { status: "IN_PROGRESS" },
-      })
-    } else if (status === "COMPLETED") {
+      if (status === "IN_PROGRESS") {
+        await tx.workOrder.update({
+          where: { id: op.workOrderId },
+          data: { status: "IN_PROGRESS" },
+        })
+        await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
+      } else if (status === "COMPLETED") {
       // 모든 공정이 완료된 경우 WorkOrder도 완료
       const allOps = await tx.workOrderOperation.findMany({
         where: { workOrderId: op.workOrderId },
         select: { status: true },
       })
       const allCompleted = allOps.every((o) => o.status === "COMPLETED")
-      if (allCompleted) {
-        await tx.workOrder.update({
-          where: { id: op.workOrderId },
-          data: { status: "COMPLETED" },
-        })
-      }
+        if (allCompleted) {
+          await tx.workOrder.update({
+            where: { id: op.workOrderId },
+            data: { status: "COMPLETED" },
+          })
+          await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
+        }
     }
   })
+  revalidatePath("/app/mes/production-plan")
 }

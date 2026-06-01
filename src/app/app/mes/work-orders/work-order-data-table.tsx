@@ -10,7 +10,12 @@ import { DataTable } from "@/components/common/data-table"
 import { Send } from "lucide-react"
 import { getColumns } from "./columns"
 import { WorkOrderFormSheet } from "./work-order-form-sheet"
-import { deleteWorkOrder, releaseWorkOrder, type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
+import {
+  deleteWorkOrder,
+  releaseWorkOrder,
+  type ProductionPlanItemForWorkOrder,
+  type WorkOrderWithDetails,
+} from "@/lib/actions/work-order.actions"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
 interface WorkOrderDataTableProps {
@@ -18,6 +23,7 @@ interface WorkOrderDataTableProps {
   sites: { id: string; code: string; name: string; type: string }[]
   items: { id: string; code: string; name: string; itemType: string }[]
   equipments: { id: string; code: string; name: string; equipmentType: string; workCenterId: string }[]
+  productionPlanItems: ProductionPlanItemForWorkOrder[]
   tenantId: string
 }
 
@@ -183,6 +189,7 @@ export function WorkOrderDataTable({
   sites,
   items,
   equipments,
+  productionPlanItems,
   tenantId,
 }: WorkOrderDataTableProps) {
   const router = useRouter()
@@ -293,6 +300,7 @@ export function WorkOrderDataTable({
         sites={sites}
         items={items}
         equipments={equipments}
+        productionPlanItems={productionPlanItems}
         tenantId={tenantId}
       />
     </div>

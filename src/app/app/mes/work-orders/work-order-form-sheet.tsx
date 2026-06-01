@@ -30,6 +30,7 @@ import {
   generateOrderNo,
   getBomsForItem,
   getRoutingsForItem,
+  type ProductionPlanItemForWorkOrder,
   WorkOrderWithDetails,
 } from "@/lib/actions/work-order.actions"
 import { WorkOrderStatus } from "@prisma/client"
@@ -56,6 +57,7 @@ interface WorkOrderFormSheetProps {
   sites: { id: string; code: string; name: string; type: string }[]
   items: { id: string; code: string; name: string; itemType: string }[]
   equipments: { id: string; code: string; name: string; equipmentType: string; workCenterId: string }[]
+  productionPlanItems: ProductionPlanItemForWorkOrder[]
   tenantId: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -97,6 +99,7 @@ export function WorkOrderFormSheet({
   sites,
   items,
   equipments,
+  productionPlanItems,
   tenantId,
   open,
   onOpenChange,
@@ -182,6 +185,7 @@ export function WorkOrderFormSheet({
   // ─── 품목 변경 핸들러 (BOM/라우팅 연쇄 로딩) ────────────────────────────────
 
   const handleItemChange = async (itemId: string) => {
+    form.setValue("productionPlanItemId", null)
     form.setValue("itemId", itemId)
     form.setValue("bomId", "")
     form.setValue("routingId", "")
@@ -208,24 +212,71 @@ export function WorkOrderFormSheet({
 
   // ─── 라우팅 변경 핸들러 (Operations 자동 채움) ──────────────────────────────
 
-  const handleRoutingChange = (routingId: string) => {
+  const applyRoutingOperations = (routing: RoutingOption | undefined, plannedQty: number) => {
     manuallyEditedOps.current.clear()
-    form.setValue("routingId", routingId)
-    const routing = routings.find((r) => r.id === routingId)
     if (routing?.operations && routing.operations.length > 0) {
-      const plannedQty = form.getValues("plannedQty") || 1
       replace(
         routing.operations.map((op) => ({
           routingOperationId: op.id,
           equipmentId: null,
           seq: op.seq,
-          plannedQty: plannedQty,
+          plannedQty,
           assignments: [],
         }))
       )
     } else {
       replace([])
     }
+  }
+
+  const handleProductionPlanItemChange = async (productionPlanItemId: string) => {
+    if (productionPlanItemId === "__none__") {
+      form.setValue("productionPlanItemId", null)
+      return
+    }
+
+    const planItem = productionPlanItems.find((item) => item.id === productionPlanItemId)
+    if (!planItem) return
+
+    const plannedQty = Number(planItem.plannedQty || 1)
+    form.setValue("productionPlanItemId", planItem.id)
+    form.setValue("siteId", planItem.plan.siteId)
+    form.setValue("itemId", planItem.itemId)
+    form.setValue("plannedQty", plannedQty)
+    form.setValue("bomId", planItem.bomId ?? "")
+    form.setValue("routingId", "")
+    replace([])
+
+    setLoadingBoms(true)
+    try {
+      const [newBoms, newRoutings] = await Promise.all([
+        getBomsForItem(planItem.itemId),
+        getRoutingsForItem(planItem.itemId),
+      ])
+      const typedRoutings = newRoutings as RoutingOption[]
+      setBoms(newBoms)
+      setRoutings(typedRoutings)
+
+      const routingId =
+        planItem.routingId ??
+        typedRoutings.find((routing) => routing.isDefault)?.id ??
+        ""
+      form.setValue("routingId", routingId)
+      applyRoutingOperations(
+        typedRoutings.find((routing) => routing.id === routingId),
+        plannedQty
+      )
+    } finally {
+      setLoadingBoms(false)
+    }
+  }
+
+  const handleRoutingChange = (routingId: string) => {
+    form.setValue("routingId", routingId)
+    applyRoutingOperations(
+      routings.find((r) => r.id === routingId),
+      form.getValues("plannedQty") || 1
+    )
   }
 
   // ─── 저장 핸들러 ────────────────────────────────────────────────────────────
@@ -345,6 +396,36 @@ export function WorkOrderFormSheet({
           {/* 헤더 정보 */}
           <div className="space-y-4">
             <p className="text-[15px] font-medium text-foreground">기본 정보</p>
+
+            <FormField
+              control={form.control}
+              name="productionPlanItemId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>생산계획</FormLabel>
+                  <Select
+                    onValueChange={handleProductionPlanItemChange}
+                    value={field.value ?? "__none__"}
+                    disabled={mode === "edit"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="확정된 생산계획 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">
+                        생산계획 없이 등록
+                      </SelectItem>
+                      {productionPlanItems.map((planItem) => (
+                        <SelectItem key={planItem.id} value={planItem.id}>
+                          [{planItem.plan.planNo}] {planItem.item.name} · {planItem.plannedQty.toLocaleString()} · {new Date(planItem.plan.endDate).toISOString().slice(0, 10)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <FormTextField

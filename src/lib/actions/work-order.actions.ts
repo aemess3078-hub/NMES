@@ -7,6 +7,10 @@ import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { WorkOrderStatus, OperationStatus, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { computeWipReceiptStatus } from "./wip-receipt.helpers"
+import {
+  syncProductionPlanStatusForWorkOrder,
+  syncProductionPlanStatusFromWorkOrders,
+} from "@/lib/actions/production-plan.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -178,6 +182,24 @@ export type CreateWorkOrderInput = {
   dueDate?: string | null
   productionPlanItemId?: string | null
   operations: WorkOrderOperationInput[]
+}
+
+export type ProductionPlanItemForWorkOrder = {
+  id: string
+  itemId: string
+  bomId: string | null
+  routingId: string | null
+  plannedQty: number
+  item: { id: string; code: string; name: string }
+  bom: { id: string; version: string } | null
+  routing: { id: string; version: string } | null
+  plan: {
+    id: string
+    planNo: string
+    siteId: string
+    endDate: string
+    site: { id: string; code: string; name: string }
+  }
 }
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
@@ -492,6 +514,52 @@ export async function getEquipments() {
   })
 }
 
+export async function getConfirmedProductionPlanItemsForWorkOrder(
+  tenantId: string
+): Promise<ProductionPlanItemForWorkOrder[]> {
+  const rows = await prisma.productionPlanItem.findMany({
+    where: {
+      plan: {
+        tenantId,
+        status: "CONFIRMED",
+      },
+    },
+    select: {
+      id: true,
+      itemId: true,
+      bomId: true,
+      routingId: true,
+      plannedQty: true,
+      item: { select: { id: true, code: true, name: true } },
+      bom: { select: { id: true, version: true } },
+      routing: { select: { id: true, version: true } },
+      plan: {
+        select: {
+          id: true,
+          planNo: true,
+          siteId: true,
+          endDate: true,
+          site: { select: { id: true, code: true, name: true } },
+        },
+      },
+    },
+    orderBy: [
+      { plan: { endDate: "asc" } },
+      { plan: { planNo: "asc" } },
+      { item: { code: "asc" } },
+    ],
+  })
+
+  return rows.map((row) => ({
+    ...row,
+    plannedQty: Number(row.plannedQty),
+    plan: {
+      ...row.plan,
+      endDate: row.plan.endDate.toISOString(),
+    },
+  }))
+}
+
 type ValidatedWorkOrderOperationInput = Omit<WorkOrderOperationInput, "assignments"> & {
   assignments: {
     equipmentId: string
@@ -734,11 +802,58 @@ export async function generateManufacturingNo(
   return generateCnsManufacturingNo(prisma, tenantId, itemContext, new Date(), sequenceOffset)
 }
 
+async function validateProductionPlanItemForWorkOrder(
+  productionPlanItemId: string | null | undefined,
+  data: Pick<CreateWorkOrderInput, "itemId" | "bomId" | "routingId">,
+  tenantId: string,
+  options: { allowInProgress?: boolean } = {}
+) {
+  if (!productionPlanItemId) return
+
+  const allowedPlanStatuses = options.allowInProgress
+    ? ["CONFIRMED", "IN_PROGRESS"]
+    : ["CONFIRMED"]
+
+  const planItem = await prisma.productionPlanItem.findFirst({
+    where: {
+      id: productionPlanItemId,
+      plan: {
+        tenantId,
+        status: { in: allowedPlanStatuses as any },
+      },
+    },
+    select: {
+      itemId: true,
+      bomId: true,
+      routingId: true,
+    },
+  })
+
+  if (!planItem) {
+    throw new Error("확정된 생산계획 품목만 작업지시에 연결할 수 있습니다.")
+  }
+  if (planItem.itemId !== data.itemId) {
+    throw new Error("생산계획 품목과 작업지시 품목이 일치하지 않습니다.")
+  }
+  if (planItem.bomId && planItem.bomId !== data.bomId) {
+    throw new Error("생산계획 품목의 BOM과 작업지시 BOM이 일치하지 않습니다.")
+  }
+  if (planItem.routingId && planItem.routingId !== data.routingId) {
+    throw new Error("생산계획 품목의 라우팅과 작업지시 라우팅이 일치하지 않습니다.")
+  }
+}
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: string) {
-  await requireRole("OPERATOR")
+  const user = await requireRole("OPERATOR")
+  if (tenantId !== user.tenantId) throw new Error("FORBIDDEN")
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
+  await validateProductionPlanItemForWorkOrder(
+    headerFields.productionPlanItemId,
+    headerFields,
+    tenantId
+  )
   const validatedOperations = await validateWorkOrderOperationAssignments(operations, tenantId)
 
   // 제조번호: 수동 입력 우선, 미입력 시 자동 생성 (MFG-YYYYMMDD-NNN)
@@ -752,42 +867,53 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
     ? (manualDisabled ? await generateManufacturingNo(tenantId, headerFields.itemId) : trimmed)
     : await generateManufacturingNo(tenantId, headerFields.itemId)
 
-  await prisma.workOrder.create({
-    data: {
-      ...headerFields,
-      tenantId,
-      manufacturingNo: finalManufacturingNo,
-      dueDate: dueDate ? new Date(dueDate) : null,
-      operations: {
-        create: validatedOperations.map((op) => ({
-          routingOperationId: op.routingOperationId,
-          equipmentId: op.equipmentId ?? null,
-          seq: op.seq,
-          plannedQty: op.plannedQty,
-          assignments:
-            op.assignments.length > 0
-              ? {
-                  create: op.assignments.map((assignment) => ({
-                    tenantId,
-                    equipmentId: assignment.equipmentId,
-                    assignedQty: assignment.assignedQty,
-                    seq: assignment.seq,
-                  })),
-                }
-              : undefined,
-        })),
+  await prisma.$transaction(async (tx) => {
+    const workOrder = await tx.workOrder.create({
+      data: {
+        ...headerFields,
+        tenantId,
+        manufacturingNo: finalManufacturingNo,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        operations: {
+          create: validatedOperations.map((op) => ({
+            routingOperationId: op.routingOperationId,
+            equipmentId: op.equipmentId ?? null,
+            seq: op.seq,
+            plannedQty: op.plannedQty,
+            assignments:
+              op.assignments.length > 0
+                ? {
+                    create: op.assignments.map((assignment) => ({
+                      tenantId,
+                      equipmentId: assignment.equipmentId,
+                      assignedQty: assignment.assignedQty,
+                      seq: assignment.seq,
+                    })),
+                  }
+                : undefined,
+          })),
+        },
       },
-    },
+      select: { id: true },
+    })
+
+    await syncProductionPlanStatusForWorkOrder(tx, workOrder.id, tenantId)
   })
 
   revalidatePath("/app/mes/work-orders")
+  revalidatePath("/app/mes/production-plan")
 }
 
 export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
-  await requireRole("OPERATOR")
+  const user = await requireRole("OPERATOR")
   const existing = await prisma.workOrder.findUnique({
     where: { id },
-    select: { status: true, tenantId: true },
+    select: {
+      status: true,
+      tenantId: true,
+      productionPlanItemId: true,
+      productionPlanItem: { select: { planId: true } },
+    },
   })
 
   if (!existing) {
@@ -801,7 +927,15 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     )
   }
 
+  if (existing.tenantId !== user.tenantId) throw new Error("FORBIDDEN")
+
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
+  await validateProductionPlanItemForWorkOrder(
+    headerFields.productionPlanItemId,
+    headerFields,
+    existing.tenantId,
+    { allowInProgress: headerFields.productionPlanItemId === existing.productionPlanItemId }
+  )
   const validatedOperations = await validateWorkOrderOperationAssignments(
     operations,
     existing.tenantId
@@ -816,9 +950,9 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     ? (manualDisabled ? await generateManufacturingNo(existing.tenantId, headerFields.itemId) : trimmed)
     : null
 
-  await prisma.$transaction([
-    prisma.workOrderOperation.deleteMany({ where: { workOrderId: id } }),
-    prisma.workOrder.update({
+  await prisma.$transaction(async (tx) => {
+    await tx.workOrderOperation.deleteMany({ where: { workOrderId: id } })
+    await tx.workOrder.update({
       where: { id },
       data: {
         ...headerFields,
@@ -844,19 +978,32 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
           })),
         },
       },
-    }),
-  ])
+    })
+    await syncProductionPlanStatusForWorkOrder(tx, id, existing.tenantId)
+    if (
+      existing.productionPlanItem?.planId &&
+      existing.productionPlanItemId !== headerFields.productionPlanItemId
+    ) {
+      await syncProductionPlanStatusFromWorkOrders(
+        tx,
+        existing.productionPlanItem.planId,
+        existing.tenantId
+      )
+    }
+  })
 
   revalidatePath("/app/mes/work-orders")
+  revalidatePath("/app/mes/production-plan")
 }
 
 export async function releaseWorkOrder(id: string): Promise<{ success: boolean; error?: string }> {
   try {
-    await requireRole("OPERATOR")
-    const existing = await prisma.workOrder.findUnique({
-      where: { id },
+    const user = await requireRole("OPERATOR")
+    const existing = await prisma.workOrder.findFirst({
+      where: { id, tenantId: user.tenantId },
       select: {
         status: true,
+        tenantId: true,
         _count: {
           select: { operations: true },
         },
@@ -869,11 +1016,15 @@ export async function releaseWorkOrder(id: string): Promise<{ success: boolean; 
     if (existing._count.operations === 0) {
       return { success: false, error: "공정이 없는 작업지시는 작업대기로 전환할 수 없습니다." }
     }
-    await prisma.workOrder.update({
-      where: { id },
-      data: { status: "RELEASED" },
+    await prisma.$transaction(async (tx) => {
+      await tx.workOrder.update({
+        where: { id },
+        data: { status: "RELEASED" },
+      })
+      await syncProductionPlanStatusForWorkOrder(tx, id, existing.tenantId)
     })
     revalidatePath("/app/mes/work-orders")
+    revalidatePath("/app/mes/production-plan")
     return { success: true }
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }
@@ -881,10 +1032,14 @@ export async function releaseWorkOrder(id: string): Promise<{ success: boolean; 
 }
 
 export async function deleteWorkOrder(id: string) {
-  await requireRole("OPERATOR")
-  const existing = await prisma.workOrder.findUnique({
-    where: { id },
-    select: { status: true },
+  const user = await requireRole("OPERATOR")
+  const existing = await prisma.workOrder.findFirst({
+    where: { id, tenantId: user.tenantId },
+    select: {
+      status: true,
+      tenantId: true,
+      productionPlanItem: { select: { planId: true } },
+    },
   })
 
   if (!existing) {
@@ -898,10 +1053,18 @@ export async function deleteWorkOrder(id: string) {
     )
   }
 
-  await prisma.$transaction([
-    prisma.workOrderOperation.deleteMany({ where: { workOrderId: id } }),
-    prisma.workOrder.delete({ where: { id } }),
-  ])
+  await prisma.$transaction(async (tx) => {
+    await tx.workOrderOperation.deleteMany({ where: { workOrderId: id } })
+    await tx.workOrder.delete({ where: { id } })
+    if (existing.productionPlanItem?.planId) {
+      await syncProductionPlanStatusFromWorkOrders(
+        tx,
+        existing.productionPlanItem.planId,
+        existing.tenantId
+      )
+    }
+  })
 
   revalidatePath("/app/mes/work-orders")
+  revalidatePath("/app/mes/production-plan")
 }

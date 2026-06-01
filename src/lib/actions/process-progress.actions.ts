@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { OperationStatus, WipMovementType, WipUnitStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-plan.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -251,6 +252,10 @@ export async function updateOperationStatusAction(
   try {
     const op = await prisma.workOrderOperation.findUnique({
       where: { id: operationId },
+      select: {
+        workOrderId: true,
+        workOrder: { select: { tenantId: true } },
+      },
     })
     if (!op) return { ok: false, error: "공정을 찾을 수 없습니다." }
 
@@ -265,6 +270,7 @@ export async function updateOperationStatusAction(
           where: { id: op.workOrderId },
           data: { status: "IN_PROGRESS" },
         })
+        await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
       } else if (status === "COMPLETED") {
         const allOps = await tx.workOrderOperation.findMany({
           where: { workOrderId: op.workOrderId },
@@ -280,12 +286,14 @@ export async function updateOperationStatusAction(
             where: { id: op.workOrderId },
             data: { status: "COMPLETED" },
           })
+          await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
         }
       }
     })
 
     revalidatePath("/app/mes/process-progress")
     revalidatePath("/app/mes/work-orders")
+    revalidatePath("/app/mes/production-plan")
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }

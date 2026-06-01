@@ -1,7 +1,13 @@
 export const dynamic = "force-dynamic"
 
 import { cookies } from "next/headers"
-import { getWorkOrders, getSites, getItemsForWorkOrder, getEquipments } from "@/lib/actions/work-order.actions"
+import {
+  getWorkOrders,
+  getSites,
+  getItemsForWorkOrder,
+  getEquipments,
+  getConfirmedProductionPlanItemsForWorkOrder,
+} from "@/lib/actions/work-order.actions"
 import { WorkOrderDataTable } from "./work-order-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 
@@ -20,11 +26,12 @@ export default async function WorkOrdersPage() {
     )
   }
 
-  const [workOrders, sites, items, equipments] = await Promise.all([
+  const [workOrders, sites, items, equipments, productionPlanItems] = await Promise.all([
     getWorkOrders(),
     getSites(),
     getItemsForWorkOrder(),
     getEquipments(),
+    getConfirmedProductionPlanItemsForWorkOrder(tenantId),
   ])
 
   return (
@@ -44,6 +51,7 @@ export default async function WorkOrdersPage() {
         sites={sites}
         items={items}
         equipments={equipments}
+        productionPlanItems={productionPlanItems}
         tenantId={tenantId}
       />
     </div>
