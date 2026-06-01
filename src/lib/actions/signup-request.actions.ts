@@ -1,7 +1,8 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { getTenantId, getCurrentUser } from "@/lib/auth"
+import { canAccessFullUserManagement } from "@/lib/developer"
 import { UserRole, SignupRequestStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { hashPassword, validatePassword } from "@/lib/password"
@@ -10,6 +11,13 @@ import { getErrorMessage } from "@/lib/utils"
 
 function normalizeLoginId(loginId: string): string {
   return loginId.trim().toLowerCase()
+}
+
+async function requireFullUserManagementAccess() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error('UNAUTHORIZED')
+  if (!canAccessFullUserManagement(user)) throw new Error('FORBIDDEN')
+  return user
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -139,7 +147,7 @@ export async function getSignupRequests(
   status?: SignupRequestStatus
 ): Promise<SignupRequestRow[]> {
   const tenantId = await getTenantId()
-  await requireRole("ADMIN")
+  await requireFullUserManagementAccess()
 
   const rows = await prisma.signupRequest.findMany({
     where: { tenantId, ...(status ? { status } : {}) },
@@ -161,7 +169,7 @@ export async function approveSignupRequest(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireFullUserManagementAccess()
 
     const request = await prisma.signupRequest.findFirst({
       where: { id: requestId, tenantId, status: "PENDING" },
@@ -292,7 +300,7 @@ export async function rejectSignupRequest(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    const actor = await requireRole("ADMIN")
+    const actor = await requireFullUserManagementAccess()
 
     const request = await prisma.signupRequest.findFirst({
       where: { id: requestId, tenantId, status: "PENDING" },
@@ -329,7 +337,7 @@ export async function rejectSignupRequest(
 
 export async function getPendingSignupCount(): Promise<number> {
   const tenantId = await getTenantId()
-  await requireRole("ADMIN")
+  await requireFullUserManagementAccess()
   return prisma.signupRequest.count({ where: { tenantId, status: "PENDING" } })
 }
 
@@ -340,7 +348,7 @@ export async function deleteSignupRequest(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
-    await requireRole("ADMIN")
+    await requireFullUserManagementAccess()
 
     const request = await prisma.signupRequest.findFirst({
       where: { id: requestId, tenantId },

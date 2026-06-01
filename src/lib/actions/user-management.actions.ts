@@ -1,10 +1,18 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { getTenantId, getCurrentUser, requireRole } from "@/lib/auth"
+import { canAccessFullUserManagement } from "@/lib/developer"
 import { UserRole, type AuditAction, type LoginEventType, type LoginFailReason, type Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
+
+async function requireFullUserManagementAccess() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error('UNAUTHORIZED')
+  if (!canAccessFullUserManagement(user)) throw new Error('FORBIDDEN')
+  return user
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,7 +38,7 @@ function isDemoSeedEmail(email: string) {
 
 export async function getTenantUsers(): Promise<TenantUserRow[]> {
   const tenantId = await getTenantId()
-  await requireRole("ADMIN")
+  await requireRole("VIEWER")
 
   // DB의 TenantUser + Profile 기준으로 조회 (Auth API 의존 제거)
   const tenantUsers = await prisma.tenantUser.findMany({
@@ -325,7 +333,7 @@ export async function getLoginHistory(
   filter: LoginHistoryFilter = {}
 ): Promise<LoginHistoryRow[]> {
   const tenantId = await getTenantId()
-  await requireRole("ADMIN")
+  await requireFullUserManagementAccess()
 
   const where: Prisma.LoginHistoryWhereInput = { tenantId }
 
@@ -489,7 +497,7 @@ export async function getAuditLogs(
   filter: AuditLogFilter = {}
 ): Promise<AuditLogRow[]> {
   const tenantId = await getTenantId()
-  await requireRole("ADMIN")
+  await requireFullUserManagementAccess()
 
   const where: Prisma.AuditLogWhereInput = { tenantId }
 

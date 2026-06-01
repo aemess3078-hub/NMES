@@ -10,20 +10,31 @@ import { Switch } from "@/components/ui/switch"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 
+// resource key → 화면 표시 이름
+// key는 DB(seed)에 저장된 값 기준. 실제 사이드바 메뉴와 매핑 관계:
+//   ITEM            ← 기준정보관리 > 품목관리
+//   BOM             ← 기준정보관리 > BOM관리
+//   ROUTING         ← 기준정보관리 > 라우팅관리 / 공정관리
+//   EQUIPMENT       ← 기준정보관리 > 설비관리
+//   USER_MANAGEMENT ← 기준정보관리 > 사용자관리
+//   PRODUCTION_PLAN ← 생산관리 > 생산계획별생산현황 / 작업지시
+//   WORK_ORDER      ← 생산관리 > 작업지시
+//   INVENTORY       ← 재고관리 > 재고현황
+//   QUALITY_INSPECTION ← 품질관리 > 초중종검사LIST
+//   COMMON_CODE     ← 시스템 > 공통코드 관리
+//
+// 실제 메뉴에 없어 제외된 key: AUDIT_LOG, APPROVAL, REPORT
 const RESOURCE_LABELS: Record<string, string> = {
-  PRODUCTION_PLAN: "생산계획",
-  WORK_ORDER: "작업지시",
-  ITEM: "품목",
-  BOM: "BOM",
-  ROUTING: "공정/라우팅",
-  INVENTORY: "재고",
+  PRODUCTION_PLAN:    "생산계획관리",
+  WORK_ORDER:         "작업지시",
+  ITEM:               "품목관리",
+  BOM:                "BOM관리",
+  ROUTING:            "라우팅/공정관리",
+  INVENTORY:          "재고관리",
   QUALITY_INSPECTION: "품질검사",
-  EQUIPMENT: "설비",
-  COMMON_CODE: "공통코드",
-  USER_MANAGEMENT: "사용자관리",
-  AUDIT_LOG: "감사로그",
-  APPROVAL: "결재",
-  REPORT: "보고서",
+  EQUIPMENT:          "설비관리",
+  COMMON_CODE:        "공통코드",
+  USER_MANAGEMENT:    "사용자관리",
 }
 
 const ROLE_LABELS: Record<UserRole, string> = {
