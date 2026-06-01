@@ -9,6 +9,7 @@ import {
   Prisma,
 } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { getTenantId, requireRole } from "@/lib/auth"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,24 @@ export type UpdateTagInput = {
   offset?: number | null
   samplingMs?: number
   deadband?: number | null
+}
+
+export type CopyTagConflictMode = "SKIP" | "UPDATE" | "REPLACE"
+
+export type CopyEquipmentTagsInput = {
+  sourceEquipmentId: string
+  targetEquipmentIds: string[]
+  conflictMode: CopyTagConflictMode
+}
+
+export type CopyEquipmentTagResult = {
+  equipmentId: string
+  equipmentCode: string
+  equipmentName: string
+  added: number
+  updated: number
+  skipped: number
+  deleted: number
 }
 
 // ─── EdgeGateway CRUD ─────────────────────────────────────────────────────────
@@ -347,6 +366,148 @@ export async function toggleTagActive(id: string, isActive: boolean) {
   revalidatePath("/app/mes/tags")
 }
 
+export async function copyEquipmentTags(
+  input: CopyEquipmentTagsInput
+): Promise<CopyEquipmentTagResult[]> {
+  await requireRole("OPERATOR")
+  const tenantId = await getTenantId()
+  const targetEquipmentIds = Array.from(new Set(input.targetEquipmentIds)).filter(
+    (id) => id && id !== input.sourceEquipmentId
+  )
+
+  if (!input.sourceEquipmentId) {
+    throw new Error("원본 설비를 선택하세요.")
+  }
+  if (targetEquipmentIds.length === 0) {
+    throw new Error("적용 대상 설비를 1대 이상 선택하세요.")
+  }
+  if (!["SKIP", "UPDATE", "REPLACE"].includes(input.conflictMode)) {
+    throw new Error("중복 처리 방식을 확인하세요.")
+  }
+
+  const sourceConnection = await prisma.equipmentConnection.findFirst({
+    where: {
+      equipmentId: input.sourceEquipmentId,
+      isActive: true,
+      equipment: { tenantId },
+    },
+    include: {
+      equipment: { select: { id: true, code: true, name: true } },
+      tags: { orderBy: { tagCode: "asc" } },
+    },
+    orderBy: { createdAt: "asc" },
+  })
+
+  if (!sourceConnection) {
+    throw new Error("현재 tenant의 활성 원본 설비 연결을 찾을 수 없습니다.")
+  }
+  if (sourceConnection.tags.length === 0) {
+    throw new Error("원본 설비에 복사할 태그가 없습니다.")
+  }
+
+  const targetConnections = await prisma.equipmentConnection.findMany({
+    where: {
+      equipmentId: { in: targetEquipmentIds },
+      isActive: true,
+      equipment: { tenantId },
+    },
+    include: {
+      equipment: { select: { id: true, code: true, name: true } },
+      tags: true,
+    },
+    orderBy: [{ equipment: { code: "asc" } }, { createdAt: "asc" }],
+  })
+
+  const targetByEquipmentId = new Map<string, (typeof targetConnections)[number]>()
+  for (const connection of targetConnections) {
+    if (!targetByEquipmentId.has(connection.equipmentId)) {
+      targetByEquipmentId.set(connection.equipmentId, connection)
+    }
+  }
+
+  if (targetByEquipmentId.size !== targetEquipmentIds.length) {
+    throw new Error("현재 tenant의 활성 연결이 없는 대상 설비가 포함되어 있습니다.")
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const results: CopyEquipmentTagResult[] = []
+
+    for (const targetEquipmentId of targetEquipmentIds) {
+      const targetConnection = targetByEquipmentId.get(targetEquipmentId)!
+      const summary: CopyEquipmentTagResult = {
+        equipmentId: targetConnection.equipment.id,
+        equipmentCode: targetConnection.equipment.code,
+        equipmentName: targetConnection.equipment.name,
+        added: 0,
+        updated: 0,
+        skipped: 0,
+        deleted: 0,
+      }
+
+      if (input.conflictMode === "REPLACE" && targetConnection.tags.length > 0) {
+        const tagIds = targetConnection.tags.map((tag) => tag.id)
+        await tx.tagSnapshot.deleteMany({ where: { tagId: { in: tagIds } } })
+        await tx.tagCurrentValue.deleteMany({ where: { tagId: { in: tagIds } } })
+        const deleted = await tx.dataTag.deleteMany({
+          where: { connectionId: targetConnection.id },
+        })
+        summary.deleted = deleted.count
+      }
+
+      const existingTags =
+        input.conflictMode === "REPLACE"
+          ? []
+          : targetConnection.tags
+      const existingByCode = new Map(existingTags.map((tag) => [tag.tagCode, tag]))
+
+      for (const sourceTag of sourceConnection.tags) {
+        const tagData = {
+          displayName: sourceTag.displayName,
+          dataType: sourceTag.dataType,
+          unit: sourceTag.unit,
+          category: sourceTag.category,
+          plcAddress: sourceTag.plcAddress,
+          scaleFactor: sourceTag.scaleFactor,
+          offset: sourceTag.offset,
+          samplingMs: sourceTag.samplingMs,
+          deadband: sourceTag.deadband,
+          isActive: sourceTag.isActive,
+        }
+        const existing = existingByCode.get(sourceTag.tagCode)
+
+        if (!existing) {
+          await tx.dataTag.create({
+            data: {
+              connectionId: targetConnection.id,
+              tagCode: sourceTag.tagCode,
+              ...tagData,
+            },
+          })
+          summary.added += 1
+          continue
+        }
+
+        if (input.conflictMode === "UPDATE") {
+          await tx.dataTag.update({
+            where: { id: existing.id },
+            data: tagData,
+          })
+          summary.updated += 1
+        } else {
+          summary.skipped += 1
+        }
+      }
+
+      results.push(summary)
+    }
+
+    return results
+  })
+
+  revalidatePath("/app/mes/tags")
+  return result
+}
+
 // ─── Lookup Helpers ───────────────────────────────────────────────────────────
 
 export async function getSitesForGateway(tenantId: string) {
@@ -387,8 +548,9 @@ export async function getConnectionsForTag(tenantId: string) {
     select: {
       id: true,
       protocol: true,
-      equipment: { select: { code: true, name: true } },
+      equipment: { select: { id: true, code: true, name: true } },
       gateway: { select: { name: true } },
+      _count: { select: { tags: true } },
     },
     orderBy: { equipment: { code: "asc" } },
   })

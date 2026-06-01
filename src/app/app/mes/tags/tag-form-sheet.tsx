@@ -33,8 +33,9 @@ interface TagFormSheetProps {
   connections: {
     id: string
     protocol: string
-    equipment: { code: string; name: string }
+    equipment: { id: string; code: string; name: string }
     gateway: { name: string }
+    _count?: { tags: number }
   }[]
 }
 
