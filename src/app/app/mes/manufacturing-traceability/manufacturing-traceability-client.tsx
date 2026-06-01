@@ -394,7 +394,6 @@ export function ManufacturingTraceabilityClient({
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">구분</th>
                     <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">이동</th>
                     <th className="pb-2 pr-4 text-right text-[13px] font-medium text-muted-foreground">수량</th>
-                    <th className="pb-2 pr-4 text-left text-[13px] font-medium text-muted-foreground">출처</th>
                     <th className="pb-2 text-left text-[13px] font-medium text-muted-foreground">비고</th>
                   </tr>
                 </thead>
@@ -424,14 +423,6 @@ export function ManufacturingTraceabilityClient({
                           </div>
                         </td>
                         <td className="py-2.5 pr-4 text-right">{formatNumber(movement.qty)}</td>
-                        <td className="py-2.5 pr-4 text-[13px] text-muted-foreground">
-                          <div>{movement.sourceType ?? "-"}</div>
-                          {movement.relatedWipUnitId ? (
-                            <div className="mt-0.5 font-mono text-[13px] text-slate-400">
-                              재공 이력 {movement.relatedWipUnitId.slice(-8)}
-                            </div>
-                          ) : null}
-                        </td>
                         <td className="py-2.5 text-[13px] text-muted-foreground">{movement.note ?? "-"}</td>
                       </tr>
                     )
