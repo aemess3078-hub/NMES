@@ -402,20 +402,21 @@ export function SalesOrderFormSheet({
             )}
 
             {fields.length > 0 && (
-              <div className="rounded-md border overflow-hidden">
-                {/* 헤더 */}
-                <div className="grid grid-cols-[1fr_70px_80px_30px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
-                  <span>품목</span>
-                  <span className="text-right">수량</span>
-                  <span className="text-right">단가</span>
-                  <span></span>
-                </div>
+              <div className="overflow-x-auto rounded-md border">
+                <div className="min-w-[620px]">
+                  {/* 헤더 */}
+                  <div className="grid grid-cols-[minmax(220px,1fr)_128px_112px_36px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
+                    <span>품목</span>
+                    <span className="text-right">수량</span>
+                    <span className="text-right">단가</span>
+                    <span></span>
+                  </div>
 
-                {fields.map((field, index) => (
-                  <div
-                    key={field.id}
-                    className="grid grid-cols-[1fr_70px_80px_30px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
-                  >
+                  {fields.map((field, index) => (
+                    <div
+                      key={field.id}
+                      className="grid grid-cols-[minmax(220px,1fr)_128px_112px_36px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
+                    >
                     {/* 품목 Select */}
                     <FormField
                       control={form.control}
@@ -451,9 +452,10 @@ export function SalesOrderFormSheet({
                         <FormItem className="pr-2">
                           <Input
                             type="number"
+                            inputMode="decimal"
                             min={1}
                             step={1}
-                            className="h-8 text-[13px] text-right"
+                            className="h-8 min-w-28 text-right text-[14px] tabular-nums"
                             disabled={isItemEditDisabled}
                             value={f.value ?? ""}
                             onChange={(e) =>
@@ -473,10 +475,11 @@ export function SalesOrderFormSheet({
                         <FormItem className="pr-2">
                           <Input
                             type="number"
+                            inputMode="decimal"
                             min={0}
                             step={1}
                             placeholder="—"
-                            className="h-8 text-[13px] text-right"
+                            className="h-8 min-w-24 text-right text-[14px] tabular-nums"
                             disabled={isItemEditDisabled}
                             value={f.value ?? ""}
                             onChange={(e) =>
@@ -501,8 +504,9 @@ export function SalesOrderFormSheet({
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
-                  </div>
-                ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
