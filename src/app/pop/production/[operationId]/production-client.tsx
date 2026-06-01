@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import {
   startOperation,
   submitProductionResult,
-  updateOperationStatus,
 } from "@/lib/actions/pop.actions"
 import { PopQuantityInput } from "../../components/pop-quantity-input"
 
@@ -125,20 +124,6 @@ export function ProductionClient({ operation }: Props) {
       }
     } catch {
       setStartError("실적 등록 중 오류가 발생했습니다.")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleComplete = async () => {
-    if (!confirm("작업을 완료 처리하겠습니까?")) return
-    setLoading(true)
-    setStartError(null)
-    try {
-      await updateOperationStatus(operation.id, "COMPLETED")
-      router.push("/pop/work-select")
-    } catch {
-      setStartError("작업 완료 처리 중 오류가 발생했습니다.")
     } finally {
       setLoading(false)
     }
@@ -296,15 +281,6 @@ export function ProductionClient({ operation }: Props) {
             >
               실적 등록
             </button>
-            {!selectedAssignment && (
-              <button
-                onClick={handleComplete}
-                disabled={loading}
-                className="w-full h-16 text-lg font-bold bg-red-500 hover:bg-red-600 text-white rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50"
-              >
-                작업 완료
-              </button>
-            )}
           </>
         )}
 

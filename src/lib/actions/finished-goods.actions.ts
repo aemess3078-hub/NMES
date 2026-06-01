@@ -2,6 +2,7 @@
 
 import { LotGenealogyRelation } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
+import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { createFinishedGoodsLot } from "./finished-goods-lot.helpers"
 import { createLotGenealogyLink } from "./lot-genealogy.helpers"
@@ -257,9 +258,21 @@ async function generateReceiptTxNo(tenantId: string): Promise<string> {
 
 export async function createFinishedGoodsReceiptAction(
   data: CreateReceiptInput,
-  tenantId: string
+  requestedTenantId?: string
 ): Promise<{ ok: boolean; error?: string; lotNo?: string }> {
   try {
+    let currentUser: Awaited<ReturnType<typeof requireRole>>
+    try {
+      currentUser = await requireRole("OPERATOR")
+    } catch {
+      throw new Error("권한이 없습니다.")
+    }
+
+    const tenantId = currentUser.tenantId
+    if (requestedTenantId && requestedTenantId !== tenantId) {
+      throw new Error("권한이 없습니다.")
+    }
+
     let createdLotNo: string | null = null
 
     await prisma.$transaction(async (tx) => {
@@ -311,6 +324,32 @@ export async function createFinishedGoodsReceiptAction(
       }
       if (workOrder.itemId !== data.itemId) {
         throw new Error("작업지시 품목과 입고 품목이 일치하지 않습니다.")
+      }
+      if (workOrder.siteId !== data.siteId) {
+        throw new Error("입고 창고가 올바르지 않습니다.")
+      }
+
+      const warehouse = await tx.warehouse.findFirst({
+        where: {
+          id: data.warehouseId,
+          tenantId,
+          siteId: workOrder.siteId,
+        },
+        select: { id: true },
+      })
+      if (!warehouse) {
+        throw new Error("입고 창고가 올바르지 않습니다.")
+      }
+
+      const location = await tx.location.findFirst({
+        where: {
+          id: data.locationId,
+          warehouseId: data.warehouseId,
+        },
+        select: { id: true },
+      })
+      if (!location) {
+        throw new Error("입고 위치가 올바르지 않습니다.")
       }
 
       // 품목 유형 조회 — 반제품(SEMI_FINISHED) 여부에 따라 LOT 발번 prefix 결정
