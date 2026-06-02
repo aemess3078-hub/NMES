@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Search } from "lucide-react"
+import { Search, Download, ChevronLeft, ChevronRight } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -13,8 +14,10 @@ import {
 } from "@/components/ui/select"
 import {
   getLoginHistory,
+  getLoginHistoryExport,
   type LoginHistoryRow,
   type LoginHistoryFilter,
+  type PaginatedResult,
 } from "@/lib/actions/user-management.actions"
 
 const FAIL_REASON_LABELS: Record<string, string> = {
@@ -40,28 +43,88 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium" })
 }
 
-export function LoginHistoryTable({ initialRows }: { initialRows: LoginHistoryRow[] }) {
-  const [rows, setRows] = useState<LoginHistoryRow[]>(initialRows)
+export function LoginHistoryTable({ initialData }: { initialData: PaginatedResult<LoginHistoryRow> }) {
+  const [rows, setRows] = useState<LoginHistoryRow[]>(initialData.rows)
+  const [total, setTotal] = useState(initialData.total)
+  const [page, setPage] = useState(initialData.page)
+  const [pageSize, setPageSize] = useState(initialData.pageSize)
+
   const [search, setSearch] = useState("")
   const [event, setEvent] = useState<"ALL" | "SUCCESS" | "FAIL">("ALL")
-  const [days, setDays] = useState<string>("7")
+  const [days, setDays] = useState<string>("90")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
   const [includeInactive, setIncludeInactive] = useState(true)
-  const [isPending, startTransition] = useTransition()
 
-  function refetch(next: Partial<LoginHistoryFilter> = {}) {
-    const filter: LoginHistoryFilter = {
+  const [isPending, startTransition] = useTransition()
+  const [isExporting, setIsExporting] = useState(false)
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  function buildFilter(overrides: Partial<LoginHistoryFilter> = {}): LoginHistoryFilter {
+    return {
       search,
       event,
-      days: Number(days) || 0,
-      ...next,
+      days: Number(days),
+      dateFrom: days === "0" ? dateFrom : undefined,
+      dateTo: days === "0" ? dateTo : undefined,
+      page,
+      pageSize,
+      ...overrides,
     }
+  }
+
+  function refetch(overrides: Partial<LoginHistoryFilter> = {}) {
     startTransition(async () => {
-      const data = await getLoginHistory(filter)
-      setRows(data)
+      const data = await getLoginHistory(buildFilter(overrides))
+      setRows(data.rows)
+      setTotal(data.total)
+      setPage(data.page)
+      setPageSize(data.pageSize)
     })
   }
 
+  function changeFilter(overrides: Partial<LoginHistoryFilter>) {
+    refetch({ page: 1, ...overrides })
+  }
+
+  async function handleExport() {
+    setIsExporting(true)
+    try {
+      const allRows = await getLoginHistoryExport({
+        search,
+        event,
+        days: Number(days),
+        dateFrom: days === "0" ? dateFrom : undefined,
+        dateTo: days === "0" ? dateTo : undefined,
+      })
+      const XLSX = await import("xlsx")
+      const wsData = [
+        ["일시", "사용자명", "이메일", "아이디", "결과", "실패사유", "IP", "기기정보"],
+        ...allRows.map((r) => [
+          r.createdAt,
+          r.name ?? "",
+          r.email ?? "",
+          r.loginId,
+          r.eventType,
+          r.failReason ? (FAIL_REASON_LABELS[r.failReason] ?? r.failReason) : "",
+          r.ipAddress ?? "",
+          r.userAgent ?? "",
+        ]),
+      ]
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet(wsData)
+      XLSX.utils.book_append_sheet(wb, ws, "접속기록")
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+      XLSX.writeFile(wb, `접속기록_${date}.xlsx`)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const visibleRows = includeInactive ? rows : rows.filter((r) => r.isActiveUser !== false)
+  const startItem = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const endItem = Math.min(page * pageSize, total)
 
   return (
     <div className="space-y-4">
@@ -70,7 +133,7 @@ export function LoginHistoryTable({ initialRows }: { initialRows: LoginHistoryRo
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            refetch()
+            changeFilter({ search })
           }}
           className="relative"
         >
@@ -88,7 +151,7 @@ export function LoginHistoryTable({ initialRows }: { initialRows: LoginHistoryRo
           onValueChange={(v) => {
             const next = v as "ALL" | "SUCCESS" | "FAIL"
             setEvent(next)
-            refetch({ event: next })
+            changeFilter({ event: next })
           }}
         >
           <SelectTrigger className="h-9 w-[130px] text-[14px]">
@@ -105,17 +168,61 @@ export function LoginHistoryTable({ initialRows }: { initialRows: LoginHistoryRo
           value={days}
           onValueChange={(v) => {
             setDays(v)
-            refetch({ days: Number(v) || 0 })
+            changeFilter({ days: Number(v), page: 1 })
           }}
         >
-          <SelectTrigger className="h-9 w-[130px] text-[14px]">
+          <SelectTrigger className="h-9 w-[140px] text-[14px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="7">최근 7일</SelectItem>
             <SelectItem value="30">최근 30일</SelectItem>
-            <SelectItem value="90">최근 90일</SelectItem>
-            <SelectItem value="0">전체 기간</SelectItem>
+            <SelectItem value="90">최근 3개월</SelectItem>
+            <SelectItem value="0">직접 기간</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {days === "0" && (
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 w-[140px] text-[14px]"
+            />
+            <span className="text-[13px] text-muted-foreground">~</span>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 w-[140px] text-[14px]"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 text-[13px]"
+              onClick={() => changeFilter({ days: 0, dateFrom, dateTo })}
+            >
+              조회
+            </Button>
+          </div>
+        )}
+
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => {
+            const next = Number(v)
+            setPageSize(next)
+            changeFilter({ pageSize: next, page: 1 })
+          }}
+        >
+          <SelectTrigger className="h-9 w-[120px] text-[14px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="20">20개씩 보기</SelectItem>
+            <SelectItem value="50">50개씩 보기</SelectItem>
+            <SelectItem value="100">100개씩 보기</SelectItem>
           </SelectContent>
         </Select>
 
@@ -128,6 +235,17 @@ export function LoginHistoryTable({ initialRows }: { initialRows: LoginHistoryRo
           />
           비활성 사용자 포함
         </label>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5 text-[13px]"
+          onClick={handleExport}
+          disabled={isExporting || total === 0}
+        >
+          <Download className="h-4 w-4" />
+          {isExporting ? "다운로드 중…" : "엑셀"}
+        </Button>
 
         {isPending && <span className="text-[13px] text-muted-foreground">불러오는 중…</span>}
       </div>
@@ -194,7 +312,37 @@ export function LoginHistoryTable({ initialRows }: { initialRows: LoginHistoryRo
           </tbody>
         </table>
       </div>
-      <p className="text-[12px] text-muted-foreground">최근 500건까지 표시됩니다.</p>
+
+      {/* 페이지네이션 */}
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] text-muted-foreground">
+          {total === 0 ? "0건" : `${startItem}–${endItem} / 총 ${total.toLocaleString()}건`}
+          {total >= 10000 && " (최대 10,000건 표시)"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={page <= 1 || isPending}
+            onClick={() => refetch({ page: page - 1 })}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-[13px] min-w-[80px] text-center">
+            {page} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={page >= totalPages || isPending}
+            onClick={() => refetch({ page: page + 1 })}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

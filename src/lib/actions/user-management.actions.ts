@@ -316,6 +316,15 @@ export async function deleteUserPermanently(
   }
 }
 
+// ─── 페이지네이션 공통 타입 ────────────────────────────────────────────────────
+
+export type PaginatedResult<T> = {
+  rows: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 // ─── 접속 기록 조회 (LoginHistory) ────────────────────────────────────────────
 
 export type LoginHistoryRow = {
@@ -334,15 +343,17 @@ export type LoginHistoryRow = {
 export type LoginHistoryFilter = {
   search?: string
   event?: "ALL" | "SUCCESS" | "FAIL"
-  days?: number          // 최근 N일, 0/미지정 = 전체
+  days?: number          // 최근 N일, 0 = 직접 기간
+  dateFrom?: string      // days===0 일 때 사용 (ISO date string)
+  dateTo?: string        // days===0 일 때 사용 (ISO date string)
+  page?: number          // 1-based, 기본 1
+  pageSize?: number      // 20 | 50 | 100, 기본 20
 }
 
-export async function getLoginHistory(
-  filter: LoginHistoryFilter = {}
-): Promise<LoginHistoryRow[]> {
-  const tenantId = await getTenantId()
-  await requireFullUserManagementAccess()
-
+function buildLoginHistoryWhere(
+  tenantId: string,
+  filter: Omit<LoginHistoryFilter, "page" | "pageSize">
+): Prisma.LoginHistoryWhereInput {
   const where: Prisma.LoginHistoryWhereInput = { tenantId }
 
   if (filter.event === "SUCCESS") where.eventType = "LOGIN_SUCCESS"
@@ -352,6 +363,10 @@ export async function getLoginHistory(
     const from = new Date()
     from.setDate(from.getDate() - filter.days)
     where.createdAt = { gte: from }
+  } else if (filter.days === 0 && (filter.dateFrom || filter.dateTo)) {
+    const from = filter.dateFrom ? new Date(filter.dateFrom) : undefined
+    const to = filter.dateTo ? new Date(filter.dateTo + "T23:59:59.999Z") : undefined
+    where.createdAt = { gte: from, lte: to }
   }
 
   if (filter.search && filter.search.trim()) {
@@ -362,6 +377,81 @@ export async function getLoginHistory(
       { profile: { email: { contains: q, mode: "insensitive" } } },
     ]
   }
+
+  return where
+}
+
+function mapLoginHistoryRow(
+  r: {
+    id: string
+    loginId: string
+    eventType: LoginEventType
+    failReason: LoginFailReason | null
+    ipAddress: string | null
+    userAgent: string | null
+    createdAt: Date
+    profile: {
+      name: string
+      email: string
+      tenantUsers: { isActive: boolean }[]
+    } | null
+  },
+): LoginHistoryRow {
+  return {
+    id: r.id,
+    loginId: r.loginId,
+    name: r.profile?.name ?? null,
+    email: r.profile?.email ?? null,
+    eventType: r.eventType,
+    failReason: r.failReason,
+    ipAddress: r.ipAddress,
+    userAgent: r.userAgent,
+    isActiveUser: r.profile ? (r.profile.tenantUsers[0]?.isActive ?? null) : null,
+    createdAt: r.createdAt.toISOString(),
+  }
+}
+
+export async function getLoginHistory(
+  filter: LoginHistoryFilter = {}
+): Promise<PaginatedResult<LoginHistoryRow>> {
+  const tenantId = await getTenantId()
+  await requireFullUserManagementAccess()
+
+  const page = Math.max(1, filter.page ?? 1)
+  const pageSize = filter.pageSize && [20, 50, 100].includes(filter.pageSize) ? filter.pageSize : 20
+  const where = buildLoginHistoryWhere(tenantId, filter)
+
+  const include = {
+    profile: {
+      select: {
+        name: true,
+        email: true,
+        tenantUsers: { where: { tenantId }, select: { isActive: true }, take: 1 },
+      },
+    },
+  }
+
+  const [total, rawRows] = await Promise.all([
+    prisma.loginHistory.count({ where }),
+    prisma.loginHistory.findMany({
+      where,
+      include,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ])
+
+  return { rows: rawRows.map(mapLoginHistoryRow), total, page, pageSize }
+}
+
+export async function getLoginHistoryExport(
+  filter: Omit<LoginHistoryFilter, "page" | "pageSize">
+): Promise<LoginHistoryRow[]> {
+  const tenantId = await getTenantId()
+  await requireFullUserManagementAccess()
+
+  const where = buildLoginHistoryWhere(tenantId, filter)
 
   const rows = await prisma.loginHistory.findMany({
     where,
@@ -375,21 +465,10 @@ export async function getLoginHistory(
       },
     },
     orderBy: { createdAt: "desc" },
-    take: 500,
+    take: 10000,
   })
 
-  return rows.map((r) => ({
-    id: r.id,
-    loginId: r.loginId,
-    name: r.profile?.name ?? null,
-    email: r.profile?.email ?? null,
-    eventType: r.eventType,
-    failReason: r.failReason,
-    ipAddress: r.ipAddress,
-    userAgent: r.userAgent,
-    isActiveUser: r.profile ? (r.profile.tenantUsers[0]?.isActive ?? null) : null,
-    createdAt: r.createdAt.toISOString(),
-  }))
+  return rows.map(mapLoginHistoryRow)
 }
 
 // ─── 이용 로그 조회 (AuditLog) ────────────────────────────────────────────────
@@ -413,6 +492,10 @@ export type AuditLogFilter = {
   action?: AuditAction | "ALL"
   entityType?: string
   days?: number
+  dateFrom?: string
+  dateTo?: string
+  page?: number
+  pageSize?: number
 }
 
 /**
@@ -501,12 +584,10 @@ function buildTargetLabel(
   return `${entityType} (ID: ${entityId.slice(0, 8)}…)`
 }
 
-export async function getAuditLogs(
-  filter: AuditLogFilter = {}
-): Promise<AuditLogRow[]> {
-  const tenantId = await getTenantId()
-  await requireFullUserManagementAccess()
-
+function buildAuditLogWhere(
+  tenantId: string,
+  filter: Omit<AuditLogFilter, "page" | "pageSize">
+): Prisma.AuditLogWhereInput {
   const where: Prisma.AuditLogWhereInput = { tenantId }
 
   if (filter.action && filter.action !== "ALL") where.action = filter.action
@@ -516,6 +597,10 @@ export async function getAuditLogs(
     const from = new Date()
     from.setDate(from.getDate() - filter.days)
     where.actedAt = { gte: from }
+  } else if (filter.days === 0 && (filter.dateFrom || filter.dateTo)) {
+    const from = filter.dateFrom ? new Date(filter.dateFrom) : undefined
+    const to = filter.dateTo ? new Date(filter.dateTo + "T23:59:59.999Z") : undefined
+    where.actedAt = { gte: from, lte: to }
   }
 
   if (filter.search && filter.search.trim()) {
@@ -526,7 +611,6 @@ export async function getAuditLogs(
       { actorLabel: { contains: q, mode: "insensitive" } },
       { menuName: { contains: q, mode: "insensitive" } },
       { actor: { name: { contains: q, mode: "insensitive" } } },
-      // afterData / beforeData JSON 내 이메일·이름 검색 (Postgres JSON path)
       { afterData: { path: ["targetUserEmail"], string_contains: q } },
       { afterData: { path: ["email"], string_contains: q } },
       { afterData: { path: ["targetUserName"], string_contains: q } },
@@ -535,27 +619,40 @@ export async function getAuditLogs(
     ]
   }
 
-  const rows = await prisma.auditLog.findMany({
-    where,
-    select: {
-      id: true,
-      actorLabel: true,
-      entityType: true,
-      entityId: true,
-      action: true,
-      menuName: true,
-      ipAddress: true,
-      userAgent: true,
-      actedAt: true,
-      beforeData: true,
-      afterData: true,
-      actor: { select: { name: true } },
-    },
-    orderBy: { actedAt: "desc" },
-    take: 500,
-  })
+  return where
+}
 
-  // ─── Batch lookup: TenantUser → Profile (N+1 방지) ─────────────────────────
+const AUDIT_LOG_SELECT = {
+  id: true,
+  actorLabel: true,
+  entityType: true,
+  entityId: true,
+  action: true,
+  menuName: true,
+  ipAddress: true,
+  userAgent: true,
+  actedAt: true,
+  beforeData: true,
+  afterData: true,
+  actor: { select: { name: true } },
+} as const
+
+async function enrichAuditLogRows(
+  rows: Array<{
+    id: string
+    actorLabel: string | null
+    entityType: string
+    entityId: string
+    action: AuditAction
+    menuName: string | null
+    ipAddress: string | null
+    userAgent: string | null
+    actedAt: Date
+    beforeData: Prisma.JsonValue
+    afterData: Prisma.JsonValue
+    actor: { name: string } | null
+  }>
+): Promise<AuditLogRow[]> {
   const tuIds = Array.from(new Set(
     rows.filter((r) => r.entityType === "TenantUser").map((r) => r.entityId)
   ))
@@ -584,7 +681,6 @@ export async function getAuditLogs(
   const profileMap = new Map<string, { name: string; email: string }>(
     profileRows.map((p) => [p.id, { name: p.name || "", email: p.email }])
   )
-  // ──────────────────────────────────────────────────────────────────────────
 
   return rows.map((r) => {
     const before = r.beforeData as Record<string, unknown> | null
@@ -603,6 +699,49 @@ export async function getAuditLogs(
       actedAt: r.actedAt.toISOString(),
     }
   })
+}
+
+export async function getAuditLogs(
+  filter: AuditLogFilter = {}
+): Promise<PaginatedResult<AuditLogRow>> {
+  const tenantId = await getTenantId()
+  await requireFullUserManagementAccess()
+
+  const page = Math.max(1, filter.page ?? 1)
+  const pageSize = filter.pageSize && [20, 50, 100].includes(filter.pageSize) ? filter.pageSize : 20
+  const where = buildAuditLogWhere(tenantId, filter)
+
+  const [total, rawRows] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({
+      where,
+      select: AUDIT_LOG_SELECT,
+      orderBy: { actedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ])
+
+  const rows = await enrichAuditLogRows(rawRows)
+  return { rows, total, page, pageSize }
+}
+
+export async function getAuditLogsExport(
+  filter: Omit<AuditLogFilter, "page" | "pageSize">
+): Promise<AuditLogRow[]> {
+  const tenantId = await getTenantId()
+  await requireFullUserManagementAccess()
+
+  const where = buildAuditLogWhere(tenantId, filter)
+
+  const rawRows = await prisma.auditLog.findMany({
+    where,
+    select: AUDIT_LOG_SELECT,
+    orderBy: { actedAt: "desc" },
+    take: 10000,
+  })
+
+  return enrichAuditLogRows(rawRows)
 }
 
 // ─── 재활성화 ─────────────────────────────────────────────────────────────────
