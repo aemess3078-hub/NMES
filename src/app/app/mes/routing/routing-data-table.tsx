@@ -2,13 +2,16 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Download, FileSpreadsheet, Plus, Upload } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { RoutingFormSheet } from "./routing-form-sheet"
 import { RoutingDetailPanel } from "./routing-detail-panel"
+import { RoutingExcelUploadDialog } from "./routing-excel-upload-dialog"
+import { downloadRoutingTemplate, downloadRoutingData } from "./routing-excel-download"
+import { getRoutingExportData } from "@/lib/actions/routing-excel.actions"
 import { deleteRouting, RoutingWithDetails } from "@/lib/actions/routing.actions"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
@@ -41,9 +44,21 @@ export function RoutingDataTable({
   const router = useRouter()
   const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingRouting, setEditingRouting] = useState<RoutingWithDetails | null>(null)
   const [detailRouting, setDetailRouting] = useState<RoutingWithDetails | null>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleDownloadCurrent = async () => {
+    setIsDownloading(true)
+    try {
+      const rows = await getRoutingExportData()
+      await downloadRoutingData(rows)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   const handleEdit = (routing: RoutingWithDetails) => {
     setEditingRouting(routing)
@@ -74,8 +89,22 @@ export function RoutingDataTable({
 
   return (
     <div className="space-y-4">
-      {canMutate && (
-        <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={downloadRoutingTemplate} className="gap-2">
+          <Download className="h-4 w-4" />
+          엑셀 양식
+        </Button>
+        <Button variant="outline" onClick={handleDownloadCurrent} disabled={isDownloading} className="gap-2">
+          <FileSpreadsheet className="h-4 w-4" />
+          {isDownloading ? "다운로드 중..." : "현재 라우팅 다운로드"}
+        </Button>
+        {canMutate && (
+          <Button variant="outline" onClick={() => setUploadOpen(true)} className="gap-2">
+            <Upload className="h-4 w-4" />
+            엑셀 업로드
+          </Button>
+        )}
+        {canMutate && (
           <Button
             onClick={() => {
               setEditingRouting(null)
@@ -86,8 +115,8 @@ export function RoutingDataTable({
             <Plus className="mr-2 h-4 w-4" />
             라우팅 등록
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       <DataTable
         columns={columns}
@@ -130,6 +159,7 @@ export function RoutingDataTable({
         workCenters={workCenters}
         tenantId={tenantId}
       />
+      <RoutingExcelUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </div>
   )
 }
