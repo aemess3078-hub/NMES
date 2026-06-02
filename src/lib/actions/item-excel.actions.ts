@@ -212,7 +212,7 @@ export async function importValidatedItems(
 
   // 서버 재검증 (클라이언트 preview 결과만 신뢰하지 않음)
   const codes       = rows.map((r) => r.code)
-  const categoryIds = [...new Set(rows.map((r) => r.categoryId))]
+  const categoryIds = Array.from(new Set(rows.map((r) => r.categoryId)))
 
   const [existingItems, validCategories] = await Promise.all([
     prisma.item.findMany({

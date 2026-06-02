@@ -207,7 +207,7 @@ export function ItemExcelUploadDialog({ open, onOpenChange }: ItemExcelUploadDia
               </div>
               <div className={`rounded-lg border p-3 text-center ${hasErrors ? "border-destructive/40 bg-red-50" : "border-slate-200"}`}>
                 <p className={`text-[13px] ${hasErrors ? "text-destructive" : "text-muted-foreground"}`}>오류 행</p>
-                <p className={`text-[22px] font-bold ${hasErrors ? "text-destructive" : ""}`}>{errors.length > 0 ? [...new Set(errors.map((e) => e.rowNum))].length : 0}</p>
+                <p className={`text-[22px] font-bold ${hasErrors ? "text-destructive" : ""}`}>{errors.length > 0 ? Array.from(new Set(errors.map((e) => e.rowNum))).length : 0}</p>
               </div>
             </div>
 
