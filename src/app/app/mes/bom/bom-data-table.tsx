@@ -2,13 +2,16 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Download, FileSpreadsheet, Plus, Upload } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { BomFormSheet } from "./bom-form-sheet"
 import { BomDetailPanel } from "./bom-detail-panel"
+import { BomExcelUploadDialog } from "./bom-excel-upload-dialog"
+import { downloadBomTemplate, downloadBomData } from "./bom-excel-download"
+import { getBomExportData } from "@/lib/actions/bom-excel.actions"
 import { deleteBom, BOMWithDetails } from "@/lib/actions/bom.actions"
 import { BOMFormValues } from "./bom-form-schema"
 import { BOMStatus } from "@prisma/client"
@@ -45,9 +48,21 @@ export function BomDataTable({
   const router = useRouter()
   const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingBom, setEditingBom] = useState<BOMWithDetails | null>(null)
   const [expandedBomId, setExpandedBomId] = useState<string | null>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleDownloadCurrent = async () => {
+    setIsDownloading(true)
+    try {
+      const rows = await getBomExportData()
+      await downloadBomData(rows)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   const handleSelect = (bom: BOMWithDetails) => {
     setExpandedBomId((prev) => (prev === bom.id ? null : bom.id))
@@ -94,8 +109,22 @@ export function BomDataTable({
 
   return (
     <div className="space-y-4">
-      {canMutate && (
-        <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={downloadBomTemplate} className="gap-2">
+          <Download className="h-4 w-4" />
+          엑셀 양식
+        </Button>
+        <Button variant="outline" onClick={handleDownloadCurrent} disabled={isDownloading} className="gap-2">
+          <FileSpreadsheet className="h-4 w-4" />
+          {isDownloading ? "다운로드 중..." : "현재 BOM 다운로드"}
+        </Button>
+        {canMutate && (
+          <Button variant="outline" onClick={() => setUploadOpen(true)} className="gap-2">
+            <Upload className="h-4 w-4" />
+            엑셀 업로드
+          </Button>
+        )}
+        {canMutate && (
           <Button
             onClick={() => {
               setEditingBom(null)
@@ -106,8 +135,8 @@ export function BomDataTable({
             <Plus className="mr-2 h-4 w-4" />
             BOM 등록
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       <DataTable
         columns={columns}
@@ -154,6 +183,7 @@ export function BomDataTable({
         componentItems={componentItems}
         tenantId={tenantId}
       />
+      <BomExcelUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </div>
   )
 }
