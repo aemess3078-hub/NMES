@@ -5,6 +5,11 @@ import { getCurrentUser } from '@/lib/auth'
 import { getErrorMessage } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 import type { UserRole } from '@prisma/client'
+import { verifyPassword } from '@/lib/password'
+import {
+  assertValidPopPin,
+  preparePopPinForStorage,
+} from '@/lib/auth/pop-pin'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +103,99 @@ export async function updateMyProfile(
         afterData: { name, phone, jobTitle },
       },
     }).catch(() => {})
+
+    revalidatePath('/app/mes/profile')
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: getErrorMessage(e) }
+  }
+}
+
+// ─── POP PIN 변경 ──────────────────────────────────────────────────────────────
+
+export async function changeMyPopPin(
+  currentPassword: string,
+  newPin: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return { success: false, error: '인증이 필요합니다.' }
+
+    const credential = await prisma.userCredential.findUnique({
+      where: { profileId: user.profileId },
+      select: { id: true, tenantId: true, passwordHash: true, isLocked: true, popPinFingerprint: true },
+    })
+    if (!credential) return { success: false, error: '계정 정보를 찾을 수 없습니다.' }
+    if (credential.isLocked) return { success: false, error: '잠긴 계정입니다. 관리자에게 문의해 주세요.' }
+
+    const isPasswordValid = await verifyPassword(currentPassword, credential.passwordHash)
+    if (!isPasswordValid) return { success: false, error: '현재 비밀번호가 올바르지 않습니다.' }
+
+    try {
+      assertValidPopPin(newPin)
+    } catch {
+      return { success: false, error: 'POP PIN은 4자리 숫자여야 합니다.' }
+    }
+
+    let popPinForStorage: Awaited<ReturnType<typeof preparePopPinForStorage>>
+    try {
+      popPinForStorage = await preparePopPinForStorage(user.tenantId, newPin)
+    } catch (e) {
+      if (e instanceof Error && e.message === 'POP_PIN_SECRET is required') {
+        return { success: false, error: 'POP PIN 설정이 준비되지 않았습니다. 관리자에게 문의해 주세요.' }
+      }
+      return { success: false, error: 'PIN 처리 중 오류가 발생했습니다.' }
+    }
+
+    if (credential.popPinFingerprint === popPinForStorage.popPinFingerprint) {
+      return { success: false, error: '기존 PIN과 동일한 PIN은 사용할 수 없습니다.' }
+    }
+
+    const [dupCredential, dupPending] = await Promise.all([
+      prisma.userCredential.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          popPinFingerprint: popPinForStorage.popPinFingerprint,
+          id: { not: credential.id },
+        },
+        select: { id: true },
+      }),
+      prisma.signupRequest.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          popPinFingerprint: popPinForStorage.popPinFingerprint,
+          status: 'PENDING',
+        },
+        select: { id: true },
+      }),
+    ])
+
+    if (dupCredential || dupPending) {
+      return { success: false, error: '이미 사용 중인 POP PIN입니다. 다른 PIN을 입력해 주세요.' }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.userCredential.update({
+        where: { id: credential.id },
+        data: {
+          popPinHash: popPinForStorage.popPinHash,
+          popPinFingerprint: popPinForStorage.popPinFingerprint,
+          popPinSetAt: popPinForStorage.popPinSetAt,
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          actorId: user.profileId,
+          actorLabel: user.name,
+          entityType: 'UserCredential',
+          entityId: credential.id,
+          action: 'UPDATE',
+          afterData: { popPinChanged: true },
+        },
+      })
+    })
 
     revalidatePath('/app/mes/profile')
     return { success: true }

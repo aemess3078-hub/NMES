@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { getMyProfile } from "@/lib/actions/profile.actions"
 import { ProfileInfoCard } from "./profile-info-card"
 import { PasswordChangeCard } from "./password-change-card"
+import { PopPinChangeCard } from "./pop-pin-change-card"
 
 export default async function ProfilePage() {
   const user = await getCurrentUser()
@@ -23,6 +24,7 @@ export default async function ProfilePage() {
       </div>
       <ProfileInfoCard profile={profile} />
       <PasswordChangeCard />
+      <PopPinChangeCard />
     </div>
   )
 }
