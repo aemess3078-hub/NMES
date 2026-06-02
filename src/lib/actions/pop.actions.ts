@@ -996,7 +996,7 @@ export async function updateOperationStatus(
   operationId: string,
   status: OperationStatus
 ) {
-  try { await requireRole("OPERATOR") } catch { /* POP 데모: 인증 없이도 동작 허용 */ }
+  await requireRole("OPERATOR")
   await prisma.$transaction(async (tx) => {
     await tx.workOrderOperation.update({
       where: { id: operationId },

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { OperationStatus, WipMovementType, WipUnitStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireRole, getTenantId } from "@/lib/auth"
 import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-plan.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -250,6 +251,9 @@ export async function updateOperationStatusAction(
   status: OperationStatus
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    await requireRole("OPERATOR")
+    const tenantId = await getTenantId()
+
     const op = await prisma.workOrderOperation.findUnique({
       where: { id: operationId },
       select: {
@@ -257,7 +261,7 @@ export async function updateOperationStatusAction(
         workOrder: { select: { tenantId: true } },
       },
     })
-    if (!op) return { ok: false, error: "공정을 찾을 수 없습니다." }
+    if (!op || op.workOrder.tenantId !== tenantId) return { ok: false, error: "공정을 찾을 수 없습니다." }
 
     await prisma.$transaction(async (tx) => {
       await tx.workOrderOperation.update({
