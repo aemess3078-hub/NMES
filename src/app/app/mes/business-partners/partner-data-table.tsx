@@ -2,11 +2,13 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Download, Plus, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { PartnerFormSheet } from "./partner-form-sheet"
+import { PartnerExcelUploadDialog } from "./partner-excel-upload-dialog"
+import downloadPartnerTemplate from "./partner-excel-download"
 import { deleteBusinessPartner, BusinessPartner } from "@/lib/actions/business-partner.actions"
 import { PartnerFormValues } from "./partner-form-schema"
 import { PartnerType } from "@prisma/client"
@@ -20,6 +22,7 @@ interface PartnerDataTableProps {
 export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDataTableProps) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingPartner, setEditingPartner] = useState<BusinessPartner | null>(null)
 
@@ -52,7 +55,15 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={downloadPartnerTemplate} className="gap-2">
+          <Download className="h-4 w-4" />
+          엑셀 양식
+        </Button>
+        <Button variant="outline" onClick={() => setUploadOpen(true)} className="gap-2">
+          <Upload className="h-4 w-4" />
+          엑셀 업로드
+        </Button>
         <Button
           onClick={() => {
             setEditingPartner(null)
@@ -98,6 +109,7 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
         partnerId={editingPartner?.id}
         fixedType={fixedType}
       />
+      <PartnerExcelUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
     </div>
   )
 }
