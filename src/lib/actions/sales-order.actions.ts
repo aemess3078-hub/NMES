@@ -520,6 +520,15 @@ export async function requestProductionFromSalesOrder(
     })
     const planNo = `${prefix}-${String(count + 1).padStart(3, "0")}`
 
+    const salesOrderForNote = await prisma.salesOrder.findUnique({
+      where: { id: salesOrderId },
+      select: { orderNo: true },
+    })
+    const noteOrderRef = salesOrderForNote?.orderNo ?? ""
+    const planNote = noteOrderRef
+      ? `수주 기반 생산의뢰 (수주번호: ${noteOrderRef})`
+      : "수주 기반 생산의뢰"
+
     await prisma.$transaction(async (tx) => {
       await tx.productionPlan.create({
         data: {
@@ -530,7 +539,7 @@ export async function requestProductionFromSalesOrder(
           startDate: new Date(),
           endDate: new Date(),
           status: "DRAFT",
-          note: `수주 기반 생산의뢰 (salesOrderId: ${salesOrderId})`,
+          note: planNote,
           items: {
             create: items.map((item) => ({
               itemId: item.itemId,

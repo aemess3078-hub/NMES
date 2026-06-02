@@ -1,5 +1,9 @@
 "use client"
 
+function sanitizeDisplayNote(note: string): string {
+  return note.replace(/\s*\(salesOrderId:\s*[^)]+\)/gi, "").trim()
+}
+
 import { Badge } from "@/components/ui/badge"
 import {
   Sheet,
@@ -126,7 +130,7 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
             {plan.note && (
               <div className="flex items-start px-4 py-2.5">
                 <span className="w-24 text-muted-foreground shrink-0 pt-0.5">비고</span>
-                <span className="text-muted-foreground">{plan.note}</span>
+                <span className="text-muted-foreground">{sanitizeDisplayNote(plan.note ?? "")}</span>
               </div>
             )}
           </div>
