@@ -22,6 +22,18 @@ export function PopHeader({ workerName = "작업자", onLogout }: Props) {
   const [now, setNow] = useState<Date | null>(null)
   const pathname = usePathname()
 
+  async function handleLogout() {
+    if (onLogout) {
+      onLogout()
+      return
+    }
+
+    await fetch("/api/pop/logout", { method: "POST" }).catch(() => null)
+    document.cookie = "nmes-mode=; path=/; max-age=0"
+    document.cookie = "nmes-worker-name=; path=/; max-age=0"
+    window.location.href = "/login"
+  }
+
   useEffect(() => {
     setNow(new Date())
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -50,7 +62,7 @@ export function PopHeader({ workerName = "작업자", onLogout }: Props) {
             시스템모드
           </Link>
           <button
-            onClick={onLogout}
+            onClick={handleLogout}
             className="text-sm bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg transition-colors"
           >
             로그아웃

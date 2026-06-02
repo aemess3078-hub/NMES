@@ -10,6 +10,11 @@ import {
   verifyPopPin,
 } from "@/lib/auth/pop-pin"
 import {
+  getPopWorkerSession,
+  setPopWorkerSessionCookie,
+  type PopWorkerSessionPayload,
+} from "@/lib/auth/pop-worker-session"
+import {
   advanceWipUnitOnOperationComplete,
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
@@ -20,6 +25,7 @@ import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-p
 
 export type PopWorkerSession = {
   userId: string
+  tenantUserId: string
   name: string
   role: string
   siteId: string
@@ -59,6 +65,39 @@ export type PopWorkQueueRow = {
   canWork: boolean
   availabilityLabel: string
   materialIssuanceReady: boolean
+}
+
+// ─── Auth context helpers ─────────────────────────────────────────────────────
+
+type PopAuthContext =
+  | { mode: "USER_SESSION"; tenantId: string }
+  | { mode: "POP_WORKER_SESSION"; tenantId: string; siteId: string | null; session: PopWorkerSessionPayload }
+  | { mode: "UNAUTHENTICATED" }
+
+async function resolvePopAuthContext(): Promise<PopAuthContext> {
+  const popWorkerSession = await getPopWorkerSession()
+  try {
+    await requireRole("OPERATOR")
+    const tenantId = await getTenantId()
+    return { mode: "USER_SESSION", tenantId }
+  } catch {
+    if (!popWorkerSession) return { mode: "UNAUTHENTICATED" }
+    return {
+      mode: "POP_WORKER_SESSION",
+      tenantId: popWorkerSession.tenantId,
+      siteId: popWorkerSession.siteId,
+      session: popWorkerSession,
+    }
+  }
+}
+
+function assertPopSessionSiteMatch(
+  session: PopWorkerSessionPayload,
+  workOrderSiteId: string | null,
+): void {
+  if (session.siteId != null && workOrderSiteId != null && session.siteId !== workOrderSiteId) {
+    throw new Error("해당 작업장의 작업만 처리할 수 있습니다.")
+  }
 }
 
 // ─── 1. PIN 로그인 (데모용 간이 구현) ─────────────────────────────────────────
@@ -136,6 +175,7 @@ export async function popLogin(
             tenantUsers: {
               where: { tenantId },
               select: {
+                id: true,
                 role: true,
                 siteId: true,
                 isActive: true,
@@ -152,8 +192,17 @@ export async function popLogin(
       const tenantUser = credential.profile.tenantUsers[0]
       if (!tenantUser?.isActive) return null
       if (await verifyPopPin(pin, credential.popPinHash)) {
+        await setPopWorkerSessionCookie({
+          tenantId,
+          profileId: credential.profileId,
+          tenantUserId: tenantUser.id,
+          workerName: credential.profile.name,
+          role: tenantUser.role,
+          siteId: tenantUser.siteId,
+        })
         return {
           userId: credential.profileId,
+          tenantUserId: tenantUser.id,
           name: credential.profile.name,
           role: tenantUser.role,
           siteId: tenantUser.siteId ?? "site-a",
@@ -162,7 +211,8 @@ export async function popLogin(
       }
       return null
     }
-  } catch {
+  } catch (e) {
+    console.error("[popLogin] unexpected error during PIN auth:", e instanceof Error ? e.message : e)
     return null
   }
 
@@ -481,7 +531,10 @@ export async function submitProductionResult(
   }
 
   try {
-    try { await requireRole("OPERATOR") } catch { /* POP 데모: 인증 없이도 동작 허용 */ }
+    const authCtx = await resolvePopAuthContext()
+    if (authCtx.mode === "UNAUTHENTICATED") {
+      return { success: false, error: "작업자 로그인이 필요합니다." }
+    }
     let isCompleted = false
 
     await prisma.$transaction(async (tx) => {
@@ -526,6 +579,12 @@ export async function submitProductionResult(
         },
       })
       if (!op) throw new Error("공정을 찾을 수 없습니다.")
+      if (authCtx.mode === "POP_WORKER_SESSION") {
+        if (authCtx.tenantId !== op.workOrder.tenantId) {
+          throw new Error("작업자 세션과 작업지시 사업장이 일치하지 않습니다.")
+        }
+        assertPopSessionSiteMatch(authCtx.session, op.workOrder.siteId)
+      }
 
       const previousOperations = op.workOrder.operations.filter((candidate) => candidate.seq < op.seq)
       if (previousOperations.length > 0 && !previousOperations.every((candidate) => candidate.status === "COMPLETED")) {
@@ -786,8 +845,11 @@ export async function startOperation(
   assignmentId?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    try { await requireRole("OPERATOR") } catch { /* POP demo auth fallback */ }
-    const tenantId = await getTenantId()
+    const authCtx = await resolvePopAuthContext()
+    if (authCtx.mode === "UNAUTHENTICATED") {
+      return { success: false, error: "작업자 로그인이 필요합니다." }
+    }
+    const tenantId = authCtx.tenantId
 
     const op = await prisma.workOrderOperation.findFirst({
       where: {
@@ -825,6 +887,12 @@ export async function startOperation(
 
     if (!op) {
       return { success: false, error: "Operation not found or already completed." }
+    }
+
+    if (authCtx.mode === "POP_WORKER_SESSION" && authCtx.siteId != null) {
+      if (op.workOrder.siteId != null && op.workOrder.siteId !== authCtx.siteId) {
+        return { success: false, error: "해당 작업장의 작업만 처리할 수 있습니다." }
+      }
     }
 
     const prevOps = op.workOrder.operations.filter((o) => o.seq < op.seq)

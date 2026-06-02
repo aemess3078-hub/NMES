@@ -285,6 +285,7 @@ function WorkerLoginForm({ onBack }: { onBack: () => void }) {
       }
 
       document.cookie = "nmes-mode=worker; path=/"
+      // Legacy display cookie only; server actions must trust the signed POP worker session cookie.
       document.cookie = `nmes-worker-name=${encodeURIComponent(result.name)}; path=/`
       window.location.href = "/pop/work-select"
     } catch {
