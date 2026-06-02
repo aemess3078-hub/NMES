@@ -1,13 +1,18 @@
 "use server"
 
+import { Prisma, UserRole, SignupRequestStatus } from "@prisma/client"
+import { revalidatePath } from "next/cache"
+
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUser } from "@/lib/auth"
 import { canAccessFullUserManagement } from "@/lib/developer"
-import { UserRole, SignupRequestStatus } from "@prisma/client"
-import { revalidatePath } from "next/cache"
 import { hashPassword, validatePassword } from "@/lib/password"
 import { maskSensitiveFields } from "@/lib/sanitize"
 import { getErrorMessage } from "@/lib/utils"
+import {
+  assertValidPopPin,
+  preparePopPinForStorage,
+} from "@/lib/auth/pop-pin"
 
 function normalizeLoginId(loginId: string): string {
   return loginId.trim().toLowerCase()
@@ -15,12 +20,48 @@ function normalizeLoginId(loginId: string): string {
 
 async function requireFullUserManagementAccess() {
   const user = await getCurrentUser()
-  if (!user) throw new Error('UNAUTHORIZED')
-  if (!canAccessFullUserManagement(user)) throw new Error('FORBIDDEN')
+  if (!user) throw new Error("UNAUTHORIZED")
+  if (!canAccessFullUserManagement(user)) throw new Error("FORBIDDEN")
   return user
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type PopPinLookupClient = {
+  userCredential: {
+    findFirst: typeof prisma.userCredential.findFirst
+  }
+  signupRequest: {
+    findFirst: typeof prisma.signupRequest.findFirst
+  }
+}
+
+async function findDuplicatePopPin(
+  tx: PopPinLookupClient,
+  tenantId: string,
+  popPinFingerprint: string,
+  options: { excludeSignupRequestId?: string } = {},
+): Promise<"credential" | "pending" | null> {
+  const [credentialPin, pendingPin] = await Promise.all([
+    tx.userCredential.findFirst({
+      where: { tenantId, popPinFingerprint },
+      select: { id: true },
+    }),
+    tx.signupRequest.findFirst({
+      where: {
+        tenantId,
+        popPinFingerprint,
+        status: "PENDING",
+        ...(options.excludeSignupRequestId
+          ? { id: { not: options.excludeSignupRequestId } }
+          : {}),
+      },
+      select: { id: true },
+    }),
+  ])
+
+  if (credentialPin) return "credential"
+  if (pendingPin) return "pending"
+  return null
+}
 
 export type CreateSignupRequestInput = {
   tenantId: string
@@ -32,6 +73,7 @@ export type CreateSignupRequestInput = {
   phone: string
   jobTitle: string
   password: string
+  popPin: string
 }
 
 export type SignupRequestRow = {
@@ -53,14 +95,22 @@ export type SignupRequestRow = {
   rejectedBy: { id: string; name: string; email: string } | null
 }
 
-// ─── 공개: 가입 신청 제출 (인증 불필요) ───────────────────────────────────────
-
 export async function createSignupRequest(
-  input: CreateSignupRequestInput
+  input: CreateSignupRequestInput,
 ): Promise<{ success: boolean; message: string }> {
-  const { tenantId, loginId, email, name, department, employeeNo, phone, jobTitle, password } = input
+  const {
+    tenantId,
+    loginId,
+    email,
+    name,
+    department,
+    employeeNo,
+    phone,
+    jobTitle,
+    password,
+    popPin,
+  } = input
 
-  // 필수값 검증
   if (!loginId || loginId.trim().length < 3) {
     return { success: false, message: "로그인 아이디는 3자 이상이어야 합니다." }
   }
@@ -69,71 +119,134 @@ export async function createSignupRequest(
   if (!phone?.trim()) return { success: false, message: "연락처를 입력해 주세요." }
   if (!jobTitle?.trim()) return { success: false, message: "직급을 입력해 주세요." }
   if (!email?.trim()) return { success: false, message: "이메일을 입력해 주세요." }
+
   const pwError = validatePassword(password)
   if (pwError) return { success: false, message: pwError }
 
-  const cleanLoginId = normalizeLoginId(loginId)
+  try {
+    assertValidPopPin(popPin)
+  } catch {
+    return { success: false, message: "작업자 POP PIN은 4자리 숫자로 입력해 주세요." }
+  }
 
-  // 1. UserCredential에 이미 같은 loginId가 있으면 신청 불가
+  const cleanLoginId = normalizeLoginId(loginId)
+  let popPinForStorage: Awaited<ReturnType<typeof preparePopPinForStorage>>
+  try {
+    popPinForStorage = await preparePopPinForStorage(tenantId, popPin)
+  } catch (e) {
+    if (e instanceof Error && e.message === "POP_PIN_SECRET is required") {
+      return {
+        success: false,
+        message: "작업자 POP PIN 설정이 준비되지 않았습니다. 관리자에게 문의해 주세요.",
+      }
+    }
+    return { success: false, message: "작업자 POP PIN을 확인해 주세요." }
+  }
+
   const existingCredential = await prisma.userCredential.findFirst({
     where: {
       tenantId,
       loginId: { equals: cleanLoginId, mode: "insensitive" },
     },
+    select: { id: true },
   })
   if (existingCredential) {
     return { success: false, message: "이미 사용 중인 아이디입니다." }
   }
 
-  // 2. PENDING 또는 HOLD 상태의 동일 loginId 신청이 있으면 불가
   const duplicatePending = await prisma.signupRequest.findFirst({
     where: {
       tenantId,
       loginId: { equals: cleanLoginId, mode: "insensitive" },
-      status: { in: ["PENDING"] },
+      status: "PENDING",
     },
+    select: { id: true },
   })
   if (duplicatePending) {
     return { success: false, message: "동일한 아이디로 이미 대기 중인 신청이 있습니다." }
   }
 
-  // 3. 이메일 기준 PENDING 중복 체크
   const duplicateEmail = await prisma.signupRequest.findFirst({
     where: { tenantId, email, status: "PENDING" },
+    select: { id: true },
   })
   if (duplicateEmail) {
     return { success: false, message: "이미 동일한 이메일로 대기 중인 신청이 있습니다." }
   }
 
-  // 4. 이미 활성 사용자인지 이메일로 체크
-  const activeProfile = await prisma.profile.findFirst({ where: { email } })
+  const activeProfile = await prisma.profile.findFirst({
+    where: { email },
+    select: { id: true },
+  })
   if (activeProfile) {
     const tenantUser = await prisma.tenantUser.findFirst({
       where: { tenantId, profileId: activeProfile.id, isActive: true },
+      select: { id: true },
     })
     if (tenantUser) {
       return { success: false, message: "이미 등록된 사용자입니다." }
     }
   }
 
-  // 5. 비밀번호 해시 처리 후 저장
+  const duplicatePopPin = await findDuplicatePopPin(
+    prisma,
+    tenantId,
+    popPinForStorage.popPinFingerprint,
+  )
+  if (duplicatePopPin) {
+    return {
+      success: false,
+      message: "이미 사용 중인 작업자 POP PIN입니다. 다른 PIN을 입력해 주세요.",
+    }
+  }
+
   const passwordHash = await hashPassword(password)
 
-  await prisma.signupRequest.create({
-    data: {
-      tenantId,
-      loginId: cleanLoginId,
-      email,
-      name,
-      department: department ?? null,
-      employeeNo: employeeNo ?? null,
-      phone: phone ?? null,
-      jobTitle: jobTitle ?? null,
-      passwordHash,
-      status: "PENDING",
-      // requestedRole은 가입자가 선택하지 않음 — DB default(OPERATOR) 사용
-    },
-  })
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        const duplicateInsideTransaction = await findDuplicatePopPin(
+          tx,
+          tenantId,
+          popPinForStorage.popPinFingerprint,
+        )
+        if (duplicateInsideTransaction) throw new Error("DUPLICATE_POP_PIN")
+
+        await tx.signupRequest.create({
+          data: {
+            tenantId,
+            loginId: cleanLoginId,
+            email,
+            name,
+            department: department ?? null,
+            employeeNo: employeeNo ?? null,
+            phone: phone ?? null,
+            jobTitle: jobTitle ?? null,
+            passwordHash,
+            popPinHash: popPinForStorage.popPinHash,
+            popPinFingerprint: popPinForStorage.popPinFingerprint,
+            popPinSetAt: popPinForStorage.popPinSetAt,
+            status: "PENDING",
+          },
+        })
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    )
+  } catch (e) {
+    if (e instanceof Error && e.message === "DUPLICATE_POP_PIN") {
+      return {
+        success: false,
+        message: "이미 사용 중인 작업자 POP PIN입니다. 다른 PIN을 입력해 주세요.",
+      }
+    }
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") {
+      return {
+        success: false,
+        message: "동시에 같은 PIN 신청이 처리되었습니다. 다른 PIN으로 다시 신청해 주세요.",
+      }
+    }
+    throw e
+  }
 
   return {
     success: true,
@@ -141,15 +254,13 @@ export async function createSignupRequest(
   }
 }
 
-// ─── 관리자: 신청 목록 조회 ────────────────────────────────────────────────────
-
 export async function getSignupRequests(
-  status?: SignupRequestStatus
+  status?: SignupRequestStatus,
 ): Promise<SignupRequestRow[]> {
   const tenantId = await getTenantId()
   await requireFullUserManagementAccess()
 
-  const rows = await prisma.signupRequest.findMany({
+  return prisma.signupRequest.findMany({
     where: { tenantId, ...(status ? { status } : {}) },
     include: {
       approvedBy: { select: { id: true, name: true, email: true } },
@@ -157,15 +268,11 @@ export async function getSignupRequests(
     },
     orderBy: { createdAt: "desc" },
   })
-
-  return rows
 }
-
-// ─── 관리자: 승인 ─────────────────────────────────────────────────────────────
 
 export async function approveSignupRequest(
   requestId: string,
-  grantedRole: UserRole
+  grantedRole: UserRole,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
@@ -174,115 +281,158 @@ export async function approveSignupRequest(
     const request = await prisma.signupRequest.findFirst({
       where: { id: requestId, tenantId, status: "PENDING" },
     })
-    if (!request) return { success: false, error: "신청을 찾을 수 없거나 이미 처리되었습니다." }
-
-    // loginId/passwordHash가 없는 구형 신청 건 방어
-    if (!request.loginId || !request.passwordHash) {
-      return { success: false, error: "이 신청 건에 로그인 아이디 또는 비밀번호 정보가 없습니다. 재신청을 요청하세요." }
+    if (!request) {
+      return { success: false, error: "신청을 찾을 수 없거나 이미 처리되었습니다." }
+    }
+    if (
+      !request.loginId ||
+      !request.passwordHash ||
+      !request.popPinHash ||
+      !request.popPinFingerprint ||
+      !request.popPinSetAt
+    ) {
+      return {
+        success: false,
+        error: "이 신청 건에 로그인 정보 또는 작업자 POP PIN 정보가 없습니다. 재신청을 요청해 주세요.",
+      }
     }
 
     const normalizedLoginId = normalizeLoginId(request.loginId)
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          const duplicateCredential = await tx.userCredential.findFirst({
+            where: {
+              tenantId,
+              loginId: { equals: normalizedLoginId, mode: "insensitive" },
+            },
+            select: { id: true },
+          })
+          if (duplicateCredential) throw new Error("DUPLICATE_LOGIN_ID")
 
-    // loginId 중복 검사 (UserCredential)
-    const duplicateCredential = await prisma.userCredential.findFirst({
-      where: {
-        tenantId,
-        loginId: { equals: normalizedLoginId, mode: "insensitive" },
-      },
-    })
-    if (duplicateCredential) {
-      return { success: false, error: `이미 사용 중인 로그인 아이디입니다: ${normalizedLoginId}` }
-    }
+          const duplicatePopPin = await findDuplicatePopPin(
+            tx,
+            tenantId,
+            request.popPinFingerprint!,
+            { excludeSignupRequestId: request.id },
+          )
+          if (duplicatePopPin) throw new Error("DUPLICATE_POP_PIN")
 
-    // 1. Profile 생성 또는 연결
-    let profileId: string
+          let profileId: string
+          const existingProfileByEmail = await tx.profile.findUnique({
+            where: { email: request.email },
+          })
+          if (existingProfileByEmail) {
+            await tx.profile.update({
+              where: { id: existingProfileByEmail.id },
+              data: {
+                name: request.name,
+                department: request.department ?? existingProfileByEmail.department,
+                phone: request.phone ?? existingProfileByEmail.phone,
+                employeeNo: request.employeeNo ?? existingProfileByEmail.employeeNo,
+                jobTitle: request.jobTitle ?? existingProfileByEmail.jobTitle,
+              },
+            })
+            profileId = existingProfileByEmail.id
+          } else {
+            const newProfile = await tx.profile.create({
+              data: {
+                email: request.email,
+                name: request.name,
+                department: request.department ?? null,
+                phone: request.phone ?? null,
+                employeeNo: request.employeeNo ?? null,
+                jobTitle: request.jobTitle ?? null,
+              },
+            })
+            profileId = newProfile.id
+          }
 
-    const existingProfileByEmail = await prisma.profile.findUnique({ where: { email: request.email } })
-    if (existingProfileByEmail) {
-      await prisma.profile.update({
-        where: { id: existingProfileByEmail.id },
-        data: {
-          name: request.name,
-          department: request.department ?? existingProfileByEmail.department,
-          phone: request.phone ?? existingProfileByEmail.phone,
-          employeeNo: request.employeeNo ?? existingProfileByEmail.employeeNo,
-          jobTitle: request.jobTitle ?? existingProfileByEmail.jobTitle,
+          const existingTU = await tx.tenantUser.findFirst({
+            where: { tenantId, profileId },
+          })
+          if (existingTU) {
+            await tx.tenantUser.update({
+              where: { id: existingTU.id },
+              data: { role: grantedRole, isActive: true },
+            })
+          } else {
+            await tx.tenantUser.create({
+              data: { tenantId, profileId, role: grantedRole, isActive: true },
+            })
+          }
+
+          const existingCredential = await tx.userCredential.findUnique({
+            where: { profileId },
+            select: { id: true },
+          })
+          if (existingCredential) throw new Error("EXISTING_CREDENTIAL")
+
+          await tx.userCredential.create({
+            data: {
+              tenantId,
+              loginId: normalizedLoginId,
+              profileId,
+              passwordHash: request.passwordHash!,
+              popPinHash: request.popPinHash!,
+              popPinFingerprint: request.popPinFingerprint!,
+              popPinSetAt: request.popPinSetAt!,
+              mustChangePw: false,
+              isLocked: false,
+              failCount: 0,
+            },
+          })
+
+          await tx.signupRequest.update({
+            where: { id: requestId },
+            data: {
+              status: "APPROVED",
+              approvedAt: new Date(),
+              approvedById: actor.id,
+            },
+          })
+
+          const afterData = maskSensitiveFields({
+            email: request.email,
+            name: request.name,
+            loginId: normalizedLoginId,
+            grantedRole,
+            profileId,
+            mustChangePw: false,
+            popPinConfigured: true,
+          })
+          await tx.auditLog.create({
+            data: {
+              tenantId,
+              actorId: actor.id,
+              actorType: "USER",
+              actorLabel: actor.name,
+              entityType: "SignupRequest",
+              entityId: requestId,
+              action: "APPROVE",
+              afterData: afterData as object,
+              menuName: "가입신청관리",
+            },
+          })
+
         },
-      })
-      profileId = existingProfileByEmail.id
-    } else {
-      const newProfile = await prisma.profile.create({
-        data: {
-          email: request.email,
-          name: request.name,
-          department: request.department ?? null,
-          phone: request.phone ?? null,
-          employeeNo: request.employeeNo ?? null,
-          jobTitle: request.jobTitle ?? null,
-        },
-      })
-      profileId = newProfile.id
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      )
+    } catch (e) {
+      if (e instanceof Error && e.message === "DUPLICATE_LOGIN_ID") {
+        return { success: false, error: `이미 사용 중인 로그인 아이디입니다: ${normalizedLoginId}` }
+      }
+      if (e instanceof Error && e.message === "DUPLICATE_POP_PIN") {
+        return { success: false, error: "이미 사용 중인 작업자 POP PIN입니다. 다른 PIN으로 재신청해 주세요." }
+      }
+      if (e instanceof Error && e.message === "EXISTING_CREDENTIAL") {
+        return { success: false, error: "이미 로그인 계정이 존재하는 사용자입니다." }
+      }
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") {
+        return { success: false, error: "동시에 같은 PIN 승인이 처리되었습니다. 다시 시도해 주세요." }
+      }
+      throw e
     }
-
-    // 2. TenantUser 생성 또는 활성화
-    const existingTU = await prisma.tenantUser.findFirst({ where: { tenantId, profileId } })
-    if (existingTU) {
-      await prisma.tenantUser.update({
-        where: { id: existingTU.id },
-        data: { role: grantedRole, isActive: true },
-      })
-    } else {
-      await prisma.tenantUser.create({
-        data: { tenantId, profileId, role: grantedRole, isActive: true },
-      })
-    }
-
-    // 3. UserCredential 생성 (profileId unique 제약이 중복 방지)
-    const existingCredential = await prisma.userCredential.findUnique({ where: { profileId } })
-    if (existingCredential) {
-      return { success: false, error: "이미 로그인 계정이 존재하는 사용자입니다." }
-    }
-
-    await prisma.userCredential.create({
-      data: {
-        tenantId,
-        loginId: normalizedLoginId,
-        profileId,
-        passwordHash: request.passwordHash,
-        mustChangePw: false,  // 사용자가 직접 설정한 비밀번호이므로 변경 강제 없음
-        isLocked: false,
-        failCount: 0,
-      },
-    })
-
-    // 4. SignupRequest 상태 업데이트
-    await prisma.signupRequest.update({
-      where: { id: requestId },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedById: actor.id },
-    })
-
-    // 5. AuditLog (비밀번호 정보 마스킹)
-    const afterData = maskSensitiveFields({
-      email: request.email,
-      name: request.name,
-      loginId: normalizedLoginId,
-      grantedRole,
-      profileId,
-      mustChangePw: false,
-    })
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorType: "USER",
-        actorLabel: actor.name,
-        entityType: "SignupRequest",
-        entityId: requestId,
-        action: "APPROVE",
-        afterData: afterData as object,
-        menuName: "가입신청관리",
-      },
-    })
 
     revalidatePath("/app/mes/users")
     return { success: true }
@@ -292,11 +442,9 @@ export async function approveSignupRequest(
   }
 }
 
-// ─── 관리자: 거절 ─────────────────────────────────────────────────────────────
-
 export async function rejectSignupRequest(
   requestId: string,
-  rejectReason: string
+  rejectReason: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
@@ -333,18 +481,14 @@ export async function rejectSignupRequest(
   }
 }
 
-// ─── 관리자: PENDING 건수 조회 ────────────────────────────────────────────────
-
 export async function getPendingSignupCount(): Promise<number> {
   const tenantId = await getTenantId()
   await requireFullUserManagementAccess()
   return prisma.signupRequest.count({ where: { tenantId, status: "PENDING" } })
 }
 
-// ─── 가입 신청 이력 삭제 (APPROVED / REJECTED 만 허용) ───────────────────────
-
 export async function deleteSignupRequest(
-  requestId: string
+  requestId: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const tenantId = await getTenantId()
@@ -355,7 +499,7 @@ export async function deleteSignupRequest(
     })
     if (!request) return { success: false, error: "신청 이력을 찾을 수 없습니다." }
     if (request.status === "PENDING") {
-      return { success: false, error: "대기 중인 신청은 삭제할 수 없습니다. 먼저 승인 또는 거절 처리하세요." }
+      return { success: false, error: "대기 중인 신청은 삭제할 수 없습니다. 먼저 승인 또는 거절 처리해 주세요." }
     }
 
     await prisma.signupRequest.delete({ where: { id: requestId } })
