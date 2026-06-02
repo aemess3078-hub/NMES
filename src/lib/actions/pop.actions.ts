@@ -5,6 +5,11 @@ import { OperationStatus, Prisma, WorkOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import {
+  assertValidPopPin,
+  createPopPinFingerprint,
+  verifyPopPin,
+} from "@/lib/auth/pop-pin"
+import {
   advanceWipUnitOnOperationComplete,
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
@@ -105,6 +110,68 @@ function formatScaledQty(value: bigint): string {
 }
 
 export async function popLogin(
+  pin: string,
+  tenantId: string
+): Promise<PopWorkerSession | null> {
+  try {
+    assertValidPopPin(pin)
+  } catch {
+    return null
+  }
+
+  try {
+    const popPinFingerprint = createPopPinFingerprint(tenantId, pin)
+    const credential = await prisma.userCredential.findFirst({
+      where: {
+        tenantId,
+        popPinFingerprint,
+      },
+      select: {
+        isLocked: true,
+        popPinHash: true,
+        profileId: true,
+        profile: {
+          select: {
+            name: true,
+            tenantUsers: {
+              where: { tenantId },
+              select: {
+                role: true,
+                siteId: true,
+                isActive: true,
+              },
+              take: 1,
+            },
+          },
+        },
+      },
+    })
+
+    if (credential) {
+      if (!credential.popPinHash || credential.isLocked) return null
+      const tenantUser = credential.profile.tenantUsers[0]
+      if (!tenantUser?.isActive) return null
+      if (await verifyPopPin(pin, credential.popPinHash)) {
+        return {
+          userId: credential.profileId,
+          name: credential.profile.name,
+          role: tenantUser.role,
+          siteId: tenantUser.siteId ?? "site-a",
+          tenantId,
+        }
+      }
+      return null
+    }
+  } catch {
+    return null
+  }
+
+  return popLoginFallback(pin, tenantId)
+}
+
+// TODO(Phase 2-D-4): Remove this demo/name fallback after existing operators have real POP PINs.
+// Risk: fallback bypasses persisted popPinHash verification and must not remain for production.
+async function popLoginFallback(
   pin: string,
   tenantId: string
 ): Promise<PopWorkerSession | null> {

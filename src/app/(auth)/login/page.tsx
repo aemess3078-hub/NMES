@@ -22,6 +22,16 @@ import { CnsLogo } from "@/components/cns-logo"
 
 type LoginMode = "select" | "system" | "worker"
 
+function getLoginTenantId(): string {
+  if (typeof document === "undefined") return "tenant-demo-001"
+  return (
+    document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("tenantId="))
+      ?.split("=")[1] ?? "tenant-demo-001"
+  )
+}
+
 // ─── 메인 페이지 ──────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
@@ -265,7 +275,7 @@ function WorkerLoginForm({ onBack }: { onBack: () => void }) {
     setError("")
 
     try {
-      const result = await popLogin(completedPin, "demo-tenant")
+      const result = await popLogin(completedPin, getLoginTenantId())
 
       if (!result) {
         setError("PIN이 올바르지 않습니다. 다시 시도해 주세요.")
