@@ -223,9 +223,16 @@ export async function popLogin(
 // ─── 2. 오늘의 작업지시 목록 ──────────────────────────────────────────────────
 
 export async function getTodayWorkOrders() {
+  const authCtx = await resolvePopAuthContext()
+  if (authCtx.mode === "UNAUTHENTICATED") return []
+
   return prisma.workOrder.findMany({
     where: {
+      tenantId: authCtx.tenantId,
       status: { in: ["RELEASED", "IN_PROGRESS"] },
+      ...(authCtx.mode === "POP_WORKER_SESSION" && authCtx.siteId != null
+        ? { siteId: authCtx.siteId }
+        : {}),
     },
     include: {
       item: true,
@@ -429,6 +436,9 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
 }
 
 export async function getOperationDetail(operationId: string, assignmentId?: string | null) {
+  const authCtx = await resolvePopAuthContext()
+  if (authCtx.mode === "UNAUTHENTICATED") return null
+
   const operation = await prisma.workOrderOperation.findUnique({
     where: { id: operationId },
     include: {
@@ -447,6 +457,12 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
   })
 
   if (!operation) return null
+  if (operation.workOrder.tenantId !== authCtx.tenantId) return null
+  if (
+    authCtx.mode === "POP_WORKER_SESSION" &&
+    authCtx.siteId != null &&
+    operation.workOrder.siteId !== authCtx.siteId
+  ) return null
 
   const selectedAssignment = assignmentId
     ? operation.assignments.find((assignment) => assignment.id === assignmentId) ?? null
@@ -965,6 +981,9 @@ export async function startOperation(
 }
 
 export async function getTodayProductionResults() {
+  const authCtx = await resolvePopAuthContext()
+  if (authCtx.mode === "UNAUTHENTICATED") return []
+
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
@@ -973,6 +992,14 @@ export async function getTodayProductionResults() {
   return prisma.productionResult.findMany({
     where: {
       startedAt: { gte: today, lt: tomorrow },
+      workOrderOperation: {
+        workOrder: {
+          tenantId: authCtx.tenantId,
+          ...(authCtx.mode === "POP_WORKER_SESSION" && authCtx.siteId != null
+            ? { siteId: authCtx.siteId }
+            : {}),
+        },
+      },
     },
     include: {
       workOrderOperation: {

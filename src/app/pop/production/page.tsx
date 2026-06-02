@@ -5,14 +5,16 @@ import { PopHeader } from "../components/pop-header"
 import { CheckCircle2, XCircle, RefreshCw, Package } from "lucide-react"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
+import { getPopWorkerSession } from "@/lib/auth/pop-worker-session"
+import { getCurrentUser } from "@/lib/auth"
 
 export default async function ProductionResultsPage() {
-  let results: Awaited<ReturnType<typeof getTodayProductionResults>> = []
-  try {
-    results = await getTodayProductionResults()
-  } catch {
-    results = []
-  }
+  const [workerSession, results] = await Promise.all([
+    getPopWorkerSession(),
+    getTodayProductionResults().catch(() => [] as Awaited<ReturnType<typeof getTodayProductionResults>>),
+  ])
+  const currentUser = workerSession ? null : await getCurrentUser()
+  const workerName = workerSession?.workerName ?? currentUser?.name ?? "작업자"
 
   const totalGood = results.reduce((sum, r) => sum + Number(r.goodQty), 0)
   const totalDefect = results.reduce((sum, r) => sum + Number(r.defectQty), 0)
@@ -20,7 +22,7 @@ export default async function ProductionResultsPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <PopHeader workerName="데모 작업자" />
+      <PopHeader workerName={workerName} />
 
       <main className="flex-1 p-6">
         <h1 className="text-2xl font-bold text-slate-800 mb-6">오늘의 생산실적</h1>
