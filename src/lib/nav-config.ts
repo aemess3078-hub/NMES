@@ -30,7 +30,8 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-users', parentId: 'nav-master', label: '사용자관리', icon: 'Users', href: '/app/mes/users', displayOrder: 8, minRole: 'ADMIN', children: [] },
           { id: 'nav-sites', parentId: 'nav-master', label: '사업장관리', icon: 'Building2', href: '/app/mes/sites', displayOrder: 9, children: [] },
           { id: 'nav-locations', parentId: 'nav-master', label: '로케이션관리', icon: 'MapPin', href: '/app/mes/locations', displayOrder: 10, children: [] },
-          { id: 'nav-vendors', parentId: 'nav-master', label: '외주처관리', icon: 'Handshake', href: '/app/mes/vendors', displayOrder: 11, children: [] },
+          { id: 'nav-customers', parentId: 'nav-master', label: '고객사 관리', icon: 'Building2', href: '/app/mes/customers', displayOrder: 11, children: [] },
+          { id: 'nav-vendors', parentId: 'nav-master', label: '거래처 관리', icon: 'Handshake', href: '/app/mes/vendors', displayOrder: 11.5, children: [] },
           { id: 'nav-inspection-standards', parentId: 'nav-master', label: '검사표준관리', icon: 'FileCheck', href: '/app/mes/master/inspection-standards', displayOrder: 12, children: [] },
           // 금형관리 + 금형재고관리 → 금형/치공구관리 단일 메뉴 (미구현)
           { id: 'nav-mold-management', parentId: 'nav-master', label: '금형/치공구관리', icon: 'Wrench', href: '/app/mes/master/molds', displayOrder: 13, children: [] },
