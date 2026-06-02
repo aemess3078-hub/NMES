@@ -38,23 +38,23 @@ export default async function UsersPage() {
           getPermissionMatrix(tenantId),
           getSignupRequests(),
           getPendingSignupCount(),
-          getLoginHistory({ days: 7 }),
-          getAuditLogs({ days: 30 }),
+          getLoginHistory({ days: 90 }),
+          getAuditLogs({ days: 90 }),
         ])
       : [
           { status: "fulfilled" as const, value: {} },
           { status: "fulfilled" as const, value: [] },
           { status: "fulfilled" as const, value: 0 },
-          { status: "fulfilled" as const, value: [] },
-          { status: "fulfilled" as const, value: [] },
+          { status: "fulfilled" as const, value: { rows: [], total: 0, page: 1, pageSize: 20 } },
+          { status: "fulfilled" as const, value: { rows: [], total: 0, page: 1, pageSize: 20 } },
         ]
 
   const matrixData = matrix.status === "fulfilled" ? matrix.value : {}
   const usersData = usersResult.status === "fulfilled" ? usersResult.value : []
   const signupData = signupRequests.status === "fulfilled" ? signupRequests.value : []
   const pending = pendingCount.status === "fulfilled" ? pendingCount.value : 0
-  const loginHistoryData = loginHistory.status === "fulfilled" ? loginHistory.value : []
-  const auditLogData = auditLogs.status === "fulfilled" ? auditLogs.value : []
+  const loginHistoryData = loginHistory.status === "fulfilled" ? loginHistory.value : { rows: [], total: 0, page: 1, pageSize: 20 }
+  const auditLogData = auditLogs.status === "fulfilled" ? auditLogs.value : { rows: [], total: 0, page: 1, pageSize: 20 }
   const usersError = usersResult.status === "rejected"
     ? usersResult.reason instanceof Error
       ? usersResult.reason.message
@@ -137,14 +137,14 @@ export default async function UsersPage() {
         {/* 접속 기록 (full-access 전용) */}
         {fullAccess && (
           <TabsContent value="login-history" className="mt-4">
-            <LoginHistoryTable initialRows={loginHistoryData} />
+            <LoginHistoryTable initialData={loginHistoryData} />
           </TabsContent>
         )}
 
         {/* 이용 로그 (full-access 전용) */}
         {fullAccess && (
           <TabsContent value="audit-log" className="mt-4">
-            <AuditLogTable initialRows={auditLogData} />
+            <AuditLogTable initialData={auditLogData} />
           </TabsContent>
         )}
       </Tabs>

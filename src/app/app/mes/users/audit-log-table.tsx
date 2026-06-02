@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Search } from "lucide-react"
+import { Search, Download, ChevronLeft, ChevronRight } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Select,
@@ -14,8 +15,10 @@ import {
 import { AuditAction } from "@prisma/client"
 import {
   getAuditLogs,
+  getAuditLogsExport,
   type AuditLogRow,
   type AuditLogFilter,
+  type PaginatedResult,
 } from "@/lib/actions/user-management.actions"
 
 const ACTION_CONFIG: Record<string, { label: string; className: string }> = {
@@ -32,25 +35,86 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium" })
 }
 
-export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
-  const [rows, setRows] = useState<AuditLogRow[]>(initialRows)
+export function AuditLogTable({ initialData }: { initialData: PaginatedResult<AuditLogRow> }) {
+  const [rows, setRows] = useState<AuditLogRow[]>(initialData.rows)
+  const [total, setTotal] = useState(initialData.total)
+  const [page, setPage] = useState(initialData.page)
+  const [pageSize, setPageSize] = useState(initialData.pageSize)
+
   const [search, setSearch] = useState("")
   const [action, setAction] = useState<AuditAction | "ALL">("ALL")
-  const [days, setDays] = useState<string>("30")
-  const [isPending, startTransition] = useTransition()
+  const [days, setDays] = useState<string>("90")
+  const [dateFrom, setDateFrom] = useState("")
+  const [dateTo, setDateTo] = useState("")
 
-  function refetch(next: Partial<AuditLogFilter> = {}) {
-    const filter: AuditLogFilter = {
+  const [isPending, startTransition] = useTransition()
+  const [isExporting, setIsExporting] = useState(false)
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  function buildFilter(overrides: Partial<AuditLogFilter> = {}): AuditLogFilter {
+    return {
       search,
       action,
-      days: Number(days) || 0,
-      ...next,
+      days: Number(days),
+      dateFrom: days === "0" ? dateFrom : undefined,
+      dateTo: days === "0" ? dateTo : undefined,
+      page,
+      pageSize,
+      ...overrides,
     }
+  }
+
+  function refetch(overrides: Partial<AuditLogFilter> = {}) {
     startTransition(async () => {
-      const data = await getAuditLogs(filter)
-      setRows(data)
+      const data = await getAuditLogs(buildFilter(overrides))
+      setRows(data.rows)
+      setTotal(data.total)
+      setPage(data.page)
+      setPageSize(data.pageSize)
     })
   }
+
+  function changeFilter(overrides: Partial<AuditLogFilter>) {
+    // 필터 변경 시 page=1 초기화
+    refetch({ page: 1, ...overrides })
+  }
+
+  async function handleExport() {
+    setIsExporting(true)
+    try {
+      const allRows = await getAuditLogsExport({
+        search,
+        action,
+        days: Number(days),
+        dateFrom: days === "0" ? dateFrom : undefined,
+        dateTo: days === "0" ? dateTo : undefined,
+      })
+      const XLSX = await import("xlsx")
+      const wsData = [
+        ["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP"],
+        ...allRows.map((r) => [
+          r.actedAt,
+          r.actorName ?? r.actorLabel ?? "시스템",
+          r.action,
+          r.entityType,
+          r.targetLabel || r.entityId,
+          r.menuName ?? "",
+          r.ipAddress ?? "",
+        ]),
+      ]
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet(wsData)
+      XLSX.utils.book_append_sheet(wb, ws, "이용로그")
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+      XLSX.writeFile(wb, `이용로그_${date}.xlsx`)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const startItem = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const endItem = Math.min(page * pageSize, total)
 
   return (
     <div className="space-y-4">
@@ -59,7 +123,7 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            refetch()
+            changeFilter({ search })
           }}
           className="relative"
         >
@@ -77,7 +141,7 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
           onValueChange={(v) => {
             const next = v as AuditAction | "ALL"
             setAction(next)
-            refetch({ action: next })
+            changeFilter({ action: next })
           }}
         >
           <SelectTrigger className="h-9 w-[130px] text-[14px]">
@@ -97,19 +161,74 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
           value={days}
           onValueChange={(v) => {
             setDays(v)
-            refetch({ days: Number(v) || 0 })
+            changeFilter({ days: Number(v), page: 1 })
           }}
         >
-          <SelectTrigger className="h-9 w-[130px] text-[14px]">
+          <SelectTrigger className="h-9 w-[140px] text-[14px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="7">최근 7일</SelectItem>
             <SelectItem value="30">최근 30일</SelectItem>
-            <SelectItem value="90">최근 90일</SelectItem>
-            <SelectItem value="0">전체 기간</SelectItem>
+            <SelectItem value="90">최근 3개월</SelectItem>
+            <SelectItem value="0">직접 기간</SelectItem>
           </SelectContent>
         </Select>
+
+        {days === "0" && (
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-9 w-[140px] text-[14px]"
+            />
+            <span className="text-[13px] text-muted-foreground">~</span>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-9 w-[140px] text-[14px]"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 text-[13px]"
+              onClick={() => changeFilter({ days: 0, dateFrom, dateTo })}
+            >
+              조회
+            </Button>
+          </div>
+        )}
+
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => {
+            const next = Number(v)
+            setPageSize(next)
+            changeFilter({ pageSize: next, page: 1 })
+          }}
+        >
+          <SelectTrigger className="h-9 w-[120px] text-[14px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="20">20개씩 보기</SelectItem>
+            <SelectItem value="50">50개씩 보기</SelectItem>
+            <SelectItem value="100">100개씩 보기</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5 text-[13px]"
+          onClick={handleExport}
+          disabled={isExporting || total === 0}
+        >
+          <Download className="h-4 w-4" />
+          {isExporting ? "다운로드 중…" : "엑셀"}
+        </Button>
 
         {isPending && <span className="text-[13px] text-muted-foreground">불러오는 중…</span>}
       </div>
@@ -174,7 +293,37 @@ export function AuditLogTable({ initialRows }: { initialRows: AuditLogRow[] }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[12px] text-muted-foreground">최근 500건까지 표시됩니다.</p>
+
+      {/* 페이지네이션 */}
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] text-muted-foreground">
+          {total === 0 ? "0건" : `${startItem}–${endItem} / 총 ${total.toLocaleString()}건`}
+          {total >= 10000 && " (최대 10,000건 표시)"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={page <= 1 || isPending}
+            onClick={() => refetch({ page: page - 1 })}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-[13px] min-w-[80px] text-center">
+            {page} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={page >= totalPages || isPending}
+            onClick={() => refetch({ page: page + 1 })}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
