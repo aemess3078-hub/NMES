@@ -7,6 +7,9 @@ import { MES_NAV } from '@/lib/nav-config';
 import { FeatureProvider } from '@/lib/contexts/feature-context'
 import { UserRoleProvider } from '@/lib/contexts/user-role-context';
 import { getEnabledFeatureCodes, getEnabledMenuCodes } from '@/lib/services/feature.service';
+import { cookies } from 'next/headers';
+import { IdleLogoutProvider } from './idle-logout-provider';
+import { NMES_SESSION_COOKIE } from '@/lib/jwt';
 import type { NavItem } from '@/types/menu';
 import type { UserRole } from '@prisma/client';
 
@@ -33,6 +36,10 @@ export default async function AppLayout({
   // ─────────────────────────────────────────────────────────────────────────
 
   if (!user) {
+    const store = await cookies();
+    if (store.get(NMES_SESSION_COOKIE)?.value) {
+      redirect('/api/auth/clear-session?next=/login&reason=session-expired');
+    }
     redirect('/login');
   }
 
@@ -77,6 +84,7 @@ export default async function AppLayout({
   return (
     <FeatureProvider enabledFeatures={enabledFeatures}>
       <UserRoleProvider role={userRole}>
+        <IdleLogoutProvider />
         <div className="flex h-screen overflow-hidden bg-background">
           <Sidebar
             navItems={filteredNav}

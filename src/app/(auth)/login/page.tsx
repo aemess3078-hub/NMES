@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -36,6 +36,16 @@ function getLoginTenantId(): string {
 
 export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("select")
+  const [notice, setNotice] = useState("")
+
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get("reason")
+    if (reason === "idle") {
+      setNotice("30분 동안 활동이 없어 자동 로그아웃되었습니다.")
+    } else if (reason === "session-expired") {
+      setNotice("세션이 만료되었습니다. 다시 로그인해 주세요.")
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
@@ -45,6 +55,12 @@ export default function LoginPage() {
           <CnsLogo size="lg" className="text-slate-900 mb-4" />
           <p className="text-slate-500 text-[15px]">스마트공장 제조실행시스템</p>
         </div>
+
+        {notice && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">
+            {notice}
+          </p>
+        )}
 
         {mode === "select" && <ModeSelectCards onSelect={setMode} />}
         {mode === "system" && <SystemLoginForm onBack={() => setMode("select")} />}

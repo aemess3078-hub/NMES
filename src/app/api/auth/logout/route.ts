@@ -31,6 +31,10 @@ export async function POST(req: NextRequest) {
     path: '/',
     maxAge: 0,
   })
+  res.cookies.set('nmes-mode', '', {
+    path: '/',
+    maxAge: 0,
+  })
 
   return res
 }
