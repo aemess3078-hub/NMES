@@ -2,11 +2,12 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Plus, Download, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { ItemFormSheet } from "./item-form-sheet"
+import { ItemExcelUploadDialog } from "./item-excel-upload-dialog"
 import { deleteItem, type ItemWithDetails, type WarehouseForItemForm } from "@/lib/actions/item.actions"
 import { type ItemFormValues } from "./item-form-schema"
 import { useUserRole } from "@/lib/contexts/user-role-context"
@@ -39,6 +40,7 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
   const [formOpen,     setFormOpen]     = useState(false)
   const [formMode,     setFormMode]     = useState<"create" | "edit">("create")
   const [editingItem,  setEditingItem]  = useState<ItemWithDetails | null>(null)
+  const [uploadOpen,   setUploadOpen]   = useState(false)
 
   const handleEdit = (item: ItemWithDetails) => {
     setEditingItem(item)
@@ -79,20 +81,45 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
 
   return (
     <div className="space-y-4">
-      {canMutate && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() => {
-              setEditingItem(null)
-              setFormMode("create")
-              setFormOpen(true)
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            품목 등록
-          </Button>
-        </div>
-      )}
+      <div className="flex items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 text-[13px] h-9"
+          onClick={async () => {
+            const { default: downloadTemplate } = await import("./item-excel-download")
+            downloadTemplate()
+          }}
+        >
+          <Download className="h-4 w-4" />
+          양식 다운로드
+        </Button>
+        {canMutate && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-[13px] h-9"
+              onClick={() => setUploadOpen(true)}
+            >
+              <Upload className="h-4 w-4" />
+              엑셀 업로드
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 text-[13px] h-9"
+              onClick={() => {
+                setEditingItem(null)
+                setFormMode("create")
+                setFormOpen(true)
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              품목 등록
+            </Button>
+          </>
+        )}
+      </div>
 
       <DataTable
         columns={columns}
@@ -120,6 +147,8 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
           },
         ]}
       />
+
+      <ItemExcelUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
 
       <ItemFormSheet
         open={formOpen}
