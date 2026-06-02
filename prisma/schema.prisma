@@ -504,6 +504,9 @@ model SignupRequest {
   phone         String?
   jobTitle      String?
   passwordHash  String?
+  popPinHash        String?
+  popPinFingerprint String?
+  popPinSetAt       DateTime?
   requestedRole UserRole            @default(OPERATOR)
   status        SignupRequestStatus @default(PENDING)
   createdAt     DateTime            @default(now())
@@ -521,6 +524,7 @@ model SignupRequest {
   @@index([status])
   @@index([email])
   @@index([tenantId, loginId])
+  @@index([tenantId, popPinFingerprint])
 }
 
 model WorkCenter {
@@ -2248,6 +2252,9 @@ model UserCredential {
   loginId      String
   profileId    String    @unique
   passwordHash String
+  popPinHash        String?
+  popPinFingerprint String?
+  popPinSetAt       DateTime?
   mustChangePw Boolean   @default(true)
   isLocked     Boolean   @default(false)
   failCount    Int       @default(0)
@@ -2259,6 +2266,7 @@ model UserCredential {
   profile Profile @relation(fields: [profileId], references: [id])
 
   @@unique([tenantId, loginId])
+  @@unique([tenantId, popPinFingerprint])
   @@index([tenantId])
 }
 
