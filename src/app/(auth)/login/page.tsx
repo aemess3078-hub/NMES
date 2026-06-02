@@ -278,7 +278,7 @@ function WorkerLoginForm({ onBack }: { onBack: () => void }) {
       const result = await popLogin(completedPin, getLoginTenantId())
 
       if (!result) {
-        setError("PIN이 올바르지 않습니다. 다시 시도해 주세요.")
+        setError("등록되지 않았거나 사용할 수 없는 작업자 PIN입니다. 관리자에게 PIN 등록 또는 상태 확인을 요청하세요.")
         setPin("")
         setLoading(false)
         return
@@ -308,8 +308,7 @@ function WorkerLoginForm({ onBack }: { onBack: () => void }) {
           <Factory className="h-5 w-5 text-emerald-500" />
           <h2 className="text-xl font-bold text-slate-800">작업자 PIN 로그인</h2>
         </div>
-        <p className="text-slate-500 text-sm">4자리 PIN을 입력하세요</p>
-        <p className="text-slate-400 text-xs mt-1">데모 PIN: 0000</p>
+        <p className="text-slate-500 text-sm">관리자에게 발급받은 4자리 POP PIN을 입력하세요</p>
       </div>
 
       {loading ? (

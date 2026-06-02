@@ -166,50 +166,7 @@ export async function popLogin(
     return null
   }
 
-  return popLoginFallback(pin, tenantId)
-}
-
-// TODO(Phase 2-D-4): Remove this demo/name fallback after existing operators have real POP PINs.
-// Risk: fallback bypasses persisted popPinHash verification and must not remain for production.
-async function popLoginFallback(
-  pin: string,
-  tenantId: string
-): Promise<PopWorkerSession | null> {
-  // 데모: PIN "0000" → 기본 작업자로 로그인
-  if (pin === "0000") {
-    return {
-      userId: "demo-worker",
-      name: "데모 작업자",
-      role: "OPERATOR",
-      siteId: "site-a",
-      tenantId,
-    }
-  }
-
-  // TenantUser + Profile 조회 후 PIN 매칭 (이름 뒤 4자리 또는 "1234")
-  try {
-    const tenantUsers = await prisma.tenantUser.findMany({
-      where: { tenantId },
-      include: { profile: true },
-    })
-
-    const matched = tenantUsers.find((u) => {
-      const nameLast4 = u.profile?.name?.slice(-4) ?? ""
-      return nameLast4 === pin || pin === "1234"
-    })
-
-    if (!matched) return null
-
-    return {
-      userId: matched.profileId,
-      name: matched.profile?.name ?? "작업자",
-      role: matched.role,
-      siteId: matched.siteId ?? "site-a",
-      tenantId,
-    }
-  } catch {
-    return null
-  }
+  return null
 }
 
 // ─── 2. 오늘의 작업지시 목록 ──────────────────────────────────────────────────
