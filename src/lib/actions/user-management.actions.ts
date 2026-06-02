@@ -4,6 +4,11 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUser, requireRole } from "@/lib/auth"
 import { canAccessFullUserManagement } from "@/lib/developer"
 import { hashPassword } from "@/lib/password"
+import {
+  assertValidPopPin,
+  createPopPinFingerprint,
+  preparePopPinForStorage,
+} from "@/lib/auth/pop-pin"
 import { UserRole, type AuditAction, type LoginEventType, type LoginFailReason, type Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
@@ -689,6 +694,113 @@ export async function resetUserPassword(
             targetUserEmail: tenantUser.profile.email,
             passwordReset: true,
             mustChangePw: true,
+          },
+        },
+      })
+    })
+
+    revalidatePath("/app/mes/users")
+    return { success: true }
+  } catch (e) {
+    return { success: false, error: getErrorMessage(e) }
+  }
+}
+
+// ─── POP PIN 재설정 (test/OWNER 전용) ─────────────────────────────────────────
+
+export async function resetUserPopPin(
+  tenantUserId: string,
+  newPin: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const tenantId = await getTenantId()
+    const actor = await requireFullUserManagementAccess()
+
+    const tenantUser = await prisma.tenantUser.findFirst({
+      where: { id: tenantUserId, tenantId },
+      include: {
+        profile: {
+          include: { userCredential: { select: { id: true, popPinFingerprint: true } } },
+        },
+      },
+    })
+    if (!tenantUser) return { success: false, error: "사용자를 찾을 수 없습니다." }
+    if (isDemoSeedEmail(tenantUser.profile.email)) {
+      return { success: false, error: "Seed/demo 계정은 운영 UI에서 관리할 수 없습니다." }
+    }
+
+    const credential = tenantUser.profile.userCredential
+    if (!credential) return { success: false, error: "계정 인증 정보가 없습니다." }
+
+    try {
+      assertValidPopPin(newPin)
+    } catch {
+      return { success: false, error: "POP PIN은 4자리 숫자여야 합니다." }
+    }
+
+    let popPinForStorage: Awaited<ReturnType<typeof preparePopPinForStorage>>
+    try {
+      popPinForStorage = await preparePopPinForStorage(tenantId, newPin)
+    } catch (e) {
+      if (e instanceof Error && e.message === "POP_PIN_SECRET is required") {
+        return { success: false, error: "POP PIN 설정이 준비되지 않았습니다. 서버 환경을 확인해 주세요." }
+      }
+      return { success: false, error: "PIN 처리 중 오류가 발생했습니다." }
+    }
+
+    if (credential.popPinFingerprint === popPinForStorage.popPinFingerprint) {
+      return { success: false, error: "기존 PIN과 동일한 PIN은 사용할 수 없습니다." }
+    }
+
+    const [dupCredential, dupPending] = await Promise.all([
+      prisma.userCredential.findFirst({
+        where: {
+          tenantId,
+          popPinFingerprint: popPinForStorage.popPinFingerprint,
+          id: { not: credential.id },
+        },
+        select: { id: true },
+      }),
+      prisma.signupRequest.findFirst({
+        where: {
+          tenantId,
+          popPinFingerprint: popPinForStorage.popPinFingerprint,
+          status: "PENDING",
+        },
+        select: { id: true },
+      }),
+    ])
+
+    if (dupCredential || dupPending) {
+      return { success: false, error: "이미 사용 중인 POP PIN입니다. 다른 PIN을 입력해 주세요." }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.userCredential.update({
+        where: { id: credential.id },
+        data: {
+          popPinHash: popPinForStorage.popPinHash,
+          popPinFingerprint: popPinForStorage.popPinFingerprint,
+          popPinSetAt: popPinForStorage.popPinSetAt,
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actor.id,
+          actorLabel: actor.name,
+          entityType: "UserCredential",
+          entityId: credential.id,
+          action: "UPDATE",
+          beforeData: {
+            targetUserName: tenantUser.profile.name,
+            targetUserEmail: tenantUser.profile.email,
+          },
+          afterData: {
+            targetUserName: tenantUser.profile.name,
+            targetUserEmail: tenantUser.profile.email,
+            popPinReset: true,
           },
         },
       })

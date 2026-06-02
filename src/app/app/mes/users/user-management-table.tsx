@@ -3,9 +3,11 @@
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { UserRole } from "@prisma/client"
-import { Shield, UserCheck, UserX, ChevronDown, Trash2, KeyRound } from "lucide-react"
+import { Shield, UserCheck, UserX, ChevronDown, Trash2, KeyRound, Hash } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,11 +17,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   updateUserRole,
   deactivateUser,
   reactivateUser,
   deleteUserPermanently,
   resetUserPassword,
+  resetUserPopPin,
 } from "@/lib/actions/user-management.actions"
 import type { TenantUserRow } from "@/lib/actions/user-management.actions"
 
@@ -57,6 +68,136 @@ const ROLE_COLORS: Record<UserRole, string> = {
   VIEWER:   "bg-slate-50 text-slate-600 border-slate-200",
 }
 
+// ─── PopPinResetDialog ────────────────────────────────────────────────────────
+
+function PopPinResetDialog({
+  target,
+  onClose,
+  onSuccess,
+}: {
+  target: { tenantUserId: string; name: string } | null
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [newPin, setNewPin] = useState("")
+  const [confirmPin, setConfirmPin] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [loading, startTransition] = useTransition()
+
+  const isValid = newPin.length === 4 && confirmPin.length === 4 && newPin === confirmPin
+
+  function handleClose() {
+    setNewPin("")
+    setConfirmPin("")
+    setError(null)
+    onClose()
+  }
+
+  function handlePinInput(
+    value: string,
+    setter: (v: string) => void
+  ) {
+    const digits = value.replace(/\D/g, "").slice(0, 4)
+    setter(digits)
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!target || !isValid) return
+    setError(null)
+    startTransition(async () => {
+      const result = await resetUserPopPin(target.tenantUserId, newPin)
+      if (result.success) {
+        handleClose()
+        onSuccess()
+      } else {
+        setError(result.error ?? "PIN 재설정에 실패했습니다.")
+      }
+    })
+  }
+
+  return (
+    <Dialog open={!!target} onOpenChange={(open) => { if (!open) handleClose() }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <div className="flex items-center gap-2 mb-1">
+            <Hash className="h-5 w-5 text-emerald-500" />
+            <DialogTitle>POP PIN 재설정</DialogTitle>
+          </div>
+          <DialogDescription asChild>
+            <div className="text-[14px] text-slate-600 pt-1">
+              <span className="font-semibold text-slate-800">{target?.name}</span> 계정의 POP PIN을 변경합니다.
+              <br />
+              <span className="text-[13px] text-slate-500">
+                4자리 숫자 POP PIN을 입력하세요. 동일 사업장 내 중복 PIN은 사용할 수 없습니다.
+              </span>
+            </div>
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="pop-pin-new" className="text-[13px] font-medium text-slate-700">
+              새 POP PIN
+            </Label>
+            <Input
+              id="pop-pin-new"
+              type="password"
+              inputMode="numeric"
+              pattern="\d*"
+              maxLength={4}
+              value={newPin}
+              onChange={(e) => handlePinInput(e.target.value, setNewPin)}
+              placeholder="••••"
+              className="h-10 text-center tracking-[0.5em] font-mono"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="pop-pin-confirm" className="text-[13px] font-medium text-slate-700">
+              PIN 확인
+            </Label>
+            <Input
+              id="pop-pin-confirm"
+              type="password"
+              inputMode="numeric"
+              pattern="\d*"
+              maxLength={4}
+              value={confirmPin}
+              onChange={(e) => handlePinInput(e.target.value, setConfirmPin)}
+              placeholder="••••"
+              className="h-10 text-center tracking-[0.5em] font-mono"
+              autoComplete="off"
+            />
+            {confirmPin.length === 4 && newPin !== confirmPin && (
+              <p className="text-[12px] text-red-500">PIN이 일치하지 않습니다.</p>
+            )}
+          </div>
+
+          {error && (
+            <p className="text-[13px] text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={handleClose} disabled={loading}>
+              취소
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={!isValid || loading}
+            >
+              {loading ? "저장 중..." : "저장"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function UserManagementTable({
@@ -72,6 +213,7 @@ export function UserManagementTable({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<UserFilter>("ACTIVE")
+  const [popPinTarget, setPopPinTarget] = useState<{ tenantUserId: string; name: string } | null>(null)
 
   // canResetPassword=false(ADMIN 이하)는 활성 사용자만 고정 표시
   const effectiveFilter = canResetPassword ? filter : "ACTIVE"
@@ -165,6 +307,12 @@ export function UserManagementTable({
 
   return (
     <>
+      <PopPinResetDialog
+        target={popPinTarget}
+        onClose={() => setPopPinTarget(null)}
+        onSuccess={() => router.refresh()}
+      />
+
       {/* 필터 바 — full-access(OWNER/test)만 전체 필터 사용 가능 */}
       {canResetPassword ? (
         <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -316,6 +464,13 @@ export function UserManagementTable({
                             >
                               <KeyRound className="w-3.5 h-3.5 mr-1.5" />
                               비밀번호 초기화
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-[13px] text-emerald-600 focus:text-emerald-600"
+                              onClick={() => setPopPinTarget({ tenantUserId: user.id, name: user.name })}
+                            >
+                              <Hash className="w-3.5 h-3.5 mr-1.5" />
+                              POP PIN 재설정
                             </DropdownMenuItem>
                           </>
                         )}
