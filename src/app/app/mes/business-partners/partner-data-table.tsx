@@ -56,7 +56,7 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="outline" onClick={downloadPartnerTemplate} className="gap-2">
+        <Button variant="outline" onClick={() => downloadPartnerTemplate(fixedType)} className="gap-2">
           <Download className="h-4 w-4" />
           엑셀 양식
         </Button>
@@ -109,7 +109,7 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
         partnerId={editingPartner?.id}
         fixedType={fixedType}
       />
-      <PartnerExcelUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+      <PartnerExcelUploadDialog open={uploadOpen} onOpenChange={setUploadOpen} fixedType={fixedType} />
     </div>
   )
 }

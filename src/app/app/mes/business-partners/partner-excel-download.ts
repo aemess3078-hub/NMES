@@ -1,4 +1,6 @@
-export default async function downloadPartnerTemplate() {
+type PartnerTypeParam = "CUSTOMER" | "SUPPLIER" | "BOTH"
+
+export default async function downloadPartnerTemplate(fixedType?: PartnerTypeParam) {
   const XLSX = await import("xlsx")
 
   const guideRow = [
@@ -19,10 +21,24 @@ export default async function downloadPartnerTemplate() {
     "사용여부 *",
     "비고",
   ]
-  const exampleRows = [
-    ["BP-001", "메디컬 부자재", "거래처", "123-45-67890", "홍길동", "02-1234-5678", "partner@example.com", "서울시 중구", "김담당", "010-1234-5678", "Y", "원부자재 공급"],
-    ["CUS-001", "수출 고객사", "고객사", "", "", "", "", "", "", "", "Y", ""],
-  ]
+
+  const typeLabel = fixedType === "CUSTOMER" ? "고객사" : fixedType === "SUPPLIER" ? "거래처" : undefined
+  const exampleRows =
+    fixedType === "CUSTOMER"
+      ? [
+          ["CUS-001", "수출 고객사", "고객사", "", "", "", "", "", "", "", "Y", ""],
+          ["CUS-002", "국내 고객사", "고객사", "123-45-67890", "홍길동", "02-1234-5678", "", "서울시 중구", "", "", "Y", ""],
+        ]
+      : fixedType === "SUPPLIER"
+      ? [
+          ["BP-001", "메디컬 부자재", "거래처", "123-45-67890", "홍길동", "02-1234-5678", "partner@example.com", "서울시 중구", "김담당", "010-1234-5678", "Y", "원부자재 공급"],
+          ["BP-002", "포장재 공급사", "거래처", "", "", "", "", "", "", "", "Y", ""],
+        ]
+      : [
+          ["BP-001", "메디컬 부자재", "거래처", "123-45-67890", "홍길동", "02-1234-5678", "partner@example.com", "서울시 중구", "김담당", "010-1234-5678", "Y", "원부자재 공급"],
+          ["CUS-001", "수출 고객사", "고객사", "", "", "", "", "", "", "", "Y", ""],
+        ]
+  const fileName = typeLabel ? `${typeLabel}관리_업로드양식.xlsx` : "거래처관리_업로드양식.xlsx"
 
   const ws = XLSX.utils.aoa_to_sheet([guideRow, headerRow, ...exampleRows])
   ws["!cols"] = [
@@ -35,7 +51,7 @@ export default async function downloadPartnerTemplate() {
     ["컬럼", "필수", "설명", "허용값 / 예시"],
     ["거래처코드", "필수", "고유 거래처 코드", "영문, 숫자, 하이픈, 언더스코어 / BP-001"],
     ["거래처명", "필수", "거래처 이름", "최대 200자"],
-    ["거래처구분", "필수", "거래처 유형", "고객사, 거래처, 고객/거래처 또는 CUSTOMER, SUPPLIER, BOTH"],
+    ["거래처구분", "필수", "거래처 유형", typeLabel ? `${typeLabel} 또는 ${fixedType}` : "고객사, 거래처, 고객/거래처 또는 CUSTOMER, SUPPLIER, BOTH"],
     ["사업자등록번호", "선택", "사업자등록번호", "123-45-67890 또는 1234567890"],
     ["대표자명", "선택", "대표자 이름", ""],
     ["전화번호", "선택", "대표 전화번호", ""],
@@ -59,5 +75,5 @@ export default async function downloadPartnerTemplate() {
   XLSX.utils.book_append_sheet(wb, ws, "거래처업로드")
   XLSX.utils.book_append_sheet(wb, wsGuide, "작성가이드")
 
-  XLSX.writeFile(wb, "거래처관리_업로드양식.xlsx")
+  XLSX.writeFile(wb, fileName)
 }

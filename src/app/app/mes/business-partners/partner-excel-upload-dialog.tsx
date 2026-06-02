@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { PartnerType } from "@prisma/client"
 import {
   importValidatedBusinessPartners,
   validateBusinessPartnerExcelRows,
@@ -58,6 +59,7 @@ async function parseExcelFile(file: File): Promise<RawPartnerExcelRow[] | string
 interface PartnerExcelUploadDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  fixedType?: PartnerType
 }
 
 type Step = "select" | "preview" | "done"
@@ -68,7 +70,7 @@ const partnerTypeLabels: Record<string, string> = {
   BOTH: "고객/거래처",
 }
 
-export function PartnerExcelUploadDialog({ open, onOpenChange }: PartnerExcelUploadDialogProps) {
+export function PartnerExcelUploadDialog({ open, onOpenChange, fixedType }: PartnerExcelUploadDialogProps) {
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>("select")
@@ -116,7 +118,7 @@ export function PartnerExcelUploadDialog({ open, onOpenChange }: PartnerExcelUpl
 
   function handleImport() {
     startTransition(async () => {
-      const result = await importValidatedBusinessPartners(validRows)
+      const result = await importValidatedBusinessPartners(validRows, fixedType)
       if (result.success) {
         setImportMsg(`${result.importedCount}개 거래처를 등록했습니다.`)
         setStep("done")
@@ -153,7 +155,7 @@ export function PartnerExcelUploadDialog({ open, onOpenChange }: PartnerExcelUpl
                   <p className="text-[13px] text-muted-foreground">필수 컬럼은 * 표시가 있으며, 오류가 있으면 전체 등록이 차단됩니다.</p>
                 </div>
               </div>
-              <Button variant="outline" size="sm" onClick={downloadPartnerTemplate} className="shrink-0 gap-2">
+              <Button variant="outline" size="sm" onClick={() => downloadPartnerTemplate(fixedType)} className="shrink-0 gap-2">
                 <Download className="h-4 w-4" />
                 양식 다운로드
               </Button>

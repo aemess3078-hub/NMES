@@ -185,7 +185,8 @@ export async function validateBusinessPartnerExcelRows(
 }
 
 export async function importValidatedBusinessPartners(
-  rows: ValidatedPartnerRow[]
+  rows: ValidatedPartnerRow[],
+  fixedType?: PartnerType
 ): Promise<{ success: true; importedCount: number } | { success: false; error: string }> {
   const tenantId = await getTenantId()
   const actor = await requireRole("OPERATOR")
@@ -221,7 +222,7 @@ export async function importValidatedBusinessPartners(
             tenantId,
             code: row.code,
             name: row.name,
-            partnerType: row.partnerType,
+            partnerType: fixedType ?? row.partnerType,
             status: row.status,
           },
         })
