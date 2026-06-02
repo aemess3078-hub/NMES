@@ -77,9 +77,23 @@ function resolvePartnerType(value: string): PartnerType | null {
   return TYPE_LABELS[value] ?? TYPE_LABELS[normalized] ?? null
 }
 
+const TYPE_KO: Record<PartnerType, string> = {
+  CUSTOMER: "고객사",
+  SUPPLIER: "거래처",
+  BOTH: "고객사+거래처",
+}
+
+// BOTH는 양쪽 페이지 모두 허용, 그 외에는 페이지 타입과 일치해야 함
+function isTypeCompatible(partnerType: PartnerType, fixedType?: PartnerType): boolean {
+  if (!fixedType) return true
+  if (partnerType === "BOTH") return true
+  return partnerType === fixedType
+}
+
 function validateRowsSync(
   rawRows: RawPartnerExcelRow[],
-  existingCodes: Set<string>
+  existingCodes: Set<string>,
+  fixedType?: PartnerType
 ): PartnerValidationResult {
   if (rawRows.length > MAX_ROWS) {
     return {
@@ -125,6 +139,12 @@ function validateRowsSync(
       rowErrors.push({ rowNum, column: COL_TYPE, message: "필수값이 누락되었습니다." })
     } else if (!partnerType) {
       rowErrors.push({ rowNum, column: COL_TYPE, message: "고객사, 거래처, 고객/거래처 또는 CUSTOMER, SUPPLIER, BOTH만 입력할 수 있습니다." })
+    } else if (!isTypeCompatible(partnerType, fixedType)) {
+      rowErrors.push({
+        rowNum,
+        column: COL_TYPE,
+        message: `${TYPE_KO[fixedType!]} 관리에서는 "${TYPE_KO[fixedType!]}" 또는 "고객사+거래처"만 등록할 수 있습니다. (입력값: ${TYPE_KO[partnerType]})`,
+      })
     }
 
     const statusRaw = str(row[COL_STATUS]).toUpperCase()
@@ -170,7 +190,8 @@ function validateRowsSync(
 }
 
 export async function validateBusinessPartnerExcelRows(
-  rawRows: RawPartnerExcelRow[]
+  rawRows: RawPartnerExcelRow[],
+  fixedType?: PartnerType
 ): Promise<PartnerValidationResult> {
   const tenantId = await getTenantId()
   await requireRole("OPERATOR")
@@ -181,7 +202,7 @@ export async function validateBusinessPartnerExcelRows(
   })
   const existingCodes = new Set(existingPartners.map((partner) => partner.code.toUpperCase()))
 
-  return validateRowsSync(rawRows, existingCodes)
+  return validateRowsSync(rawRows, existingCodes, fixedType)
 }
 
 export async function importValidatedBusinessPartners(
@@ -212,6 +233,17 @@ export async function importValidatedBusinessPartners(
     return { success: false, error: `이미 등록된 거래처코드가 있습니다: ${existingDuplicateCodes.join(", ")}` }
   }
 
+  // 페이지 타입과 호환되지 않는 행 차단 (BOTH는 양쪽 허용)
+  if (fixedType) {
+    const incompatible = rows.filter((row) => !isTypeCompatible(row.partnerType, fixedType))
+    if (incompatible.length > 0) {
+      return {
+        success: false,
+        error: `${TYPE_KO[fixedType]} 관리에서는 "${TYPE_KO[fixedType]}" 또는 "고객사+거래처"만 등록할 수 있습니다: ${incompatible.map((row) => row.code).join(", ")}`,
+      }
+    }
+  }
+
   const importedCodes: string[] = []
 
   try {
@@ -222,7 +254,7 @@ export async function importValidatedBusinessPartners(
             tenantId,
             code: row.code,
             name: row.name,
-            partnerType: fixedType ?? row.partnerType,
+            partnerType: row.partnerType,
             status: row.status,
           },
         })

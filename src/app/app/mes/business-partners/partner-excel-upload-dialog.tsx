@@ -108,7 +108,7 @@ export function PartnerExcelUploadDialog({ open, onOpenChange, fixedType }: Part
     }
 
     startTransition(async () => {
-      const result = await validateBusinessPartnerExcelRows(parsed)
+      const result = await validateBusinessPartnerExcelRows(parsed, fixedType)
       setValidRows(result.validRows)
       setErrors(result.errors)
       setTotalRows(result.totalRows)
