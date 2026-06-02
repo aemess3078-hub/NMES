@@ -100,7 +100,7 @@ function assertPopSessionSiteMatch(
   }
 }
 
-// ─── 1. PIN 로그인 (데모용 간이 구현) ─────────────────────────────────────────
+// ─── 1. PIN 로그인 ───────────────────────────────────────────────────────────
 
 const QTY_DECIMAL_SCALE = 6
 const ZERO_QTY = BigInt(0)
@@ -167,6 +167,7 @@ export async function popLogin(
       },
       select: {
         isLocked: true,
+        mustChangePw: true,
         popPinHash: true,
         profileId: true,
         profile: {
@@ -188,7 +189,7 @@ export async function popLogin(
     })
 
     if (credential) {
-      if (!credential.popPinHash || credential.isLocked) return null
+      if (!credential.popPinHash || credential.isLocked || credential.mustChangePw) return null
       const tenantUser = credential.profile.tenantUsers[0]
       if (!tenantUser?.isActive) return null
       if (await verifyPopPin(pin, credential.popPinHash)) {
