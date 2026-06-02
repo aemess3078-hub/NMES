@@ -11,6 +11,7 @@ import { maskSensitiveFields } from "@/lib/sanitize"
 import { getErrorMessage } from "@/lib/utils"
 import {
   assertValidPopPin,
+  createPopPinFingerprint,
   preparePopPinForStorage,
 } from "@/lib/auth/pop-pin"
 
@@ -479,6 +480,34 @@ export async function rejectSignupRequest(
   } catch (e) {
     return { success: false, error: getErrorMessage(e) }
   }
+}
+
+export async function checkSignupPopPinAvailability(
+  tenantId: string,
+  pin: string,
+): Promise<{ available: boolean; message: string }> {
+  try {
+    assertValidPopPin(pin)
+  } catch {
+    return { available: false, message: "작업자 POP PIN은 4자리 숫자로 입력해 주세요." }
+  }
+
+  let fingerprint: string
+  try {
+    fingerprint = createPopPinFingerprint(tenantId, pin)
+  } catch (e) {
+    if (e instanceof Error && e.message === "POP_PIN_SECRET is required") {
+      return { available: false, message: "PIN 중복검사를 사용할 수 없습니다. 관리자에게 문의해 주세요." }
+    }
+    return { available: false, message: "PIN 중복검사 중 오류가 발생했습니다." }
+  }
+
+  const duplicate = await findDuplicatePopPin(prisma, tenantId, fingerprint)
+  if (duplicate) {
+    return { available: false, message: "이미 사용 중인 작업자 POP PIN입니다. 다른 PIN을 입력해 주세요." }
+  }
+
+  return { available: true, message: "사용 가능한 PIN입니다." }
 }
 
 export async function getPendingSignupCount(): Promise<number> {

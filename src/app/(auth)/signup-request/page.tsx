@@ -7,7 +7,10 @@ import { CheckCircle, Eye, EyeOff, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { createSignupRequest } from "@/lib/actions/signup-request.actions"
+import {
+  createSignupRequest,
+  checkSignupPopPinAvailability,
+} from "@/lib/actions/signup-request.actions"
 import { validatePassword } from "@/lib/password"
 
 const POP_PIN_RE = /^\d{4}$/
@@ -31,6 +34,9 @@ export default function SignupRequestPage() {
   const [loading, setLoading] = useState(false)
   const [clientError, setClientError] = useState<string | null>(null)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [pinChecked, setPinChecked] = useState(false)
+  const [pinCheckLoading, setPinCheckLoading] = useState(false)
+  const [pinCheckMessage, setPinCheckMessage] = useState<{ available: boolean; text: string } | null>(null)
 
   const tenantId =
     typeof document !== "undefined"
@@ -41,10 +47,11 @@ export default function SignupRequestPage() {
       : "tenant-demo-001"
 
   function updatePinField(field: "popPin" | "confirmPopPin", value: string) {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value.replace(/\D/g, "").slice(0, 4),
-    }))
+    setForm((prev) => ({ ...prev, [field]: value.replace(/\D/g, "").slice(0, 4) }))
+    if (field === "popPin") {
+      setPinChecked(false)
+      setPinCheckMessage(null)
+    }
   }
 
   function validate(): string | null {
@@ -65,12 +72,32 @@ export default function SignupRequestPage() {
     if (form.popPin !== form.confirmPopPin) {
       return "작업자 POP PIN이 일치하지 않습니다."
     }
+    if (!pinChecked) {
+      return "POP PIN 중복확인을 완료해 주세요."
+    }
     if (!form.name.trim()) return "이름을 입력해 주세요."
     if (!form.department.trim()) return "부서를 입력해 주세요."
     if (!form.phone.trim()) return "연락처를 입력해 주세요."
     if (!form.email.trim()) return "이메일을 입력해 주세요."
     if (!form.jobTitle.trim()) return "직급을 입력해 주세요."
     return null
+  }
+
+  const handlePinCheck = async () => {
+    if (!POP_PIN_RE.test(form.popPin)) {
+      setPinCheckMessage({ available: false, text: "POP PIN을 4자리 숫자로 먼저 입력해 주세요." })
+      return
+    }
+    setPinCheckLoading(true)
+    try {
+      const res = await checkSignupPopPinAvailability(tenantId, form.popPin)
+      setPinChecked(res.available)
+      setPinCheckMessage({ available: res.available, text: res.message })
+    } catch {
+      setPinCheckMessage({ available: false, text: "중복검사 중 오류가 발생했습니다." })
+    } finally {
+      setPinCheckLoading(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -247,6 +274,23 @@ export default function SignupRequestPage() {
                     className="h-10 text-center tracking-[0.25em]"
                   />
                 </div>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3 text-[13px] shrink-0"
+                  onClick={handlePinCheck}
+                  disabled={pinCheckLoading || !POP_PIN_RE.test(form.popPin)}
+                >
+                  {pinCheckLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "중복확인"}
+                </Button>
+                {pinCheckMessage && (
+                  <span className={`text-[13px] ${pinCheckMessage.available ? "text-emerald-600" : "text-red-500"}`}>
+                    {pinCheckMessage.text}
+                  </span>
+                )}
               </div>
             </div>
 
