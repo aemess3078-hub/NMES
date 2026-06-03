@@ -152,40 +152,46 @@ export async function popLogin(
   pin: string,
   tenantId: string
 ): Promise<PopWorkerSession | null> {
+  // PIN 형식 검증
+  try { assertValidPopPin(pin) } catch { return null }
+
+  // 서버 env 우선 사용 (클라이언트 쿠키 fallback 무효화)
+  const effectiveTenantId = process.env.DEFAULT_TENANT_ID ?? tenantId
+  const hasDefaultTenantEnv = Boolean(process.env.DEFAULT_TENANT_ID)
+
+  let popPinFingerprint = ""
+  let failureReason = "UNKNOWN"
+
   try {
-    assertValidPopPin(pin)
-  } catch {
+    popPinFingerprint = createPopPinFingerprint(effectiveTenantId, pin)
+  } catch (e) {
+    failureReason = "FINGERPRINT_ERROR"
+    console.info("[POP_LOGIN_DEBUG]", {
+      clientTenantId: tenantId,
+      hasDefaultTenantId: hasDefaultTenantEnv,
+      effectiveTenantId,
+      pinLength: pin.length,
+      failureReason,
+      error: e instanceof Error ? e.message : String(e),
+    })
     return null
   }
 
-  // 클라이언트가 전달하는 tenantId는 쿠키가 없으면 "tenant-demo-001"로 fallback되는
-  // 버그가 있다. 서버 액션은 process.env.DEFAULT_TENANT_ID를 신뢰할 수 있으므로
-  // 이를 우선 사용한다.
-  const effectiveTenantId = process.env.DEFAULT_TENANT_ID ?? tenantId
-
   try {
-    const popPinFingerprint = createPopPinFingerprint(effectiveTenantId, pin)
     const credential = await prisma.userCredential.findFirst({
-      where: {
-        tenantId: effectiveTenantId,
-        popPinFingerprint,
-      },
+      where: { tenantId: effectiveTenantId, popPinFingerprint },
       select: {
         isLocked: true,
         mustChangePw: true,
         popPinHash: true,
         profileId: true,
+        loginId: true,
         profile: {
           select: {
             name: true,
             tenantUsers: {
               where: { tenantId: effectiveTenantId },
-              select: {
-                id: true,
-                role: true,
-                siteId: true,
-                isActive: true,
-              },
+              select: { id: true, role: true, siteId: true, isActive: true },
               take: 1,
             },
           },
@@ -193,36 +199,69 @@ export async function popLogin(
       },
     })
 
-    if (credential) {
-      if (!credential.popPinHash || credential.isLocked || credential.mustChangePw) return null
-      const tenantUser = credential.profile.tenantUsers[0]
-      if (!tenantUser?.isActive) return null
-      if (await verifyPopPin(pin, credential.popPinHash)) {
-        await setPopWorkerSessionCookie({
-          tenantId: effectiveTenantId,
-          profileId: credential.profileId,
-          tenantUserId: tenantUser.id,
-          workerName: credential.profile.name,
-          role: tenantUser.role,
-          siteId: tenantUser.siteId,
-        })
-        return {
-          userId: credential.profileId,
-          tenantUserId: tenantUser.id,
-          name: credential.profile.name,
-          role: tenantUser.role,
-          siteId: tenantUser.siteId ?? "site-a",
-          tenantId: effectiveTenantId,
-        }
-      }
-      return null
+    const tenantUser = credential?.profile?.tenantUsers[0]
+
+    if (!credential) {
+      failureReason = "CREDENTIAL_NOT_FOUND"
+    } else if (!credential.popPinHash) {
+      failureReason = "NO_PIN_HASH"
+    } else if (credential.isLocked) {
+      failureReason = "LOCKED"
+    } else if (credential.mustChangePw) {
+      failureReason = "MUST_CHANGE_PW"
+    } else if (!tenantUser) {
+      failureReason = "NO_TENANT_USER"
+    } else if (!tenantUser.isActive) {
+      failureReason = "INACTIVE"
     }
+
+    // Runtime Log: Vercel에서 정확한 실패 원인 확인용
+    console.info("[POP_LOGIN_DEBUG]", {
+      clientTenantId: tenantId,
+      hasDefaultTenantId: hasDefaultTenantEnv,
+      effectiveTenantId,
+      pinLength: pin.length,
+      fingerprintPrefix: popPinFingerprint.slice(0, 8),
+      foundCredential: Boolean(credential),
+      foundLoginId: credential?.loginId ?? null,
+      hasPopPinHash: Boolean(credential?.popPinHash),
+      isLocked: credential?.isLocked ?? null,
+      mustChangePw: credential?.mustChangePw ?? null,
+      tenantUserFound: Boolean(tenantUser),
+      tenantUserActive: tenantUser?.isActive ?? null,
+      profileName: credential?.profile?.name ?? null,
+      failureReason,
+    })
+
+    if (failureReason !== "UNKNOWN") return null
+
+    if (await verifyPopPin(pin, credential!.popPinHash!)) {
+      await setPopWorkerSessionCookie({
+        tenantId: effectiveTenantId,
+        profileId: credential!.profileId,
+        tenantUserId: tenantUser!.id,
+        workerName: credential!.profile.name,
+        role: tenantUser!.role,
+        siteId: tenantUser!.siteId,
+      })
+      return {
+        userId: credential!.profileId,
+        tenantUserId: tenantUser!.id,
+        name: credential!.profile.name,
+        role: tenantUser!.role,
+        siteId: tenantUser!.siteId ?? "site-a",
+        tenantId: effectiveTenantId,
+      }
+    }
+
+    // bcrypt compare failed
+    console.info("[POP_LOGIN_DEBUG] failureReason=HASH_MISMATCH")
+    return null
+
   } catch (e) {
-    console.error("[popLogin] unexpected error during PIN auth:", e instanceof Error ? e.message : e)
+    console.error("[popLogin] unexpected error:", e instanceof Error ? e.message : e)
     return null
   }
-
-  return null
 }
 
 // ─── 2. 오늘의 작업지시 목록 ──────────────────────────────────────────────────
