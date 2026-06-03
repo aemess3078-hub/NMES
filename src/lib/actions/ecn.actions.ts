@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { ECNStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getCurrentUser, requireRole, type CurrentUser } from "@/lib/auth"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 
 export type ECNDetail = {
   id: string
@@ -93,15 +94,20 @@ export async function getECNs(
   profileId: string,
   isAdmin: boolean,
 ): Promise<ECNWithDetails[]> {
-  const results = await prisma.engineeringChange.findMany({
-    where: {
-      tenantId,
-      ...(isAdmin ? {} : { requestedBy: profileId }),
-    },
-    include: ECN_INCLUDE,
-    orderBy: { createdAt: "desc" },
-  })
-  return results as any
+  try {
+    const results = await prisma.engineeringChange.findMany({
+      where: {
+        tenantId,
+        ...(isAdmin ? {} : { requestedBy: profileId }),
+      },
+      include: ECN_INCLUDE,
+      orderBy: { createdAt: "desc" },
+    })
+    return results as any
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
 }
 
 export async function getECNById(id: string): Promise<ECNWithDetails | null> {
@@ -113,11 +119,16 @@ export async function getECNById(id: string): Promise<ECNWithDetails | null> {
 }
 
 export async function getItemsForECN(tenantId: string) {
-  return prisma.item.findMany({
-    where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] }, status: "ACTIVE" },
-    select: { id: true, code: true, name: true, itemType: true },
-    orderBy: { name: "asc" },
-  })
+  try {
+    return await prisma.item.findMany({
+      where: { tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] }, status: "ACTIVE" },
+      select: { id: true, code: true, name: true, itemType: true },
+      orderBy: { name: "asc" },
+    })
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
 }
 
 export async function getCurrentBOM(itemId: string) {

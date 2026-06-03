@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { isDeveloperUser } from "@/lib/developer"
@@ -8,11 +7,12 @@ import { getSupportRequests } from "@/lib/actions/support-request.actions"
 import { SupportRequestsClient } from "./support-requests-client"
 
 export default async function SupportRequestsPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-
   const user = await getCurrentUser()
   if (!user) redirect("/login")
+
+  // tenantId는 인증된 사용자(JWT) 기준 사용.
+  // 평문 "tenantId" 쿠키 fallback은 tenant-demo-001로 잘못 조회되는 버그가 있었음.
+  const tenantId = user.tenantId
 
   // 관리자: ADMIN 이상 역할 또는 개발자 계정
   const isAdmin =

@@ -139,13 +139,11 @@ export async function getPermissionMatrix(tenantId: string): Promise<PermissionM
 // 업무 더미 데이터 없이 권한 정의만 초기화한다.
 export async function ensurePermissionMatrix(tenantId: string): Promise<PermissionMatrix> {
   try {
-    const count = await prisma.rolePermission.count({ where: { tenantId } })
-
-    if (count === 0) {
-      const rows = buildDefaultPermissionRows(tenantId)
-      // createMany 실패(예: tenant FK 위반)해도 페이지가 깨지지 않도록 방어.
-      await prisma.rolePermission.createMany({ data: rows, skipDuplicates: true })
-    }
+    // skipDuplicates=true로 항상 실행 → 누락 role 행만 추가, 기존 행 유지.
+    // count 게이트 없이 실행해야 OWNER/ADMIN만 있고 MANAGER/OPERATOR/VIEWER가
+    // 없는 부분 삽입 상태를 자동으로 보정할 수 있다.
+    const rows = buildDefaultPermissionRows(tenantId)
+    await prisma.rolePermission.createMany({ data: rows, skipDuplicates: true })
   } catch (e) {
     // 자동 초기화 실패는 치명적이지 않다. 기존 데이터만이라도 표시한다.
     console.error("[ensurePermissionMatrix] 자동 초기화 실패:", e)

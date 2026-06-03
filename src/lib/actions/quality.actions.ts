@@ -327,7 +327,7 @@ export async function createInspectionSpec(
   })
   if (existing) throw new Error("The same item/process/version inspection spec already exists.")
 
-  await prisma.inspectionSpec.create({
+  const created = await prisma.inspectionSpec.create({
     data: {
       tenantId,
       itemId: data.itemId,
@@ -339,6 +339,7 @@ export async function createInspectionSpec(
 
   revalidatePath("/app/mes/measurement")
   revalidatePath("/app/mes/master/inspection-standards")
+  return { id: created.id }
 }
 
 export async function updateInspectionSpec(id: string, data: UpdateInspectionSpecInput) {

@@ -179,6 +179,14 @@ export function InspectionSpecFormSheet({
       }
     }
 
+    const mappedItems = itemRows.map((row) => ({
+      seq: Number(row.seq),
+      name: row.name.trim(),
+      inputType: row.inputType as "NUMERIC" | "TEXT" | "BOOLEAN" | "SELECT",
+      lowerLimit: row.lowerLimit !== "" ? parseFloat(row.lowerLimit) : null,
+      upperLimit: row.upperLimit !== "" ? parseFloat(row.upperLimit) : null,
+    }))
+
     setIsLoading(true)
     try {
       if (isEdit) {
@@ -186,24 +194,9 @@ export function InspectionSpecFormSheet({
           version: values.version,
           status: values.status,
         })
-        await upsertInspectionItems(
-          editingSpec!.id,
-          itemRows.map((row) => ({
-            seq: Number(row.seq),
-            name: row.name.trim(),
-            inputType: row.inputType as
-              | "NUMERIC"
-              | "TEXT"
-              | "BOOLEAN"
-              | "SELECT",
-            lowerLimit:
-              row.lowerLimit !== "" ? parseFloat(row.lowerLimit) : null,
-            upperLimit:
-              row.upperLimit !== "" ? parseFloat(row.upperLimit) : null,
-          }))
-        )
+        await upsertInspectionItems(editingSpec!.id, mappedItems)
       } else {
-        await createInspectionSpec(
+        const created = await createInspectionSpec(
           {
             itemId: values.itemId,
             routingOperationId: values.routingOperationId,
@@ -212,6 +205,10 @@ export function InspectionSpecFormSheet({
           },
           tenantId
         )
+        // 등록과 동시에 검사항목 저장
+        if (itemRows.length > 0 && created?.id) {
+          await upsertInspectionItems(created.id, mappedItems)
+        }
       }
       onOpenChange(false)
       router.refresh()
@@ -225,9 +222,7 @@ export function InspectionSpecFormSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        className={`${
-          isEdit ? "sm:max-w-3xl" : "sm:max-w-lg"
-        } overflow-y-auto flex flex-col`}
+        className="sm:max-w-3xl overflow-y-auto flex flex-col"
       >
         <SheetHeader>
           <SheetTitle>
@@ -236,7 +231,7 @@ export function InspectionSpecFormSheet({
           <SheetDescription>
             {isEdit
               ? "검사표준 정보를 수정하고 검사항목을 관리합니다."
-              : "품목·공정별 검사표준을 등록합니다. 검사항목은 등록 후 수정에서 추가할 수 있습니다."}
+              : "품목·공정별 검사표준을 등록합니다. 검사항목을 함께 추가할 수 있습니다."}
           </SheetDescription>
         </SheetHeader>
 
@@ -284,146 +279,146 @@ export function InspectionSpecFormSheet({
               />
             </div>
 
-            {/* 검사항목 섹션 — 수정 모드에서만 표시 */}
-            {isEdit && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <div>
-                    <h3 className="text-[15px] font-semibold">검사항목</h3>
-                    <p className="text-[12px] text-muted-foreground mt-0.5">
-                      저장 시 기존 항목 전체가 교체됩니다.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addItemRow}
-                    className="h-8 text-[13px]"
-                  >
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    항목 추가
-                  </Button>
+            {/* 검사항목 섹션 — 등록/수정 모드 모두 표시 */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div>
+                  <h3 className="text-[15px] font-semibold">검사항목</h3>
+                  <p className="text-[12px] text-muted-foreground mt-0.5">
+                    {isEdit
+                      ? "저장 시 기존 항목 전체가 교체됩니다."
+                      : "검사항목을 미리 추가한 후 등록할 수 있습니다."}
+                  </p>
                 </div>
-
-                {itemRows.length === 0 ? (
-                  <div className="flex items-center justify-center py-8 border rounded-lg text-[14px] text-muted-foreground">
-                    등록된 검사항목이 없습니다.
-                  </div>
-                ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="w-16 text-[13px]">순서</TableHead>
-                          <TableHead className="text-[13px]">항목명</TableHead>
-                          <TableHead className="w-28 text-[13px]">입력유형</TableHead>
-                          <TableHead className="w-24 text-[13px]">하한값</TableHead>
-                          <TableHead className="w-24 text-[13px]">상한값</TableHead>
-                          <TableHead className="w-10" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {itemRows.map((row, index) => (
-                          <TableRow key={index}>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                className="h-7 text-[13px] w-14 text-center"
-                                value={row.seq}
-                                onChange={(e) =>
-                                  updateItemRow(
-                                    index,
-                                    "seq",
-                                    parseInt(e.target.value) || 0
-                                  )
-                                }
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                className="h-7 text-[13px]"
-                                placeholder="항목명"
-                                value={row.name}
-                                onChange={(e) =>
-                                  updateItemRow(index, "name", e.target.value)
-                                }
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Select
-                                value={row.inputType}
-                                onValueChange={(v) =>
-                                  updateItemRow(index, "inputType", v)
-                                }
-                              >
-                                <SelectTrigger className="h-7 text-[13px]">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {INPUT_TYPE_OPTIONS.map((o) => (
-                                    <SelectItem
-                                      key={o.value}
-                                      value={o.value}
-                                      className="text-[13px]"
-                                    >
-                                      {o.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                className="h-7 text-[13px]"
-                                placeholder="—"
-                                value={row.lowerLimit}
-                                onChange={(e) =>
-                                  updateItemRow(
-                                    index,
-                                    "lowerLimit",
-                                    e.target.value
-                                  )
-                                }
-                                disabled={row.inputType !== "NUMERIC"}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                className="h-7 text-[13px]"
-                                placeholder="—"
-                                value={row.upperLimit}
-                                onChange={(e) =>
-                                  updateItemRow(
-                                    index,
-                                    "upperLimit",
-                                    e.target.value
-                                  )
-                                }
-                                disabled={row.inputType !== "NUMERIC"}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive"
-                                onClick={() => removeItemRow(index)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addItemRow}
+                  className="h-8 text-[13px]"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  항목 추가
+                </Button>
               </div>
-            )}
+
+              {itemRows.length === 0 ? (
+                <div className="flex items-center justify-center py-8 border rounded-lg text-[14px] text-muted-foreground">
+                  검사항목이 없습니다. 항목 추가 버튼으로 추가하세요.
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="w-16 text-[13px]">순서</TableHead>
+                        <TableHead className="text-[13px]">항목명</TableHead>
+                        <TableHead className="w-28 text-[13px]">입력유형</TableHead>
+                        <TableHead className="w-24 text-[13px]">하한값</TableHead>
+                        <TableHead className="w-24 text-[13px]">상한값</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemRows.map((row, index) => (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="h-7 text-[13px] w-14 text-center"
+                              value={row.seq}
+                              onChange={(e) =>
+                                updateItemRow(
+                                  index,
+                                  "seq",
+                                  parseInt(e.target.value) || 0
+                                )
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-7 text-[13px]"
+                              placeholder="항목명"
+                              value={row.name}
+                              onChange={(e) =>
+                                updateItemRow(index, "name", e.target.value)
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={row.inputType}
+                              onValueChange={(v) =>
+                                updateItemRow(index, "inputType", v)
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-[13px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {INPUT_TYPE_OPTIONS.map((o) => (
+                                  <SelectItem
+                                    key={o.value}
+                                    value={o.value}
+                                    className="text-[13px]"
+                                  >
+                                    {o.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="h-7 text-[13px]"
+                              placeholder="—"
+                              value={row.lowerLimit}
+                              onChange={(e) =>
+                                updateItemRow(
+                                  index,
+                                  "lowerLimit",
+                                  e.target.value
+                                )
+                              }
+                              disabled={row.inputType !== "NUMERIC"}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="h-7 text-[13px]"
+                              placeholder="—"
+                              value={row.upperLimit}
+                              onChange={(e) =>
+                                updateItemRow(
+                                  index,
+                                  "upperLimit",
+                                  e.target.value
+                                )
+                              }
+                              disabled={row.inputType !== "NUMERIC"}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={() => removeItemRow(index)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
           </div>
         </Form>
 
