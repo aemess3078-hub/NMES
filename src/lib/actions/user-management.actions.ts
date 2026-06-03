@@ -107,8 +107,10 @@ export async function updateUserRole(
     if (tenantUser.profileId === actor.id && actor.role !== "OWNER") {
       return { success: false, error: "본인의 역할은 변경할 수 없습니다." }
     }
-    if (newRole === "OWNER" && actor.role !== "OWNER") {
-      return { success: false, error: "OWNER 역할 부여는 OWNER만 가능합니다." }
+    // OWNER 부여 가능: 현재 OWNER 또는 내부 유지보수 계정(loginId='test').
+    // 일반 ADMIN/MANAGER/OPERATOR/VIEWER는 OWNER 부여 불가.
+    if (newRole === "OWNER" && !canAccessFullUserManagement(actor)) {
+      return { success: false, error: "OWNER 역할 부여는 OWNER 또는 유지보수 계정만 가능합니다." }
     }
     if (tenantUser.role === "OWNER") {
       const ownerCount = await prisma.tenantUser.count({
