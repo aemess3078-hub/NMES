@@ -11,8 +11,7 @@ import { UserManagementTable } from "./user-management-table"
 import { SignupRequestsTable } from "./signup-requests-table"
 import { LoginHistoryTable } from "./login-history-table"
 import { AuditLogTable } from "./audit-log-table"
-import { cookies } from "next/headers"
-import { getCurrentUser, requireRole } from "@/lib/auth"
+import { requireRole } from "@/lib/auth"
 import { canAccessFullUserManagement } from "@/lib/developer"
 
 export default async function UsersPage() {
@@ -20,8 +19,10 @@ export default async function UsersPage() {
   const currentUser = await requireRole("VIEWER")
   const fullAccess = canAccessFullUserManagement(currentUser)
 
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  // tenantId는 인증된 사용자(JWT 세션) 기준으로 사용한다.
+  // 평문 "tenantId" 쿠키는 존재하지 않아 tenant-demo-001로 잘못 fallback되어
+  // 운영 테넌트(cns-medical) 권한 데이터를 못 찾는 버그가 있었다.
+  const tenantId = currentUser.tenantId
 
   // 사용자 목록은 VIEWER 이상 공통 조회
   const usersResult = await getTenantUsers().then(

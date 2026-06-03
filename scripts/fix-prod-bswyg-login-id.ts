@@ -14,9 +14,26 @@
  *   - 실행 후 bswyg 계정으로 로그인 테스트 필수.
  */
 
+import { readFileSync } from "fs"
+import { join } from "path"
 import { PrismaClient } from "@prisma/client"
 
-const prisma = new PrismaClient()
+// 운영 DATABASE_URL 우선순위: process.env > .env.deploy
+function resolveDbUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL
+  try {
+    const raw = readFileSync(join(process.cwd(), ".env.deploy"), "utf8")
+    for (const line of raw.split(/\r?\n/)) {
+      const m = line.match(/^DATABASE_URL=(.*)$/)
+      if (m) return m[1].trim()
+    }
+  } catch {
+    /* .env.deploy 없음 → 아래에서 에러 처리 */
+  }
+  throw new Error("DATABASE_URL을 찾을 수 없습니다 (process.env 또는 .env.deploy 필요).")
+}
+
+const prisma = new PrismaClient({ datasources: { db: { url: resolveDbUrl() } } })
 
 const OLD_LOGIN_ID = "bswyg@cnsmed.co.kr"
 const NEW_LOGIN_ID = "bswyg"

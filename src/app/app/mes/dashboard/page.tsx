@@ -1,6 +1,7 @@
 import { getProductionKPIs } from "@/lib/actions/equipment-monitor.actions"
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Activity,
@@ -28,28 +29,46 @@ async function getExtendedKPIs() {
   const _t1 = Date.now()
   console.log(`[PERF] dashboard.getTenantId ${_t1 - _t0}ms`)
   // ─────────────────────────────────────────────────────────────────────────
+  // 운영 DB에 일부 테이블이 아직 없거나(P2021) 컬럼 드리프트(P2022)가 있어도
+  // 첫 화면이 죽지 않도록 개별 쿼리를 방어한다. 누락 시 빈/0 값으로 표시한다.
+  type OpenRepair = { id: string; title: string; equipment: { name: string }; priority: string }
+  async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await fn()
+    } catch (error) {
+      if (isMissingDbObjectError(error)) return fallback
+      throw error
+    }
+  }
+
   const [kpis, inspectionsToday, openRepairs, defectRate30d] = await Promise.all([
     getProductionKPIs(),
-    prisma.qualityInspection.count({
-      where: { workOrderOperation: { workOrder: { tenantId } }, inspectedAt: { gte: today } },
-    }),
-    prisma.equipmentRepairRequest.findMany({
-      where: { tenantId, status: { in: ["OPEN", "IN_PROGRESS"] }, priority: { in: ["HIGH", "CRITICAL"] } },
-      select: { id: true, title: true, equipment: { select: { name: true } }, priority: true },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    }),
+    safe(
+      () => prisma.qualityInspection.count({
+        where: { workOrderOperation: { workOrder: { tenantId } }, inspectedAt: { gte: today } },
+      }),
+      0,
+    ),
+    safe<OpenRepair[]>(
+      () => prisma.equipmentRepairRequest.findMany({
+        where: { tenantId, status: { in: ["OPEN", "IN_PROGRESS"] }, priority: { in: ["HIGH", "CRITICAL"] } },
+        select: { id: true, title: true, equipment: { select: { name: true } }, priority: true },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+      [],
+    ),
     (async () => {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
       const [good, defect] = await Promise.all([
-        prisma.productionResult.aggregate({
+        safe(() => prisma.productionResult.aggregate({
           where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
           _sum: { goodQty: true },
-        }),
-        prisma.productionResult.aggregate({
+        }), { _sum: { goodQty: null } }),
+        safe(() => prisma.productionResult.aggregate({
           where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
           _sum: { defectQty: true },
-        }),
+        }), { _sum: { defectQty: null } }),
       ])
       const g = Number(good._sum?.goodQty ?? 0)
       const d = Number(defect._sum?.defectQty ?? 0)
@@ -68,7 +87,27 @@ export default async function DashboardPage() {
   // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
   const _pt0 = Date.now()
   // ─────────────────────────────────────────────────────────────────────────
-  const { kpis, inspectionsToday, openRepairs, defectRate30d } = await getExtendedKPIs()
+  // 첫 진입 화면은 어떤 경우에도 오류 화면으로 떨어지지 않도록 최종 방어한다.
+  const DEFAULT_KPIS = {
+    kpis: {
+      activeWorkOrders: 0,
+      todayGoodQty: 0,
+      todayDefectQty: 0,
+      defectRate: "0.0",
+      openRepairs: 0,
+      failedChecks: 0,
+      equipmentAvailability: "0.0",
+    },
+    inspectionsToday: 0,
+    openRepairs: [] as Awaited<ReturnType<typeof getExtendedKPIs>>["openRepairs"],
+    defectRate30d: "0.00",
+  }
+  const { kpis, inspectionsToday, openRepairs, defectRate30d } = await getExtendedKPIs().catch(
+    (e) => {
+      console.error("[dashboard] KPI 조회 실패 — 기본값으로 렌더:", e)
+      return DEFAULT_KPIS
+    },
+  )
   // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   console.log(`[PERF] dashboard.page.total ${Date.now() - _pt0}ms`)
   // ─────────────────────────────────────────────────────────────────────────
