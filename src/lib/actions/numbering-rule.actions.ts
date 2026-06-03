@@ -3,13 +3,20 @@
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import type { Token, ContextKey } from "@/lib/types/numbering-rule"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 
 // ─── 규칙 조회 ────────────────────────────────────────────────────────────────
 
 export async function getNumberingRules(tenantId: string) {
-  const rules = await prisma.numberingRule.findMany({
-    where: { tenantId },
-  })
+  let rules: any[]
+  try {
+    rules = await prisma.numberingRule.findMany({
+      where: { tenantId },
+    })
+  } catch (error) {
+    if (!isMissingDbObjectError(error)) throw error
+    rules = []
+  }
   return {
     LOT: rules.find((r) => r.type === "LOT") ?? null,
     SERIAL: rules.find((r) => r.type === "SERIAL") ?? null,
@@ -47,9 +54,15 @@ export async function getRuleContextTokens(
   tenantId: string,
   type: "LOT" | "SERIAL"
 ): Promise<Array<{ key: ContextKey; fallback?: string; codeGroupCode?: string }>> {
-  const rule = await prisma.numberingRule.findUnique({
-    where: { tenantId_type: { tenantId, type } },
-  })
+  let rule
+  try {
+    rule = await prisma.numberingRule.findUnique({
+      where: { tenantId_type: { tenantId, type } },
+    })
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
   if (!rule) return []
   const tokens = rule.tokens as Token[]
   return tokens
@@ -63,9 +76,15 @@ export async function getContextCodeOptions(
   tenantId: string,
   type: "LOT" | "SERIAL"
 ): Promise<Record<string, { code: string; name: string }[]>> {
-  const rule = await prisma.numberingRule.findUnique({
-    where: { tenantId_type: { tenantId, type } },
-  })
+  let rule
+  try {
+    rule = await prisma.numberingRule.findUnique({
+      where: { tenantId_type: { tenantId, type } },
+    })
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return {}
+    throw error
+  }
   if (!rule) return {}
 
   const tokens = rule.tokens as Token[]
@@ -128,9 +147,15 @@ export async function generateNumber(
   type: "LOT" | "SERIAL",
   context?: Partial<Record<ContextKey, string>>
 ): Promise<string> {
-  const rule = await prisma.numberingRule.findUnique({
-    where: { tenantId_type: { tenantId, type } },
-  })
+  let rule
+  try {
+    rule = await prisma.numberingRule.findUnique({
+      where: { tenantId_type: { tenantId, type } },
+    })
+  } catch (error) {
+    if (!isMissingDbObjectError(error)) throw error
+    rule = null
+  }
 
   if (!rule || !rule.isActive) {
     // 규칙 없을 때 기본 생성

@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUserId } from "@/lib/auth"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { InspectionStage, InspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -47,6 +48,9 @@ export async function getInspectionsByStage(stage?: InspectionStage): Promise<In
       inspector: { select: { id: true, name: true } },
     },
     orderBy: { inspectedAt: "desc" },
+  }).catch((error) => {
+    if (isMissingDbObjectError(error)) return []
+    throw error
   })
   return rows.map((r) => ({
     ...r,
@@ -193,7 +197,7 @@ export async function getInspectionStageSummary() {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  const [first, mid, final, passCount, failCount] = await Promise.all([
+  const counts = await Promise.all([
     prisma.qualityInspection.count({
       where: { workOrderOperation: { workOrder: { tenantId } }, stage: "FIRST", inspectedAt: { gte: today } },
     }),
@@ -209,7 +213,11 @@ export async function getInspectionStageSummary() {
     prisma.qualityInspection.count({
       where: { workOrderOperation: { workOrder: { tenantId } }, result: "FAIL", inspectedAt: { gte: today } },
     }),
-  ])
+  ]).catch((error) => {
+    if (isMissingDbObjectError(error)) return [0, 0, 0, 0, 0]
+    throw error
+  })
 
+  const [first, mid, final, passCount, failCount] = counts
   return { first, mid, final, passCount, failCount }
 }

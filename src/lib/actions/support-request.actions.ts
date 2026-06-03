@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import type { SupportType, SupportStatus, SupportPriority } from "@prisma/client"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,29 +101,39 @@ export async function getSupportRequests(
   currentProfileId: string,
   isAdmin: boolean,
 ): Promise<SupportRequestItem[]> {
-  const rows = await prisma.supportRequest.findMany({
-    where: {
-      tenantId,
-      ...(isAdmin ? {} : { authorId: currentProfileId }),
-    },
-    include: {
-      author: { select: { name: true, email: true } },
-      handledBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  })
-  return rows.map(toItem)
+  try {
+    const rows = await prisma.supportRequest.findMany({
+      where: {
+        tenantId,
+        ...(isAdmin ? {} : { authorId: currentProfileId }),
+      },
+      include: {
+        author: { select: { name: true, email: true } },
+        handledBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+    return rows.map(toItem)
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
 }
 
 export async function getSupportRequestById(id: string): Promise<SupportRequestItem | null> {
-  const row = await prisma.supportRequest.findUnique({
-    where: { id },
-    include: {
-      author: { select: { name: true, email: true } },
-      handledBy: { select: { name: true } },
-    },
-  })
-  return row ? toItem(row) : null
+  try {
+    const row = await prisma.supportRequest.findUnique({
+      where: { id },
+      include: {
+        author: { select: { name: true, email: true } },
+        handledBy: { select: { name: true } },
+      },
+    })
+    return row ? toItem(row) : null
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return null
+    throw error
+  }
 }
 
 // ─── 등록 ──────────────────────────────────────────────────────────────────────

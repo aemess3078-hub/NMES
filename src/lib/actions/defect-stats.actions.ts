@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import {
   InspectionStage,
   InspectionResult,
@@ -105,6 +106,25 @@ export type DefectStatsFilterOptions = {
 
 const ROW_LIMIT = 500
 
+function emptyDefectStats(): DefectStatsResult {
+  return {
+    summary: {
+      inspectionCount: 0,
+      inspectedQty: 0,
+      passQty: 0,
+      failQty: 0,
+      defectQty: 0,
+      defectRate: 0,
+    },
+    daily: [],
+    byType: [],
+    byItem: [],
+    byOperation: [],
+    rows: [],
+    truncated: false,
+  }
+}
+
 function toDateOnly(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
@@ -175,7 +195,12 @@ export async function getDefectStats(
     },
     orderBy: { inspectedAt: "desc" },
     take: ROW_LIMIT + 1, // truncated 여부 판단용
+  }).catch((error) => {
+    if (isMissingDbObjectError(error)) return null
+    throw error
   })
+
+  if (!inspections) return emptyDefectStats()
 
   const truncated = inspections.length > ROW_LIMIT
   const sliced = truncated ? inspections.slice(0, ROW_LIMIT) : inspections

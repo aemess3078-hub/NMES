@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUserId } from "@/lib/auth"
+import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { RepairRequestStatus, RepairPriority, CheckResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 
@@ -64,11 +65,16 @@ export type DailyCheckRow = {
 
 export async function getProblemTypes(): Promise<ProblemTypeRow[]> {
   const tenantId = await getTenantId()
-  return prisma.equipmentProblemType.findMany({
-    where: { tenantId },
-    include: { _count: { select: { repairRequests: true } } },
-    orderBy: { code: "asc" },
-  }) as any
+  try {
+    return (await prisma.equipmentProblemType.findMany({
+      where: { tenantId },
+      include: { _count: { select: { repairRequests: true } } },
+      orderBy: { code: "asc" },
+    })) as any
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
 }
 
 export async function createProblemType(data: {
@@ -110,17 +116,22 @@ export async function getRepairRequests(filters?: {
   priority?: RepairPriority
 }): Promise<RepairRequestRow[]> {
   const tenantId = await getTenantId()
-  return prisma.equipmentRepairRequest.findMany({
-    where: { tenantId, ...filters },
-    include: {
-      equipment: { select: { id: true, code: true, name: true } },
-      problemType: { select: { id: true, name: true } },
-      requester: { select: { id: true, name: true } },
-      assignee: { select: { id: true, name: true } },
-      site: { select: { id: true, name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  }) as any
+  try {
+    return (await prisma.equipmentRepairRequest.findMany({
+      where: { tenantId, ...filters },
+      include: {
+        equipment: { select: { id: true, code: true, name: true } },
+        problemType: { select: { id: true, name: true } },
+        requester: { select: { id: true, name: true } },
+        assignee: { select: { id: true, name: true } },
+        site: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    })) as any
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
 }
 
 export async function createRepairRequest(data: {
@@ -211,20 +222,25 @@ export async function getDailyChecks(filters?: {
   to?: Date
 }): Promise<DailyCheckRow[]> {
   const tenantId = await getTenantId()
-  return prisma.equipmentDailyCheck.findMany({
-    where: {
-      tenantId,
-      ...(filters?.equipmentId && { equipmentId: filters.equipmentId }),
-      ...(filters?.from && { checkDate: { gte: filters.from } }),
-      ...(filters?.to && { checkDate: { lte: filters.to } }),
-    },
-    include: {
-      equipment: { select: { id: true, code: true, name: true } },
-      checker: { select: { id: true, name: true } },
-      site: { select: { id: true, name: true } },
-    },
-    orderBy: { checkDate: "desc" },
-  }) as any
+  try {
+    return (await prisma.equipmentDailyCheck.findMany({
+      where: {
+        tenantId,
+        ...(filters?.equipmentId && { equipmentId: filters.equipmentId }),
+        ...(filters?.from && { checkDate: { gte: filters.from } }),
+        ...(filters?.to && { checkDate: { lte: filters.to } }),
+      },
+      include: {
+        equipment: { select: { id: true, code: true, name: true } },
+        checker: { select: { id: true, name: true } },
+        site: { select: { id: true, name: true } },
+      },
+      orderBy: { checkDate: "desc" },
+    })) as any
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
 }
 
 export async function createDailyCheck(data: {
@@ -325,24 +341,30 @@ export async function getDailyCheckStatusData(filter: {
   const from = new Date(filter.from)
   const to = new Date(filter.to)
 
-  const checks = await prisma.equipmentDailyCheck.findMany({
-    where: {
-      tenantId,
-      checkDate: { gte: from, lte: to },
-      ...(filter.equipmentId ? { equipmentId: filter.equipmentId } : {}),
-      ...(filter.result ? { result: filter.result } : {}),
-    },
-    select: {
-      id: true,
-      checkDate: true,
-      result: true,
-      note: true,
-      equipment: { select: { code: true, name: true } },
-      site: { select: { name: true } },
-      checker: { select: { name: true } },
-    },
-    orderBy: { checkDate: "desc" },
-  })
+  let checks: any[]
+  try {
+    checks = await prisma.equipmentDailyCheck.findMany({
+      where: {
+        tenantId,
+        checkDate: { gte: from, lte: to },
+        ...(filter.equipmentId ? { equipmentId: filter.equipmentId } : {}),
+        ...(filter.result ? { result: filter.result } : {}),
+      },
+      select: {
+        id: true,
+        checkDate: true,
+        result: true,
+        note: true,
+        equipment: { select: { code: true, name: true } },
+        site: { select: { name: true } },
+        checker: { select: { name: true } },
+      },
+      orderBy: { checkDate: "desc" },
+    })
+  } catch (error) {
+    if (!isMissingDbObjectError(error)) throw error
+    checks = []
+  }
 
   const rows: DailyCheckStatusRow[] = checks.map((c) => {
     const d = c.checkDate
@@ -374,11 +396,16 @@ export async function getDailyCheckStatusData(filter: {
 
 export async function getRepairStats() {
   const tenantId = await getTenantId()
-  const [open, inProgress, completed, critical] = await Promise.all([
-    prisma.equipmentRepairRequest.count({ where: { tenantId, status: "OPEN" } }),
-    prisma.equipmentRepairRequest.count({ where: { tenantId, status: "IN_PROGRESS" } }),
-    prisma.equipmentRepairRequest.count({ where: { tenantId, status: "COMPLETED" } }),
-    prisma.equipmentRepairRequest.count({ where: { tenantId, priority: "CRITICAL", status: { not: "COMPLETED" } } }),
-  ])
-  return { open, inProgress, completed, critical }
+  try {
+    const [open, inProgress, completed, critical] = await Promise.all([
+      prisma.equipmentRepairRequest.count({ where: { tenantId, status: "OPEN" } }),
+      prisma.equipmentRepairRequest.count({ where: { tenantId, status: "IN_PROGRESS" } }),
+      prisma.equipmentRepairRequest.count({ where: { tenantId, status: "COMPLETED" } }),
+      prisma.equipmentRepairRequest.count({ where: { tenantId, priority: "CRITICAL", status: { not: "COMPLETED" } } }),
+    ])
+    return { open, inProgress, completed, critical }
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return { open: 0, inProgress: 0, completed: 0, critical: 0 }
+    throw error
+  }
 }
