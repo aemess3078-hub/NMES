@@ -36,7 +36,16 @@ export async function POST(req: NextRequest) {
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "파일을 선택하세요." }, { status: 400 })
     }
-    if (file.type !== ALLOWED_CONTENT_TYPE) {
+
+    const isPdf =
+      file.type === ALLOWED_CONTENT_TYPE ||
+      file.name.toLowerCase().endsWith(".pdf")
+
+    console.log(
+      `[work-standard upload] name="${file.name}" type="${file.type}" size=${file.size} isPdf=${isPdf}`,
+    )
+
+    if (!isPdf) {
       return NextResponse.json(
         { error: "PDF 파일(.pdf)만 업로드할 수 있습니다." },
         { status: 400 },
