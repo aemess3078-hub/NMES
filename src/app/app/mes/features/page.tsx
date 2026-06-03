@@ -3,15 +3,14 @@ export const dynamic = "force-dynamic"
 import { notFound } from "next/navigation"
 import { getCatalogWithStatus } from "@/lib/actions/feature.actions"
 import { FeatureCatalogClient } from "./feature-catalog-client"
-import { cookies } from "next/headers"
 import { getCurrentUser } from "@/lib/auth"
 import { isDeveloperUser } from "@/lib/developer"
 
 export default async function FeaturesPage() {
   const user = await getCurrentUser()
-  if (!isDeveloperUser(user)) notFound()
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  if (!user || !isDeveloperUser(user)) notFound()
+
+  const tenantId = user.tenantId
   const catalog = await getCatalogWithStatus(tenantId)
 
   return (
@@ -21,8 +20,8 @@ export default async function FeaturesPage() {
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
             기능 관리
           </h1>
-          <p className="text-[15px] text-muted-foreground mt-1">
-            테넌트에서 사용할 기능을 선택합니다. 의존성이 있는 기능은 자동으로 활성화됩니다.
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            CNS MEDICAL 운영 감리 기간에는 기능 제한을 적용하지 않고 모든 구현 메뉴를 활성 상태로 처리합니다.
           </p>
         </div>
       </div>

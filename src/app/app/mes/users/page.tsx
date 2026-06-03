@@ -4,8 +4,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getPermissionMatrix } from "@/lib/actions/permission.actions"
 import {
   getTenantUsers,
-  getLoginHistory,
-  getAuditLogs,
 } from "@/lib/actions/user-management.actions"
 import { getSignupRequests, getPendingSignupCount } from "@/lib/actions/signup-request.actions"
 import { PermissionMatrixTable } from "./permission-matrix"
@@ -32,29 +30,27 @@ export default async function UsersPage() {
   )
 
   // full-access 전용 데이터는 조건부 조회
-  const [matrix, signupRequests, pendingCount, loginHistory, auditLogs] =
+  const emptyLogData = { rows: [], total: 0, page: 1, pageSize: 20 }
+
+  const [matrix, signupRequests, pendingCount] =
     fullAccess
       ? await Promise.allSettled([
           getPermissionMatrix(tenantId),
           getSignupRequests(),
           getPendingSignupCount(),
-          getLoginHistory({ days: 90 }),
-          getAuditLogs({ days: 90 }),
         ])
       : [
           { status: "fulfilled" as const, value: {} },
           { status: "fulfilled" as const, value: [] },
           { status: "fulfilled" as const, value: 0 },
-          { status: "fulfilled" as const, value: { rows: [], total: 0, page: 1, pageSize: 20 } },
-          { status: "fulfilled" as const, value: { rows: [], total: 0, page: 1, pageSize: 20 } },
         ]
 
   const matrixData = matrix.status === "fulfilled" ? matrix.value : {}
   const usersData = usersResult.status === "fulfilled" ? usersResult.value : []
   const signupData = signupRequests.status === "fulfilled" ? signupRequests.value : []
   const pending = pendingCount.status === "fulfilled" ? pendingCount.value : 0
-  const loginHistoryData = loginHistory.status === "fulfilled" ? loginHistory.value : { rows: [], total: 0, page: 1, pageSize: 20 }
-  const auditLogData = auditLogs.status === "fulfilled" ? auditLogs.value : { rows: [], total: 0, page: 1, pageSize: 20 }
+  const loginHistoryData = emptyLogData
+  const auditLogData = emptyLogData
   const usersError = usersResult.status === "rejected"
     ? usersResult.reason instanceof Error
       ? usersResult.reason.message
