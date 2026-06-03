@@ -22,6 +22,85 @@ export type PermissionRecord = {
   isAllowed: boolean
 }
 
+// ─── 기본 권한 카탈로그 ───────────────────────────────────────────────────────
+// seed.ts와 동일한 정의를 코드 기준으로 관리.
+// 운영 DB에 권한 데이터가 없을 때 자동으로 삽입하는 데 사용한다.
+
+const ALL_ACTIONS: PermissionAction[] = ["READ", "CREATE", "UPDATE", "DELETE", "APPROVE", "EXPORT"]
+
+const ALL_RESOURCES = [
+  "PRODUCTION_PLAN", "WORK_ORDER", "ITEM", "BOM", "ROUTING",
+  "INVENTORY", "QUALITY_INSPECTION", "EQUIPMENT", "COMMON_CODE",
+  "USER_MANAGEMENT", "AUDIT_LOG", "APPROVAL", "REPORT",
+]
+
+const MANAGER_PERMS: Record<string, PermissionAction[]> = {
+  PRODUCTION_PLAN:    ["READ", "CREATE", "UPDATE"],
+  WORK_ORDER:         ["READ", "CREATE", "UPDATE"],
+  ITEM:               ["READ", "CREATE", "UPDATE"],
+  BOM:                ["READ", "CREATE", "UPDATE"],
+  ROUTING:            ["READ", "CREATE", "UPDATE"],
+  INVENTORY:          ["READ", "CREATE", "UPDATE"],
+  QUALITY_INSPECTION: ["READ", "CREATE", "UPDATE"],
+  EQUIPMENT:          ["READ", "CREATE", "UPDATE"],
+  COMMON_CODE:        ["READ"],
+  USER_MANAGEMENT:    ["READ"],
+  AUDIT_LOG:          ["READ"],
+  APPROVAL:           ["READ", "CREATE", "APPROVE"],
+  REPORT:             ["READ", "EXPORT"],
+}
+
+const OPERATOR_PERMS: Record<string, PermissionAction[]> = {
+  PRODUCTION_PLAN:    ["READ"],
+  WORK_ORDER:         ["READ", "UPDATE"],
+  ITEM:               ["READ"],
+  BOM:                ["READ"],
+  ROUTING:            ["READ"],
+  INVENTORY:          ["READ", "CREATE", "UPDATE"],
+  QUALITY_INSPECTION: ["READ", "CREATE"],
+  EQUIPMENT:          ["READ"],
+  COMMON_CODE:        ["READ"],
+  APPROVAL:           ["READ", "CREATE"],
+  REPORT:             ["READ"],
+}
+
+const VIEWER_RESOURCES = [
+  "PRODUCTION_PLAN", "WORK_ORDER", "ITEM", "BOM", "ROUTING",
+  "INVENTORY", "QUALITY_INSPECTION", "EQUIPMENT", "COMMON_CODE",
+  "APPROVAL", "REPORT",
+]
+
+function buildDefaultPermissionRows(tenantId: string) {
+  type PermRow = { tenantId: string; role: UserRole; resource: string; action: PermissionAction; isAllowed: boolean }
+  const rows: PermRow[] = []
+
+  for (const role of ["OWNER", "ADMIN"] as UserRole[]) {
+    for (const resource of ALL_RESOURCES) {
+      for (const action of ALL_ACTIONS) {
+        rows.push({ tenantId, role, resource, action, isAllowed: true })
+      }
+    }
+  }
+
+  for (const [resource, actions] of Object.entries(MANAGER_PERMS)) {
+    for (const action of actions) {
+      rows.push({ tenantId, role: "MANAGER", resource, action, isAllowed: true })
+    }
+  }
+
+  for (const [resource, actions] of Object.entries(OPERATOR_PERMS)) {
+    for (const action of actions) {
+      rows.push({ tenantId, role: "OPERATOR", resource, action, isAllowed: true })
+    }
+  }
+
+  for (const resource of VIEWER_RESOURCES) {
+    rows.push({ tenantId, role: "VIEWER", resource, action: "READ", isAllowed: true })
+  }
+
+  return rows
+}
+
 // 1. 전체 권한 조회
 export async function getPermissions(tenantId: string): Promise<PermissionRecord[]> {
   return prisma.rolePermission.findMany({
@@ -54,6 +133,19 @@ export async function getPermissionMatrix(tenantId: string): Promise<PermissionM
   }
 
   return matrix
+}
+
+// 2-a. 권한 매트릭스 조회 + 없으면 기본값 자동 삽입 (운영 환경용)
+// 업무 더미 데이터 없이 권한 정의만 초기화한다.
+export async function ensurePermissionMatrix(tenantId: string): Promise<PermissionMatrix> {
+  const count = await prisma.rolePermission.count({ where: { tenantId } })
+
+  if (count === 0) {
+    const rows = buildDefaultPermissionRows(tenantId)
+    await prisma.rolePermission.createMany({ data: rows, skipDuplicates: true })
+  }
+
+  return getPermissionMatrix(tenantId)
 }
 
 // 3. 단건 토글

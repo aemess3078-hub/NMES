@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getPermissionMatrix } from "@/lib/actions/permission.actions"
+import { ensurePermissionMatrix } from "@/lib/actions/permission.actions"
 import {
   getTenantUsers,
 } from "@/lib/actions/user-management.actions"
@@ -35,7 +35,7 @@ export default async function UsersPage() {
   const [matrix, signupRequests, pendingCount] =
     fullAccess
       ? await Promise.allSettled([
-          getPermissionMatrix(tenantId),
+          ensurePermissionMatrix(tenantId),
           getSignupRequests(),
           getPendingSignupCount(),
         ])

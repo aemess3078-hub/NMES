@@ -214,7 +214,7 @@ export function PermissionMatrixTable({ matrix, tenantId }: Props) {
   if (resources.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 border rounded-xl text-[14px] text-muted-foreground">
-        등록된 권한 데이터가 없습니다. 시드 데이터를 먼저 실행하세요.
+        권한 데이터를 불러오는 중입니다. 잠시 후 다시 시도해 주세요.
       </div>
     )
   }

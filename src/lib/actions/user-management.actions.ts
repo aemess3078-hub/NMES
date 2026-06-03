@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUser, requireRole } from "@/lib/auth"
-import { canAccessFullUserManagement } from "@/lib/developer"
+import { canAccessFullUserManagement, DEVELOPER_LOGIN_ID } from "@/lib/developer"
 import { hashPassword } from "@/lib/password"
 import {
   assertValidPopPin,
@@ -64,9 +64,10 @@ export async function getTenantUsers(): Promise<TenantUserRow[]> {
     orderBy: { createdAt: "asc" },
   })
 
-  // seed/demo 계정 필터링
+  // seed/demo 계정 및 유지보수용 개발자 계정 필터링 (로그인은 가능하나 고객사 목록에서 제외)
   const result: TenantUserRow[] = tenantUsers
     .filter((tu) => !isDemoSeedEmail(tu.profile.email))
+    .filter((tu) => tu.profile.userCredential?.loginId !== DEVELOPER_LOGIN_ID)
     .map((tu) => ({
       id: tu.id,
       profileId: tu.profileId,
