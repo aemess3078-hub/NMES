@@ -23,50 +23,81 @@ export type PermissionRecord = {
 }
 
 // ─── 기본 권한 카탈로그 ───────────────────────────────────────────────────────
-// seed.ts와 동일한 정의를 코드 기준으로 관리.
-// 운영 DB에 권한 데이터가 없을 때 자동으로 삽입하는 데 사용한다.
+// nav-config.ts 실제 메뉴 기준으로 리소스를 관리한다.
+// DB의 resource 코드와 화면 표시 label은 permission-matrix.tsx에서 분리한다.
+// skipDuplicates 사용으로 기존 데이터 충돌 없이 신규 리소스만 추가된다.
 
 const ALL_ACTIONS: PermissionAction[] = ["READ", "CREATE", "UPDATE", "DELETE", "APPROVE", "EXPORT"]
 
+// 실제 메뉴 기준 전체 리소스 목록
 const ALL_RESOURCES = [
-  "PRODUCTION_PLAN", "WORK_ORDER", "ITEM", "BOM", "ROUTING",
-  "INVENTORY", "QUALITY_INSPECTION", "EQUIPMENT", "COMMON_CODE",
-  "USER_MANAGEMENT", "AUDIT_LOG", "APPROVAL", "REPORT",
+  // 기준정보관리
+  "ITEM", "BOM", "ROUTING", "EQUIPMENT", "INSPECTION_SPEC", "WORK_STANDARD",
+  // 생산관리
+  "PRODUCTION_PLAN", "WORK_ORDER", "WORK_RESULT",
+  // 재고관리
+  "INVENTORY", "INVENTORY_TXN",
+  // 품질관리
+  "QUALITY_INSPECTION", "ECN",
+  // 설비점검/수리
+  "EQUIPMENT_REPAIR",
+  // 시스템/추적성
+  "LOT", "COMMON_CODE", "AUDIT_LOG",
+  // 사용자관리
+  "USER_MANAGEMENT",
+  // 기존 호환 (DB에 이미 존재)
+  "APPROVAL", "REPORT",
 ]
 
 const MANAGER_PERMS: Record<string, PermissionAction[]> = {
-  PRODUCTION_PLAN:    ["READ", "CREATE", "UPDATE"],
-  WORK_ORDER:         ["READ", "CREATE", "UPDATE"],
   ITEM:               ["READ", "CREATE", "UPDATE"],
   BOM:                ["READ", "CREATE", "UPDATE"],
   ROUTING:            ["READ", "CREATE", "UPDATE"],
-  INVENTORY:          ["READ", "CREATE", "UPDATE"],
-  QUALITY_INSPECTION: ["READ", "CREATE", "UPDATE"],
   EQUIPMENT:          ["READ", "CREATE", "UPDATE"],
+  INSPECTION_SPEC:    ["READ", "CREATE", "UPDATE"],
+  WORK_STANDARD:      ["READ", "CREATE", "UPDATE"],
+  PRODUCTION_PLAN:    ["READ", "CREATE", "UPDATE"],
+  WORK_ORDER:         ["READ", "CREATE", "UPDATE"],
+  WORK_RESULT:        ["READ", "CREATE", "UPDATE", "EXPORT"],
+  INVENTORY:          ["READ", "CREATE", "UPDATE"],
+  INVENTORY_TXN:      ["READ", "EXPORT"],
+  QUALITY_INSPECTION: ["READ", "CREATE", "UPDATE", "APPROVE"],
+  ECN:                ["READ", "CREATE", "UPDATE", "APPROVE"],
+  EQUIPMENT_REPAIR:   ["READ", "CREATE", "UPDATE", "APPROVE"],
+  LOT:                ["READ", "CREATE", "UPDATE"],
   COMMON_CODE:        ["READ"],
-  USER_MANAGEMENT:    ["READ"],
   AUDIT_LOG:          ["READ"],
+  USER_MANAGEMENT:    ["READ"],
   APPROVAL:           ["READ", "CREATE", "APPROVE"],
   REPORT:             ["READ", "EXPORT"],
 }
 
 const OPERATOR_PERMS: Record<string, PermissionAction[]> = {
-  PRODUCTION_PLAN:    ["READ"],
-  WORK_ORDER:         ["READ", "UPDATE"],
   ITEM:               ["READ"],
   BOM:                ["READ"],
   ROUTING:            ["READ"],
-  INVENTORY:          ["READ", "CREATE", "UPDATE"],
-  QUALITY_INSPECTION: ["READ", "CREATE"],
   EQUIPMENT:          ["READ"],
+  INSPECTION_SPEC:    ["READ"],
+  WORK_STANDARD:      ["READ"],
+  PRODUCTION_PLAN:    ["READ"],
+  WORK_ORDER:         ["READ", "UPDATE"],
+  WORK_RESULT:        ["READ", "CREATE"],
+  INVENTORY:          ["READ", "CREATE", "UPDATE"],
+  INVENTORY_TXN:      ["READ"],
+  QUALITY_INSPECTION: ["READ", "CREATE"],
+  ECN:                ["READ", "CREATE"],
+  EQUIPMENT_REPAIR:   ["READ", "CREATE"],
+  LOT:                ["READ"],
   COMMON_CODE:        ["READ"],
   APPROVAL:           ["READ", "CREATE"],
   REPORT:             ["READ"],
 }
 
 const VIEWER_RESOURCES = [
-  "PRODUCTION_PLAN", "WORK_ORDER", "ITEM", "BOM", "ROUTING",
-  "INVENTORY", "QUALITY_INSPECTION", "EQUIPMENT", "COMMON_CODE",
+  "ITEM", "BOM", "ROUTING", "EQUIPMENT", "INSPECTION_SPEC", "WORK_STANDARD",
+  "PRODUCTION_PLAN", "WORK_ORDER", "WORK_RESULT",
+  "INVENTORY", "QUALITY_INSPECTION", "ECN",
+  "EQUIPMENT_REPAIR", "LOT",
   "APPROVAL", "REPORT",
 ]
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronRight, Pencil, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { InspectionSpecWithItems } from "@/lib/actions/quality.actions"
@@ -21,18 +21,56 @@ export const STATUS_CONFIG: Record<string, { label: string; className: string }>
   INACTIVE: { label: "비활성", className: "bg-red-100 text-red-700" },
 }
 
+// ─── 검사항목 요약 ────────────────────────────────────────────────────────────
+
+export function buildItemSummary(items: InspectionSpecWithItems["inspectionItems"]): string {
+  if (items.length === 0) return "—"
+  const MAX_SHOW = 2
+  const shown = items.slice(0, MAX_SHOW).map((i) => i.name)
+  const rest = items.length - MAX_SHOW
+  if (rest <= 0) return shown.join(", ")
+  return `${shown.join(", ")} 외 ${rest}건`
+}
+
 // ─── 컬럼 정의 ───────────────────────────────────────────────────────────────
 
 type ColumnActions = {
   onEdit: (row: InspectionSpecRow) => void
   onDelete: (row: InspectionSpecRow) => void
+  expandedRowId?: string | null
+  onExpandedRowIdChange?: (id: string | null) => void
 }
 
 export function getInspectionSpecColumns({
   onEdit,
   onDelete,
+  expandedRowId,
+  onExpandedRowIdChange,
 }: ColumnActions): ColumnDef<InspectionSpecRow>[] {
   return [
+    // 확장 토글
+    {
+      id: "expand",
+      header: "",
+      cell: ({ row }) => {
+        const isExpanded = expandedRowId === row.original.id
+        return (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onExpandedRowIdChange?.(isExpanded ? null : row.original.id)
+            }}
+            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={isExpanded ? "접기" : "펼치기"}
+          >
+            {isExpanded
+              ? <ChevronDown className="h-4 w-4" />
+              : <ChevronRight className="h-4 w-4" />}
+          </button>
+        )
+      },
+      size: 36,
+    },
     {
       accessorKey: "itemLabel",
       header: "품목",
@@ -55,13 +93,21 @@ export function getInspectionSpecColumns({
       ),
     },
     {
-      id: "itemCount",
-      header: "검사항목 수",
-      cell: ({ row }) => (
-        <span className="text-[14px]">
-          {row.original.inspectionItems.length}개
-        </span>
-      ),
+      id: "itemSummary",
+      header: "검사항목",
+      cell: ({ row }) => {
+        const items = row.original.inspectionItems
+        return (
+          <div className="space-y-0.5">
+            <span className="text-[13px] font-medium">{items.length}개</span>
+            {items.length > 0 && (
+              <p className="text-[12px] text-muted-foreground max-w-[220px] truncate">
+                {buildItemSummary(items)}
+              </p>
+            )}
+          </div>
+        )
+      },
     },
     {
       accessorKey: "status",
@@ -104,7 +150,7 @@ export function getInspectionSpecColumns({
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              onClick={() => onEdit(spec)}
+              onClick={(e) => { e.stopPropagation(); onEdit(spec) }}
             >
               <Pencil className="h-3.5 w-3.5" />
             </Button>
@@ -112,7 +158,7 @@ export function getInspectionSpecColumns({
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-destructive hover:text-destructive"
-              onClick={() => onDelete(spec)}
+              onClick={(e) => { e.stopPropagation(); onDelete(spec) }}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
