@@ -4,6 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ensurePermissionMatrix } from "@/lib/actions/permission.actions"
 import {
   getTenantUsers,
+  getLoginHistory,
+  getAuditLogs,
 } from "@/lib/actions/user-management.actions"
 import { getSignupRequests, getPendingSignupCount } from "@/lib/actions/signup-request.actions"
 import { PermissionMatrixTable } from "./permission-matrix"
@@ -31,27 +33,34 @@ export default async function UsersPage() {
   )
 
   // full-access 전용 데이터는 조건부 조회
+  // 접속기록/이용로그는 빈 데이터 대신 서버에서 직접 조회한다.
+  // 클라이언트 컴포넌트가 마운트 시 자동 refetch를 하지 않으므로
+  // 서버에서 초기 데이터를 넘겨야 첫 렌더링에서 바로 보인다.
   const emptyLogData = { rows: [], total: 0, page: 1, pageSize: 20 }
 
-  const [matrix, signupRequests, pendingCount] =
+  const [matrix, signupRequests, pendingCount, loginHistoryResult, auditLogResult] =
     fullAccess
       ? await Promise.allSettled([
           ensurePermissionMatrix(tenantId),
           getSignupRequests(),
           getPendingSignupCount(),
+          getLoginHistory({ days: 90, page: 1, pageSize: 20 }),
+          getAuditLogs({ days: 90, page: 1, pageSize: 20 }),
         ])
       : [
           { status: "fulfilled" as const, value: {} },
           { status: "fulfilled" as const, value: [] },
           { status: "fulfilled" as const, value: 0 },
+          { status: "fulfilled" as const, value: emptyLogData },
+          { status: "fulfilled" as const, value: emptyLogData },
         ]
 
   const matrixData = matrix.status === "fulfilled" ? matrix.value : {}
   const usersData = usersResult.status === "fulfilled" ? usersResult.value : []
   const signupData = signupRequests.status === "fulfilled" ? signupRequests.value : []
   const pending = pendingCount.status === "fulfilled" ? pendingCount.value : 0
-  const loginHistoryData = emptyLogData
-  const auditLogData = emptyLogData
+  const loginHistoryData = loginHistoryResult.status === "fulfilled" ? loginHistoryResult.value : emptyLogData
+  const auditLogData = auditLogResult.status === "fulfilled" ? auditLogResult.value : emptyLogData
   const usersError = usersResult.status === "rejected"
     ? usersResult.reason instanceof Error
       ? usersResult.reason.message
