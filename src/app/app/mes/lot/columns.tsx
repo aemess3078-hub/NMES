@@ -162,7 +162,7 @@ export function getColumns({ onStatusChange }: ColumnActions): ColumnDef<LotWith
         const lot = row.original
         return (
           <div className="flex items-center justify-end gap-1">
-            <Link href={`/app/mes/traceability?lotId=${lot.id}`}>
+            <Link href={`/app/mes/traceability?lotNo=${lot.lotNo}`}>
               <Button variant="ghost" size="sm" className="h-7 px-2 text-[13px] text-blue-600 hover:text-blue-700">
                 <ScanLine className="h-3.5 w-3.5 mr-1" />
                 추적

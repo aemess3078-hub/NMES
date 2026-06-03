@@ -47,7 +47,7 @@ export function RoutingDataTable({
   const [uploadOpen, setUploadOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingRouting, setEditingRouting] = useState<RoutingWithDetails | null>(null)
-  const [detailRouting, setDetailRouting] = useState<RoutingWithDetails | null>(null)
+  const [expandedRoutingId, setExpandedRoutingId] = useState<string | null>(null)
   const [isDownloading, setIsDownloading] = useState(false)
 
   const handleDownloadCurrent = async () => {
@@ -77,7 +77,7 @@ export function RoutingDataTable({
   }
 
   const handleView = (routing: RoutingWithDetails) => {
-    setDetailRouting((prev) => (prev?.id === routing.id ? null : routing))
+    setExpandedRoutingId((prev) => (prev === routing.id ? null : routing.id))
   }
 
   const allColumns = getColumns({
@@ -141,14 +141,14 @@ export function RoutingDataTable({
             ],
           },
         ]}
+        expandedRowId={expandedRoutingId}
+        renderExpandedRow={(routing) => (
+          <RoutingDetailPanel
+            routing={routing}
+            onClose={() => setExpandedRoutingId(null)}
+          />
+        )}
       />
-
-      {detailRouting && (
-        <RoutingDetailPanel
-          routing={detailRouting}
-          onClose={() => setDetailRouting(null)}
-        />
-      )}
 
       <RoutingFormSheet
         open={formOpen}

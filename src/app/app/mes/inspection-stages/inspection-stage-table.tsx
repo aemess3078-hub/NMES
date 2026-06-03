@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Pencil, Plus } from "lucide-react"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 
@@ -33,9 +33,16 @@ interface Props {
 export function InspectionStageTable({ data, workOrders }: Props) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingInspection, setEditingInspection] = useState<InspectionStageRow | null>(null)
   const [stageFilter, setStageFilter] = useState<string>("ALL")
 
   const filtered = stageFilter === "ALL" ? data : data.filter((d) => d.stage === stageFilter)
+
+  const handleEdit = (inspection: InspectionStageRow) => {
+    setEditingInspection(inspection)
+    setEditOpen(true)
+  }
 
   const columns: ColumnDef<InspectionStageRow>[] = [
     {
@@ -102,6 +109,21 @@ export function InspectionStageTable({ data, workOrders }: Props) {
         </span>
       ),
     },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-[13px] text-muted-foreground hover:text-foreground"
+          onClick={() => handleEdit(row.original)}
+        >
+          <Pencil className="h-3.5 w-3.5 mr-1" />
+          수정
+        </Button>
+      ),
+    },
   ]
 
   const filterableColumns = [
@@ -145,11 +167,22 @@ export function InspectionStageTable({ data, workOrders }: Props) {
       <DataTable columns={columns} data={filtered} filterableColumns={filterableColumns} />
 
       <InspectionStageFormSheet
+        mode="create"
         open={formOpen}
         onOpenChange={setFormOpen}
         workOrders={workOrders}
         onSuccess={() => router.refresh()}
       />
+
+      {editingInspection && (
+        <InspectionStageFormSheet
+          mode="edit"
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          inspection={editingInspection}
+          onSuccess={() => router.refresh()}
+        />
+      )}
     </div>
   )
 }

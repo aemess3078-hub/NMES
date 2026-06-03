@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -97,15 +97,15 @@ function LotTreeView({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface TraceabilityClientProps {
-  initialLotId?: string
+  initialLotNo?: string
   tenantId: string
 }
 
 export function TraceabilityClient({
-  initialLotId,
+  initialLotNo,
   tenantId,
 }: TraceabilityClientProps) {
-  const [query, setQuery] = useState("")
+  const [query, setQuery] = useState(initialLotNo ?? "")
   const [direction, setDirection] = useState<TraceDirection>("both")
   const [searchResult, setSearchResult] = useState<any>(null)
   const [traceTree, setTraceTree] = useState<TraceResult | null>(null)
@@ -149,6 +149,11 @@ export function TraceabilityClient({
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (initialLotNo) handleSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const hasForward =
     traceTree?.forward &&

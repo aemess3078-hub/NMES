@@ -8,6 +8,30 @@ import { getTenantId } from "@/lib/auth"
 export type KpiFilter = {
   from: string // YYYY-MM-DD
   to: string
+  itemId?: string
+  equipmentIds?: string[]
+}
+
+export type KpiFilterOptions = {
+  items: { id: string; code: string; name: string }[]
+  equipments: { id: string; code: string; name: string }[]
+}
+
+export async function getKpiFilterOptions(): Promise<KpiFilterOptions> {
+  const tenantId = await getTenantId()
+  const [items, equipments] = await Promise.all([
+    prisma.item.findMany({
+      where: { tenantId, status: "ACTIVE" },
+      select: { id: true, code: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.equipment.findMany({
+      where: { tenantId },
+      select: { id: true, code: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ])
+  return { items, equipments }
 }
 
 function parseDateRange(f: KpiFilter) {
@@ -52,6 +76,7 @@ async function fetchManufacturingLeadTime(
       tenantId,
       status: "COMPLETED",
       updatedAt: { gte: from, lte: to },
+      ...(f.itemId && { itemId: f.itemId }),
     },
     select: {
       orderNo: true,
@@ -103,7 +128,9 @@ async function fetchDefectRate(
   const inspections = await prisma.qualityInspection.findMany({
     where: {
       inspectedAt: { gte: from, lte: to },
-      workOrderOperation: { workOrder: { tenantId } },
+      workOrderOperation: {
+        workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
+      },
     },
     select: {
       inspectedQty: true,
@@ -162,7 +189,9 @@ async function fetchLaborEffort(
     where: {
       startedAt: { gte: from, lte: to },
       endedAt: { not: null },
-      workOrderOperation: { workOrder: { tenantId } },
+      workOrderOperation: {
+        workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
+      },
     },
     select: { startedAt: true, endedAt: true, goodQty: true },
   })
@@ -276,7 +305,9 @@ async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
     where: {
       startedAt: { gte: from, lte: to },
       endedAt: { not: null },
-      workOrderOperation: { workOrder: { tenantId } },
+      workOrderOperation: {
+        workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
+      },
     },
     select: { startedAt: true, endedAt: true, goodQty: true },
   })
@@ -337,7 +368,11 @@ async function fetchEquipmentAvailability(
   const totalMinutes = (to.getTime() - from.getTime()) / 60_000
 
   const equipments = await prisma.equipment.findMany({
-    where: { tenantId, status: "ACTIVE" },
+    where: {
+      tenantId,
+      status: "ACTIVE",
+      ...(f.equipmentIds?.length && { id: { in: f.equipmentIds } }),
+    },
     select: {
       code: true,
       name: true,
@@ -401,6 +436,8 @@ export async function getKpiDashboardData(
   const filter: KpiFilter = {
     from: filterOverride?.from ?? defaults.from,
     to: filterOverride?.to ?? defaults.to,
+    itemId: filterOverride?.itemId,
+    equipmentIds: filterOverride?.equipmentIds,
   }
 
   const [mlt, dr, le, dlt, uph, ea] = await Promise.all([

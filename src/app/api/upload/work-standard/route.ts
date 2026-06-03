@@ -80,10 +80,11 @@ export async function POST(req: NextRequest) {
     if (!uploadRes.ok) {
       let errBody = ""
       try { errBody = JSON.stringify(await uploadRes.json()) } catch { errBody = await uploadRes.text().catch(() => "") }
+      console.error(`[work-standard upload] Supabase HTTP ${uploadRes.status}: ${errBody}`)
 
       if (
         uploadRes.status === 400 &&
-        (errBody.includes("Bucket") || errBody.includes("bucket"))
+        (errBody.includes("Bucket") || errBody.includes("bucket") || errBody.includes("not found"))
       ) {
         return NextResponse.json(
           {

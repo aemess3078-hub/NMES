@@ -88,6 +88,66 @@ export async function createStagedInspection(data: {
   revalidatePath("/app/mes/inspection")
 }
 
+export async function updateStagedInspection(
+  inspectionId: string,
+  data: {
+    stage?: InspectionStage
+    result?: string
+    inspectedQty?: number
+    inspectedAt?: Date
+  }
+) {
+  const tenantId = await getTenantId()
+  const userId = await getCurrentUserId()
+
+  const existing = await prisma.qualityInspection.findFirst({
+    where: {
+      id: inspectionId,
+      workOrderOperation: { workOrder: { tenantId } },
+    },
+    select: { id: true, stage: true, result: true, inspectedQty: true, inspectedAt: true },
+  })
+  if (!existing) throw new Error("검사 기록을 찾을 수 없거나 권한이 없습니다.")
+
+  const updated = await prisma.qualityInspection.update({
+    where: { id: inspectionId },
+    data: {
+      ...(data.stage !== undefined && { stage: data.stage }),
+      ...(data.result !== undefined && { result: data.result as InspectionResult }),
+      ...(data.inspectedQty !== undefined && { inspectedQty: data.inspectedQty }),
+      ...(data.inspectedAt !== undefined && { inspectedAt: data.inspectedAt }),
+    },
+    select: { id: true, stage: true, result: true, inspectedQty: true, inspectedAt: true },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: userId,
+      entityType: "QualityInspection",
+      entityId: inspectionId,
+      action: "UPDATE",
+      beforeData: {
+        stage: existing.stage,
+        result: existing.result,
+        inspectedQty: String(existing.inspectedQty),
+        inspectedAt: existing.inspectedAt.toISOString(),
+      },
+      afterData: {
+        stage: updated.stage,
+        result: updated.result,
+        inspectedQty: String(updated.inspectedQty),
+        inspectedAt: updated.inspectedAt.toISOString(),
+      },
+      menuName: "초중종검사관리",
+    },
+  })
+
+  revalidatePath("/app/mes/inspection-stages")
+  revalidatePath("/app/mes/inspection")
+  revalidatePath("/app/mes/manufacturing-traceability")
+}
+
 export async function getWorkOrdersForInspection() {
   const tenantId = await getTenantId()
   const ops = await prisma.workOrderOperation.findMany({

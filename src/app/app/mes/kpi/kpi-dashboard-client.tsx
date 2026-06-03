@@ -4,6 +4,7 @@ import { useState, useTransition, useRef, useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import type {
   KpiDashboardData,
+  KpiFilterOptions,
   ManufacturingLeadTimeKpi,
   DefectRateKpi,
   LaborEffortKpi,
@@ -23,6 +24,7 @@ type KpiId =
 
 interface Props {
   data: KpiDashboardData
+  filterOptions: KpiFilterOptions
 }
 
 // ─── 공통 테이블 ──────────────────────────────────────────────────────────────
@@ -203,13 +205,16 @@ function EquipmentAvailabilityDetail({ data }: { data: EquipmentAvailabilityKpi 
 
 // ─── 메인 대시보드 ────────────────────────────────────────────────────────────
 
-export function KpiDashboardClient({ data }: Props) {
+export function KpiDashboardClient({ data, filterOptions }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const [isPending, startTransition] = useTransition()
   const [activeKpi, setActiveKpi] = useState<KpiId | null>(null)
   const [from, setFrom] = useState(data.filter.from)
   const [to, setTo] = useState(data.filter.to)
+  const [itemId, setItemId] = useState(data.filter.itemId ?? "")
+  const [equipmentIds, setEquipmentIds] = useState<string[]>(data.filter.equipmentIds ?? [])
+  const [equipDropOpen, setEquipDropOpen] = useState(false)
   const detailRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -218,10 +223,28 @@ export function KpiDashboardClient({ data }: Props) {
     }
   }, [activeKpi])
 
+  useEffect(() => {
+    if (!equipDropOpen) return
+    const close = () => setEquipDropOpen(false)
+    document.addEventListener("click", close)
+    return () => document.removeEventListener("click", close)
+  }, [equipDropOpen])
+
   function handleFilterApply() {
+    const params = new URLSearchParams()
+    params.set("from", from)
+    params.set("to", to)
+    if (itemId) params.set("itemId", itemId)
+    if (equipmentIds.length) params.set("equipmentIds", equipmentIds.join(","))
     startTransition(() => {
-      router.push(`${pathname}?from=${from}&to=${to}`)
+      router.push(`${pathname}?${params.toString()}`)
     })
+  }
+
+  function toggleEquipment(id: string) {
+    setEquipmentIds((prev) =>
+      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]
+    )
   }
 
   function toggleKpi(id: KpiId) {
@@ -307,31 +330,129 @@ export function KpiDashboardClient({ data }: Props) {
     },
   ]
 
+  const selectedItem = filterOptions.items.find((i) => i.id === itemId)
+  const selectedEquipNames = filterOptions.equipments
+    .filter((e) => equipmentIds.includes(e.id))
+    .map((e) => e.name)
+
   return (
     <div className="space-y-6">
-      {/* 기간 필터 */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-[14px] text-muted-foreground">기간</span>
-        <input
-          type="date"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          className="border border-border rounded-md px-3 py-1.5 text-[14px] bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-        <span className="text-[14px] text-muted-foreground">~</span>
-        <input
-          type="date"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          className="border border-border rounded-md px-3 py-1.5 text-[14px] bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-        <button
-          onClick={handleFilterApply}
-          disabled={isPending}
-          className="px-4 py-1.5 rounded-md text-[14px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
-          {isPending ? "조회중…" : "조회"}
-        </button>
+      {/* 필터 영역 */}
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        {/* 기간 필터 */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-[14px] text-muted-foreground w-10">기간</span>
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="border border-border rounded-md px-3 py-1.5 text-[14px] bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <span className="text-[14px] text-muted-foreground">~</span>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="border border-border rounded-md px-3 py-1.5 text-[14px] bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+        {/* 품목 필터 */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-[14px] text-muted-foreground w-10">품목</span>
+          <select
+            value={itemId}
+            onChange={(e) => setItemId(e.target.value)}
+            className="border border-border rounded-md px-3 py-1.5 text-[14px] bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring min-w-[200px]"
+          >
+            <option value="">전체 품목</option>
+            {filterOptions.items.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} ({item.code})
+              </option>
+            ))}
+          </select>
+          {selectedItem && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[13px]">
+              {selectedItem.name}
+              <button onClick={() => setItemId("")} className="hover:text-blue-900">✕</button>
+            </span>
+          )}
+        </div>
+        {/* 설비 필터 */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-[14px] text-muted-foreground w-10">설비</span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setEquipDropOpen((o) => !o) }}
+              className="border border-border rounded-md px-3 py-1.5 text-[14px] bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring min-w-[200px] text-left flex items-center justify-between gap-2"
+            >
+              <span className="truncate">
+                {equipmentIds.length === 0
+                  ? "전체 설비"
+                  : `${equipmentIds.length}개 선택`}
+              </span>
+              <span className="text-[12px]">▼</span>
+            </button>
+            {equipDropOpen && (
+              <div
+                className="absolute z-20 top-full left-0 mt-1 w-64 max-h-60 overflow-y-auto rounded-md border border-border bg-background shadow-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {filterOptions.equipments.length === 0 ? (
+                  <p className="px-3 py-2 text-[13px] text-muted-foreground">설비 없음</p>
+                ) : (
+                  filterOptions.equipments.map((eq) => (
+                    <label
+                      key={eq.id}
+                      className="flex items-center gap-2 px-3 py-2 hover:bg-muted/30 cursor-pointer text-[14px]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={equipmentIds.includes(eq.id)}
+                        onChange={() => toggleEquipment(eq.id)}
+                        className="rounded border-border"
+                      />
+                      <span>{eq.name} ({eq.code})</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          {selectedEquipNames.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {selectedEquipNames.map((name) => (
+                <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 text-[13px]">
+                  {name}
+                  <button
+                    onClick={() => {
+                      const eq = filterOptions.equipments.find((e) => e.name === name)
+                      if (eq) toggleEquipment(eq.id)
+                    }}
+                    className="hover:text-violet-900"
+                  >✕</button>
+                </span>
+              ))}
+              <button
+                onClick={() => setEquipmentIds([])}
+                className="text-[12px] text-muted-foreground hover:text-foreground"
+              >
+                전체 해제
+              </button>
+            </div>
+          )}
+        </div>
+        {/* 조회 버튼 */}
+        <div className="flex justify-end">
+          <button
+            onClick={handleFilterApply}
+            disabled={isPending}
+            className="px-4 py-1.5 rounded-md text-[14px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {isPending ? "조회중…" : "조회"}
+          </button>
+        </div>
       </div>
 
       {/* KPI 카드 그리드 */}

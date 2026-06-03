@@ -1,10 +1,10 @@
-import { getKpiDashboardData } from "@/lib/actions/kpi.actions"
+import { getKpiDashboardData, getKpiFilterOptions } from "@/lib/actions/kpi.actions"
 import { KpiDashboardClient } from "./kpi-dashboard-client"
 
 export const dynamic = "force-dynamic"
 
 interface Props {
-  searchParams?: Promise<{ from?: string; to?: string }>
+  searchParams?: Promise<{ from?: string; to?: string; itemId?: string; equipmentIds?: string }>
 }
 
 function defaultDateRange() {
@@ -20,10 +20,20 @@ export default async function KpiDashboardPage({ searchParams }: Props) {
   const params = searchParams ? await searchParams : {}
   const { from: defaultFrom, to: defaultTo } = defaultDateRange()
 
-  const data = await getKpiDashboardData({
-    from: params.from?.trim() || defaultFrom,
-    to: params.to?.trim() || defaultTo,
-  })
+  const itemId = params.itemId?.trim() || undefined
+  const equipmentIds = params.equipmentIds
+    ? params.equipmentIds.split(",").filter(Boolean)
+    : undefined
+
+  const [data, filterOptions] = await Promise.all([
+    getKpiDashboardData({
+      from: params.from?.trim() || defaultFrom,
+      to: params.to?.trim() || defaultTo,
+      itemId,
+      equipmentIds,
+    }),
+    getKpiFilterOptions(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -35,7 +45,7 @@ export default async function KpiDashboardPage({ searchParams }: Props) {
           핵심 성과 지표를 한 화면에서 확인합니다.
         </p>
       </div>
-      <KpiDashboardClient data={data} />
+      <KpiDashboardClient data={data} filterOptions={filterOptions} />
     </div>
   )
 }

@@ -5,7 +5,7 @@ import { TraceabilityClient } from "./traceability-client"
 export const dynamic = "force-dynamic"
 
 interface TraceabilityPageProps {
-  searchParams: Promise<{ lotId?: string }>
+  searchParams: Promise<{ lotId?: string; lotNo?: string }>
 }
 
 export default async function TraceabilityPage({ searchParams }: TraceabilityPageProps) {
@@ -24,7 +24,7 @@ export default async function TraceabilityPage({ searchParams }: TraceabilityPag
   }
 
   const params = await searchParams
-  const initialLotId = params.lotId
+  const initialLotNo = params.lotNo?.trim() || undefined
 
   return (
     <div className="space-y-6">
@@ -38,7 +38,7 @@ export default async function TraceabilityPage({ searchParams }: TraceabilityPag
       </div>
 
       <TraceabilityClient
-        initialLotId={initialLotId}
+        initialLotNo={initialLotNo}
         tenantId={tenantId}
       />
     </div>
