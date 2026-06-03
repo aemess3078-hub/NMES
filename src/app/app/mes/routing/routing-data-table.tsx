@@ -141,7 +141,10 @@ export function RoutingDataTable({
             ],
           },
         ]}
+        getRowId={(row: RoutingWithDetails) => row.id}
+        expandOnRowClick
         expandedRowId={expandedRoutingId}
+        onExpandedRowIdChange={setExpandedRoutingId}
         renderExpandedRow={(routing) => (
           <RoutingDetailPanel
             routing={routing}
