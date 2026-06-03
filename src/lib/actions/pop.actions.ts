@@ -158,11 +158,16 @@ export async function popLogin(
     return null
   }
 
+  // 클라이언트가 전달하는 tenantId는 쿠키가 없으면 "tenant-demo-001"로 fallback되는
+  // 버그가 있다. 서버 액션은 process.env.DEFAULT_TENANT_ID를 신뢰할 수 있으므로
+  // 이를 우선 사용한다.
+  const effectiveTenantId = process.env.DEFAULT_TENANT_ID ?? tenantId
+
   try {
-    const popPinFingerprint = createPopPinFingerprint(tenantId, pin)
+    const popPinFingerprint = createPopPinFingerprint(effectiveTenantId, pin)
     const credential = await prisma.userCredential.findFirst({
       where: {
-        tenantId,
+        tenantId: effectiveTenantId,
         popPinFingerprint,
       },
       select: {
@@ -174,7 +179,7 @@ export async function popLogin(
           select: {
             name: true,
             tenantUsers: {
-              where: { tenantId },
+              where: { tenantId: effectiveTenantId },
               select: {
                 id: true,
                 role: true,
@@ -194,7 +199,7 @@ export async function popLogin(
       if (!tenantUser?.isActive) return null
       if (await verifyPopPin(pin, credential.popPinHash)) {
         await setPopWorkerSessionCookie({
-          tenantId,
+          tenantId: effectiveTenantId,
           profileId: credential.profileId,
           tenantUserId: tenantUser.id,
           workerName: credential.profile.name,
@@ -207,7 +212,7 @@ export async function popLogin(
           name: credential.profile.name,
           role: tenantUser.role,
           siteId: tenantUser.siteId ?? "site-a",
-          tenantId,
+          tenantId: effectiveTenantId,
         }
       }
       return null
