@@ -5,12 +5,14 @@ export const NMES_SESSION_COOKIE = 'nmes-session'
 
 const TOKEN_EXPIRY_SECONDS = 60 * 60 * 8 // 8 hours
 
+// maxAge를 설정하지 않아 session cookie로 동작한다.
+// 브라우저(모든 창) 종료 시 쿠키가 삭제되며, PC 재부팅 후 재로그인이 필요하다.
+// JWT 자체의 expiresIn이 8시간 서버사이드 만료를 보장한다.
 export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: 'strict' as const,
   secure: process.env.NODE_ENV === 'production',
   path: '/',
-  maxAge: TOKEN_EXPIRY_SECONDS,
 }
 
 function getJwtSecret(): string {
