@@ -16,6 +16,7 @@ import {
 } from "@/lib/auth/pop-worker-session"
 import {
   advanceWipUnitOnOperationComplete,
+  findActiveWipUnitForWorkOrder,
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
 } from "@/lib/actions/wip-traceability.helpers"
@@ -667,6 +668,35 @@ export async function submitProductionResult(
 
       if (op.status !== "IN_PROGRESS") {
         throw new Error("작업시작 후 실적을 등록해 주세요.")
+      }
+
+      // ── 전공정 양품 기준 투입 가능 수량 제한 ──────────────────────────────
+      // 이 공정에 투입 가능한 수량은 plannedQty(작업지시 계획수량)가 아니라
+      // 전공정에서 양품으로 넘어온 수량(= 현재 활성 root WipUnit 수량) 기준이어야 한다.
+      // 전공정 불량/재작업으로 분리된 수량은 recordProductionResultQualityMovements에서
+      // 이미 root WipUnit qty에서 차감되므로, root WipUnit 수량이 곧 "이동 가능 양품 + 재작업 복귀" 수량이다.
+      //   이번 입력 허용치 = root WipUnit 현재 수량 - 이 공정에서 이미 기록한 양품수량
+      // (root 수량은 이 공정에서 분리된 불량/재작업만큼 이미 줄어 있으므로, 양품 기처리분만 차감하면 된다.)
+      const rootWip = await findActiveWipUnitForWorkOrder(tx, {
+        tenantId: op.workOrder.tenantId,
+        workOrderId: op.workOrderId,
+      })
+      if (rootWip) {
+        const rootQtyScaled = toScaledQty(rootWip.qty, "이동 가능 수량", { allowZero: true })
+        const goodAgg = await tx.productionResult.aggregate({
+          where: { workOrderOperationId },
+          _sum: { goodQty: true },
+        })
+        const goodSoFarScaled = toScaledQty(goodAgg._sum.goodQty ?? 0, "양품수량", { allowZero: true })
+        const availableInputScaled = rootQtyScaled - goodSoFarScaled
+        if (totalScaled > availableInputScaled) {
+          const available = formatScaledQty(
+            availableInputScaled > ZERO_QTY ? availableInputScaled : ZERO_QTY
+          )
+          throw new Error(
+            `전공정에서 다음 공정으로 이동 가능한 수량은 ${available}개입니다. 불량/재작업 대기 수량을 먼저 처리해 주세요.`
+          )
+        }
       }
 
       const assignment = assignmentId
