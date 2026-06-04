@@ -137,6 +137,29 @@ export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps):
       },
     },
     {
+      id: "earliestDueDate",
+      accessorFn: (row) => {
+        // 수주 연결 품목에서 유효한 납기일을 수집 (품목별 > 수주 헤더 순)
+        const dates = row.items
+          .map((i) => i.salesOrderItem?.deliveryDate ?? i.salesOrderItem?.salesOrder.deliveryDate ?? null)
+          .filter((d): d is Date => d != null)
+        if (dates.length === 0) return null
+        return dates.reduce((min, d) => (d < min ? d : min))
+      },
+      header: "납기일",
+      cell: ({ row }) => {
+        const date = row.getValue("earliestDueDate") as Date | null
+        if (!date) return <span className="text-[13px] text-muted-foreground/40">—</span>
+        const formatted = formatDate(date)
+        const isOverdue = new Date(date) < new Date(new Date().toDateString())
+        return (
+          <span className={`text-[13px] tabular-nums ${isOverdue ? "text-red-600 font-medium" : "text-foreground"}`}>
+            {formatted}
+          </span>
+        )
+      },
+    },
+    {
       id: "itemCount",
       accessorFn: (row) => row.items.length,
       header: "품목 수",
