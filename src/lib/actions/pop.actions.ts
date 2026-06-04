@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { OperationStatus, Prisma, WorkOrderStatus } from "@prisma/client"
+import { OperationStatus, Prisma, WipUnitStatus, WorkOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/lib/auth/pop-worker-session"
 import {
   advanceWipUnitOnOperationComplete,
+  findActiveWipUnitForWorkOrder,
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
 } from "@/lib/actions/wip-traceability.helpers"
@@ -518,6 +519,42 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     ? await workOrderHasMaterialIssuance(operation.workOrder.tenantId, operation.workOrder.id)
     : true
 
+  // 현재 공정의 실제 투입 가능 WIP 수량 (전공정 불량/재작업 차감 반영)
+  const rootWipForDisplay = operation.workOrder
+    ? await prisma.wipUnit.findFirst({
+        where: {
+          workOrderId: operation.workOrder.id,
+          parentWipUnitId: null,
+          sourceProductionResultId: null,
+          status: {
+            in: [
+              WipUnitStatus.WAITING,
+              WipUnitStatus.IN_PROCESS,
+              WipUnitStatus.ON_HOLD,
+              WipUnitStatus.OUTSOURCED,
+              WipUnitStatus.IN_TRANSIT,
+              WipUnitStatus.RECEIVED,
+              WipUnitStatus.REWORK,
+            ],
+          },
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: { qty: true },
+      })
+    : null
+
+  const goodSoFarAgg = rootWipForDisplay
+    ? await prisma.productionResult.aggregate({
+        where: { workOrderOperationId: operation.id },
+        _sum: { goodQty: true },
+      })
+    : null
+
+  const availableWipQty =
+    rootWipForDisplay !== null
+      ? Math.max(0, Number(rootWipForDisplay.qty) - Number(goodSoFarAgg?._sum?.goodQty ?? 0))
+      : null
+
   return {
     id: operation.id,
     seq: operation.seq,
@@ -525,6 +562,7 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     materialIssuanceReady,
     plannedQty: Number(operation.plannedQty),
     completedQty: Number(operation.completedQty),
+    availableWipQty,
     workOrder: operation.workOrder
       ? {
           id: operation.workOrder.id,
@@ -669,6 +707,42 @@ export async function submitProductionResult(
         throw new Error("작업시작 후 실적을 등록해 주세요.")
       }
 
+      // ── 전공정 양품 기준 투입 가능 수량 제한 + 공정 완료 판단용 WIP 소진 여부 ────
+      // 이 공정에 투입 가능한 수량은 plannedQty(작업지시 계획수량)가 아니라
+      // 전공정에서 양품으로 넘어온 수량(= 현재 활성 root WipUnit 수량) 기준이어야 한다.
+      // 전공정 불량/재작업으로 분리된 수량은 recordProductionResultQualityMovements에서
+      // 이미 root WipUnit qty에서 차감되므로, root WipUnit 수량이 곧 "이동 가능 양품 + 재작업 복귀" 수량이다.
+      //   이번 입력 허용치 = root WipUnit 현재 수량 - 이 공정에서 이미 기록한 양품수량
+      // (root 수량은 이 공정에서 분리된 불량/재작업만큼 이미 줄어 있으므로, 양품 기처리분만 차감하면 된다.)
+      //
+      // wipExhaustedAfterThisResult: 이번 실적을 반영한 뒤 처리 가능 WIP가 전량 소진되는지 여부.
+      // recordProductionResultQualityMovements 가 root qty -= (defect+rework) 를 수행하므로
+      // 남은 WIP = availableInput - totalScaled. 0이면 이 공정에서 더 처리할 WIP가 없으므로
+      // plannedQty 미달이더라도 공정을 완료 처리할 수 있다.
+      const rootWip = await findActiveWipUnitForWorkOrder(tx, {
+        tenantId: op.workOrder.tenantId,
+        workOrderId: op.workOrderId,
+      })
+      let wipExhaustedAfterThisResult = false
+      if (rootWip) {
+        const rootQtyScaled = toScaledQty(rootWip.qty, "이동 가능 수량", { allowZero: true })
+        const goodAgg = await tx.productionResult.aggregate({
+          where: { workOrderOperationId },
+          _sum: { goodQty: true },
+        })
+        const goodSoFarScaled = toScaledQty(goodAgg._sum.goodQty ?? 0, "양품수량", { allowZero: true })
+        const availableInputScaled = rootQtyScaled - goodSoFarScaled
+        if (totalScaled > availableInputScaled) {
+          const available = formatScaledQty(
+            availableInputScaled > ZERO_QTY ? availableInputScaled : ZERO_QTY
+          )
+          throw new Error(
+            `전공정에서 다음 공정으로 이동 가능한 수량은 ${available}개입니다. 불량/재작업 대기 수량을 먼저 처리해 주세요.`
+          )
+        }
+        wipExhaustedAfterThisResult = availableInputScaled - totalScaled <= ZERO_QTY
+      }
+
       const assignment = assignmentId
         ? op.assignments.find((candidate) => candidate.id === assignmentId) ?? null
         : null
@@ -701,7 +775,8 @@ export async function submitProductionResult(
           throw new Error("잔여 수량(" + formatScaledQty(remainingScaled) + ")을 초과할 수 없습니다.")
         }
 
-        const assignmentShouldComplete = newAssignmentCompletedScaled >= assignedScaled
+        const assignmentShouldComplete =
+          newAssignmentCompletedScaled >= assignedScaled || wipExhaustedAfterThisResult
         const assignmentCompletedById = new Map(
           op.assignments.map((candidate) => [
             candidate.id,
@@ -742,6 +817,19 @@ export async function submitProductionResult(
             status: assignmentShouldComplete ? "COMPLETED" : "IN_PROGRESS",
           },
         })
+
+        // WIP 전량 소진 시 아직 처리 대기 중인 다른 설비배정도 완료 처리한다.
+        // completedQty는 실제 처리한 수량 그대로 유지하고 status만 COMPLETED로 전환한다.
+        if (wipExhaustedAfterThisResult) {
+          await tx.workOrderOperationAssignment.updateMany({
+            where: {
+              workOrderOperationId,
+              status: { in: ["PENDING", "IN_PROGRESS"] },
+              id: { not: assignment.id },
+            },
+            data: { status: "COMPLETED" },
+          })
+        }
 
         // Re-query after update: lock guarantees no concurrent modifications; fresh read
         // includes our just-applied update, replacing stale snapshot-based calculation
@@ -815,7 +903,7 @@ export async function submitProductionResult(
         throw new Error("잔여 수량(" + formatScaledQty(remainingScaled) + ")을 초과할 수 없습니다.")
       }
 
-      const shouldComplete = newCompletedScaled >= plannedScaled
+      const shouldComplete = newCompletedScaled >= plannedScaled || wipExhaustedAfterThisResult
 
       const createdResult = await tx.productionResult.create({
         data: {
