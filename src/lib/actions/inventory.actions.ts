@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { TransactionType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireRole } from "@/lib/auth"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -692,4 +693,230 @@ export async function createTransaction(
 
   revalidatePath("/app/mes/inventory")
   revalidatePath("/app/mes/inventory-transactions")
+}
+
+// ─── 재고실사/재고조정 (의료기기 추적성 보존) ──────────────────────────────────
+//
+// 고객사 실사 결과와 MES 재고가 다를 때 보정하는 기능.
+// 설계 원칙:
+//   1) qtyOnHand를 단순 덮어쓰기(set)하지 않는다. 차이수량(diff)만큼 증감한다.
+//   2) 기존 입출고 InventoryTransaction은 수정/삭제하지 않는다.
+//      차이수량만 refType=STOCK_ADJUSTMENT 인 ADJUST 트랜잭션으로 1건 신규 기록한다.
+//   3) 누가/언제/무엇을/사유 를 AuditLog 로 남긴다.
+//   4) LOT 관리 품목은 LOT 선택 필수. 비LOT 품목은 창고 기준.
+//   5) qtyHold(예약 수량)는 보존하고 qtyAvailable만 재계산한다.
+//   6) 라벨 재발행과 분리: 이 액션은 수량 보정만 수행한다.
+
+const STOCK_ADJUSTMENT_REF_TYPE = "STOCK_ADJUSTMENT"
+
+export type StockAdjustmentInput = {
+  siteId: string
+  warehouseId: string
+  itemId: string
+  lotId?: string | null
+  physicalQty: number // 실사수량
+  reason: string      // 조정 사유 (필수)
+  note?: string | null
+}
+
+export type StockAdjustmentResult = {
+  success: boolean
+  error?: string
+  txNo?: string
+  currentQty?: number
+  physicalQty?: number
+  diffQty?: number
+  direction?: "INCREASE" | "DECREASE"
+}
+
+export async function adjustInventoryStock(
+  input: StockAdjustmentInput
+): Promise<StockAdjustmentResult> {
+  // 권한: 의료기기 재고 보정은 책임자 권한(MANAGER 이상)으로 제한.
+  let actor
+  try {
+    actor = await requireRole("MANAGER")
+  } catch {
+    return { success: false, error: "재고조정 권한이 없습니다. (MANAGER 이상 필요)" }
+  }
+  const tenantId = actor.tenantId
+
+  const { siteId, warehouseId, itemId } = input
+  const lotId = input.lotId ?? null
+  const reason = input.reason?.trim()
+
+  if (!siteId || !warehouseId || !itemId) {
+    return { success: false, error: "사업장/창고/품목은 필수 입력값입니다." }
+  }
+  if (!reason) {
+    return { success: false, error: "재고조정 사유를 입력해 주세요." }
+  }
+  if (!Number.isFinite(input.physicalQty) || input.physicalQty < 0) {
+    return { success: false, error: "실사수량은 0 이상의 숫자여야 합니다." }
+  }
+
+  try {
+    const item = await prisma.item.findFirst({
+      where: { id: itemId, tenantId },
+      select: { isLotTracked: true, itemType: true, code: true, name: true },
+    })
+    if (!item) return { success: false, error: "품목을 찾을 수 없습니다." }
+
+    // LOT 관리 품목(원자재 LOT/완제품 제조번호 추적)은 LOT 선택 필수.
+    if (item.isLotTracked && !lotId) {
+      return {
+        success: false,
+        error: "LOT/제조번호 관리 품목은 LOT를 반드시 선택해 조정해야 합니다.",
+      }
+    }
+
+    const txNo = await generateTxNo(tenantId, TransactionType.ADJUST)
+
+    const result = await prisma.$transaction(async (tx) => {
+      const where = { tenantId, siteId, warehouseId, itemId, lotId }
+      const existing = await tx.inventoryBalance.findFirst({ where })
+      const currentQty = existing ? Number(existing.qtyOnHand) : 0
+      const physicalQty = input.physicalQty
+      const diffQty = Number((physicalQty - currentQty).toFixed(6))
+
+      if (diffQty === 0) {
+        throw new Error("실사수량이 현재고와 동일하여 조정할 내역이 없습니다.")
+      }
+      if (!existing && diffQty < 0) {
+        throw new Error("해당 LOT/창고에 재고 잔고가 없습니다.")
+      }
+
+      // 1) 차이수량만 ADJUST 트랜잭션으로 신규 기록 (기존 입출고 이력 미수정)
+      //    양수=조정입고(toLocation), 음수=조정출고(fromLocation)
+      await tx.inventoryTransaction.create({
+        data: {
+          tenantId,
+          itemId,
+          lotId,
+          fromLocationId: diffQty < 0 ? warehouseId : null,
+          toLocationId: diffQty > 0 ? warehouseId : null,
+          txNo,
+          txType: TransactionType.ADJUST,
+          qty: diffQty, // 부호 있는 차이수량
+          refType: STOCK_ADJUSTMENT_REF_TYPE,
+          refId: existing?.id ?? null,
+          note:
+            `재고실사 조정 | 현재고:${currentQty} 실사:${physicalQty} 차이:${diffQty >= 0 ? "+" : ""}${diffQty} | 사유:${reason}` +
+            (input.note ? ` | 비고:${input.note}` : ""),
+          txAt: new Date(),
+        },
+      })
+
+      // 2) Balance를 차이수량만큼 증감 (덮어쓰기 금지, qtyHold 보존)
+      let newQtyOnHand: number
+      let balanceId: string
+      if (existing) {
+        newQtyOnHand = Number((currentQty + diffQty).toFixed(6))
+        if (newQtyOnHand < 0) {
+          throw new Error("조정 후 재고가 음수가 될 수 없습니다.")
+        }
+        const qtyHold = Number(existing.qtyHold)
+        await tx.inventoryBalance.update({
+          where: { id: existing.id },
+          data: {
+            qtyOnHand: newQtyOnHand,
+            qtyAvailable: Math.max(0, Number((newQtyOnHand - qtyHold).toFixed(6))),
+          },
+        })
+        balanceId = existing.id
+      } else {
+        newQtyOnHand = physicalQty
+        const created = await tx.inventoryBalance.create({
+          data: { ...where, qtyOnHand: newQtyOnHand, qtyAvailable: newQtyOnHand, qtyHold: 0 },
+        })
+        balanceId = created.id
+      }
+
+      // 3) AuditLog (누가/언제/무엇을/사유)
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actor.profileId,
+          actorType: "USER",
+          actorLabel: actor.name,
+          entityType: "InventoryBalance",
+          entityId: balanceId,
+          action: "UPDATE",
+          menuName: "재고조정",
+          beforeData: { qtyOnHand: currentQty },
+          afterData: {
+            qtyOnHand: newQtyOnHand,
+            physicalQty,
+            diffQty,
+            reason,
+            note: input.note ?? null,
+            txNo,
+            itemId,
+            itemCode: item.code,
+            warehouseId,
+            lotId,
+          },
+        },
+      })
+
+      return { currentQty, physicalQty, diffQty }
+    })
+
+    revalidatePath("/app/mes/inventory")
+    revalidatePath("/app/mes/inventory-transactions")
+
+    return {
+      success: true,
+      txNo,
+      currentQty: result.currentQty,
+      physicalQty: result.physicalQty,
+      diffQty: result.diffQty,
+      direction: result.diffQty > 0 ? "INCREASE" : "DECREASE",
+    }
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "재고조정 중 오류가 발생했습니다.",
+    }
+  }
+}
+
+// ─── 재고조정 이력 조회 ────────────────────────────────────────────────────────
+
+export type StockAdjustmentHistoryRow = {
+  id: string
+  txNo: string
+  txAt: string
+  itemCode: string
+  itemName: string
+  lotNo: string | null
+  warehouseName: string | null
+  diffQty: number
+  note: string | null
+}
+
+export async function getStockAdjustmentHistory(): Promise<StockAdjustmentHistoryRow[]> {
+  const rows = await prisma.inventoryTransaction.findMany({
+    where: { refType: STOCK_ADJUSTMENT_REF_TYPE },
+    include: {
+      item: { select: { code: true, name: true } },
+      lot: { select: { lotNo: true } },
+      fromLocation: { select: { name: true } },
+      toLocation: { select: { name: true } },
+    },
+    orderBy: { txAt: "desc" },
+    take: 500,
+  })
+
+  return rows.map((r) => ({
+    id: r.id,
+    txNo: r.txNo,
+    txAt: r.txAt.toISOString(),
+    itemCode: r.item.code,
+    itemName: r.item.name,
+    lotNo: r.lot?.lotNo ?? null,
+    warehouseName: r.toLocation?.name ?? r.fromLocation?.name ?? null,
+    diffQty: Number(r.qty),
+    note: r.note,
+  }))
 }
