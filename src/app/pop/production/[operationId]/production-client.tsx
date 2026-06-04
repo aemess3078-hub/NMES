@@ -49,6 +49,7 @@ type Operation = {
   materialIssuanceReady: boolean
   plannedQty: unknown
   completedQty: unknown
+  availableWipQty?: number | null
   workOrder: WorkOrder | null
   routingOperation: RoutingOperation | null
   equipment: Equipment | null
@@ -80,6 +81,15 @@ export function ProductionClient({ operation }: Props) {
     : Number(operation.plannedQty)
   const equipmentName = selectedAssignment?.equipment?.name ?? operation.equipment?.name ?? "-"
   const materialBlocked = !operation.materialIssuanceReady
+
+  // 실제 투입 가능 WIP (전공정 불량 차감 반영). null이면 WIP 추적 없음 → plannedQty 기준 표시.
+  const availableWipQty = operation.availableWipQty ?? null
+  const hasWipShortfall =
+    availableWipQty !== null && availableWipQty < plannedQty && status !== "COMPLETED"
+  // 잔여수량은 WIP 제약이 있으면 실제 투입 가능 기준, 없으면 계획 기준
+  const effectiveRemaining = hasWipShortfall
+    ? Math.max(availableWipQty - completedQty, 0)
+    : Math.max(plannedQty - completedQty, 0)
   const progress =
     plannedQty > 0
       ? Math.min(100, Math.round((completedQty / plannedQty) * 100))
@@ -183,7 +193,7 @@ export function ProductionClient({ operation }: Props) {
             <div>
               <p className="text-sm text-blue-700">잔여수량</p>
               <p className="mt-1 text-lg font-bold text-blue-900">
-                {Math.max(plannedQty - completedQty, 0).toLocaleString()}
+                {effectiveRemaining.toLocaleString()}
               </p>
             </div>
           </div>
@@ -192,7 +202,7 @@ export function ProductionClient({ operation }: Props) {
         <div className="mt-4">
           <div className="flex justify-between text-sm text-slate-500 mb-1">
             <span>
-              진행률 ({completedQty} / {plannedQty}개)
+              진행률 ({completedQty} / {plannedQty}개 계획)
             </span>
             <span>{progress}%</span>
           </div>
@@ -202,6 +212,16 @@ export function ProductionClient({ operation }: Props) {
               style={{ width: `${progress}%` }}
             />
           </div>
+          {hasWipShortfall && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+              <span className="mt-0.5 shrink-0">⚠</span>
+              <span>
+                전공정 불량으로 투입 가능 수량이 감소했습니다.{" "}
+                <strong>잔여 투입 가능: {effectiveRemaining.toLocaleString()}개</strong>{" "}
+                (계획: {plannedQty.toLocaleString()}개)
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
