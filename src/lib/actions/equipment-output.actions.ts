@@ -22,13 +22,30 @@ export type EquipmentOutputRow = {
   latestAt:       string | null
 }
 
+export type PeriodType = "day" | "week" | "month" | "year" | "range"
+
+export type EquipmentOutputFilter = {
+  from: string       // YYYY-MM-DD (computed)
+  to: string         // YYYY-MM-DD (computed)
+  periodType: PeriodType
+  periodDate: string   // YYYY-MM-DD — UI state for day/week
+  periodMonth: string  // YYYY-MM   — UI state for month
+  periodYear: string   // YYYY      — UI state for year
+}
+
 // ─── 설비별 생산실적 집계 ──────────────────────────────────────────────────────
 
-export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
+export async function getEquipmentOutputStats(
+  filter: Pick<EquipmentOutputFilter, "from" | "to">
+): Promise<EquipmentOutputRow[]> {
   const tenantId = await getTenantId()
+
+  const from = new Date(`${filter.from}T00:00:00.000`)
+  const to   = new Date(`${filter.to}T23:59:59.999`)
 
   const results = await prisma.productionResult.findMany({
     where: {
+      startedAt: { gte: from, lte: to },
       workOrderOperation: {
         workOrder: { tenantId },
       },
@@ -77,7 +94,6 @@ export async function getEquipmentOutputStats(): Promise<EquipmentOutputRow[]> {
   })
 
   // ── 설비별로 그룹핑 ──────────────────────────────────────────────────────────
-  // assignment 실적은 assignment.equipment, 기존 실적은 operation.equipment 우선
   const map = new Map<string, EquipmentOutputRow>()
 
   for (const r of results) {
