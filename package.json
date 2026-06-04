@@ -4,16 +4,18 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node scripts/db-migrate.js && prisma generate && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "node scripts/db-migrate.js",
     "db:studio": "prisma studio",
     "db:seed": "ts-node --project tsconfig.json -e \"require('./prisma/seed.ts')\"",
-    "migrate:user-credentials": "ts-node --project tsconfig.json scripts/migrate-user-credentials.ts"
+    "migrate:user-credentials": "ts-node --project tsconfig.json scripts/migrate-user-credentials.ts",
+    "dev:set-pop-pin": "ts-node --project tsconfig.scripts.json scripts/set-pop-pin-dev.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
