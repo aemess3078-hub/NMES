@@ -3,7 +3,6 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { LocationWithSite } from "@/lib/actions/location.actions"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,22 +18,6 @@ type GetColumnsProps = {
 
 export function getColumns({ onEdit, onDelete }: GetColumnsProps): ColumnDef<LocationWithSite>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(!!v)}
-        />
-      ),
-      enableSorting: false,
-    },
     {
       accessorKey: "code",
       header: "코드",

@@ -12,7 +12,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Checkbox } from "@/components/ui/checkbox"
 
 export type ItemPriceRow = {
   id: string
@@ -31,26 +30,6 @@ export function getColumns(
   onDelete: (id: string) => void
 ): ColumnDef<ItemPriceRow>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(!!v)}
-          aria-label="행 선택"
-        />
-      ),
-      size: 40,
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       id: "itemCode",
       header: "품목코드",

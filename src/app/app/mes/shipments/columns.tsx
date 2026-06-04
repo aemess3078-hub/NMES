@@ -13,7 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Checkbox } from "@/components/ui/checkbox"
 
 export type ShipmentRow = {
   id: string
@@ -50,26 +49,6 @@ export function getColumns(
   onDelete: (id: string) => void
 ): ColumnDef<ShipmentRow>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="행 선택"
-        />
-      ),
-      size: 40,
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       accessorKey: "shipmentNo",
       header: "출하번호",

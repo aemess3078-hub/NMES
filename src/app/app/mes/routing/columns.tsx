@@ -4,7 +4,6 @@ import { ColumnDef } from "@tanstack/react-table"
 import { RoutingStatus } from "@prisma/client"
 
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { RoutingWithDetails } from "@/lib/actions/routing.actions"
@@ -28,28 +27,6 @@ export function getColumns(callbacks: {
   onDelete: (routing: RoutingWithDetails) => void
 }): ColumnDef<RoutingWithDetails>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && "indeterminate")
-          }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="행 선택"
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       accessorKey: "code",
       header: ({ column }) => (

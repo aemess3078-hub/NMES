@@ -3,7 +3,6 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { PartnerType, PartnerStatus } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader, DataTableRowActions } from "@/components/common/data-table"
 import { BusinessPartner } from "@/lib/actions/business-partner.actions"
 
@@ -24,28 +23,6 @@ export function getColumns(callbacks: {
   onDelete: (partner: BusinessPartner) => void
 }): ColumnDef<BusinessPartner>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && "indeterminate")
-          }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="행 선택"
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       accessorKey: "code",
       header: ({ column }) => <DataTableColumnHeader column={column} title="코드" />,

@@ -3,7 +3,6 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { differenceInDays, isPast } from "date-fns"
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader, DataTableRowActions } from "@/components/common/data-table"
 import type { QuotationWithDetails } from "@/lib/actions/quotation.actions"
 
@@ -25,25 +24,6 @@ export function getColumns(callbacks: {
   onConvert: (q: QuotationWithDetails) => void
 }): ColumnDef<QuotationWithDetails>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
-          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(!!v)}
-          aria-label="행 선택"
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       accessorKey: "quotationNo",
       header: ({ column }) => <DataTableColumnHeader column={column} title="견적번호" />,

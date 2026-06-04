@@ -3,7 +3,6 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { ItemType, ItemStatus } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import type { ItemWithDetails } from "@/lib/actions/item.actions"
@@ -33,28 +32,6 @@ export function getColumns(callbacks: {
   onDelete: (item: ItemWithDetails) => void
 }): ColumnDef<ItemWithDetails>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && "indeterminate")
-          }
-          onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(!!v)}
-          aria-label="행 선택"
-        />
-      ),
-      enableSorting: false,
-      enableHiding:  false,
-    },
     {
       accessorKey: "code",
       header: ({ column }) => <DataTableColumnHeader column={column} title="품목코드" />,

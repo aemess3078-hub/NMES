@@ -69,7 +69,6 @@ export function DataTable<TData, TValue>({
   expandedRowId,
   onExpandedRowIdChange,
 }: DataTableProps<TData, TValue>) {
-  const [rowSelection, setRowSelection] = React.useState({})
   const [internalExpanded, setInternalExpanded] = React.useState<ExpandedState>({})
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({})
@@ -93,13 +92,10 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       columnVisibility,
-      rowSelection,
       columnFilters,
       expanded,
     },
-    enableRowSelection: true,
     getRowCanExpand: () => Boolean(renderExpandedRow),
-    onRowSelectionChange: setRowSelection,
     onExpandedChange: isExpandedControlled ? undefined : setInternalExpanded,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -144,7 +140,6 @@ export function DataTable<TData, TValue>({
               table.getRowModel().rows.map((row) => (
                 <React.Fragment key={row.id}>
                   <TableRow
-                    data-state={row.getIsSelected() && "selected"}
                     onClick={(event) => {
                       if (isInteractiveElement(event.target)) return
                       if (expandOnRowClick && renderExpandedRow) {

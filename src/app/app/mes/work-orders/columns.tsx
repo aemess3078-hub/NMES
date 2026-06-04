@@ -7,7 +7,6 @@ import { Boxes, ChevronDown, ChevronRight, ExternalLink, Layers, Package, Send, 
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { type WorkOrderWithDetails } from "@/lib/actions/work-order.actions"
@@ -120,28 +119,6 @@ function getMaterialIssueStatus(workOrder: WorkOrderWithDetails): {
 
 export function getColumns({ onEdit, onDelete, onRelease }: GetColumnsProps): ColumnDef<WorkOrderWithDetails>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && "indeterminate")
-          }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="행 선택"
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       id: "expand",
       header: "",

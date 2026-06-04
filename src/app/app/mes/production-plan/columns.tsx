@@ -4,7 +4,6 @@ import { ColumnDef } from "@tanstack/react-table"
 import { PlanStatus, PlanType } from "@prisma/client"
 
 import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { PlanWithDetails } from "@/lib/actions/production-plan.actions"
@@ -35,28 +34,6 @@ function formatDate(date: Date): string {
 
 export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
   return [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <Checkbox
-          checked={
-            table.getIsAllPageRowsSelected() ||
-            (table.getIsSomePageRowsSelected() && "indeterminate")
-          }
-          onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-          aria-label="전체 선택"
-        />
-      ),
-      cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="행 선택"
-        />
-      ),
-      enableSorting: false,
-      enableHiding: false,
-    },
     {
       accessorKey: "planNo",
       header: ({ column }) => (
