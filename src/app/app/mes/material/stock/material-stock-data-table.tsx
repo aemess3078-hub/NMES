@@ -7,6 +7,8 @@ import { getGroupedColumns } from "./columns"
 import type { GroupedMaterialStock } from "@/lib/actions/inventory.actions"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useUserRole } from "@/lib/contexts/user-role-context"
+import { StockAdjustmentDialog } from "../../inventory/stock-adjustment-dialog"
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "-"
@@ -18,6 +20,8 @@ function formatDate(value: string | null | undefined): string {
 // ── LOT 상세 (행 아래 inline 펼침 내용) ───────────────────────────────────────
 
 function LotDetailContent({ item }: { item: GroupedMaterialStock }) {
+  const role = useUserRole()
+  const canAdjust = role === "OWNER" || role === "ADMIN" || role === "MANAGER"
   // LOT 관리 품목에 한해 LOT 미지정 재고를 경고 대상으로 본다.
   const unlottedRows = item.isLotTracked
     ? item.lotBalances.filter((b) => !b.lotId && b.qtyOnHand > 0)
@@ -76,6 +80,9 @@ function LotDetailContent({ item }: { item: GroupedMaterialStock }) {
                 {item.isLotTracked && (
                   <th className="px-3 py-2 text-right font-medium text-muted-foreground">유통기한</th>
                 )}
+                {canAdjust && (
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">조정</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -106,6 +113,27 @@ function LotDetailContent({ item }: { item: GroupedMaterialStock }) {
                   {item.isLotTracked && (
                     <td className="px-3 py-2 text-right text-muted-foreground">
                       {formatDate(b.expiryDate)}
+                    </td>
+                  )}
+                  {canAdjust && (
+                    <td className="px-3 py-2 text-right">
+                      <StockAdjustmentDialog
+                        target={{
+                          balanceId: b.balanceId,
+                          itemId: item.itemId,
+                          itemCode: item.itemCode,
+                          itemName: item.itemName,
+                          uom: item.uom,
+                          siteId: b.siteId,
+                          siteName: b.siteName,
+                          warehouseId: b.warehouseId,
+                          warehouseCode: b.warehouseCode,
+                          warehouseName: b.warehouseName,
+                          lotId: b.lotId,
+                          lotNo: b.lotNo,
+                          qtyOnHand: b.qtyOnHand,
+                        }}
+                      />
                     </td>
                   )}
                 </tr>

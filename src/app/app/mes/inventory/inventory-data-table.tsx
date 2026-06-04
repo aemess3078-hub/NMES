@@ -6,6 +6,8 @@ import { DataTable } from "@/components/common/data-table"
 import { getGroupedInventoryColumns } from "./columns"
 import type { GroupedInventoryStock } from "@/lib/actions/inventory.actions"
 import { Input } from "@/components/ui/input"
+import { useUserRole } from "@/lib/contexts/user-role-context"
+import { StockAdjustmentDialog } from "./stock-adjustment-dialog"
 import {
   Select,
   SelectContent,
@@ -23,6 +25,9 @@ interface Site {
 // ── LOT/창고별 상세 (행 아래 inline 펼침) ──────────────────────────────────────
 
 function InventoryDetailContent({ item }: { item: GroupedInventoryStock }) {
+  const role = useUserRole()
+  const canAdjust = role === "OWNER" || role === "ADMIN" || role === "MANAGER"
+
   // item.balances 는 이미 site/warehouse 필터 적용 후 전달된 데이터
   const unlottedRows = item.isLotTracked
     ? item.balances.filter((b) => !b.lotId && b.qtyOnHand > 0)
@@ -85,6 +90,11 @@ function InventoryDetailContent({ item }: { item: GroupedInventoryStock }) {
                 <th className="px-3 py-2 text-right font-medium text-muted-foreground">
                   보류재고
                 </th>
+                {canAdjust && (
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">
+                    조정
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -114,8 +124,29 @@ function InventoryDetailContent({ item }: { item: GroupedInventoryStock }) {
                     {b.qtyAvailable.toLocaleString()}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {b.qtyHold > 0 ? b.qtyHold.toLocaleString() : "—"}
+                    {b.qtyHold > 0 ? b.qtyHold.toLocaleString() : "-"}
                   </td>
+                  {canAdjust && (
+                    <td className="px-3 py-2 text-right">
+                      <StockAdjustmentDialog
+                        target={{
+                          balanceId: b.balanceId,
+                          itemId: item.itemId,
+                          itemCode: item.itemCode,
+                          itemName: item.itemName,
+                          uom: item.uom,
+                          siteId: b.siteId,
+                          siteName: b.siteName,
+                          warehouseId: b.warehouseId,
+                          warehouseCode: b.warehouseCode,
+                          warehouseName: b.warehouseName,
+                          lotId: b.lotId,
+                          lotNo: b.lotNo,
+                          qtyOnHand: b.qtyOnHand,
+                        }}
+                      />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
