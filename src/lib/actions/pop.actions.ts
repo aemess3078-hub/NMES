@@ -20,6 +20,10 @@ import {
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
 } from "@/lib/actions/wip-traceability.helpers"
+import {
+  recordSelfInspectionDefects,
+  type SelfInspectionDefectDetail,
+} from "@/lib/actions/self-inspection.helpers"
 import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-plan.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,6 +43,9 @@ export type SubmitResultInput = {
   goodQty: number
   defectQty: number
   reworkQty: number
+  // 불량수량 > 0이면 불량코드별 수량(자주검사 불량내역)을 필수로 받는다.
+  // 합계는 defectQty와 일치해야 한다.
+  defectDetails?: SelfInspectionDefectDetail[]
 }
 
 export type PopWorkQueueRow = {
@@ -71,22 +78,23 @@ export type PopWorkQueueRow = {
 // ─── Auth context helpers ─────────────────────────────────────────────────────
 
 type PopAuthContext =
-  | { mode: "USER_SESSION"; tenantId: string }
-  | { mode: "POP_WORKER_SESSION"; tenantId: string; siteId: string | null; session: PopWorkerSessionPayload }
+  | { mode: "USER_SESSION"; tenantId: string; profileId: string }
+  | { mode: "POP_WORKER_SESSION"; tenantId: string; siteId: string | null; profileId: string; session: PopWorkerSessionPayload }
   | { mode: "UNAUTHENTICATED" }
 
 async function resolvePopAuthContext(): Promise<PopAuthContext> {
   const popWorkerSession = await getPopWorkerSession()
   try {
-    await requireRole("OPERATOR")
+    const user = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
-    return { mode: "USER_SESSION", tenantId }
+    return { mode: "USER_SESSION", tenantId, profileId: user.profileId }
   } catch {
     if (!popWorkerSession) return { mode: "UNAUTHENTICATED" }
     return {
       mode: "POP_WORKER_SESSION",
       tenantId: popWorkerSession.tenantId,
       siteId: popWorkerSession.siteId,
+      profileId: popWorkerSession.profileId,
       session: popWorkerSession,
     }
   }
@@ -555,6 +563,13 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
       ? Math.max(0, Number(rootWipForDisplay.qty) - Number(goodSoFarAgg?._sum?.goodQty ?? 0))
       : null
 
+  // POP 자주검사 불량코드 선택용 목록
+  const defectCodes = await prisma.defectCode.findMany({
+    where: { tenantId: operation.workOrder.tenantId },
+    select: { id: true, code: true, name: true, defectCategory: true },
+    orderBy: { code: "asc" },
+  })
+
   return {
     id: operation.id,
     seq: operation.seq,
@@ -563,6 +578,12 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     plannedQty: Number(operation.plannedQty),
     completedQty: Number(operation.completedQty),
     availableWipQty,
+    defectCodes: defectCodes.map((dc) => ({
+      id: dc.id,
+      code: dc.code,
+      name: dc.name,
+      category: dc.defectCategory,
+    })),
     workOrder: operation.workOrder
       ? {
           id: operation.workOrder.id,
@@ -629,6 +650,41 @@ export async function submitProductionResult(
     return { success: false, error: "수량을 1 이상 입력해 주세요." }
   }
 
+  // ── 불량 자주검사 입력 검증 ────────────────────────────────────────────────
+  // 불량수량 > 0이면 불량코드별 수량(defectDetails)이 필수이며,
+  // 코드 중복 금지 + 합계가 불량수량과 정확히 일치해야 한다.
+  const defectDetails = (data.defectDetails ?? []).filter((d) => d && d.defectCodeId)
+  if (defectQty > 0) {
+    if (defectDetails.length === 0) {
+      return { success: false, error: "불량수량이 있으면 불량코드별 수량을 입력해 주세요." }
+    }
+    const seen = new Set<string>()
+    let detailSumScaled = ZERO_QTY
+    for (const detail of defectDetails) {
+      if (seen.has(detail.defectCodeId)) {
+        return { success: false, error: "이미 선택된 불량코드입니다. 중복 없이 입력해 주세요." }
+      }
+      seen.add(detail.defectCodeId)
+      if (!(detail.qty > 0)) {
+        return { success: false, error: "불량코드별 수량은 1 이상이어야 합니다." }
+      }
+      try {
+        detailSumScaled += toScaledQty(detail.qty, "불량코드 수량")
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : "불량코드 수량 형식이 올바르지 않습니다." }
+      }
+    }
+    const defectScaled = toScaledQty(defectQty, "불량수량")
+    if (detailSumScaled !== defectScaled) {
+      return {
+        success: false,
+        error: `불량코드 수량 합계(${formatScaledQty(detailSumScaled)})가 불량수량(${formatScaledQty(defectScaled)})과 일치해야 합니다.`,
+      }
+    }
+  } else if (defectDetails.length > 0) {
+    return { success: false, error: "불량수량이 0인데 불량코드가 입력되었습니다." }
+  }
+
   try {
     const authCtx = await resolvePopAuthContext()
     if (authCtx.mode === "UNAUTHENTICATED") {
@@ -662,6 +718,7 @@ export async function submitProductionResult(
             },
             orderBy: { seq: "asc" },
           },
+          routingOperationId: true,
           routingOperation: {
             select: { workCenterId: true },
           },
@@ -669,6 +726,7 @@ export async function submitProductionResult(
             select: {
               tenantId: true,
               siteId: true,
+              itemId: true,
               operations: {
                 select: { seq: true, status: true },
                 orderBy: { seq: "asc" },
@@ -810,6 +868,17 @@ export async function submitProductionResult(
           reworkQty,
         })
 
+        // POP 불량을 자주검사(QualityInspection + DefectRecord)로 기록 → 불량통계 반영
+        await recordSelfInspectionDefects(tx, {
+          tenantId: op.workOrder.tenantId,
+          workOrderOperationId,
+          itemId: op.workOrder.itemId,
+          routingOperationId: op.routingOperationId,
+          inspectorProfileId: authCtx.profileId,
+          inspectedQty: goodQty + defectQty + reworkQty,
+          defectDetails,
+        })
+
         await tx.workOrderOperationAssignment.update({
           where: { id: assignment.id },
           data: {
@@ -925,6 +994,17 @@ export async function submitProductionResult(
         productionResultId: createdResult.id,
         defectQty,
         reworkQty,
+      })
+
+      // POP 불량을 자주검사(QualityInspection + DefectRecord)로 기록 → 불량통계 반영
+      await recordSelfInspectionDefects(tx, {
+        tenantId: op.workOrder.tenantId,
+        workOrderOperationId,
+        itemId: op.workOrder.itemId,
+        routingOperationId: op.routingOperationId,
+        inspectorProfileId: authCtx.profileId,
+        inspectedQty: goodQty + defectQty + reworkQty,
+        defectDetails,
       })
 
       await tx.workOrderOperation.update({

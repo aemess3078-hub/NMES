@@ -42,6 +42,18 @@ type Assignment = {
   equipment: Equipment | null
 }
 
+type DefectCode = {
+  id: string
+  code: string
+  name: string
+  category: string
+}
+
+type DefectLine = {
+  defectCodeId: string
+  qty: number
+}
+
 type Operation = {
   id: string
   seq: number
@@ -50,6 +62,7 @@ type Operation = {
   plannedQty: unknown
   completedQty: unknown
   availableWipQty?: number | null
+  defectCodes?: DefectCode[]
   workOrder: WorkOrder | null
   routingOperation: RoutingOperation | null
   equipment: Equipment | null
@@ -67,8 +80,39 @@ export function ProductionClient({ operation }: Props) {
   const [goodQty, setGoodQty] = useState(0)
   const [defectQty, setDefectQty] = useState(0)
   const [reworkQty, setReworkQty] = useState(0)
+  const [defectLines, setDefectLines] = useState<DefectLine[]>([])
   const [loading, setLoading] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
+
+  const defectCodes = operation.defectCodes ?? []
+  const defectLinesTotal = defectLines.reduce((sum, line) => sum + (line.qty || 0), 0)
+  // 불량수량 > 0이면 불량코드별 수량 합계가 정확히 일치해야 제출 가능
+  const defectDetailsValid =
+    defectQty === 0
+      ? defectLines.length === 0
+      : defectLines.length > 0 &&
+        defectLines.every((line) => line.defectCodeId && line.qty > 0) &&
+        defectLinesTotal === defectQty
+
+  const addDefectLine = () => {
+    // 아직 선택되지 않은 첫 불량코드를 기본값으로
+    const usedIds = new Set(defectLines.map((l) => l.defectCodeId))
+    const nextCode = defectCodes.find((dc) => !usedIds.has(dc.id))
+    setDefectLines((prev) => [
+      ...prev,
+      { defectCodeId: nextCode?.id ?? "", qty: 0 },
+    ])
+  }
+
+  const updateDefectLine = (index: number, patch: Partial<DefectLine>) => {
+    setDefectLines((prev) =>
+      prev.map((line, i) => (i === index ? { ...line, ...patch } : line))
+    )
+  }
+
+  const removeDefectLine = (index: number) => {
+    setDefectLines((prev) => prev.filter((_, i) => i !== index))
+  }
 
   const wo = operation.workOrder
   const selectedAssignment = operation.selectedAssignment
@@ -114,6 +158,12 @@ export function ProductionClient({ operation }: Props) {
 
   const handleSubmit = async () => {
     if (goodQty + defectQty + reworkQty === 0) return
+    if (defectQty > 0 && !defectDetailsValid) {
+      setStartError(
+        `불량코드별 수량 합계(${defectLinesTotal})가 불량수량(${defectQty})과 일치해야 합니다.`
+      )
+      return
+    }
     setLoading(true)
     setStartError(null)
     try {
@@ -123,11 +173,19 @@ export function ProductionClient({ operation }: Props) {
         goodQty,
         defectQty,
         reworkQty,
+        defectDetails:
+          defectQty > 0
+            ? defectLines.map((line) => ({
+                defectCodeId: line.defectCodeId,
+                qty: line.qty,
+              }))
+            : [],
       })
       if (result.success) {
         setGoodQty(0)
         setDefectQty(0)
         setReworkQty(0)
+        setDefectLines([])
         router.refresh()
       } else {
         setStartError(result.error ?? "실적 등록에 실패했습니다.")
@@ -238,6 +296,101 @@ export function ProductionClient({ operation }: Props) {
           <h2 className="font-bold text-lg text-slate-800">실적 입력</h2>
           <PopQuantityInput label="양품" value={goodQty} onChange={setGoodQty} steps={[1, 10, 100]} />
           <PopQuantityInput label="불량" value={defectQty} onChange={setDefectQty} steps={[1, 10]} />
+
+          {/* 불량코드별 수량 (자주검사) — 불량수량 > 0일 때만 */}
+          {defectQty > 0 && (
+            <div className="rounded-xl border border-red-200 bg-red-50/60 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-[15px] text-red-800">
+                  불량 원인 입력 (자주검사)
+                </h3>
+                <span
+                  className={`text-sm font-medium ${
+                    defectDetailsValid ? "text-emerald-700" : "text-red-600"
+                  }`}
+                >
+                  합계 {defectLinesTotal} / {defectQty}개
+                </span>
+              </div>
+
+              {defectCodes.length === 0 ? (
+                <p className="text-sm text-red-700">
+                  등록된 불량코드가 없습니다. 불량관리에서 먼저 불량코드를 등록해 주세요.
+                </p>
+              ) : (
+                <>
+                  {defectLines.map((line, index) => {
+                    const usedIds = new Set(
+                      defectLines
+                        .filter((_, i) => i !== index)
+                        .map((l) => l.defectCodeId)
+                    )
+                    return (
+                      <div key={index} className="flex items-center gap-2">
+                        <select
+                          value={line.defectCodeId}
+                          onChange={(e) =>
+                            updateDefectLine(index, { defectCodeId: e.target.value })
+                          }
+                          className="flex-1 h-11 rounded-lg border border-slate-300 bg-white px-3 text-[15px]"
+                        >
+                          <option value="" disabled>
+                            불량코드 선택
+                          </option>
+                          {defectCodes.map((dc) => (
+                            <option
+                              key={dc.id}
+                              value={dc.id}
+                              disabled={usedIds.has(dc.id)}
+                            >
+                              [{dc.code}] {dc.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="numeric"
+                          value={line.qty === 0 ? "" : line.qty}
+                          placeholder="수량"
+                          onChange={(e) =>
+                            updateDefectLine(index, {
+                              qty: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          className="w-20 h-11 rounded-lg border border-slate-300 bg-white px-3 text-[15px] text-center"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeDefectLine(index)}
+                          className="h-11 w-11 shrink-0 rounded-lg border border-slate-300 bg-white text-slate-500 hover:text-red-600"
+                          aria-label="불량코드 행 삭제"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )
+                  })}
+
+                  <button
+                    type="button"
+                    onClick={addDefectLine}
+                    disabled={defectLines.length >= defectCodes.length}
+                    className="w-full h-11 rounded-lg border border-dashed border-red-300 text-[15px] text-red-700 hover:bg-red-100 disabled:opacity-40"
+                  >
+                    + 불량코드 추가
+                  </button>
+
+                  {!defectDetailsValid && defectLines.length > 0 && (
+                    <p className="text-sm text-red-600">
+                      불량코드별 수량 합계가 불량수량({defectQty})과 일치해야 등록할 수 있습니다.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <PopQuantityInput label="재작업" value={reworkQty} onChange={setReworkQty} steps={[1, 10]} />
         </div>
       )}
@@ -296,7 +449,11 @@ export function ProductionClient({ operation }: Props) {
             )}
             <button
               onClick={handleSubmit}
-              disabled={loading || goodQty + defectQty + reworkQty === 0}
+              disabled={
+                loading ||
+                goodQty + defectQty + reworkQty === 0 ||
+                (defectQty > 0 && !defectDetailsValid)
+              }
               className="w-full h-16 text-lg font-bold bg-blue-500 hover:bg-blue-600 text-white rounded-2xl transition-all active:scale-[0.98] disabled:opacity-50"
             >
               실적 등록
