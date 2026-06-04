@@ -143,6 +143,7 @@ export type LotBalanceDetail = {
   warehouseId: string
   warehouseCode: string
   warehouseName: string
+  siteId: string
   siteName: string
   qtyOnHand: number
   qtyAvailable: number
@@ -188,6 +189,7 @@ export async function getGroupedMaterialInventoryBalances(): Promise<GroupedMate
       warehouseId: balance.warehouseId,
       warehouseCode: balance.warehouse.code,
       warehouseName: balance.warehouse.name,
+      siteId: balance.warehouse.siteId,
       siteName: balance.warehouse.site.name,
       qtyOnHand: balance.qtyOnHand,
       qtyAvailable: balance.qtyAvailable,
@@ -863,6 +865,7 @@ export async function adjustInventoryStock(
     })
 
     revalidatePath("/app/mes/inventory")
+    revalidatePath("/app/mes/material/stock")
     revalidatePath("/app/mes/inventory-transactions")
 
     return {
