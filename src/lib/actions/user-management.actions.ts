@@ -133,6 +133,7 @@ export async function updateUserRole(
         action: "UPDATE",
         beforeData: { role: beforeRole, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
         afterData: { role: newRole, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        menuName: "사용자/권한관리",
       },
     })
 
@@ -182,6 +183,7 @@ export async function deactivateUser(tenantUserId: string): Promise<{ success: b
         action: "UPDATE",
         beforeData: { isActive: true, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
         afterData: { isActive: false, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        menuName: "사용자/권한관리",
       },
     })
 
@@ -308,6 +310,7 @@ export async function deleteUserPermanently(
           entityId: profileId,
           action: "DELETE",
           beforeData: { email: targetEmail, name: targetName, tenantUserId },
+          menuName: "사용자/권한관리",
         },
       })
     })
@@ -367,8 +370,8 @@ function buildLoginHistoryWhere(
     from.setDate(from.getDate() - filter.days)
     where.createdAt = { gte: from }
   } else if (filter.days === 0 && (filter.dateFrom || filter.dateTo)) {
-    const from = filter.dateFrom ? new Date(filter.dateFrom) : undefined
-    const to = filter.dateTo ? new Date(filter.dateTo + "T23:59:59.999Z") : undefined
+    const from = filter.dateFrom ? new Date(filter.dateFrom + "T00:00:00+09:00") : undefined
+    const to = filter.dateTo ? new Date(filter.dateTo + "T23:59:59.999+09:00") : undefined
     where.createdAt = { gte: from, lte: to }
   }
 
@@ -601,8 +604,8 @@ function buildAuditLogWhere(
     from.setDate(from.getDate() - filter.days)
     where.actedAt = { gte: from }
   } else if (filter.days === 0 && (filter.dateFrom || filter.dateTo)) {
-    const from = filter.dateFrom ? new Date(filter.dateFrom) : undefined
-    const to = filter.dateTo ? new Date(filter.dateTo + "T23:59:59.999Z") : undefined
+    const from = filter.dateFrom ? new Date(filter.dateFrom + "T00:00:00+09:00") : undefined
+    const to = filter.dateTo ? new Date(filter.dateTo + "T23:59:59.999+09:00") : undefined
     where.actedAt = { gte: from, lte: to }
   }
 
@@ -774,6 +777,7 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
         action: "UPDATE",
         beforeData: { isActive: false, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
         afterData: { isActive: true, targetUserName: tenantUser.profile.name, targetUserEmail: tenantUser.profile.email },
+        menuName: "사용자/권한관리",
       },
     })
 
@@ -837,6 +841,7 @@ export async function resetUserPassword(
             passwordReset: true,
             mustChangePw: true,
           },
+          menuName: "사용자/권한관리",
         },
       })
     })
@@ -944,6 +949,7 @@ export async function resetUserPopPin(
             targetUserEmail: tenantUser.profile.email,
             popPinReset: true,
           },
+          menuName: "사용자/권한관리",
         },
       })
     })

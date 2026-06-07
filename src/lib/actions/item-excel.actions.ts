@@ -279,6 +279,7 @@ export async function importValidatedItems(
             importedCount: rows.length,
             itemCodes:     importedCodes.slice(0, 20),
           },
+          menuName: "품목 관리",
         },
       })
     })

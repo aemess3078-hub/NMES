@@ -101,6 +101,7 @@ export async function updateMyProfile(
           jobTitle: before?.jobTitle ?? null,
         },
         afterData: { name, phone, jobTitle },
+        menuName: "내 프로필",
       },
     }).catch(() => {})
 
@@ -193,6 +194,7 @@ export async function changeMyPopPin(
           entityId: credential.id,
           action: 'UPDATE',
           afterData: { popPinChanged: true },
+          menuName: "내 프로필",
         },
       })
     })

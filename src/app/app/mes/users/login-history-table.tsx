@@ -40,7 +40,7 @@ const EVENT_CONFIG: Record<string, { label: string; className: string }> = {
 function formatDateTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return "—"
-  return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium" })
+  return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" })
 }
 
 export function LoginHistoryTable({ initialData }: { initialData: PaginatedResult<LoginHistoryRow> }) {
@@ -102,11 +102,11 @@ export function LoginHistoryTable({ initialData }: { initialData: PaginatedResul
       const wsData = [
         ["일시", "사용자명", "이메일", "아이디", "결과", "실패사유", "IP", "기기정보"],
         ...allRows.map((r) => [
-          r.createdAt,
+          formatDateTime(r.createdAt),
           r.name ?? "",
           r.email ?? "",
           r.loginId,
-          r.eventType,
+          EVENT_CONFIG[r.eventType]?.label ?? r.eventType,
           r.failReason ? (FAIL_REASON_LABELS[r.failReason] ?? r.failReason) : "",
           r.ipAddress ?? "",
           r.userAgent ?? "",
@@ -115,7 +115,7 @@ export function LoginHistoryTable({ initialData }: { initialData: PaginatedResul
       const wb = XLSX.utils.book_new()
       const ws = XLSX.utils.aoa_to_sheet(wsData)
       XLSX.utils.book_append_sheet(wb, ws, "접속기록")
-      const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+      const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }).replace(/-/g, "")
       XLSX.writeFile(wb, `접속기록_${date}.xlsx`)
     } finally {
       setIsExporting(false)

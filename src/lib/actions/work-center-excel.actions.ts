@@ -245,6 +245,7 @@ export async function importValidatedWorkCenters(
             importedCount: recheck.validRows.length,
             workCenterCodes: importedCodes.slice(0, 20),
           },
+          menuName: "작업센터 관리",
         },
       })
     })

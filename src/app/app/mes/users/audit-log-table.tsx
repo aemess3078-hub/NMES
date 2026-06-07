@@ -29,10 +29,25 @@ const ACTION_CONFIG: Record<string, { label: string; className: string }> = {
   REJECT: { label: "반려", className: "bg-amber-50 text-amber-700 border-amber-200" },
 }
 
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+  TenantUser: "사용자",
+  Profile: "프로필",
+  UserCredential: "비밀번호/PIN",
+  EngineeringChange: "변경관리(ECN)",
+  SignupRequest: "가입신청",
+  QualityInspection: "검사",
+  InventoryBalance: "재고",
+  BOM: "BOM",
+  Item: "품목",
+  BusinessPartner: "거래처",
+  Routing: "라우팅",
+  WorkCenter: "작업센터",
+}
+
 function formatDateTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return "—"
-  return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium" })
+  return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" })
 }
 
 export function AuditLogTable({ initialData }: { initialData: PaginatedResult<AuditLogRow> }) {
@@ -94,10 +109,10 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
       const wsData = [
         ["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP"],
         ...allRows.map((r) => [
-          r.actedAt,
+          formatDateTime(r.actedAt),
           r.actorName ?? r.actorLabel ?? "시스템",
-          r.action,
-          r.entityType,
+          ACTION_CONFIG[r.action]?.label ?? r.action,
+          ENTITY_TYPE_LABELS[r.entityType] ?? r.entityType,
           r.targetLabel || r.entityId,
           r.menuName ?? "",
           r.ipAddress ?? "",
@@ -106,7 +121,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
       const wb = XLSX.utils.book_new()
       const ws = XLSX.utils.aoa_to_sheet(wsData)
       XLSX.utils.book_append_sheet(wb, ws, "이용로그")
-      const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+      const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" }).replace(/-/g, "")
       XLSX.writeFile(wb, `이용로그_${date}.xlsx`)
     } finally {
       setIsExporting(false)
@@ -269,7 +284,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
                       </Badge>
                     </td>
                     <td className="px-4 py-2.5 text-[13px] text-muted-foreground whitespace-nowrap">
-                      {r.entityType}
+                      {ENTITY_TYPE_LABELS[r.entityType] ?? r.entityType}
                     </td>
                     <td className="px-4 py-2.5 text-[13px] max-w-[280px]">
                       <span className="block truncate" title={r.targetLabel || r.entityId}>
