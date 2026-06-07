@@ -114,10 +114,10 @@ export type CreateBomInput = {
 }
 
 export async function createBom(data: CreateBomInput, _tenantId?: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { bomItems, ...bomFields } = data
-  await prisma.bOM.create({
+  const bom = await prisma.bOM.create({
     data: {
       ...bomFields,
       tenantId,
@@ -131,11 +131,23 @@ export async function createBom(data: CreateBomInput, _tenantId?: string) {
       },
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "BOM",
+      entityId: bom.id,
+      action: "CREATE",
+      afterData: { itemId: bom.itemId, version: bom.version, status: bom.status, bomItemCount: bomItems.length },
+      menuName: "BOM 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/bom")
 }
 
 export async function updateBom(id: string, data: CreateBomInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -162,11 +174,24 @@ export async function updateBom(id: string, data: CreateBomInput) {
       },
     }),
   ])
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "BOM",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { itemId: owned.itemId, version: owned.version, status: owned.status },
+      afterData: { itemId, version, status, bomItemCount: bomItems.length },
+      menuName: "BOM 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/bom")
 }
 
 export async function deleteBom(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -175,5 +200,17 @@ export async function deleteBom(id: string) {
     prisma.bOMItem.deleteMany({ where: { bomId: id } }),
     prisma.bOM.delete({ where: { id } }),
   ])
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "BOM",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { itemId: owned.itemId, version: owned.version, status: owned.status },
+      menuName: "BOM 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/bom")
 }

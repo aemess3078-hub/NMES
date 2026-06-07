@@ -274,6 +274,7 @@ export async function importValidatedBusinessPartners(
             importedCount: rows.length,
             partnerCodes: importedCodes.slice(0, 20),
           },
+          menuName: "거래처 관리",
         },
       })
     })

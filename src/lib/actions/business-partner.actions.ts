@@ -1,6 +1,6 @@
 "use server"
 
-import { getTenantId } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, PartnerType, PartnerStatus } from "@prisma/client"
 
@@ -33,18 +33,33 @@ export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promi
 }
 
 export async function createBusinessPartner(_tenantId: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const existing = await prisma.businessPartner.findFirst({
     where: { tenantId, code: data.code },
   })
   if (existing) throw new Error("DUPLICATE_CODE")
 
-  return prisma.businessPartner.create({
+  const partner = await prisma.businessPartner.create({
     data: { tenantId, code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "BusinessPartner",
+      entityId: partner.id,
+      action: "CREATE",
+      afterData: { code: partner.code, name: partner.name, partnerType: partner.partnerType, status: partner.status },
+      menuName: "거래처 관리",
+    },
+  }).catch(() => {})
+  return partner
 }
 
 export async function updateBusinessPartner(id: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.businessPartner.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -54,13 +69,43 @@ export async function updateBusinessPartner(id: string, data: BusinessPartnerFor
   })
   if (duplicate) throw new Error("DUPLICATE_CODE")
 
-  return prisma.businessPartner.update({
+  const updated = await prisma.businessPartner.update({
     where: { id },
     data: { code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "BusinessPartner",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, partnerType: owned.partnerType, status: owned.status },
+      afterData: { code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
+      menuName: "거래처 관리",
+    },
+  }).catch(() => {})
+  return updated
 }
 
 export async function deleteBusinessPartner(id: string): Promise<void> {
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
+  const owned = await prisma.businessPartner.findFirst({ where: { id, tenantId } })
   await prisma.businessPartner.deleteMany({ where: { id, tenantId } })
+  if (owned) {
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "BusinessPartner",
+        entityId: id,
+        action: "DELETE",
+        beforeData: { code: owned.code, name: owned.name, partnerType: owned.partnerType, status: owned.status },
+        menuName: "거래처 관리",
+      },
+    }).catch(() => {})
+  }
 }

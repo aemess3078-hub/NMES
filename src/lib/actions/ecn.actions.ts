@@ -450,6 +450,7 @@ async function implementECNLegacy(id: string) {
         entityId: id,
         action: "UPDATE",
         afterData: { ecnNo: ecn.ecnNo, changeType: ecn.changeType, status: "IMPLEMENTED" },
+        menuName: "변경관리(ECN)",
       },
     })
   })
