@@ -70,9 +70,9 @@ export type CreateSiteInput = {
 }
 
 export async function createSite(data: CreateSiteInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  await prisma.site.create({
+  const site = await prisma.site.create({
     data: {
       code: data.code,
       name: data.name,
@@ -80,11 +80,23 @@ export async function createSite(data: CreateSiteInput) {
       tenantId,
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Site",
+      entityId: site.id,
+      action: "CREATE",
+      afterData: { code: site.code, name: site.name, type: site.type },
+      menuName: "사업장 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/sites")
 }
 
 export async function updateSite(id: string, data: CreateSiteInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.site.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -93,11 +105,24 @@ export async function updateSite(id: string, data: CreateSiteInput) {
     where: { id },
     data: { code: data.code, name: data.name, type: data.type ?? SiteType.FACTORY },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Site",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, type: owned.type },
+      afterData: { code: data.code, name: data.name, type: data.type ?? SiteType.FACTORY },
+      menuName: "사업장 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/sites")
 }
 
 export async function deleteSite(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.site.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -111,5 +136,17 @@ export async function deleteSite(id: string) {
     throw new Error(`이 사이트에 배정된 사용자가 ${userCount}명 있습니다. 사용자 배정을 먼저 해제해주세요.`)
   }
   await prisma.site.delete({ where: { id } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Site",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, type: owned.type },
+      menuName: "사업장 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/sites")
 }

@@ -42,6 +42,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   BusinessPartner: "거래처",
   Routing: "라우팅",
   WorkCenter: "작업센터",
+  Site: "사업장",
 }
 
 function formatDateTime(iso: string): string {
