@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
@@ -34,9 +35,22 @@ export type CreateItemPriceInput = {
 }
 
 export async function createItemPrice(tenantId: string, data: CreateItemPriceInput) {
-  await prisma.itemPrice.create({
+  const actor = await requireRole("OPERATOR")
+  const created = await prisma.itemPrice.create({
     data: { tenantId, ...data },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "ItemPrice",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { itemId: data.itemId, partnerId: data.partnerId, priceType: data.priceType, unitPrice: data.unitPrice, currency: data.currency },
+      menuName: "품목 가격 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/item-prices")
 }
 
@@ -49,11 +63,46 @@ export type UpdateItemPriceInput = {
 }
 
 export async function updateItemPrice(id: string, data: UpdateItemPriceInput) {
+  const actor = await requireRole("OPERATOR")
+  const tenantId = await getTenantId()
+  const owned = await prisma.itemPrice.findUnique({ where: { id } })
   await prisma.itemPrice.update({ where: { id }, data })
+  if (owned) {
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "ItemPrice",
+        entityId: id,
+        action: "UPDATE",
+        beforeData: { unitPrice: Number(owned.unitPrice), currency: owned.currency },
+        afterData: { unitPrice: data.unitPrice, currency: data.currency },
+        menuName: "품목 가격 관리",
+      },
+    }).catch(() => {})
+  }
   revalidatePath("/app/mes/item-prices")
 }
 
 export async function deleteItemPrice(id: string) {
+  const actor = await requireRole("OPERATOR")
+  const tenantId = await getTenantId()
+  const owned = await prisma.itemPrice.findUnique({ where: { id } })
   await prisma.itemPrice.delete({ where: { id } })
+  if (owned) {
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "ItemPrice",
+        entityId: id,
+        action: "DELETE",
+        beforeData: { itemId: owned.itemId, partnerId: owned.partnerId, priceType: owned.priceType, unitPrice: Number(owned.unitPrice), currency: owned.currency },
+        menuName: "품목 가격 관리",
+      },
+    }).catch(() => {})
+  }
   revalidatePath("/app/mes/item-prices")
 }

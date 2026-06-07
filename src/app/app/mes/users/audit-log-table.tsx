@@ -43,6 +43,12 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   Routing: "라우팅",
   WorkCenter: "작업센터",
   Site: "사업장",
+  Warehouse: "창고/로케이션",
+  ItemCategory: "품목 카테고리",
+  ItemGroup: "품목 그룹",
+  ItemPrice: "품목 가격",
+  CodeGroup: "공통코드 그룹",
+  CommonCode: "공통코드",
 }
 
 function formatDateTime(iso: string): string {

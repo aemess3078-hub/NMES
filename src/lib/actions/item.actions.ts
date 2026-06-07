@@ -142,7 +142,7 @@ async function resolveCategoryAndValidateGroup(
 }
 
 export async function createItem(data: ItemFormValues) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const existing = await prisma.item.findFirst({ where: { tenantId, code: data.code } })
@@ -159,7 +159,7 @@ export async function createItem(data: ItemFormValues) {
   )
   const lotNumberingSettings = resolveLotNumberingSettings(data)
 
-  return prisma.item.create({
+  const item = await prisma.item.create({
     data: {
       tenantId,
       code:            data.code,
@@ -176,10 +176,23 @@ export async function createItem(data: ItemFormValues) {
       defaultWarehouseId: resolvedDefaultWarehouseId,
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Item",
+      entityId: item.id,
+      action: "CREATE",
+      afterData: { code: item.code, name: item.name, itemType: item.itemType, status: item.status },
+      menuName: "품목 관리",
+    },
+  }).catch(() => {})
+  return item
 }
 
 export async function updateItem(id: string, data: ItemFormValues) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const owned = await prisma.item.findFirst({ where: { id, tenantId } })
@@ -201,7 +214,7 @@ export async function updateItem(id: string, data: ItemFormValues) {
   )
   const lotNumberingSettings = resolveLotNumberingSettings(data)
 
-  return prisma.item.update({
+  const updated = await prisma.item.update({
     where: { id },
     data: {
       code:            data.code,
@@ -218,10 +231,40 @@ export async function updateItem(id: string, data: ItemFormValues) {
       defaultWarehouseId: resolvedDefaultWarehouseId,
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Item",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, status: owned.status },
+      afterData: { code: data.code, name: data.name, status: data.status },
+      menuName: "품목 관리",
+    },
+  }).catch(() => {})
+  return updated
 }
 
 export async function deleteItem(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  return prisma.item.deleteMany({ where: { id, tenantId } })
+  const owned = await prisma.item.findFirst({ where: { id, tenantId } })
+  const result = await prisma.item.deleteMany({ where: { id, tenantId } })
+  if (owned) {
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "Item",
+        entityId: id,
+        action: "DELETE",
+        beforeData: { code: owned.code, name: owned.name, status: owned.status },
+        menuName: "품목 관리",
+      },
+    }).catch(() => {})
+  }
+  return result
 }

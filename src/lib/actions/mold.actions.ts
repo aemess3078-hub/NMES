@@ -102,7 +102,7 @@ export async function createMold(data: {
   equipmentType: MoldEquipmentType
   status?: EquipmentStatus
 }) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const existing = await prisma.equipment.findUnique({
@@ -110,7 +110,7 @@ export async function createMold(data: {
   })
   if (existing) throw new Error(`코드 '${data.code}'가 이미 존재합니다.`)
 
-  await prisma.equipment.create({
+  const created = await prisma.equipment.create({
     data: {
       tenantId,
       siteId: data.siteId,
@@ -121,6 +121,18 @@ export async function createMold(data: {
       status: data.status ?? "ACTIVE",
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Equipment",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { code: created.code, name: created.name, equipmentType: created.equipmentType, status: created.status },
+      menuName: "금형/치공구 관리",
+    },
+  }).catch(() => {})
   revalidatePath(REVALIDATE_PATH)
 }
 
@@ -135,7 +147,7 @@ export async function updateMold(
     status?: EquipmentStatus
   }
 ) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const owned = await prisma.equipment.findFirst({
@@ -144,6 +156,19 @@ export async function updateMold(
   if (!owned) throw new Error("금형/치공구를 찾을 수 없습니다.")
 
   await prisma.equipment.update({ where: { id }, data })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Equipment",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, equipmentType: owned.equipmentType, status: owned.status },
+      afterData: { code: owned.code, name: data.name ?? owned.name, equipmentType: data.equipmentType ?? owned.equipmentType, status: data.status ?? owned.status },
+      menuName: "금형/치공구 관리",
+    },
+  }).catch(() => {})
   revalidatePath(REVALIDATE_PATH)
 }
 
@@ -151,7 +176,7 @@ export async function updateMold(
 // 이력이 있으면 hard delete 차단 → 삭제 대신 INACTIVE 상태 변경 권유
 
 export async function deleteMold(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const owned = await prisma.equipment.findFirst({
@@ -173,5 +198,17 @@ export async function deleteMold(id: string) {
   }
 
   await prisma.equipment.delete({ where: { id } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Equipment",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, equipmentType: owned.equipmentType, status: owned.status },
+      menuName: "금형/치공구 관리",
+    },
+  }).catch(() => {})
   revalidatePath(REVALIDATE_PATH)
 }

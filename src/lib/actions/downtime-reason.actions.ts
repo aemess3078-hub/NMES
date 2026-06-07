@@ -62,14 +62,14 @@ export type DowntimeReasonInput = {
 }
 
 export async function createDowntimeReason(data: DowntimeReasonInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const groupId  = await ensureGroup(tenantId)
 
   const dup = await prisma.commonCode.findFirst({ where: { groupId, code: data.code } })
   if (dup) throw new Error("DUPLICATE_CODE")
 
-  await prisma.commonCode.create({
+  const created = await prisma.commonCode.create({
     data: {
       groupId,
       code:         data.code,
@@ -79,6 +79,18 @@ export async function createDowntimeReason(data: DowntimeReasonInput) {
       isActive:     data.isActive ?? true,
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CommonCode",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { code: created.code, name: created.name, group: GROUP_CODE },
+      menuName: "비가동 사유 관리",
+    },
+  }).catch(() => {})
   revalidatePath(REVALIDATE)
 }
 
@@ -86,7 +98,7 @@ export async function updateDowntimeReason(
   id:   string,
   data: Partial<Omit<DowntimeReasonInput, "code">>,
 ) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const groupId  = await ensureGroup(tenantId)
 
@@ -94,11 +106,24 @@ export async function updateDowntimeReason(
   if (!owned) throw new Error("NOT_FOUND")
 
   await prisma.commonCode.update({ where: { id }, data })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CommonCode",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
+      afterData: { code: owned.code, name: data.name ?? owned.name, isActive: data.isActive ?? owned.isActive },
+      menuName: "비가동 사유 관리",
+    },
+  }).catch(() => {})
   revalidatePath(REVALIDATE)
 }
 
 export async function toggleDowntimeReasonActive(id: string, isActive: boolean) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const groupId  = await ensureGroup(tenantId)
 
@@ -106,5 +131,18 @@ export async function toggleDowntimeReasonActive(id: string, isActive: boolean) 
   if (!owned) throw new Error("NOT_FOUND")
 
   await prisma.commonCode.update({ where: { id }, data: { isActive } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CommonCode",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
+      afterData: { code: owned.code, name: owned.name, isActive },
+      menuName: "비가동 사유 관리",
+    },
+  }).catch(() => {})
   revalidatePath(REVALIDATE)
 }

@@ -70,14 +70,14 @@ export type CreateEquipmentInput = {
 }
 
 export async function createEquipment(data: CreateEquipmentInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const existing = await prisma.equipment.findUnique({
     where: { siteId_code: { siteId: data.siteId, code: data.code } },
   })
   if (existing) throw new Error(`설비코드 '${data.code}'가 이미 존재합니다.`)
 
-  await prisma.equipment.create({
+  const created = await prisma.equipment.create({
     data: {
       tenantId,
       siteId: data.siteId,
@@ -88,6 +88,18 @@ export async function createEquipment(data: CreateEquipmentInput) {
       status: data.status ?? "ACTIVE",
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Equipment",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { code: created.code, name: created.name, equipmentType: created.equipmentType, status: created.status },
+      menuName: "설비 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/master/equipment")
 }
 
@@ -101,19 +113,32 @@ export type UpdateEquipmentInput = {
 }
 
 export async function updateEquipment(id: string, data: UpdateEquipmentInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.equipment.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("설비를 찾을 수 없습니다.")
 
   await prisma.equipment.update({ where: { id }, data })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Equipment",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, equipmentType: owned.equipmentType, status: owned.status },
+      afterData: { code: owned.code, name: data.name ?? owned.name, equipmentType: data.equipmentType ?? owned.equipmentType, status: data.status ?? owned.status },
+      menuName: "설비 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/master/equipment")
 }
 
 // ─── 삭제 ─────────────────────────────────────────────────────────────────────
 
 export async function deleteEquipment(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.equipment.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("설비를 찾을 수 없습니다.")
@@ -127,5 +152,17 @@ export async function deleteEquipment(id: string) {
     throw new Error(`수리요청 이력이 ${repairCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
 
   await prisma.equipment.delete({ where: { id } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Equipment",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, equipmentType: owned.equipmentType, status: owned.status },
+      menuName: "설비 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/master/equipment")
 }

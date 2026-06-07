@@ -33,7 +33,7 @@ export type ItemGroupFormData = {
 }
 
 export async function createItemGroup(data: ItemGroupFormData) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const [duplicate, ownedCategory] = await Promise.all([
@@ -43,7 +43,7 @@ export async function createItemGroup(data: ItemGroupFormData) {
   if (duplicate) throw new Error("DUPLICATE_CODE")
   if (!ownedCategory) throw new Error("INVALID_CATEGORY")
 
-  return prisma.itemGroup.create({
+  const created = await prisma.itemGroup.create({
     data: {
       tenantId,
       categoryId:   data.categoryId,
@@ -54,10 +54,23 @@ export async function createItemGroup(data: ItemGroupFormData) {
       isActive:     data.isActive,
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "ItemGroup",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { code: created.code, name: created.name, isActive: created.isActive },
+      menuName: "품목 그룹 관리",
+    },
+  }).catch(() => {})
+  return created
 }
 
 export async function updateItemGroup(id: string, data: ItemGroupFormData) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const owned = await prisma.itemGroup.findFirst({ where: { id, tenantId } })
@@ -70,7 +83,7 @@ export async function updateItemGroup(id: string, data: ItemGroupFormData) {
   if (duplicate) throw new Error("DUPLICATE_CODE")
   if (!ownedCategory) throw new Error("INVALID_CATEGORY")
 
-  return prisma.itemGroup.update({
+  const updated = await prisma.itemGroup.update({
     where: { id },
     data: {
       categoryId:   data.categoryId,
@@ -81,10 +94,24 @@ export async function updateItemGroup(id: string, data: ItemGroupFormData) {
       isActive:     data.isActive,
     },
   })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "ItemGroup",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
+      afterData: { code: data.code, name: data.name, isActive: data.isActive },
+      menuName: "품목 그룹 관리",
+    },
+  }).catch(() => {})
+  return updated
 }
 
 export async function deleteItemGroup(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   const owned = await prisma.itemGroup.findFirst({ where: { id, tenantId } })
@@ -93,5 +120,18 @@ export async function deleteItemGroup(id: string) {
   const itemCount = await prisma.item.count({ where: { itemGroupId: id } })
   if (itemCount > 0) throw new Error("HAS_ITEMS")
 
-  return prisma.itemGroup.delete({ where: { id } })
+  const result = await prisma.itemGroup.delete({ where: { id } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "ItemGroup",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
+      menuName: "품목 그룹 관리",
+    },
+  }).catch(() => {})
+  return result
 }

@@ -108,10 +108,11 @@ export type CreateRoutingInput = {
 }
 
 export async function createRouting(data: CreateRoutingInput, _tenantId?: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { operations, itemId, isDefault, ...routingFields } = data
 
+  let createdId = ""
   await prisma.$transaction(async (tx) => {
     const routing = await tx.routing.create({
       data: {
@@ -128,17 +129,29 @@ export async function createRouting(data: CreateRoutingInput, _tenantId?: string
         },
       },
     })
-
+    createdId = routing.id
     await tx.itemRouting.create({
       data: { tenantId, itemId, routingId: routing.id, isDefault },
     })
   })
 
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Routing",
+      entityId: createdId,
+      action: "CREATE",
+      afterData: { code: data.code, name: data.name, version: data.version, status: data.status, operationCount: operations.length },
+      menuName: "라우팅 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/routing")
 }
 
 export async function updateRouting(id: string, data: CreateRoutingInput) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.routing.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -170,11 +183,24 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
     })
   })
 
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Routing",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, version: owned.version, status: owned.status },
+      afterData: { code, name, version, status, operationCount: operations.length },
+      menuName: "라우팅 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/routing")
 }
 
 export async function deleteRouting(id: string) {
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.routing.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
@@ -184,5 +210,17 @@ export async function deleteRouting(id: string) {
     prisma.routingOperation.deleteMany({ where: { routingId: id } }),
     prisma.routing.delete({ where: { id } }),
   ])
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Routing",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, version: owned.version, status: owned.status },
+      menuName: "라우팅 관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/routing")
 }
