@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'CNS Medical MES',
-  description: '씨앤에스메디칼 스마트공장 제조실행시스템',
+  title: process.env.NEXT_PUBLIC_BRAND === 'newmes' ? 'NewMES' : 'CNS Medical MES',
+  description: '스마트공장 제조실행시스템',
 };
 
 export default function RootLayout({
