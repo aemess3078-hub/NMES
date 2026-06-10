@@ -35,10 +35,10 @@ export default async function InventoryTransactionsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            원자재 입출고 이력
+            전체입출고내역
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
-            InventoryTransaction 기준으로 LOT 입고, 출고, 조정 이력과 제조번호 연결 상태를 확인합니다.
+            입출고 이력 기준으로 LOT 입고, 출고, 조정 이력과 제조번호 연결 상태를 확인합니다.
           </p>
         </div>
       </div>

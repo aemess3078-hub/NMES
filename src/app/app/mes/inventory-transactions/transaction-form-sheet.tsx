@@ -195,8 +195,8 @@ export function TransactionFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       mode="create"
-      title="입출고 트랜잭션 등록"
-      description="재고 입고, 출고, 이동, 조정 등의 트랜잭션을 등록합니다."
+      title="입출고 등록"
+      description="재고 입고, 출고, 이동, 조정 등을 등록합니다."
       isLoading={isLoading}
       onSubmit={form.handleSubmit(onSubmit)}
     >
@@ -213,7 +213,7 @@ export function TransactionFormSheet({
                 name="txType"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>트랜잭션 유형</FormLabel>
+                    <FormLabel>입출고 유형</FormLabel>
                     <Select
                       onValueChange={handleTxTypeChange}
                       value={field.value || undefined}

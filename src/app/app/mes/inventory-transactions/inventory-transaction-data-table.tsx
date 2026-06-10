@@ -85,7 +85,7 @@ export function InventoryTransactionDataTable({
         </div>
         <Button onClick={() => setFormOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          트랜잭션 등록
+          입출고 등록
         </Button>
       </div>
 
