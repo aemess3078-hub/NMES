@@ -14,13 +14,14 @@ import { ConnectionProtocol } from "@prisma/client"
 // ─── 프로토콜 설정 ────────────────────────────────────────────────────────────
 
 export const PROTOCOL_CONFIG: Record<ConnectionProtocol, { label: string; className: string }> = {
-  MODBUS_TCP:  { label: "Modbus TCP",  className: "bg-blue-100 text-blue-800" },
-  OPC_UA:      { label: "OPC-UA",      className: "bg-purple-100 text-purple-800" },
-  MQTT:        { label: "MQTT",        className: "bg-green-100 text-green-800" },
-  MC_PROTOCOL: { label: "MC Protocol", className: "bg-amber-100 text-amber-800" },
-  S7:          { label: "S7",          className: "bg-orange-100 text-orange-800" },
-  FOCAS:       { label: "FOCAS",       className: "bg-cyan-100 text-cyan-800" },
-  CUSTOM:      { label: "Custom",      className: "bg-gray-100 text-gray-700" },
+  MODBUS_TCP:    { label: "Modbus TCP",    className: "bg-blue-100 text-blue-800" },
+  OPC_UA:        { label: "OPC-UA",        className: "bg-purple-100 text-purple-800" },
+  MQTT:          { label: "MQTT",          className: "bg-green-100 text-green-800" },
+  MC_PROTOCOL:   { label: "MC Protocol",   className: "bg-amber-100 text-amber-800" },
+  S7:            { label: "S7",            className: "bg-orange-100 text-orange-800" },
+  FOCAS:         { label: "FOCAS",         className: "bg-cyan-100 text-cyan-800" },
+  CUSTOM:        { label: "Custom",        className: "bg-gray-100 text-gray-700" },
+  NCWATCH_AGENT: { label: "NCWatch Agent", className: "bg-teal-100 text-teal-800" },
 }
 
 // ─── 컬럼 정의 ───────────────────────────────────────────────────────────────

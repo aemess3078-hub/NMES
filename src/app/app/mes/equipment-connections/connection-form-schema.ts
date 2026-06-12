@@ -1,19 +1,20 @@
 import { z } from "zod"
 
 export const CONNECTION_PROTOCOL_OPTIONS = [
-  { label: "Modbus TCP",   value: "MODBUS_TCP" },
-  { label: "OPC-UA",       value: "OPC_UA" },
-  { label: "MQTT",         value: "MQTT" },
-  { label: "MC Protocol",  value: "MC_PROTOCOL" },
-  { label: "Siemens S7",   value: "S7" },
-  { label: "FOCAS",        value: "FOCAS" },
-  { label: "Custom",       value: "CUSTOM" },
+  { label: "Modbus TCP",    value: "MODBUS_TCP" },
+  { label: "OPC-UA",        value: "OPC_UA" },
+  { label: "MQTT",          value: "MQTT" },
+  { label: "MC Protocol",   value: "MC_PROTOCOL" },
+  { label: "Siemens S7",    value: "S7" },
+  { label: "FOCAS",         value: "FOCAS" },
+  { label: "Custom",        value: "CUSTOM" },
+  { label: "NCWatch Agent", value: "NCWATCH_AGENT" },
 ] as const
 
 export const connectionFormSchema = z.object({
   equipmentId: z.string().min(1, "설비를 선택하세요"),
   gatewayId:   z.string().min(1, "게이트웨이를 선택하세요"),
-  protocol:    z.enum(["MODBUS_TCP", "OPC_UA", "MQTT", "MC_PROTOCOL", "S7", "FOCAS", "CUSTOM"], {
+  protocol:    z.enum(["MODBUS_TCP", "OPC_UA", "MQTT", "MC_PROTOCOL", "S7", "FOCAS", "CUSTOM", "NCWATCH_AGENT"], {
     required_error: "프로토콜을 선택하세요",
   }),
   host: z.string().max(255).optional().nullable(),
