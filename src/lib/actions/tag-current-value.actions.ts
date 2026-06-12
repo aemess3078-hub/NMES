@@ -42,6 +42,8 @@ export async function getCurrentTagValuesByEquipment(
       tag: {
         connection: { equipmentId },
         isActive: true,
+        isEnabled: true,
+        isVisible: true,
       },
     },
     include: {
@@ -111,6 +113,8 @@ export async function getParameterRows(equipmentId?: string): Promise<ParameterR
   const tags = await prisma.dataTag.findMany({
     where: {
       isActive: true,
+      isEnabled: true,
+      isVisible: true,
       connection: {
         isActive: true,
         equipment: {
@@ -169,11 +173,20 @@ export async function getParameterPageSummary(): Promise<ParameterPageSummary> {
       prisma.dataTag.count({
         where: {
           isActive: true,
+          isEnabled: true,
+          isVisible: true,
           connection: { isActive: true, equipment: { tenantId } },
         },
       }),
       prisma.tagCurrentValue.count({
-        where: { tag: { connection: { equipment: { tenantId } } } },
+        where: {
+          tag: {
+            isActive: true,
+            isEnabled: true,
+            isVisible: true,
+            connection: { isActive: true, equipment: { tenantId } },
+          },
+        },
       }),
     ])
 
@@ -194,7 +207,14 @@ export async function getCurrentTagValuesByTags(
   if (tagIds.length === 0) return []
 
   const rows = await prisma.tagCurrentValue.findMany({
-    where: { tagId: { in: tagIds } },
+    where: {
+      tagId: { in: tagIds },
+      tag: {
+        isActive: true,
+        isEnabled: true,
+        isVisible: true,
+      },
+    },
     include: {
       tag: {
         select: {

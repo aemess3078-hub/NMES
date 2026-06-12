@@ -38,7 +38,8 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
           where: { isActive: true },
           include: {
             tags: {
-              where: { isActive: true },
+              where: { isActive: true, isEnabled: true, isVisible: true },
+              orderBy: [{ displayOrder: "asc" }, { tagCode: "asc" }],
               include: {
                 snapshots: {
                   orderBy: { timestamp: "desc" },
