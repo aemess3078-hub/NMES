@@ -125,8 +125,12 @@ export async function POST(request: NextRequest) {
 
       // 3-4. 매핑 조회
       const mapping = await prisma.ncwatchEquipmentMapping.findUnique({
-        where:  { tenantId_machineName: { tenantId, machineName: m.machineName } },
-        select: { equipmentId: true, isActive: true },
+        where: { tenantId_machineName: { tenantId, machineName: m.machineName } },
+        select: {
+          equipmentId: true,
+          isActive: true,
+          equipment: { select: { tenantId: true } },
+        },
       })
 
       if (!mapping?.equipmentId || !mapping.isActive) {
@@ -136,6 +140,15 @@ export async function POST(request: NextRequest) {
       }
 
       const { equipmentId } = mapping
+      if (!mapping.equipment || mapping.equipment.tenantId !== tenantId) {
+        results.push({
+          machineName: m.machineName,
+          result: "ERROR",
+          equipmentId,
+          message: "INVALID_MAPPING",
+        })
+        continue
+      }
 
       // 3-5. native 모델 변환 (병렬 실행)
       await Promise.all([

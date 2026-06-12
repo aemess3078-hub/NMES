@@ -269,6 +269,7 @@ export async function getConnections(
   const rows = await prisma.equipmentConnection.findMany({
     where: {
       equipment: { tenantId },
+      protocol: { not: "NCWATCH_AGENT" },
     },
     include: {
       equipment: { select: { id: true, code: true, name: true } },

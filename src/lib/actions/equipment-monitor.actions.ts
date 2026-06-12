@@ -46,32 +46,40 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
                   take: 1,
                 },
               },
-              take: 4,
             },
           },
-          take: 1,
         },
       },
       orderBy: { code: "asc" },
     })
 
-    return equipments.map((eq) => ({
-      id: eq.id,
-      code: eq.code,
-      name: eq.name,
-      equipmentType: eq.equipmentType,
-      status: eq.status,
-      workCenter: eq.workCenter,
-      latestEvent: eq.events[0] ?? null,
-      openRepairs: 0,
-      lastCheckResult: null,
-      recentTags: (eq.connections[0]?.tags ?? []).map((tag) => ({
-        displayName: tag.displayName,
-        unit: tag.unit,
-        latestValue: tag.snapshots[0]?.value ?? null,
-        timestamp: tag.snapshots[0]?.timestamp ?? null,
-      })),
-    }))
+    return equipments.map((eq) => {
+      const tags = eq.connections
+        .flatMap((connection) => connection.tags)
+        .sort((a, b) => {
+          const orderDiff = a.displayOrder - b.displayOrder
+          return orderDiff !== 0 ? orderDiff : a.tagCode.localeCompare(b.tagCode)
+        })
+        .slice(0, 4)
+
+      return {
+        id: eq.id,
+        code: eq.code,
+        name: eq.name,
+        equipmentType: eq.equipmentType,
+        status: eq.status,
+        workCenter: eq.workCenter,
+        latestEvent: eq.events[0] ?? null,
+        openRepairs: 0,
+        lastCheckResult: null,
+        recentTags: tags.map((tag) => ({
+          displayName: tag.displayName,
+          unit: tag.unit,
+          latestValue: tag.snapshots[0]?.value ?? null,
+          timestamp: tag.snapshots[0]?.timestamp ?? null,
+        })),
+      }
+    })
   } catch (error) {
     if (isMissingDbObjectError(error)) return []
     throw error
