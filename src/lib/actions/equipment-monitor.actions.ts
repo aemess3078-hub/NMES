@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
-import { isMissingDbObjectError } from "@/lib/db/prisma-error"
+import { isMissingDbObjectError, isSchemaCompatibilityError } from "@/lib/db/prisma-error"
 
 export type EquipmentMonitorRow = {
   id: string
@@ -81,6 +81,59 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
       }
     })
   } catch (error) {
+    if (isSchemaCompatibilityError(error)) {
+      const equipments = await prisma.equipment.findMany({
+        where: { tenantId },
+        include: {
+          workCenter: { select: { name: true } },
+          events: {
+            orderBy: { startedAt: "desc" },
+            take: 1,
+          },
+          connections: {
+            where: { isActive: true },
+            include: {
+              tags: {
+                where: { isActive: true },
+                orderBy: { tagCode: "asc" },
+                include: {
+                  snapshots: {
+                    orderBy: { timestamp: "desc" },
+                    take: 1,
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: { code: "asc" },
+      })
+
+      return equipments.map((eq) => {
+        const tags = eq.connections
+          .flatMap((connection) => connection.tags)
+          .sort((a, b) => a.tagCode.localeCompare(b.tagCode))
+          .slice(0, 4)
+
+        return {
+          id: eq.id,
+          code: eq.code,
+          name: eq.name,
+          equipmentType: eq.equipmentType,
+          status: eq.status,
+          workCenter: eq.workCenter,
+          latestEvent: eq.events[0] ?? null,
+          openRepairs: 0,
+          lastCheckResult: null,
+          recentTags: tags.map((tag) => ({
+            displayName: tag.displayName,
+            unit: tag.unit,
+            latestValue: tag.snapshots[0]?.value ?? null,
+            timestamp: tag.snapshots[0]?.timestamp ?? null,
+          })),
+        }
+      })
+    }
     if (isMissingDbObjectError(error)) return []
     throw error
   }

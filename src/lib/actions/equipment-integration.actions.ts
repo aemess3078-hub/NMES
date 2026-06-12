@@ -269,7 +269,6 @@ export async function getConnections(
   const rows = await prisma.equipmentConnection.findMany({
     where: {
       equipment: { tenantId },
-      protocol: { not: "NCWATCH_AGENT" },
     },
     include: {
       equipment: { select: { id: true, code: true, name: true } },
@@ -278,7 +277,7 @@ export async function getConnections(
     },
     orderBy: { createdAt: "desc" },
   })
-  return rows as any
+  return rows.filter((row) => row.protocol !== "NCWATCH_AGENT") as any
 }
 
 export async function createConnection(data: CreateConnectionInput) {

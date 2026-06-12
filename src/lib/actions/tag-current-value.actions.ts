@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
+import { isSchemaCompatibilityError } from "@/lib/db/prisma-error"
 
 export type TagCurrentValueRow = {
   tagId: string
@@ -37,44 +38,84 @@ export async function upsertTagCurrentValue(
 export async function getCurrentTagValuesByEquipment(
   equipmentId: string
 ): Promise<TagCurrentValueRow[]> {
-  const rows = await prisma.tagCurrentValue.findMany({
-    where: {
-      tag: {
-        connection: { equipmentId },
-        isActive: true,
-        isEnabled: true,
-        isVisible: true,
+  try {
+    const rows = await prisma.tagCurrentValue.findMany({
+      where: {
+        tag: {
+          connection: { equipmentId },
+          isActive: true,
+          isEnabled: true,
+          isVisible: true,
+        },
       },
-    },
-    include: {
-      tag: {
-        select: {
-          tagCode: true,
-          displayName: true,
-          unit: true,
-          connection: {
-            select: {
-              equipment: { select: { id: true, name: true } },
+      include: {
+        tag: {
+          select: {
+            tagCode: true,
+            displayName: true,
+            unit: true,
+            connection: {
+              select: {
+                equipment: { select: { id: true, name: true } },
+              },
             },
           },
         },
       },
-    },
-    orderBy: { tag: { tagCode: "asc" } },
-  })
+      orderBy: { tag: { tagCode: "asc" } },
+    })
 
-  return rows.map((r) => ({
-    tagId: r.tagId,
-    tagCode: r.tag.tagCode,
-    displayName: r.tag.displayName,
-    unit: r.tag.unit,
-    value: r.value,
-    numericValue: r.numericValue !== null ? Number(r.numericValue) : null,
-    quality: r.quality,
-    timestamp: r.timestamp,
-    equipmentId: r.tag.connection.equipment.id,
-    equipmentName: r.tag.connection.equipment.name,
-  }))
+    return rows.map((r) => ({
+      tagId: r.tagId,
+      tagCode: r.tag.tagCode,
+      displayName: r.tag.displayName,
+      unit: r.tag.unit,
+      value: r.value,
+      numericValue: r.numericValue !== null ? Number(r.numericValue) : null,
+      quality: r.quality,
+      timestamp: r.timestamp,
+      equipmentId: r.tag.connection.equipment.id,
+      equipmentName: r.tag.connection.equipment.name,
+    }))
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error
+    const rows = await prisma.tagCurrentValue.findMany({
+      where: {
+        tag: {
+          connection: { equipmentId },
+          isActive: true,
+        },
+      },
+      include: {
+        tag: {
+          select: {
+            tagCode: true,
+            displayName: true,
+            unit: true,
+            connection: {
+              select: {
+                equipment: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { tag: { tagCode: "asc" } },
+    })
+
+    return rows.map((r) => ({
+      tagId: r.tagId,
+      tagCode: r.tag.tagCode,
+      displayName: r.tag.displayName,
+      unit: r.tag.unit,
+      value: r.value,
+      numericValue: r.numericValue !== null ? Number(r.numericValue) : null,
+      quality: r.quality,
+      timestamp: r.timestamp,
+      equipmentId: r.tag.connection.equipment.id,
+      equipmentName: r.tag.connection.equipment.name,
+    }))
+  }
 }
 
 // ─── Parameter page types ─────────────────────────────────────────────────────
@@ -110,53 +151,102 @@ export type ParameterPageSummary = {
 export async function getParameterRows(equipmentId?: string): Promise<ParameterRow[]> {
   const tenantId = await getTenantId()
 
-  const tags = await prisma.dataTag.findMany({
-    where: {
-      isActive: true,
-      isEnabled: true,
-      isVisible: true,
-      connection: {
+  try {
+    const tags = await prisma.dataTag.findMany({
+      where: {
         isActive: true,
-        equipment: {
-          tenantId,
-          ...(equipmentId ? { id: equipmentId } : {}),
+        isEnabled: true,
+        isVisible: true,
+        connection: {
+          isActive: true,
+          equipment: {
+            tenantId,
+            ...(equipmentId ? { id: equipmentId } : {}),
+          },
         },
       },
-    },
-    include: {
-      currentValue: true,
-      connection: {
-        select: {
-          equipment: { select: { id: true, code: true, name: true } },
+      include: {
+        currentValue: true,
+        connection: {
+          select: {
+            equipment: { select: { id: true, code: true, name: true } },
+          },
         },
       },
-    },
-    orderBy: [
-      { connection: { equipment: { code: "asc" } } },
-      { category: "asc" },
-      { tagCode: "asc" },
-    ],
-  })
+      orderBy: [
+        { connection: { equipment: { code: "asc" } } },
+        { category: "asc" },
+        { tagCode: "asc" },
+      ],
+    })
 
-  return tags.map((tag) => ({
-    tagId: tag.id,
-    tagCode: tag.tagCode,
-    displayName: tag.displayName,
-    category: tag.category as string,
-    dataType: tag.dataType as string,
-    unit: tag.unit,
-    plcAddress: tag.plcAddress,
-    currentValue: tag.currentValue?.value ?? null,
-    numericValue:
-      tag.currentValue?.numericValue != null
-        ? Number(tag.currentValue.numericValue)
-        : null,
-    quality: tag.currentValue?.quality ?? null,
-    receivedAt: tag.currentValue?.timestamp ?? null,
-    equipmentId: tag.connection.equipment.id,
-    equipmentCode: tag.connection.equipment.code,
-    equipmentName: tag.connection.equipment.name,
-  }))
+    return tags.map((tag) => ({
+      tagId: tag.id,
+      tagCode: tag.tagCode,
+      displayName: tag.displayName,
+      category: tag.category as string,
+      dataType: tag.dataType as string,
+      unit: tag.unit,
+      plcAddress: tag.plcAddress,
+      currentValue: tag.currentValue?.value ?? null,
+      numericValue:
+        tag.currentValue?.numericValue != null
+          ? Number(tag.currentValue.numericValue)
+          : null,
+      quality: tag.currentValue?.quality ?? null,
+      receivedAt: tag.currentValue?.timestamp ?? null,
+      equipmentId: tag.connection.equipment.id,
+      equipmentCode: tag.connection.equipment.code,
+      equipmentName: tag.connection.equipment.name,
+    }))
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error
+    const tags = await prisma.dataTag.findMany({
+      where: {
+        isActive: true,
+        connection: {
+          isActive: true,
+          equipment: {
+            tenantId,
+            ...(equipmentId ? { id: equipmentId } : {}),
+          },
+        },
+      },
+      include: {
+        currentValue: true,
+        connection: {
+          select: {
+            equipment: { select: { id: true, code: true, name: true } },
+          },
+        },
+      },
+      orderBy: [
+        { connection: { equipment: { code: "asc" } } },
+        { category: "asc" },
+        { tagCode: "asc" },
+      ],
+    })
+
+    return tags.map((tag) => ({
+      tagId: tag.id,
+      tagCode: tag.tagCode,
+      displayName: tag.displayName,
+      category: tag.category as string,
+      dataType: tag.dataType as string,
+      unit: tag.unit,
+      plcAddress: tag.plcAddress,
+      currentValue: tag.currentValue?.value ?? null,
+      numericValue:
+        tag.currentValue?.numericValue != null
+          ? Number(tag.currentValue.numericValue)
+          : null,
+      quality: tag.currentValue?.quality ?? null,
+      receivedAt: tag.currentValue?.timestamp ?? null,
+      equipmentId: tag.connection.equipment.id,
+      equipmentCode: tag.connection.equipment.code,
+      equipmentName: tag.connection.equipment.name,
+    }))
+  }
 }
 
 // ─── Summary stats for parameter page ─────────────────────────────────────────
@@ -164,31 +254,61 @@ export async function getParameterRows(equipmentId?: string): Promise<ParameterR
 export async function getParameterPageSummary(): Promise<ParameterPageSummary> {
   const tenantId = await getTenantId()
 
-  const [totalEquipment, connectedEquipment, totalTags, receivedTags] =
-    await Promise.all([
-      prisma.equipment.count({ where: { tenantId } }),
-      prisma.equipment.count({
-        where: { tenantId, connections: { some: { isActive: true } } },
-      }),
-      prisma.dataTag.count({
-        where: {
-          isActive: true,
-          isEnabled: true,
-          isVisible: true,
-          connection: { isActive: true, equipment: { tenantId } },
-        },
-      }),
-      prisma.tagCurrentValue.count({
-        where: {
-          tag: {
+  let totalEquipment: number
+  let connectedEquipment: number
+  let totalTags: number
+  let receivedTags: number
+
+  try {
+    ;[totalEquipment, connectedEquipment, totalTags, receivedTags] =
+      await Promise.all([
+        prisma.equipment.count({ where: { tenantId } }),
+        prisma.equipment.count({
+          where: { tenantId, connections: { some: { isActive: true } } },
+        }),
+        prisma.dataTag.count({
+          where: {
             isActive: true,
             isEnabled: true,
             isVisible: true,
             connection: { isActive: true, equipment: { tenantId } },
           },
-        },
-      }),
-    ])
+        }),
+        prisma.tagCurrentValue.count({
+          where: {
+            tag: {
+              isActive: true,
+              isEnabled: true,
+              isVisible: true,
+              connection: { isActive: true, equipment: { tenantId } },
+            },
+          },
+        }),
+      ])
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error
+    ;[totalEquipment, connectedEquipment, totalTags, receivedTags] =
+      await Promise.all([
+        prisma.equipment.count({ where: { tenantId } }),
+        prisma.equipment.count({
+          where: { tenantId, connections: { some: { isActive: true } } },
+        }),
+        prisma.dataTag.count({
+          where: {
+            isActive: true,
+            connection: { isActive: true, equipment: { tenantId } },
+          },
+        }),
+        prisma.tagCurrentValue.count({
+          where: {
+            tag: {
+              isActive: true,
+              connection: { isActive: true, equipment: { tenantId } },
+            },
+          },
+        }),
+      ])
+  }
 
   return {
     totalEquipment,
@@ -206,42 +326,82 @@ export async function getCurrentTagValuesByTags(
 ): Promise<TagCurrentValueRow[]> {
   if (tagIds.length === 0) return []
 
-  const rows = await prisma.tagCurrentValue.findMany({
-    where: {
-      tagId: { in: tagIds },
-      tag: {
-        isActive: true,
-        isEnabled: true,
-        isVisible: true,
+  try {
+    const rows = await prisma.tagCurrentValue.findMany({
+      where: {
+        tagId: { in: tagIds },
+        tag: {
+          isActive: true,
+          isEnabled: true,
+          isVisible: true,
+        },
       },
-    },
-    include: {
-      tag: {
-        select: {
-          tagCode: true,
-          displayName: true,
-          unit: true,
-          connection: {
-            select: {
-              equipment: { select: { id: true, name: true } },
+      include: {
+        tag: {
+          select: {
+            tagCode: true,
+            displayName: true,
+            unit: true,
+            connection: {
+              select: {
+                equipment: { select: { id: true, name: true } },
+              },
             },
           },
         },
       },
-    },
-    orderBy: { tag: { tagCode: "asc" } },
-  })
+      orderBy: { tag: { tagCode: "asc" } },
+    })
 
-  return rows.map((r) => ({
-    tagId: r.tagId,
-    tagCode: r.tag.tagCode,
-    displayName: r.tag.displayName,
-    unit: r.tag.unit,
-    value: r.value,
-    numericValue: r.numericValue !== null ? Number(r.numericValue) : null,
-    quality: r.quality,
-    timestamp: r.timestamp,
-    equipmentId: r.tag.connection.equipment.id,
-    equipmentName: r.tag.connection.equipment.name,
-  }))
+    return rows.map((r) => ({
+      tagId: r.tagId,
+      tagCode: r.tag.tagCode,
+      displayName: r.tag.displayName,
+      unit: r.tag.unit,
+      value: r.value,
+      numericValue: r.numericValue !== null ? Number(r.numericValue) : null,
+      quality: r.quality,
+      timestamp: r.timestamp,
+      equipmentId: r.tag.connection.equipment.id,
+      equipmentName: r.tag.connection.equipment.name,
+    }))
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error
+    const rows = await prisma.tagCurrentValue.findMany({
+      where: {
+        tagId: { in: tagIds },
+        tag: {
+          isActive: true,
+        },
+      },
+      include: {
+        tag: {
+          select: {
+            tagCode: true,
+            displayName: true,
+            unit: true,
+            connection: {
+              select: {
+                equipment: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { tag: { tagCode: "asc" } },
+    })
+
+    return rows.map((r) => ({
+      tagId: r.tagId,
+      tagCode: r.tag.tagCode,
+      displayName: r.tag.displayName,
+      unit: r.tag.unit,
+      value: r.value,
+      numericValue: r.numericValue !== null ? Number(r.numericValue) : null,
+      quality: r.quality,
+      timestamp: r.timestamp,
+      equipmentId: r.tag.connection.equipment.id,
+      equipmentName: r.tag.connection.equipment.name,
+    }))
+  }
 }
