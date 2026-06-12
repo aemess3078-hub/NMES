@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation"
-import { cookies } from "next/headers"
 import {
   getConnections,
   getEquipmentsForConnection,
   getGatewaysForConnection,
+  getNcwatchMappings,
 } from "@/lib/actions/equipment-integration.actions"
-import { ConnectionDataTable } from "./connection-data-table"
+import { EquipmentConnectionsClient } from "./equipment-connections-client"
 import { getCurrentUser } from "@/lib/auth"
 import { isDeveloperUser } from "@/lib/developer"
 
@@ -13,14 +13,14 @@ export const dynamic = "force-dynamic"
 
 export default async function EquipmentConnectionsPage() {
   const user = await getCurrentUser()
-  if (!isDeveloperUser(user)) notFound()
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  if (!user || !isDeveloperUser(user)) notFound()
+  const tenantId = user.tenantId
 
-  const [connections, equipments, gateways] = await Promise.all([
+  const [connections, equipments, gateways, ncwatchMappings] = await Promise.all([
     getConnections(tenantId),
     getEquipmentsForConnection(tenantId),
     getGatewaysForConnection(tenantId),
+    getNcwatchMappings(tenantId),
   ])
 
   return (
@@ -36,8 +36,9 @@ export default async function EquipmentConnectionsPage() {
         </div>
       </div>
 
-      <ConnectionDataTable
-        data={connections}
+      <EquipmentConnectionsClient
+        connections={connections}
+        ncwatchMappings={ncwatchMappings}
         equipments={equipments}
         gateways={gateways}
       />

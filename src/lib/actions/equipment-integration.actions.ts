@@ -9,7 +9,7 @@ import {
   Prisma,
 } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { requireDeveloper } from "@/lib/auth"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +68,28 @@ export type DataTagRow = {
   }
 }
 
+export type NcwatchMappingStatus = "MAPPED" | "UNMAPPED" | "INACTIVE"
+
+export type NcwatchMappingRow = {
+  id: string | null
+  tenantId: string
+  siteId: string | null
+  machineName: string
+  equipmentId: string | null
+  equipment: { id: string; code: string; name: string } | null
+  isActive: boolean
+  memo: string | null
+  status: NcwatchMappingStatus
+  statusCode: number | null
+  statusLabel: string | null
+  lastReceivedAt: Date | null
+  lastSyncResult: string | null
+  lastSyncMessage: string | null
+  lastSyncAt: Date | null
+  createdAt: Date | null
+  updatedAt: Date | null
+}
+
 // ─── Input Types ──────────────────────────────────────────────────────────────
 
 export type CreateGatewayInput = {
@@ -124,6 +146,26 @@ export type UpdateTagInput = {
   deadband?: number | null
 }
 
+export type UpsertNcwatchMappingInput = {
+  id?: string | null
+  machineName: string
+  equipmentId?: string | null
+  isActive?: boolean
+  memo?: string | null
+}
+
+type NcwatchDefaultTagDefinition = {
+  tagCode: string
+  displayName: string
+  dataType: TagDataType
+  unit: string | null
+  category: TagCategory
+  plcAddress: string
+  isVisible: boolean
+  isPrimary: boolean
+  displayOrder: number
+}
+
 export type CopyTagConflictMode = "SKIP" | "UPDATE" | "REPLACE"
 
 export type CopyEquipmentTagsInput = {
@@ -158,11 +200,19 @@ export async function getGateways(tenantId: string): Promise<EdgeGatewayRow[]> {
 
 export async function createGateway(
   data: CreateGatewayInput,
-  tenantId: string
+  _tenantId?: string
 ): Promise<{ id: string; apiKey: string }> {
+  const actor = await requireDeveloper()
+  const scopedTenantId = actor.tenantId
+  const site = await prisma.site.findFirst({
+    where: { id: data.siteId, tenantId: scopedTenantId },
+    select: { id: true },
+  })
+  if (!site) throw new Error("사이트를 찾을 수 없습니다.")
+
   const gateway = await prisma.edgeGateway.create({
     data: {
-      tenantId,
+      tenantId: scopedTenantId,
       siteId: data.siteId,
       name: data.name,
       description: data.description ?? null,
@@ -175,6 +225,13 @@ export async function createGateway(
 }
 
 export async function updateGateway(id: string, data: UpdateGatewayInput) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.edgeGateway.findFirst({
+    where: { id, tenantId: actor.tenantId },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("Gateway를 찾을 수 없습니다.")
+
   await prisma.edgeGateway.update({
     where: { id },
     data: {
@@ -187,6 +244,13 @@ export async function updateGateway(id: string, data: UpdateGatewayInput) {
 }
 
 export async function deleteGateway(id: string) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.edgeGateway.findFirst({
+    where: { id, tenantId: actor.tenantId },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("Gateway를 찾을 수 없습니다.")
+
   const connCount = await prisma.equipmentConnection.count({
     where: { gatewayId: id },
   })
@@ -217,6 +281,20 @@ export async function getConnections(
 }
 
 export async function createConnection(data: CreateConnectionInput) {
+  const actor = await requireDeveloper()
+  const [equipment, gateway] = await Promise.all([
+    prisma.equipment.findFirst({
+      where: { id: data.equipmentId, tenantId: actor.tenantId },
+      select: { id: true },
+    }),
+    prisma.edgeGateway.findFirst({
+      where: { id: data.gatewayId, tenantId: actor.tenantId },
+      select: { id: true },
+    }),
+  ])
+  if (!equipment) throw new Error("설비를 찾을 수 없습니다.")
+  if (!gateway) throw new Error("Gateway를 찾을 수 없습니다.")
+
   const existing = await prisma.equipmentConnection.findUnique({
     where: {
       equipmentId_gatewayId: {
@@ -245,6 +323,13 @@ export async function updateConnection(
   id: string,
   data: UpdateConnectionInput
 ) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.equipmentConnection.findFirst({
+    where: { id, equipment: { tenantId: actor.tenantId } },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("설비 연결을 찾을 수 없습니다.")
+
   await prisma.equipmentConnection.update({
     where: { id },
     data: {
@@ -258,6 +343,13 @@ export async function updateConnection(
 }
 
 export async function deleteConnection(id: string) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.equipmentConnection.findFirst({
+    where: { id, equipment: { tenantId: actor.tenantId } },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("설비 연결을 찾을 수 없습니다.")
+
   const tagCount = await prisma.dataTag.count({ where: { connectionId: id } })
   if (tagCount > 0) {
     throw new Error("이 연결에 등록된 태그가 있어 삭제할 수 없습니다.")
@@ -267,10 +359,483 @@ export async function deleteConnection(id: string) {
 }
 
 export async function toggleConnectionActive(id: string, isActive: boolean) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.equipmentConnection.findFirst({
+    where: { id, equipment: { tenantId: actor.tenantId } },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("설비 연결을 찾을 수 없습니다.")
+
   await prisma.equipmentConnection.update({
     where: { id },
     data: { isActive },
   })
+  revalidatePath("/app/mes/equipment-connections")
+}
+
+// ─── NCWatch Agent Mapping CRUD ────────────────────────────────────────────────
+
+function normalizeMachineName(machineName: string) {
+  return machineName.trim()
+}
+
+async function resolveNcwatchSiteId(
+  tenantId: string,
+  machineName: string,
+  equipmentId?: string | null
+) {
+  if (equipmentId) {
+    const equipment = await prisma.equipment.findFirst({
+      where: { id: equipmentId, tenantId },
+      select: { siteId: true },
+    })
+    if (!equipment) throw new Error("선택한 MES 설비를 찾을 수 없습니다.")
+    return equipment.siteId
+  }
+
+  const status = await prisma.ncwatchStatus.findUnique({
+    where: { tenantId_machineName: { tenantId, machineName } },
+    select: { siteId: true },
+  })
+  return status?.siteId ?? null
+}
+
+const NCWATCH_GATEWAY_NAME = "NCWatch Agent"
+
+const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
+  {
+    tagCode: "STATUS",
+    displayName: "NCWatch Status",
+    dataType: "STRING",
+    unit: null,
+    category: "STATUS",
+    plcAddress: "statusLabel",
+    isVisible: true,
+    isPrimary: true,
+    displayOrder: 10,
+  },
+  {
+    tagCode: "PROGRAM_NAME",
+    displayName: "NCWatch Program",
+    dataType: "STRING",
+    unit: null,
+    category: "PROCESS",
+    plcAddress: "programName",
+    isVisible: true,
+    isPrimary: false,
+    displayOrder: 20,
+  },
+  {
+    tagCode: "SPINDLE_SPEED",
+    displayName: "Spindle Speed",
+    dataType: "INT",
+    unit: "rpm",
+    category: "PROCESS",
+    plcAddress: "spindleSpeed",
+    isVisible: true,
+    isPrimary: false,
+    displayOrder: 30,
+  },
+  {
+    tagCode: "PART_COUNT",
+    displayName: "Part Count",
+    dataType: "INT",
+    unit: "ea",
+    category: "COUNTER",
+    plcAddress: "partCount",
+    isVisible: true,
+    isPrimary: false,
+    displayOrder: 40,
+  },
+  {
+    tagCode: "ALARM_MESSAGE",
+    displayName: "Alarm Message",
+    dataType: "STRING",
+    unit: null,
+    category: "ALARM",
+    plcAddress: "alarmMessage",
+    isVisible: true,
+    isPrimary: false,
+    displayOrder: 50,
+  },
+  {
+    tagCode: "POS_X",
+    displayName: "Position X",
+    dataType: "FLOAT",
+    unit: "mm",
+    category: "PROCESS",
+    plcAddress: "positionX",
+    isVisible: false,
+    isPrimary: false,
+    displayOrder: 110,
+  },
+  {
+    tagCode: "POS_Y",
+    displayName: "Position Y",
+    dataType: "FLOAT",
+    unit: "mm",
+    category: "PROCESS",
+    plcAddress: "positionY",
+    isVisible: false,
+    isPrimary: false,
+    displayOrder: 120,
+  },
+  {
+    tagCode: "POS_Z",
+    displayName: "Position Z",
+    dataType: "FLOAT",
+    unit: "mm",
+    category: "PROCESS",
+    plcAddress: "positionZ",
+    isVisible: false,
+    isPrimary: false,
+    displayOrder: 130,
+  },
+  {
+    tagCode: "TOOL_NO",
+    displayName: "Tool No",
+    dataType: "STRING",
+    unit: null,
+    category: "STATUS",
+    plcAddress: "toolNo",
+    isVisible: false,
+    isPrimary: false,
+    displayOrder: 140,
+  },
+  {
+    tagCode: "FEED_RATE",
+    displayName: "Feed Rate",
+    dataType: "INT",
+    unit: "mm/min",
+    category: "PROCESS",
+    plcAddress: "feedRate",
+    isVisible: false,
+    isPrimary: false,
+    displayOrder: 150,
+  },
+  {
+    tagCode: "ALARM_CODE",
+    displayName: "Alarm Code",
+    dataType: "STRING",
+    unit: null,
+    category: "ALARM",
+    plcAddress: "alarmCode",
+    isVisible: false,
+    isPrimary: false,
+    displayOrder: 160,
+  },
+]
+
+async function ensureNcwatchConnectionAndDefaultTags(
+  tenantId: string,
+  equipmentId: string,
+  machineName: string
+) {
+  const equipment = await prisma.equipment.findFirst({
+    where: { id: equipmentId, tenantId },
+    select: { id: true, siteId: true },
+  })
+  if (!equipment) throw new Error("선택한 MES 설비를 찾을 수 없습니다.")
+
+  const gateway =
+    (await prisma.edgeGateway.findFirst({
+      where: { tenantId, siteId: equipment.siteId, name: NCWATCH_GATEWAY_NAME },
+      select: { id: true },
+    })) ??
+    (await prisma.edgeGateway.create({
+      data: {
+        tenantId,
+        siteId: equipment.siteId,
+        name: NCWATCH_GATEWAY_NAME,
+        description: "Virtual gateway for NCWatch Agent push integration",
+        status: "OFFLINE",
+      },
+      select: { id: true },
+    }))
+
+  const connection = await prisma.equipmentConnection.upsert({
+    where: {
+      equipmentId_gatewayId: {
+        equipmentId,
+        gatewayId: gateway.id,
+      },
+    },
+    update: {
+      protocol: "NCWATCH_AGENT",
+      isActive: true,
+      host: null,
+      port: null,
+      config: { machineName },
+    },
+    create: {
+      equipmentId,
+      gatewayId: gateway.id,
+      protocol: "NCWATCH_AGENT",
+      host: null,
+      port: null,
+      config: { machineName },
+      isActive: true,
+    },
+    select: { id: true },
+  })
+
+  await Promise.all(
+    NCWATCH_DEFAULT_TAGS.map((tag) =>
+      prisma.dataTag.upsert({
+        where: {
+          connectionId_tagCode: {
+            connectionId: connection.id,
+            tagCode: tag.tagCode,
+          },
+        },
+        update: {},
+        create: {
+          connectionId: connection.id,
+          tagCode: tag.tagCode,
+          displayName: tag.displayName,
+          dataType: tag.dataType,
+          unit: tag.unit,
+          category: tag.category,
+          plcAddress: tag.plcAddress,
+          samplingMs: 10000,
+          isActive: true,
+          isEnabled: true,
+          isVisible: tag.isVisible,
+          isPrimary: tag.isPrimary,
+          displayOrder: tag.displayOrder,
+          source: "NCWATCH",
+        },
+      })
+    )
+  )
+}
+
+export async function getNcwatchMappings(
+  tenantId: string
+): Promise<NcwatchMappingRow[]> {
+  const [mappings, statuses, historyRows, syncLogs] = await Promise.all([
+    prisma.ncwatchEquipmentMapping.findMany({
+      where: { tenantId },
+      include: {
+        equipment: { select: { id: true, code: true, name: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+    prisma.ncwatchStatus.findMany({
+      where: { tenantId },
+      orderBy: { machineName: "asc" },
+    }),
+    prisma.ncwatchStatusHistory.findMany({
+      where: { tenantId },
+      orderBy: { receivedAt: "desc" },
+      take: 1000,
+    }),
+    prisma.ncwatchSyncLog.findMany({
+      where: { tenantId, machineName: { not: null } },
+      orderBy: { createdAt: "desc" },
+      take: 1000,
+    }),
+  ])
+
+  const mappingByMachine = new Map(mappings.map((row) => [row.machineName, row]))
+  const statusByMachine = new Map(statuses.map((row) => [row.machineName, row]))
+  const historyByMachine = new Map<string, (typeof historyRows)[number]>()
+  for (const row of historyRows) {
+    if (!historyByMachine.has(row.machineName)) historyByMachine.set(row.machineName, row)
+  }
+  const syncByMachine = new Map<string, (typeof syncLogs)[number]>()
+  for (const row of syncLogs) {
+    if (row.machineName && !syncByMachine.has(row.machineName)) {
+      syncByMachine.set(row.machineName, row)
+    }
+  }
+
+  const machineNames = new Set<string>()
+  for (const row of mappings) machineNames.add(row.machineName)
+  for (const row of statuses) machineNames.add(row.machineName)
+  for (const row of historyRows) machineNames.add(row.machineName)
+
+  return Array.from(machineNames)
+    .sort((a, b) => a.localeCompare(b))
+    .map((machineName) => {
+      const mapping = mappingByMachine.get(machineName)
+      const current = statusByMachine.get(machineName)
+      const latestHistory = historyByMachine.get(machineName)
+      const latestSync = syncByMachine.get(machineName)
+      const isActive = mapping?.isActive ?? true
+      const equipmentId = mapping?.equipmentId ?? null
+      const status: NcwatchMappingStatus = !isActive
+        ? "INACTIVE"
+        : equipmentId
+          ? "MAPPED"
+          : "UNMAPPED"
+
+      return {
+        id: mapping?.id ?? null,
+        tenantId,
+        siteId: mapping?.siteId ?? current?.siteId ?? null,
+        machineName,
+        equipmentId,
+        equipment: mapping?.equipment ?? null,
+        isActive,
+        memo: mapping?.memo ?? null,
+        status,
+        statusCode: current?.statusCode ?? latestHistory?.statusCode ?? null,
+        statusLabel: current?.statusLabel ?? latestHistory?.statusLabel ?? null,
+        lastReceivedAt: current?.receivedAt ?? latestHistory?.receivedAt ?? null,
+        lastSyncResult: latestSync?.result ?? null,
+        lastSyncMessage: latestSync?.message ?? null,
+        lastSyncAt: latestSync?.createdAt ?? null,
+        createdAt: mapping?.createdAt ?? null,
+        updatedAt: mapping?.updatedAt ?? null,
+      }
+    })
+}
+
+export async function upsertNcwatchMapping(input: UpsertNcwatchMappingInput) {
+  const actor = await requireDeveloper()
+  const tenantId = actor.tenantId
+  const machineName = normalizeMachineName(input.machineName)
+  if (!machineName) throw new Error("수집 기계명을 입력하세요.")
+
+  const equipmentId = input.equipmentId?.trim() || null
+  const siteId = await resolveNcwatchSiteId(tenantId, machineName, equipmentId)
+
+  if (input.id) {
+    const owned = await prisma.ncwatchEquipmentMapping.findFirst({
+      where: { id: input.id, tenantId },
+    })
+    if (!owned) throw new Error("NCWatch 매핑을 찾을 수 없습니다.")
+
+    const duplicated = await prisma.ncwatchEquipmentMapping.findFirst({
+      where: { tenantId, machineName, id: { not: input.id } },
+      select: { id: true },
+    })
+    if (duplicated) throw new Error("같은 수집 기계명의 NCWatch 매핑이 이미 있습니다.")
+
+    const updated = await prisma.ncwatchEquipmentMapping.update({
+      where: { id: input.id },
+      data: {
+        machineName,
+        siteId,
+        equipmentId,
+        isActive: input.isActive ?? true,
+        memo: input.memo?.trim() || null,
+      },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "NcwatchEquipmentMapping",
+        entityId: updated.id,
+        action: "UPDATE",
+        beforeData: owned,
+        afterData: updated,
+        menuName: "설비연결설정",
+      },
+    }).catch(() => {})
+
+    if (equipmentId && (input.isActive ?? true)) {
+      await ensureNcwatchConnectionAndDefaultTags(tenantId, equipmentId, machineName)
+    }
+  } else {
+    const existing = await prisma.ncwatchEquipmentMapping.findUnique({
+      where: { tenantId_machineName: { tenantId, machineName } },
+    })
+    if (existing) throw new Error("같은 수집 기계명의 NCWatch 매핑이 이미 있습니다.")
+
+    const created = await prisma.ncwatchEquipmentMapping.create({
+      data: {
+        tenantId,
+        siteId,
+        machineName,
+        equipmentId,
+        isActive: input.isActive ?? true,
+        memo: input.memo?.trim() || null,
+      },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        tenantId,
+        actorId: actor.id,
+        actorLabel: actor.name,
+        entityType: "NcwatchEquipmentMapping",
+        entityId: created.id,
+        action: "CREATE",
+        afterData: created,
+        menuName: "설비연결설정",
+      },
+    }).catch(() => {})
+
+    if (equipmentId && (input.isActive ?? true)) {
+      await ensureNcwatchConnectionAndDefaultTags(tenantId, equipmentId, machineName)
+    }
+  }
+
+  revalidatePath("/app/mes/equipment-connections")
+}
+
+export async function unmapNcwatchMapping(id: string) {
+  const actor = await requireDeveloper()
+  const tenantId = actor.tenantId
+  const owned = await prisma.ncwatchEquipmentMapping.findFirst({
+    where: { id, tenantId },
+  })
+  if (!owned) throw new Error("NCWatch 매핑을 찾을 수 없습니다.")
+
+  const updated = await prisma.ncwatchEquipmentMapping.update({
+    where: { id },
+    data: { equipmentId: null },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "NcwatchEquipmentMapping",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: owned,
+      afterData: updated,
+      menuName: "설비연결설정",
+    },
+  }).catch(() => {})
+
+  revalidatePath("/app/mes/equipment-connections")
+}
+
+export async function toggleNcwatchMappingActive(id: string, isActive: boolean) {
+  const actor = await requireDeveloper()
+  const tenantId = actor.tenantId
+  const owned = await prisma.ncwatchEquipmentMapping.findFirst({
+    where: { id, tenantId },
+  })
+  if (!owned) throw new Error("NCWatch 매핑을 찾을 수 없습니다.")
+
+  const updated = await prisma.ncwatchEquipmentMapping.update({
+    where: { id },
+    data: { isActive },
+  })
+
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "NcwatchEquipmentMapping",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { isActive: owned.isActive },
+      afterData: { isActive: updated.isActive },
+      menuName: "설비연결설정",
+    },
+  }).catch(() => {})
+
   revalidatePath("/app/mes/equipment-connections")
 }
 
@@ -304,6 +869,13 @@ export async function getTags(tenantId: string): Promise<DataTagRow[]> {
 }
 
 export async function createTag(data: CreateTagInput) {
+  const actor = await requireDeveloper()
+  const connection = await prisma.equipmentConnection.findFirst({
+    where: { id: data.connectionId, equipment: { tenantId: actor.tenantId } },
+    select: { id: true },
+  })
+  if (!connection) throw new Error("설비 연결을 찾을 수 없습니다.")
+
   const existing = await prisma.dataTag.findUnique({
     where: {
       connectionId_tagCode: {
@@ -334,6 +906,13 @@ export async function createTag(data: CreateTagInput) {
 }
 
 export async function updateTag(id: string, data: UpdateTagInput) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.dataTag.findFirst({
+    where: { id, connection: { equipment: { tenantId: actor.tenantId } } },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("태그를 찾을 수 없습니다.")
+
   await prisma.dataTag.update({
     where: { id },
     data: {
@@ -352,6 +931,13 @@ export async function updateTag(id: string, data: UpdateTagInput) {
 }
 
 export async function deleteTag(id: string) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.dataTag.findFirst({
+    where: { id, connection: { equipment: { tenantId: actor.tenantId } } },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("태그를 찾을 수 없습니다.")
+
   await prisma.tagSnapshot.deleteMany({ where: { tagId: id } })
   await prisma.tagCurrentValue.deleteMany({ where: { tagId: id } })
   await prisma.dataTag.delete({ where: { id } })
@@ -359,6 +945,13 @@ export async function deleteTag(id: string) {
 }
 
 export async function toggleTagActive(id: string, isActive: boolean) {
+  const actor = await requireDeveloper()
+  const owned = await prisma.dataTag.findFirst({
+    where: { id, connection: { equipment: { tenantId: actor.tenantId } } },
+    select: { id: true },
+  })
+  if (!owned) throw new Error("태그를 찾을 수 없습니다.")
+
   await prisma.dataTag.update({
     where: { id },
     data: { isActive },
@@ -369,8 +962,8 @@ export async function toggleTagActive(id: string, isActive: boolean) {
 export async function copyEquipmentTags(
   input: CopyEquipmentTagsInput
 ): Promise<CopyEquipmentTagResult[]> {
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireDeveloper()
+  const tenantId = actor.tenantId
   const targetEquipmentIds = Array.from(new Set(input.targetEquipmentIds)).filter(
     (id) => id && id !== input.sourceEquipmentId
   )

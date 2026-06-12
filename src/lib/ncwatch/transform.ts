@@ -187,15 +187,25 @@ export async function writeSyncLog(
   const allUnmapped = results.every((r) => r.result === "UNMAPPED")
   const overallResult = hasError ? "ERROR" : allUnmapped ? "UNMAPPED" : "OK"
 
-  await prisma.ncwatchSyncLog.create({
-    data: {
-      tenantId,
-      endpoint,
-      result:       overallResult,
-      message:      hasError
-        ? results.find((r) => r.result === "ERROR")?.message ?? null
-        : null,
-      payloadCount: results.length,
-    },
+  await prisma.ncwatchSyncLog.createMany({
+    data: [
+      {
+        tenantId,
+        endpoint,
+        result:       overallResult,
+        message:      hasError
+          ? results.find((r) => r.result === "ERROR")?.message ?? null
+          : null,
+        payloadCount: results.length,
+      },
+      ...results.map((r) => ({
+        tenantId,
+        machineName:  r.machineName,
+        endpoint,
+        result:       r.result,
+        message:      r.message ?? null,
+        payloadCount: 1,
+      })),
+    ],
   })
 }

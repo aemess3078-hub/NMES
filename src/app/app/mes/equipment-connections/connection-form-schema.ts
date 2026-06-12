@@ -8,7 +8,6 @@ export const CONNECTION_PROTOCOL_OPTIONS = [
   { label: "Siemens S7",    value: "S7" },
   { label: "FOCAS",         value: "FOCAS" },
   { label: "Custom",        value: "CUSTOM" },
-  { label: "NCWatch Agent", value: "NCWATCH_AGENT" },
 ] as const
 
 export const connectionFormSchema = z.object({
