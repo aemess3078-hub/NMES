@@ -42,6 +42,21 @@ function isOperationStatusTag(tag: EquipmentMonitorRow["recentTags"][number]) {
   return tag.tagCode === "STATUS" || OPERATION_STATUS_TAG_NAMES.has(tag.displayName)
 }
 
+function getStatusKeyFromOperationValue(value: string | null | undefined) {
+  if (!value || value === "—") return null
+  const text = value.trim()
+  const upper = text.toUpperCase()
+
+  if (text.includes("오프라인") || upper === "OFFLINE") return "INACTIVE"
+  if (text.includes("알람") || upper === "ALARM") return "DOWN"
+  if (text.includes("가동") || upper === "RUN" || upper === "START") return "ACTIVE"
+  if (text.includes("대기") || upper === "READY" || upper === "IDLE") return "IDLE"
+  if (text.includes("정지") || upper === "STOP" || upper === "PAUSE") return "INACTIVE"
+  if (text.includes("수동") || upper === "MANUAL") return "IDLE"
+
+  return null
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function CheckBadge({ result }: { result: string | null }) {
@@ -133,10 +148,13 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
       <div className="grid grid-cols-3 gap-4">
         {filtered.map((eq) => {
           const meta = metaMap.get(eq.id)
-          const statusCfg =
-            STATUS_CONFIG[eq.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.INACTIVE
           const operationStatusTag = eq.recentTags.find(isOperationStatusTag)
           const visibleTags = eq.recentTags.filter((tag) => !isOperationStatusTag(tag)).slice(0, 4)
+          const displayStatusKey =
+            getStatusKeyFromOperationValue(operationStatusTag?.latestValue) ??
+            (eq.status as keyof typeof STATUS_CONFIG)
+          const statusCfg =
+            STATUS_CONFIG[displayStatusKey as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.INACTIVE
           const statusLabel = operationStatusTag?.latestValue ?? statusCfg.label
 
           // Meta-driven border override
@@ -162,7 +180,7 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
                         className={`w-2.5 h-2.5 rounded-full ${
                           meta?.isAlarm
                             ? "bg-red-500 animate-pulse"
-                            : statusCfg.className + (eq.status === "ACTIVE" ? " animate-pulse" : "")
+                            : statusCfg.className + (displayStatusKey === "ACTIVE" ? " animate-pulse" : "")
                         }`}
                       />
                       <span
