@@ -26,7 +26,10 @@ function getLatestTimestamp(eq: EquipmentMonitorRow): Date | null {
 }
 
 function getStatusTagValue(eq: EquipmentMonitorRow): string | null {
-  return eq.recentTags.find((t) => t.displayName === "운전 상태")?.latestValue ?? null
+  return (
+    eq.recentTags.find((t) => t.tagCode === "STATUS" || t.displayName === "운전 상태")
+      ?.latestValue ?? null
+  )
 }
 
 function detectAlarm(eq: EquipmentMonitorRow): boolean {

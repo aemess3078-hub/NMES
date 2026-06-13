@@ -36,6 +36,12 @@ const EVENT_TYPE_LABEL: Record<string, string> = {
   MAINTENANCE: "유지보수",
 }
 
+const OPERATION_STATUS_TAG_NAMES = new Set(["운전 상태", "NCWatch Status"])
+
+function isOperationStatusTag(tag: EquipmentMonitorRow["recentTags"][number]) {
+  return tag.tagCode === "STATUS" || OPERATION_STATUS_TAG_NAMES.has(tag.displayName)
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function CheckBadge({ result }: { result: string | null }) {
@@ -129,6 +135,9 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
           const meta = metaMap.get(eq.id)
           const statusCfg =
             STATUS_CONFIG[eq.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.INACTIVE
+          const operationStatusTag = eq.recentTags.find(isOperationStatusTag)
+          const visibleTags = eq.recentTags.filter((tag) => !isOperationStatusTag(tag)).slice(0, 4)
+          const statusLabel = operationStatusTag?.latestValue ?? statusCfg.label
 
           // Meta-driven border override
           const borderClass = meta?.isAlarm
@@ -161,7 +170,7 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
                           meta?.isAlarm ? "text-red-700" : statusCfg.textClass
                         }`}
                       >
-                        {meta?.isAlarm ? "알람" : statusCfg.label}
+                        {meta?.isAlarm ? "알람" : statusLabel}
                       </span>
                     </div>
                     {meta?.isDelay && (
@@ -176,9 +185,9 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
 
               <CardContent className="px-4 pb-4 space-y-2">
                 {/* Real-time tags */}
-                {eq.recentTags.length > 0 && (
+                {visibleTags.length > 0 && (
                   <div className="grid grid-cols-2 gap-1.5 py-2 border-y">
-                    {eq.recentTags.map((tag) => (
+                    {visibleTags.map((tag) => (
                       <div key={tag.displayName} className="min-w-0 bg-muted/50 rounded-md px-2 py-1.5">
                         <p className="text-[11px] text-muted-foreground truncate">{tag.displayName}</p>
                         <p

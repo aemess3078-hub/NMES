@@ -15,6 +15,7 @@ export type EquipmentMonitorRow = {
   openRepairs: number
   lastCheckResult: string | null
   recentTags: {
+    tagCode: string
     displayName: string
     unit: string | null
     latestValue: string | null
@@ -73,6 +74,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
         openRepairs: 0,
         lastCheckResult: null,
         recentTags: tags.map((tag) => ({
+          tagCode: tag.tagCode,
           displayName: tag.displayName,
           unit: tag.unit,
           latestValue: tag.snapshots[0]?.value ?? null,
@@ -132,6 +134,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
           openRepairs: 0,
           lastCheckResult: null,
           recentTags: tags.map((tag) => ({
+            tagCode: tag.tagCode,
             displayName: tag.displayName,
             unit: tag.unit,
             latestValue: tag.snapshots[0]?.value ?? null,
