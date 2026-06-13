@@ -60,7 +60,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
           const orderDiff = a.displayOrder - b.displayOrder
           return orderDiff !== 0 ? orderDiff : a.tagCode.localeCompare(b.tagCode)
         })
-        .slice(0, 4)
+        .slice(0, 6)
 
       return {
         id: eq.id,
@@ -119,7 +119,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
         const tags = eq.connections
           .flatMap((connection) => connection.tags)
           .sort((a, b) => a.tagCode.localeCompare(b.tagCode))
-          .slice(0, 4)
+          .slice(0, 6)
 
         return {
           id: eq.id,

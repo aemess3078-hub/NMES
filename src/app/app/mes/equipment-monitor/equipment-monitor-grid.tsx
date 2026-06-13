@@ -112,9 +112,9 @@ export function EquipmentMonitorGrid({ data }: Props) {
                 {eq.recentTags.length > 0 && (
                   <div className="grid grid-cols-2 gap-1.5 py-2 border-y">
                     {eq.recentTags.map((tag) => (
-                      <div key={tag.displayName} className="bg-muted/50 rounded-md px-2 py-1.5">
-                        <p className="text-[11px] text-muted-foreground">{tag.displayName}</p>
-                        <p className="text-[15px] font-semibold">
+                      <div key={tag.displayName} className="min-w-0 bg-muted/50 rounded-md px-2 py-1.5">
+                        <p className="text-[11px] text-muted-foreground truncate">{tag.displayName}</p>
+                        <p className="text-[15px] font-semibold break-all" title={tag.latestValue ?? undefined}>
                           {tag.latestValue ?? "—"}
                           {tag.unit && <span className="text-[12px] font-normal text-muted-foreground ml-0.5">{tag.unit}</span>}
                         </p>

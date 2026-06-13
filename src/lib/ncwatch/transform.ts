@@ -90,8 +90,12 @@ export async function syncEquipmentEvent(
 const FIELD_MAP: Record<string, keyof MachineStatusPayload> = {
   STATUS:         "statusLabel",
   PROGRAM_NAME:   "programName",
+  O_NUMBER:       "oNumber",
+  MODE:           "modeCode",
   SPINDLE_SPEED:  "spindleSpeed",
   FEED_RATE:      "feedRate",
+  RATIO:          "ratio",
+  BLOCK_NUMBER:   "blockNumber",
   POS_X:          "positionX",
   POS_Y:          "positionY",
   POS_Z:          "positionZ",
@@ -111,6 +115,17 @@ const STATUS_LABEL_KO: Record<number, string> = {
   4: "오프라인",
   5: "알람",
   6: "수동",
+}
+
+// 운전 모드 코드 → 라벨 (mapper.js MODE_MAP 기준, CNC 표준 약어 유지)
+const MODE_LABEL: Record<number, string> = {
+  0: "MDI",
+  1: "MEM",
+  3: "EDIT",
+  4: "HND",
+  5: "JOG",
+  9: "REG",
+  10: "REMOTE",
 }
 
 export async function syncTagValues(
@@ -162,11 +177,15 @@ export async function syncTagValues(
       const rawValue = m[payloadField]
       if (rawValue == null) return
 
-      // 운전 상태 태그는 statusCode 기준 한글 라벨로 표기
-      const value =
-        tag.tagCode === "STATUS" && m.statusCode != null
-          ? (STATUS_LABEL_KO[m.statusCode] ?? String(rawValue))
-          : String(rawValue)
+      // 일부 태그는 코드값을 사람이 읽는 라벨로 변환해 표기
+      let value: string
+      if (tag.tagCode === "STATUS" && m.statusCode != null) {
+        value = STATUS_LABEL_KO[m.statusCode] ?? String(rawValue)
+      } else if (tag.tagCode === "MODE" && m.modeCode != null) {
+        value = MODE_LABEL[m.modeCode] ?? String(rawValue)
+      } else {
+        value = String(rawValue)
+      }
       const numericVal  = Number(rawValue)
       const numericValue = isFinite(numericVal) ? numericVal : null
 
