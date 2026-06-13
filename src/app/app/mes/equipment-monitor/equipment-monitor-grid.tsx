@@ -3,26 +3,40 @@
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertTriangle, CheckCircle2, Clock, Wrench, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Clock, WifiOff, Wrench, XCircle } from "lucide-react"
 import { EquipmentMonitorRow } from "@/lib/actions/equipment-monitor.actions"
-import { format } from "date-fns"
+import { format, formatDistanceToNow } from "date-fns"
 import { ko } from "date-fns/locale"
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface EquipmentCardMeta {
+  id: string
+  isAlarm: boolean
+  isDelay: boolean
+  lastTimestamp: Date | null
+}
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+
 const STATUS_CONFIG = {
-  ACTIVE: { label: "가동중", className: "bg-green-500", textClass: "text-green-700", borderClass: "border-green-200" },
-  IDLE: { label: "대기", className: "bg-yellow-400", textClass: "text-yellow-700", borderClass: "border-yellow-200" },
-  MAINTENANCE: { label: "점검중", className: "bg-blue-500", textClass: "text-blue-700", borderClass: "border-blue-200" },
-  DOWN: { label: "고장", className: "bg-red-500", textClass: "text-red-700", borderClass: "border-red-200" },
-  INACTIVE: { label: "비가동", className: "bg-slate-400", textClass: "text-slate-600", borderClass: "border-slate-200" },
+  ACTIVE:      { label: "가동중",  className: "bg-green-500",  textClass: "text-green-700",  borderClass: "border-green-200"  },
+  IDLE:        { label: "대기",    className: "bg-yellow-400", textClass: "text-yellow-700", borderClass: "border-yellow-200" },
+  MAINTENANCE: { label: "점검중",  className: "bg-blue-500",   textClass: "text-blue-700",   borderClass: "border-blue-200"   },
+  DOWN:        { label: "고장",    className: "bg-red-500",    textClass: "text-red-700",    borderClass: "border-red-200"    },
+  INACTIVE:    { label: "비가동",  className: "bg-slate-400",  textClass: "text-slate-600",  borderClass: "border-slate-200"  },
 }
 
 const EVENT_TYPE_LABEL: Record<string, string> = {
-  START: "가동 시작",
-  STOP: "가동 정지",
-  ALARM: "알람",
-  ERROR: "에러",
+  RUN:         "가동 시작",
+  START:       "가동 시작",
+  STOP:        "가동 정지",
+  ALARM:       "알람",
+  ERROR:       "에러",
   MAINTENANCE: "유지보수",
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function CheckBadge({ result }: { result: string | null }) {
   if (!result) return <span className="text-[13px] text-muted-foreground">—</span>
@@ -39,12 +53,32 @@ function CheckBadge({ result }: { result: string | null }) {
   return <Badge className="bg-slate-100 text-slate-600 border-0 text-[12px]">해당없음</Badge>
 }
 
-interface Props {
-  data: EquipmentMonitorRow[]
+function TimestampBadge({ ts, isDelay }: { ts: Date | null; isDelay: boolean }) {
+  if (!ts) return null
+  return (
+    <span
+      className={`flex items-center gap-1 text-[11px] ${
+        isDelay ? "text-amber-600" : "text-muted-foreground"
+      }`}
+    >
+      {isDelay && <WifiOff className="h-3 w-3" />}
+      {formatDistanceToNow(ts, { addSuffix: true, locale: ko })}
+    </span>
+  )
 }
 
-export function EquipmentMonitorGrid({ data }: Props) {
+// ─── Grid component ───────────────────────────────────────────────────────────
+
+interface Props {
+  data: EquipmentMonitorRow[]
+  equipmentMeta?: EquipmentCardMeta[]
+  showLastReceived?: boolean
+}
+
+export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = false }: Props) {
   const [filter, setFilter] = useState<string>("ALL")
+
+  const metaMap = new Map(equipmentMeta?.map((m) => [m.id, m]) ?? [])
 
   const filtered = filter === "ALL" ? data : data.filter((d) => d.status === filter)
 
@@ -92,21 +126,54 @@ export function EquipmentMonitorGrid({ data }: Props) {
       {/* Equipment Cards */}
       <div className="grid grid-cols-3 gap-4">
         {filtered.map((eq) => {
-          const statusCfg = STATUS_CONFIG[eq.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.INACTIVE
+          const meta = metaMap.get(eq.id)
+          const statusCfg =
+            STATUS_CONFIG[eq.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.INACTIVE
+
+          // Meta-driven border override
+          const borderClass = meta?.isAlarm
+            ? "border-red-400 shadow-sm shadow-red-100"
+            : meta?.isDelay
+            ? "border-amber-400"
+            : statusCfg.borderClass
+
           return (
-            <Card key={eq.id} className={`border ${statusCfg.borderClass}`}>
+            <Card key={eq.id} className={`border ${borderClass} transition-all`}>
               <CardHeader className="pb-2 pt-4 px-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-[15px] font-semibold">{eq.name}</CardTitle>
-                    <p className="text-[13px] text-muted-foreground">{eq.code} · {eq.workCenter.name}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <CardTitle className="text-[15px] font-semibold truncate">{eq.name}</CardTitle>
+                    <p className="text-[13px] text-muted-foreground truncate">
+                      {eq.code} · {eq.workCenter.name}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`w-2.5 h-2.5 rounded-full ${statusCfg.className} animate-pulse`} />
-                    <span className={`text-[13px] font-medium ${statusCfg.textClass}`}>{statusCfg.label}</span>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          meta?.isAlarm
+                            ? "bg-red-500 animate-pulse"
+                            : statusCfg.className + (eq.status === "ACTIVE" ? " animate-pulse" : "")
+                        }`}
+                      />
+                      <span
+                        className={`text-[13px] font-medium ${
+                          meta?.isAlarm ? "text-red-700" : statusCfg.textClass
+                        }`}
+                      >
+                        {meta?.isAlarm ? "알람" : statusCfg.label}
+                      </span>
+                    </div>
+                    {meta?.isDelay && (
+                      <Badge className="bg-amber-100 text-amber-700 border-0 text-[11px] gap-1 px-1.5 py-0">
+                        <WifiOff className="h-2.5 w-2.5" />
+                        통신지연
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </CardHeader>
+
               <CardContent className="px-4 pb-4 space-y-2">
                 {/* Real-time tags */}
                 {eq.recentTags.length > 0 && (
@@ -114,9 +181,16 @@ export function EquipmentMonitorGrid({ data }: Props) {
                     {eq.recentTags.map((tag) => (
                       <div key={tag.displayName} className="min-w-0 bg-muted/50 rounded-md px-2 py-1.5">
                         <p className="text-[11px] text-muted-foreground truncate">{tag.displayName}</p>
-                        <p className="text-[15px] font-semibold break-all" title={tag.latestValue ?? undefined}>
+                        <p
+                          className="text-[15px] font-semibold break-all"
+                          title={tag.latestValue ?? undefined}
+                        >
                           {tag.latestValue ?? "—"}
-                          {tag.unit && <span className="text-[12px] font-normal text-muted-foreground ml-0.5">{tag.unit}</span>}
+                          {tag.unit && (
+                            <span className="text-[12px] font-normal text-muted-foreground ml-0.5">
+                              {tag.unit}
+                            </span>
+                          )}
                         </p>
                       </div>
                     ))}
@@ -136,6 +210,17 @@ export function EquipmentMonitorGrid({ data }: Props) {
                   </span>
                 </div>
 
+                {/* Last received timestamp (현황 모드에서만 표시) */}
+                {(showLastReceived || !!meta) && (
+                  <div className="flex justify-between items-center text-[13px]">
+                    <span className="text-muted-foreground">마지막 수신</span>
+                    <TimestampBadge
+                      ts={meta?.lastTimestamp ?? (eq.recentTags[0]?.timestamp ?? null)}
+                      isDelay={meta?.isDelay ?? false}
+                    />
+                  </div>
+                )}
+
                 {/* Daily check */}
                 <div className="flex justify-between items-center text-[13px]">
                   <span className="text-muted-foreground">일상점검</span>
@@ -153,6 +238,7 @@ export function EquipmentMonitorGrid({ data }: Props) {
             </Card>
           )
         })}
+
         {filtered.length === 0 && (
           <div className="col-span-3 text-center py-12 text-[15px] text-muted-foreground">
             해당 상태의 설비가 없습니다.
