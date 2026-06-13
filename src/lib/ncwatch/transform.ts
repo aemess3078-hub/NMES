@@ -23,10 +23,29 @@ function buildEventMessage(m: MachineStatusPayload): string | null {
   return null
 }
 
-// ncwatchTs 파싱: 유효한 Date면 사용, 아니면 null
-function parseNcwatchTs(ts: string | null | undefined): Date | null {
+// ncwatchTs 파싱: 타임존 없는 NCWatch 시간은 KST(Asia/Seoul) 로 간주한다.
+export function parseNcwatchTs(ts: string | null | undefined): Date | null {
   if (!ts) return null
-  const d = new Date(ts)
+  const trimmed = ts.trim()
+  const localMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/
+  )
+
+  if (localMatch) {
+    const [, year, month, day, hour, minute, second = "0"] = localMatch
+    const utcMs = Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour) - 9,
+      Number(minute),
+      Number(second)
+    )
+    const d = new Date(utcMs)
+    return isNaN(d.getTime()) ? null : d
+  }
+
+  const d = new Date(trimmed)
   return isNaN(d.getTime()) ? null : d
 }
 

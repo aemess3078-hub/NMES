@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { verifyAgentKey } from "@/lib/ncwatch/auth"
-import { syncEquipmentEvent, syncTagValues, writeSyncLog } from "@/lib/ncwatch/transform"
+import { parseNcwatchTs, syncEquipmentEvent, syncTagValues, writeSyncLog } from "@/lib/ncwatch/transform"
 import type { MachineStatusPayload, MachineResult } from "@/lib/ncwatch/types"
 
 export const dynamic = "force-dynamic"
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
 
       // 3-3. ncwatch_status_history insert (최초 수신 또는 statusCode 변경 시)
       if (prevStatusCode !== (m.statusCode ?? null)) {
-        const changedAt = m.ncwatchTs ? new Date(m.ncwatchTs) : new Date()
+        const changedAt = parseNcwatchTs(m.ncwatchTs) ?? new Date()
         if (!isNaN(changedAt.getTime())) {
           await prisma.ncwatchStatusHistory.create({
             data: {

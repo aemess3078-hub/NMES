@@ -342,7 +342,7 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
             (eq.status as keyof typeof STATUS_CONFIG)
           const statusCfg =
             STATUS_CONFIG[displayStatusKey as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.INACTIVE
-          const statusLabel = operationStatusTag?.latestValue ?? statusCfg.label
+          const statusLabel = meta?.isDelay ? "통신지연" : operationStatusTag?.latestValue ?? statusCfg.label
 
           // Meta-driven border override
           const borderClass = meta?.isAlarm
@@ -379,12 +379,14 @@ export function EquipmentMonitorGrid({ data, equipmentMeta, showLastReceived = f
                         className={`w-2.5 h-2.5 rounded-full ${
                           meta?.isAlarm
                             ? "bg-red-500 animate-pulse"
+                            : meta?.isDelay
+                            ? "bg-amber-500"
                             : statusCfg.className + (displayStatusKey === "ACTIVE" ? " animate-pulse" : "")
                         }`}
                       />
                       <span
                         className={`text-[13px] font-medium ${
-                          meta?.isAlarm ? "text-red-700" : statusCfg.textClass
+                          meta?.isAlarm ? "text-red-700" : meta?.isDelay ? "text-amber-700" : statusCfg.textClass
                         }`}
                       >
                         {meta?.isAlarm ? "알람" : statusLabel}
