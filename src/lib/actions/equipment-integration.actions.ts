@@ -405,7 +405,7 @@ const NCWATCH_GATEWAY_NAME = "NCWatch Agent"
 const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   {
     tagCode: "STATUS",
-    displayName: "NCWatch Status",
+    displayName: "운전 상태",
     dataType: "STRING",
     unit: null,
     category: "STATUS",
@@ -416,7 +416,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "PROGRAM_NAME",
-    displayName: "NCWatch Program",
+    displayName: "가공 프로그램",
     dataType: "STRING",
     unit: null,
     category: "PROCESS",
@@ -427,7 +427,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "SPINDLE_SPEED",
-    displayName: "Spindle Speed",
+    displayName: "주축 회전수",
     dataType: "INT",
     unit: "rpm",
     category: "PROCESS",
@@ -438,7 +438,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "PART_COUNT",
-    displayName: "Part Count",
+    displayName: "생산 수량",
     dataType: "INT",
     unit: "ea",
     category: "COUNTER",
@@ -449,7 +449,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "ALARM_MESSAGE",
-    displayName: "Alarm Message",
+    displayName: "알람 메시지",
     dataType: "STRING",
     unit: null,
     category: "ALARM",
@@ -460,7 +460,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "POS_X",
-    displayName: "Position X",
+    displayName: "X축 위치",
     dataType: "FLOAT",
     unit: "mm",
     category: "PROCESS",
@@ -471,7 +471,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "POS_Y",
-    displayName: "Position Y",
+    displayName: "Y축 위치",
     dataType: "FLOAT",
     unit: "mm",
     category: "PROCESS",
@@ -482,7 +482,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "POS_Z",
-    displayName: "Position Z",
+    displayName: "Z축 위치",
     dataType: "FLOAT",
     unit: "mm",
     category: "PROCESS",
@@ -493,7 +493,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "TOOL_NO",
-    displayName: "Tool No",
+    displayName: "공구 번호",
     dataType: "STRING",
     unit: null,
     category: "STATUS",
@@ -504,7 +504,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "FEED_RATE",
-    displayName: "Feed Rate",
+    displayName: "이송 속도",
     dataType: "INT",
     unit: "mm/min",
     category: "PROCESS",
@@ -515,7 +515,7 @@ const NCWATCH_DEFAULT_TAGS: NcwatchDefaultTagDefinition[] = [
   },
   {
     tagCode: "ALARM_CODE",
-    displayName: "Alarm Code",
+    displayName: "알람 코드",
     dataType: "STRING",
     unit: null,
     category: "ALARM",

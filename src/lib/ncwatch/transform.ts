@@ -101,6 +101,18 @@ const FIELD_MAP: Record<string, keyof MachineStatusPayload> = {
   ALARM_MESSAGE:  "alarmMessage",
 }
 
+// 운전 상태 코드 → 한글 라벨 (statusCode 기준 — agent의 영어 라벨과 무관하게 일관 표기)
+// mapper.js STATUS_MAP: 0 READY, 1 STOP, 2 PAUSE, 3 START, 4 OFFLINE, 5 ALARM, 6 MANUAL
+const STATUS_LABEL_KO: Record<number, string> = {
+  0: "대기",
+  1: "정지",
+  2: "일시정지",
+  3: "가동",
+  4: "오프라인",
+  5: "알람",
+  6: "수동",
+}
+
 export async function syncTagValues(
   equipmentId:      string,
   m:                MachineStatusPayload,
@@ -150,7 +162,11 @@ export async function syncTagValues(
       const rawValue = m[payloadField]
       if (rawValue == null) return
 
-      const value       = String(rawValue)
+      // 운전 상태 태그는 statusCode 기준 한글 라벨로 표기
+      const value =
+        tag.tagCode === "STATUS" && m.statusCode != null
+          ? (STATUS_LABEL_KO[m.statusCode] ?? String(rawValue))
+          : String(rawValue)
       const numericVal  = Number(rawValue)
       const numericValue = isFinite(numericVal) ? numericVal : null
 
