@@ -14,6 +14,7 @@ export type EquipmentMonitorRow = {
   latestEvent: { eventType: string; startedAt: Date; endedAt: Date | null } | null
   openRepairs: number
   lastCheckResult: string | null
+  ncwatchTodayPartCount: number | null
   recentTags: {
     tagCode: string
     displayName: string
@@ -115,8 +116,70 @@ async function getNcwatchAvailabilityRates(
   }
 }
 
+async function getNcwatchTodayPartCounts(
+  tenantId: string,
+  equipmentIds: string[],
+  reportFrom: Date,
+  reportTo: Date,
+): Promise<Map<string, number> | null> {
+  if (equipmentIds.length === 0) return new Map()
+
+  try {
+    const mappings = await prisma.ncwatchEquipmentMapping.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        equipmentId: { in: equipmentIds },
+      },
+      select: {
+        equipmentId: true,
+        machineName: true,
+      },
+    })
+
+    const machineNames = Array.from(new Set(mappings.map((mapping) => mapping.machineName)))
+    if (machineNames.length === 0) return new Map()
+
+    const reports = await prisma.ncwatchReportDaily.findMany({
+      where: {
+        tenantId,
+        machineName: { in: machineNames },
+        reportDate: { gte: reportFrom, lte: reportTo },
+      },
+      select: {
+        machineName: true,
+        partCount: true,
+        receivedAt: true,
+      },
+      orderBy: { receivedAt: "desc" },
+    })
+
+    const latestPartCountByMachine = new Map<string, number>()
+    for (const report of reports) {
+      if (report.partCount == null || latestPartCountByMachine.has(report.machineName)) continue
+      latestPartCountByMachine.set(report.machineName, report.partCount)
+    }
+
+    const counts = new Map<string, number>()
+    for (const mapping of mappings) {
+      if (!mapping.equipmentId) continue
+      const partCount = latestPartCountByMachine.get(mapping.machineName)
+      if (partCount != null) counts.set(mapping.equipmentId, partCount)
+    }
+
+    return counts
+  } catch (error) {
+    if (isMissingDbObjectError(error) || isSchemaCompatibilityError(error)) return null
+    throw error
+  }
+}
+
 export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> {
   const tenantId = await getTenantId()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayEnd = new Date(today)
+  todayEnd.setHours(23, 59, 59, 999)
 
   try {
     const equipments = await prisma.equipment.findMany({
@@ -145,6 +208,12 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
       },
       orderBy: { code: "asc" },
     })
+    const todayPartCounts = await getNcwatchTodayPartCounts(
+      tenantId,
+      equipments.map((equipment) => equipment.id),
+      today,
+      todayEnd,
+    )
 
     return equipments.map((eq) => {
       const tags = eq.connections
@@ -153,7 +222,6 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
           const orderDiff = a.displayOrder - b.displayOrder
           return orderDiff !== 0 ? orderDiff : a.tagCode.localeCompare(b.tagCode)
         })
-        .slice(0, 6)
 
       return {
         id: eq.id,
@@ -165,6 +233,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
         latestEvent: eq.events[0] ?? null,
         openRepairs: 0,
         lastCheckResult: null,
+        ncwatchTodayPartCount: todayPartCounts?.get(eq.id) ?? null,
         recentTags: tags.map((tag) => ({
           tagCode: tag.tagCode,
           displayName: tag.displayName,
@@ -213,7 +282,6 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
         const tags = eq.connections
           .flatMap((connection) => connection.tags)
           .sort((a, b) => a.tagCode.localeCompare(b.tagCode))
-          .slice(0, 6)
 
         return {
           id: eq.id,
@@ -225,6 +293,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
           latestEvent: eq.events[0] ?? null,
           openRepairs: 0,
           lastCheckResult: null,
+          ncwatchTodayPartCount: null,
           recentTags: tags.map((tag) => ({
             tagCode: tag.tagCode,
             displayName: tag.displayName,
