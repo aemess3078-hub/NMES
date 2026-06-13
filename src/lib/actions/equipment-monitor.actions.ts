@@ -102,7 +102,8 @@ async function getNcwatchAvailabilityRates(
         parseNcwatchTimeToMinutes(report.offlineTime)
 
       const rate =
-        totalMinutes > 0 ? (runMinutes / totalMinutes) * 100 : normalizePercent(report.runPct)
+        normalizePercent(report.runPct) ??
+        (totalMinutes > 0 ? (runMinutes / totalMinutes) * 100 : null)
 
       if (rate != null) {
         rates.set(mapping.equipmentId, rate)
@@ -344,11 +345,11 @@ export async function getProductionKPIs() {
       today,
       todayEnd,
     )
-    const availabilityTotal = equipments.reduce((sum, equipment) => {
-      const ncwatchRate = ncwatchRates?.get(equipment.id)
-      if (ncwatchRate != null) return sum + ncwatchRate
-      return sum + (equipment.status === "ACTIVE" ? 100 : 0)
-    }, 0)
+    const ncwatchRateValues = Array.from(ncwatchRates?.values() ?? [])
+    const legacyAvailabilityTotal = equipments.reduce(
+      (sum, equipment) => sum + (equipment.status === "ACTIVE" ? 100 : 0),
+      0,
+    )
 
     return {
       activeWorkOrders,
@@ -358,7 +359,9 @@ export async function getProductionKPIs() {
       openRepairs: 0,
       failedChecks: 0,
       equipmentAvailability:
-        equipments.length > 0 ? (availabilityTotal / equipments.length).toFixed(1) : "0.0",
+        ncwatchRateValues.length > 0
+          ? (ncwatchRateValues.reduce((sum, rate) => sum + rate, 0) / ncwatchRateValues.length).toFixed(1)
+          : equipments.length > 0 ? (legacyAvailabilityTotal / equipments.length).toFixed(1) : "0.0",
     }
   } catch (error) {
     if (!isMissingDbObjectError(error)) throw error

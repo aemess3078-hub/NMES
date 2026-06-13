@@ -103,7 +103,17 @@ export async function getEquipmentAnalysisData(
     let hasNcwatchData = false
     const ncwatchMap = new Map<
       string,
-      { run: number; stop: number; manual: number; alarm: number; offline: number }
+      {
+        run: number
+        stop: number
+        manual: number
+        alarm: number
+        offline: number
+        runPctSum: number
+        runPctCount: number
+        alarmPctSum: number
+        alarmPctCount: number
+      }
     >()
 
     if (machineToEq.size > 0) {
@@ -117,19 +127,39 @@ export async function getEquipmentAnalysisData(
           select: {
             machineName: true,
             runTime: true,
+            runPct: true,
             stopTime: true,
             manualTime: true,
             alarmTime: true,
+            alarmPct: true,
             offlineTime: true,
           },
         })
         for (const r of reports) {
-          const cur = ncwatchMap.get(r.machineName) ?? { run: 0, stop: 0, manual: 0, alarm: 0, offline: 0 }
+          const cur = ncwatchMap.get(r.machineName) ?? {
+            run: 0,
+            stop: 0,
+            manual: 0,
+            alarm: 0,
+            offline: 0,
+            runPctSum: 0,
+            runPctCount: 0,
+            alarmPctSum: 0,
+            alarmPctCount: 0,
+          }
           cur.run    += parseTimeToMinutes(r.runTime)
           cur.stop   += parseTimeToMinutes(r.stopTime)
           cur.manual += parseTimeToMinutes(r.manualTime)
           cur.alarm  += parseTimeToMinutes(r.alarmTime)
           cur.offline += parseTimeToMinutes(r.offlineTime)
+          if (r.runPct != null) {
+            cur.runPctSum += Number(r.runPct)
+            cur.runPctCount++
+          }
+          if (r.alarmPct != null) {
+            cur.alarmPctSum += Number(r.alarmPct)
+            cur.alarmPctCount++
+          }
           ncwatchMap.set(r.machineName, cur)
         }
         hasNcwatchData = reports.length > 0
@@ -199,6 +229,14 @@ export async function getEquipmentAnalysisData(
 
       if (ncwatch) {
         const total = ncwatch.run + ncwatch.stop + ncwatch.manual + ncwatch.alarm + ncwatch.offline
+        const runRate =
+          ncwatch.runPctCount > 0
+            ? Math.round((ncwatch.runPctSum / ncwatch.runPctCount) * 100) / 100
+            : total > 0 ? Math.round((ncwatch.run / total) * 1000) / 10 : null
+        const alarmRate =
+          ncwatch.alarmPctCount > 0
+            ? Math.round((ncwatch.alarmPctSum / ncwatch.alarmPctCount) * 100) / 100
+            : total > 0 ? Math.round((ncwatch.alarm / total) * 1000) / 10 : null
         return {
           equipmentId: eq.id,
           equipmentCode: eq.code,
@@ -209,8 +247,8 @@ export async function getEquipmentAnalysisData(
           alarmMinutes:   fmtMins(ncwatch.alarm),
           offlineMinutes: fmtMins(ncwatch.offline),
           totalMinutes:   fmtMins(total),
-          runRate:   total > 0 ? Math.round((ncwatch.run  / total) * 1000) / 10 : null,
-          alarmRate: total > 0 ? Math.round((ncwatch.alarm / total) * 1000) / 10 : null,
+          runRate,
+          alarmRate,
           alarmCount: alarm.count,
           source: "ncwatch",
         }
