@@ -4,6 +4,15 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { isMissingDbObjectError, isSchemaCompatibilityError } from "@/lib/db/prisma-error"
 
+// reportDate는 Agent가 한국 날짜 문자열("YYYY-MM-DD")을 UTC midnight으로 저장한다.
+// Vercel 서버는 UTC이므로 setHours(0,0,0,0)은 UTC 기준이 돼 KST 날짜와 어긋난다.
+// KST 날짜 문자열로 정확한 reportDate를 구한다.
+function getKSTReportDate(): Date {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+  const kstDateStr = new Date(Date.now() + KST_OFFSET_MS).toISOString().slice(0, 10)
+  return new Date(kstDateStr + "T00:00:00.000Z")
+}
+
 export type EquipmentMonitorRow = {
   id: string
   code: string
@@ -177,10 +186,8 @@ async function getNcwatchTodayPartCounts(
 
 export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> {
   const tenantId = await getTenantId()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const todayEnd = new Date(today)
-  todayEnd.setHours(23, 59, 59, 999)
+  const today = getKSTReportDate()
+  const todayEnd = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
 
   try {
     const equipments = await prisma.equipment.findMany({
@@ -312,10 +319,8 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
 
 export async function getProductionKPIs() {
   const tenantId = await getTenantId()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const todayEnd = new Date(today)
-  todayEnd.setHours(23, 59, 59, 999)
+  const today = getKSTReportDate()
+  const todayEnd = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
 
   try {
     const [activeWorkOrders, todayResults, equipments] =
