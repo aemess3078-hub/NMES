@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
           ncwatchTs:    m.ncwatchTs   ?? null,
           rawPayload:   m as object,
           siteId:       siteId        ?? null,
+          receivedAt:   new Date(),   // 매 수신마다 갱신 (마지막 수신 시각)
         },
         create: {
           tenantId,
