@@ -23,6 +23,98 @@ export type EquipmentMonitorRow = {
   }[]
 }
 
+function parseNcwatchTimeToMinutes(value: string | null | undefined): number {
+  if (!value) return 0
+  const [hours = 0, minutes = 0, seconds = 0] = value.split(":").map(Number)
+  return hours * 60 + minutes + seconds / 60
+}
+
+function normalizePercent(value: unknown): number | null {
+  if (value == null) return null
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return null
+  return Math.max(0, Math.min(100, numeric))
+}
+
+async function getNcwatchAvailabilityRates(
+  tenantId: string,
+  equipmentIds: string[],
+  reportFrom: Date,
+  reportTo: Date,
+): Promise<Map<string, number> | null> {
+  if (equipmentIds.length === 0) return new Map()
+
+  try {
+    const mappings = await prisma.ncwatchEquipmentMapping.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+        equipmentId: { in: equipmentIds },
+      },
+      select: {
+        equipmentId: true,
+        machineName: true,
+      },
+    })
+
+    const machineNames = Array.from(new Set(mappings.map((mapping) => mapping.machineName)))
+    if (machineNames.length === 0) return new Map()
+
+    const reports = await prisma.ncwatchReportDaily.findMany({
+      where: {
+        tenantId,
+        machineName: { in: machineNames },
+        reportDate: { gte: reportFrom, lte: reportTo },
+      },
+      select: {
+        machineName: true,
+        runTime: true,
+        stopTime: true,
+        manualTime: true,
+        alarmTime: true,
+        offlineTime: true,
+        runPct: true,
+        receivedAt: true,
+      },
+      orderBy: { receivedAt: "desc" },
+    })
+
+    const latestReportByMachine = new Map<string, (typeof reports)[number]>()
+    for (const report of reports) {
+      if (!latestReportByMachine.has(report.machineName)) {
+        latestReportByMachine.set(report.machineName, report)
+      }
+    }
+
+    const rates = new Map<string, number>()
+    for (const mapping of mappings) {
+      if (!mapping.equipmentId) continue
+      const report = latestReportByMachine.get(mapping.machineName)
+      if (!report) continue
+
+      const runMinutes = parseNcwatchTimeToMinutes(report.runTime)
+      const totalMinutes =
+        runMinutes +
+        parseNcwatchTimeToMinutes(report.stopTime) +
+        parseNcwatchTimeToMinutes(report.manualTime) +
+        parseNcwatchTimeToMinutes(report.alarmTime) +
+        parseNcwatchTimeToMinutes(report.offlineTime)
+
+      const rate =
+        totalMinutes > 0 ? (runMinutes / totalMinutes) * 100 : normalizePercent(report.runPct)
+
+      if (rate != null) {
+        rates.set(mapping.equipmentId, rate)
+      }
+    }
+
+    return rates
+  } catch (error) {
+    if (isMissingDbObjectError(error) || isSchemaCompatibilityError(error)) return null
+    throw error
+  }
+}
+
 export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> {
   const tenantId = await getTenantId()
 
@@ -152,9 +244,11 @@ export async function getProductionKPIs() {
   const tenantId = await getTenantId()
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+  const todayEnd = new Date(today)
+  todayEnd.setHours(23, 59, 59, 999)
 
   try {
-    const [activeWorkOrders, todayResults, totalEquipment, runningEquipment] =
+    const [activeWorkOrders, todayResults, equipments] =
       await Promise.all([
         prisma.workOrder.count({
           where: { tenantId, status: { in: ["RELEASED", "IN_PROGRESS"] } },
@@ -166,13 +260,26 @@ export async function getProductionKPIs() {
           },
           _sum: { goodQty: true, defectQty: true },
         }),
-        prisma.equipment.count({ where: { tenantId } }),
-        prisma.equipment.count({ where: { tenantId, status: "ACTIVE" } }),
+        prisma.equipment.findMany({
+          where: { tenantId },
+          select: { id: true, status: true },
+        }),
       ])
 
     const goodQty = Number(todayResults._sum?.goodQty ?? 0)
     const defectQty = Number(todayResults._sum?.defectQty ?? 0)
     const totalQty = goodQty + defectQty
+    const ncwatchRates = await getNcwatchAvailabilityRates(
+      tenantId,
+      equipments.map((equipment) => equipment.id),
+      today,
+      todayEnd,
+    )
+    const availabilityTotal = equipments.reduce((sum, equipment) => {
+      const ncwatchRate = ncwatchRates?.get(equipment.id)
+      if (ncwatchRate != null) return sum + ncwatchRate
+      return sum + (equipment.status === "ACTIVE" ? 100 : 0)
+    }, 0)
 
     return {
       activeWorkOrders,
@@ -182,7 +289,7 @@ export async function getProductionKPIs() {
       openRepairs: 0,
       failedChecks: 0,
       equipmentAvailability:
-        totalEquipment > 0 ? ((runningEquipment / totalEquipment) * 100).toFixed(1) : "0.0",
+        equipments.length > 0 ? (availabilityTotal / equipments.length).toFixed(1) : "0.0",
     }
   } catch (error) {
     if (!isMissingDbObjectError(error)) throw error
