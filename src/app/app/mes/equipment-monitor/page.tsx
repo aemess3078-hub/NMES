@@ -1,4 +1,7 @@
-import { getEquipmentAnalysisData } from "@/lib/actions/equipment-analysis.actions"
+import {
+  getEquipmentAnalysisData,
+  getEquipmentTimelineData,
+} from "@/lib/actions/equipment-analysis.actions"
 import { EquipmentAnalysisClient } from "./analysis-client"
 import type { AnalysisPeriod } from "@/lib/actions/equipment-analysis.actions"
 
@@ -18,7 +21,10 @@ function toPeriod(raw: string | undefined): AnalysisPeriod {
 export default async function EquipmentAnalysisPage({ searchParams }: Props) {
   const params = searchParams ? await searchParams : {}
   const period = toPeriod(params.period)
-  const data = await getEquipmentAnalysisData(period)
+  const [data, timelineData] = await Promise.all([
+    getEquipmentAnalysisData(period),
+    getEquipmentTimelineData(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -31,7 +37,7 @@ export default async function EquipmentAnalysisPage({ searchParams }: Props) {
         </p>
       </div>
 
-      <EquipmentAnalysisClient data={data} />
+      <EquipmentAnalysisClient data={data} timelineData={timelineData} />
     </div>
   )
 }

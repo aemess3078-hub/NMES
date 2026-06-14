@@ -8,25 +8,49 @@ import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 
 export type AnalysisPeriod = "today" | "week" | "month"
 
+// ─── 타임라인 Types ────────────────────────────────────────────────────────────
+
+export type TimelineEvent = {
+  eventType: string
+  startedAt: Date
+  endedAt: Date | null
+}
+
+export type EquipmentTimeline = {
+  equipmentId: string
+  equipmentCode: string
+  equipmentName: string
+  events: TimelineEvent[]
+}
+
+export type TimelineData = {
+  dayStart: Date
+  dayEnd: Date
+  now: Date
+  equipments: EquipmentTimeline[]
+}
+
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+
+// 서버(UTC) 기준이 아니라 KST 달력 날짜로 범위를 잡는다.
+// NcwatchReportDaily.reportDate 는 KST 날짜를 UTC 자정으로 저장하므로
+// from/to 도 KST 날짜의 UTC 자정으로 맞춰야 매칭된다.
 function getDateRange(period: AnalysisPeriod): { from: Date; to: Date; label: string } {
-  const now = new Date()
-  const to = new Date(now)
-  to.setHours(23, 59, 59, 999)
+  const todayKst = new Date(Date.now() + KST_OFFSET_MS).toISOString().slice(0, 10)
+  const todayStart = new Date(todayKst + "T00:00:00.000Z")
+  const to = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1)
 
   if (period === "today") {
-    const from = new Date(now)
-    from.setHours(0, 0, 0, 0)
-    return { from, to, label: "오늘" }
+    return { from: todayStart, to, label: "오늘" }
   }
   if (period === "week") {
-    const from = new Date(now)
-    from.setDate(from.getDate() - 6)
-    from.setHours(0, 0, 0, 0)
+    const from = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000)
     return { from, to, label: "최근 7일" }
   }
-  // month
-  const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
-  return { from, to, label: "이번 달" }
+  // month — KST 기준 이번 달 1일
+  const y = Number(todayKst.slice(0, 4))
+  const m = Number(todayKst.slice(5, 7))
+  return { from: new Date(Date.UTC(y, m - 1, 1)), to, label: "이번 달" }
 }
 
 // "HH:MM:SS" → minutes
@@ -289,6 +313,84 @@ export async function getEquipmentAnalysisData(
   } catch (error) {
     if (isMissingDbObjectError(error)) {
       return { period, periodLabel: label, rows: [], hasNcwatchData: false }
+    }
+    throw error
+  }
+}
+
+// ─── 24h 가동 타임라인 ─────────────────────────────────────────────────────────
+// 오늘 00:00 ~ 현재까지의 EquipmentEvent를 설비별로 집계.
+// 어제 시작되어 아직 닫히지 않은 이벤트도 포함 (오늘 00:00 기점으로 클램프).
+// protocol 컬럼 미접근 — NCWATCH_AGENT enum 역직렬화 위험 없음.
+
+export async function getEquipmentTimelineData(): Promise<TimelineData> {
+  const tenantId = await getTenantId()
+  const now = new Date()
+  // KST 자정을 실제 UTC 인스턴트로 환산 (이벤트 startedAt 은 실제 시각이므로)
+  const todayKst = new Date(Date.now() + KST_OFFSET_MS).toISOString().slice(0, 10)
+  const dayStart = new Date(todayKst + "T00:00:00+09:00")
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000) // 고정 24h 축
+
+  try {
+    const equipments = await prisma.equipment.findMany({
+      where: { tenantId },
+      select: { id: true, code: true, name: true },
+      orderBy: { code: "asc" },
+    })
+
+    if (equipments.length === 0) {
+      return { dayStart, dayEnd, now, equipments: [] }
+    }
+
+    const equipmentIds = equipments.map((e) => e.id)
+
+    // 오늘 기준 이벤트:
+    //   - 오늘 시작된 것
+    //   - 아직 닫히지 않은 것 (전날 시작 포함)
+    //   - 오늘 닫힌 것 (전날 시작 포함)
+    const events = await prisma.equipmentEvent.findMany({
+      where: {
+        equipmentId: { in: equipmentIds },
+        OR: [
+          { startedAt: { gte: dayStart } },
+          { endedAt: null },
+          { endedAt: { gte: dayStart } },
+        ],
+      },
+      select: {
+        equipmentId: true,
+        eventType:   true,
+        startedAt:   true,
+        endedAt:     true,
+      },
+      orderBy: { startedAt: "asc" },
+    })
+
+    const eqEventMap = new Map<string, TimelineEvent[]>()
+    for (const ev of events) {
+      const list = eqEventMap.get(ev.equipmentId) ?? []
+      list.push({
+        eventType: ev.eventType as string,
+        startedAt: ev.startedAt,
+        endedAt:   ev.endedAt,
+      })
+      eqEventMap.set(ev.equipmentId, list)
+    }
+
+    return {
+      dayStart,
+      dayEnd,
+      now,
+      equipments: equipments.map((eq) => ({
+        equipmentId:   eq.id,
+        equipmentCode: eq.code,
+        equipmentName: eq.name,
+        events:        eqEventMap.get(eq.id) ?? [],
+      })),
+    }
+  } catch (error) {
+    if (isMissingDbObjectError(error)) {
+      return { dayStart, dayEnd, now, equipments: [] }
     }
     throw error
   }

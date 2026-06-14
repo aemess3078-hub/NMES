@@ -3,10 +3,13 @@
 import { useTransition } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { BarChart2, Info } from "lucide-react"
+import { format } from "date-fns"
+import { ko } from "date-fns/locale"
 import type {
   EquipmentAnalysisData,
   EquipmentAnalysisRow,
   AnalysisPeriod,
+  TimelineData,
 } from "@/lib/actions/equipment-analysis.actions"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -28,56 +31,175 @@ function fmtMins(mins: number): string {
 
 // ─── Ratio bar ────────────────────────────────────────────────────────────────
 
+// 막대는 가동률(runRate)과 일치시킨다. NCWatch 일간 집계는 가동률(%)을 24시간 기준으로
+// 산출하지만 비가동 항목별(정지/수동/오프라인) 시간은 에이전트가 전송하지 않으므로,
+// 가동 / (알람) / 비가동 3분할로 표시한다 — 표의 가동률 숫자와 정확히 일치.
 function RatioBar({ row }: { row: EquipmentAnalysisRow }) {
-  const total = row.totalMinutes
-  if (total === 0 || row.source === "none") {
+  if (row.source === "none" || row.runRate === null) {
     return <span className="text-[13px] text-muted-foreground">데이터 없음</span>
   }
 
-  const pct = (n: number) => Math.max(0, Math.min(100, (n / total) * 100))
-  const runPct     = pct(row.runMinutes)
-  const stopPct    = pct(row.stopMinutes)
-  const manualPct  = pct(row.manualMinutes)
-  const alarmPct   = pct(row.alarmMinutes)
-  const offlinePct = pct(row.offlineMinutes)
+  const run   = Math.max(0, Math.min(100, row.runRate))
+  const alarm = Math.max(0, Math.min(100 - run, row.alarmRate ?? 0))
+  const idle  = Math.max(0, 100 - run - alarm)
 
   return (
-    <div className="flex h-3.5 w-36 rounded-full overflow-hidden gap-px bg-slate-100">
-      {runPct > 0 && (
-        <div
-          className="bg-green-500 h-full"
-          style={{ width: `${runPct}%` }}
-          title={`가동 ${Math.round(runPct)}%`}
-        />
+    <div className="flex h-3.5 w-36 rounded-full overflow-hidden bg-slate-100">
+      {run > 0 && (
+        <div className="bg-green-500 h-full" style={{ width: `${run}%` }} title={`가동 ${run.toFixed(1)}%`} />
       )}
-      {stopPct > 0 && (
-        <div
-          className="bg-slate-300 h-full"
-          style={{ width: `${stopPct}%` }}
-          title={`정지 ${Math.round(stopPct)}%`}
-        />
+      {alarm > 0 && (
+        <div className="bg-red-500 h-full" style={{ width: `${alarm}%` }} title={`알람 ${alarm.toFixed(1)}%`} />
       )}
-      {manualPct > 0 && (
-        <div
-          className="bg-amber-400 h-full"
-          style={{ width: `${manualPct}%` }}
-          title={`수동 ${Math.round(manualPct)}%`}
-        />
+      {idle > 0 && (
+        <div className="bg-slate-300 h-full" style={{ width: `${idle}%` }} title={`비가동 ${idle.toFixed(1)}%`} />
       )}
-      {alarmPct > 0 && (
-        <div
-          className="bg-red-500 h-full"
-          style={{ width: `${alarmPct}%` }}
-          title={`알람 ${Math.round(alarmPct)}%`}
-        />
+    </div>
+  )
+}
+
+// ─── 24h Timeline ─────────────────────────────────────────────────────────────
+
+const EVENT_COLOR: Record<string, string> = {
+  RUN:         "bg-green-500",
+  STOP:        "bg-slate-300",
+  ALARM:       "bg-red-500",
+  WARNING:     "bg-amber-300",
+  MAINTENANCE: "bg-blue-400",
+}
+
+const HOUR_TICKS = [0, 4, 8, 12, 16, 20, 24]
+
+function TimelineSection({ timeline }: { timeline: TimelineData }) {
+  const { dayStart, dayEnd, now, equipments } = timeline
+  const totalMs = Math.max(1, dayEnd.getTime() - dayStart.getTime()) // 고정 24h
+  const nowPct = Math.min(100, Math.max(0, ((now.getTime() - dayStart.getTime()) / totalMs) * 100))
+
+  if (equipments.length === 0) return null
+  // 이벤트가 하나도 없는 경우 섹션 자체를 숨기지 않음 — "이벤트 없음" 표시
+  const hasAnyEvent = equipments.some((eq) => eq.events.length > 0)
+
+  function segLeft(ts: Date): number {
+    const ms = Math.max(0, ts.getTime() - dayStart.getTime())
+    return Math.min(100, (ms / totalMs) * 100)
+  }
+  function segWidth(from: Date, to: Date): number {
+    const cFrom = from < dayStart ? dayStart : from
+    const cTo   = to   > dayEnd   ? dayEnd   : to
+    if (cTo <= cFrom) return 0
+    return Math.min(100 - segLeft(cFrom), ((cTo.getTime() - cFrom.getTime()) / totalMs) * 100)
+  }
+
+  return (
+    <div className="rounded-lg border bg-card p-5 space-y-4">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-[15px] font-semibold">24시간 가동 타임라인</h3>
+        <span className="text-[13px] text-muted-foreground">
+          {format(dayStart, "M월 d일 (E)", { locale: ko })} · 현재 {format(now, "HH:mm")}
+        </span>
+      </div>
+
+      {!hasAnyEvent ? (
+        <p className="text-[14px] text-muted-foreground text-center py-6">
+          오늘 기록된 설비 이벤트가 없습니다.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {/* 시각 눈금 헤더 */}
+          <div className="flex">
+            <div className="w-28 shrink-0" />
+            <div className="flex-1 relative h-5">
+              {HOUR_TICKS.map((h) => (
+                <span
+                  key={h}
+                  className="absolute text-[11px] text-muted-foreground -translate-x-1/2 select-none"
+                  style={{ left: `${(h / 24) * 100}%` }}
+                >
+                  {String(h).padStart(2, "0")}:00
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* 설비별 타임라인 바 */}
+          {equipments.map((eq) => (
+            <div key={eq.equipmentId} className="flex items-center">
+              <div className="w-28 shrink-0 text-right pr-3 text-[13px] text-muted-foreground truncate">
+                {eq.equipmentName}
+              </div>
+              <div className="flex-1 relative h-7 bg-slate-100 rounded overflow-hidden">
+                {/* 시간대 구분선 */}
+                {HOUR_TICKS.filter((h) => h > 0 && h < 24).map((h) => (
+                  <div
+                    key={h}
+                    className="absolute top-0 h-full w-px bg-white/50 z-10 pointer-events-none"
+                    style={{ left: `${(h / 24) * 100}%` }}
+                  />
+                ))}
+
+                {/* 미래 구간(현재 이후) 흐리게 */}
+                {nowPct < 100 && (
+                  <div
+                    className="absolute top-0 h-full bg-slate-50 z-0"
+                    style={{ left: `${nowPct}%`, width: `${100 - nowPct}%` }}
+                  />
+                )}
+
+                {/* 현재 시각 마커 */}
+                {nowPct < 100 && (
+                  <div
+                    className="absolute top-0 h-full w-px bg-foreground/40 z-20 pointer-events-none"
+                    style={{ left: `${nowPct}%` }}
+                    title={`현재 ${format(now, "HH:mm")}`}
+                  />
+                )}
+
+                {/* 이벤트 세그먼트 */}
+                {eq.events.map((ev, i) => {
+                  const from = new Date(ev.startedAt)
+                  const to   = ev.endedAt ? new Date(ev.endedAt) : now
+                  if (from >= dayEnd || to <= dayStart) return null
+                  const left  = segLeft(from < dayStart ? dayStart : from)
+                  const width = segWidth(from, to)
+                  if (width < 0.05) return null
+                  const color = EVENT_COLOR[ev.eventType] ?? "bg-slate-300"
+                  const label = `${ev.eventType} ${format(from < dayStart ? dayStart : from, "HH:mm")}–${ev.endedAt ? format(to, "HH:mm") : "진행중"}`
+                  return (
+                    <div
+                      key={i}
+                      className={`absolute top-0 h-full ${color}`}
+                      style={{ left: `${left}%`, width: `${width}%` }}
+                      title={label}
+                    />
+                  )
+                })}
+
+                {/* 이벤트 없는 설비 */}
+                {eq.events.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[11px] text-muted-foreground/50">이벤트 없음</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
-      {offlinePct > 0 && (
-        <div
-          className="bg-slate-500 h-full"
-          style={{ width: `${offlinePct}%` }}
-          title={`오프라인 ${Math.round(offlinePct)}%`}
-        />
-      )}
+
+      {/* 범례 */}
+      <div className="flex items-center gap-4 text-[12px] text-muted-foreground ml-28 pt-1">
+        {[
+          { color: "bg-green-500", label: "가동"  },
+          { color: "bg-slate-300", label: "정지"  },
+          { color: "bg-red-500",   label: "알람"  },
+        ].map(({ color, label }) => (
+          <span key={label} className="flex items-center gap-1.5">
+            <span className={`w-3 h-3 rounded-sm ${color}`} />
+            {label}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
@@ -86,9 +208,10 @@ function RatioBar({ row }: { row: EquipmentAnalysisRow }) {
 
 interface Props {
   data: EquipmentAnalysisData
+  timelineData: TimelineData
 }
 
-export function EquipmentAnalysisClient({ data }: Props) {
+export function EquipmentAnalysisClient({ data, timelineData }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const [isPending, startTransition] = useTransition()
@@ -230,10 +353,8 @@ export function EquipmentAnalysisClient({ data }: Props) {
           <span className="font-medium text-foreground">범례</span>
           {[
             { color: "bg-green-500", label: "가동" },
-            { color: "bg-slate-300", label: "정지" },
-            { color: "bg-amber-400", label: "수동" },
             { color: "bg-red-500",   label: "알람" },
-            { color: "bg-slate-500", label: "오프라인" },
+            { color: "bg-slate-300", label: "비가동" },
           ].map(({ color, label }) => (
             <span key={label} className="flex items-center gap-1.5">
               <span className={`w-3 h-3 rounded-sm ${color}`} />
@@ -243,11 +364,8 @@ export function EquipmentAnalysisClient({ data }: Props) {
         </div>
       )}
 
-      {/* 24h timeline placeholder */}
-      <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
-        <p className="text-[14px] font-medium text-muted-foreground">24시간 가동 타임라인</p>
-        <p className="text-[13px] text-muted-foreground mt-1">다음 버전에서 제공 예정</p>
-      </div>
+      {/* 24h 타임라인 */}
+      <TimelineSection timeline={timelineData} />
     </>
   )
 }
