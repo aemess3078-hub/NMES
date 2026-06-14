@@ -92,6 +92,10 @@ export async function getEquipmentAnalysisData(
 ): Promise<EquipmentAnalysisData> {
   const tenantId = await getTenantId()
   const { from, to, label } = getDateRange(period)
+  // from/to 는 reportDate(=KST 날짜의 UTC 자정) 매칭용.
+  // EquipmentEvent.startedAt 은 실제 시각이므로 KST 달력일의 실제 UTC 구간으로 9h 당겨 조회한다.
+  const eventFrom = new Date(from.getTime() - KST_OFFSET_MS)
+  const eventTo = new Date(to.getTime() - KST_OFFSET_MS)
 
   try {
     // 1. 설비 목록 + NCWatch 매핑 (protocol 컬럼 미접근 — enum 역직렬화 위험 없음)
@@ -197,7 +201,7 @@ export async function getEquipmentAnalysisData(
       where: {
         equipmentId: { in: equipmentIds },
         eventType: "ALARM",
-        startedAt: { gte: from, lte: to },
+        startedAt: { gte: eventFrom, lte: eventTo },
       },
       select: {
         equipmentId: true,
@@ -207,13 +211,14 @@ export async function getEquipmentAnalysisData(
       },
     })
 
+    const nowMs = Date.now()
     const alarmMap = new Map<string, { count: number; minutes: number }>()
     for (const ev of alarmEvents) {
       const cur = alarmMap.get(ev.equipmentId) ?? { count: 0, minutes: 0 }
       cur.count++
       if (ev.duration != null) cur.minutes += ev.duration / 60
-      else if (ev.endedAt && ev.startedAt)
-        cur.minutes += (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
+      else if (ev.endedAt) cur.minutes += (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
+      else cur.minutes += (nowMs - ev.startedAt.getTime()) / 60_000 // 진행 중 알람
       alarmMap.set(ev.equipmentId, cur)
     }
 
@@ -224,7 +229,7 @@ export async function getEquipmentAnalysisData(
         where: {
           equipmentId: { in: equipmentIds },
           eventType: "RUN",
-          startedAt: { gte: from, lte: to },
+          startedAt: { gte: eventFrom, lte: eventTo },
         },
         select: {
           equipmentId: true,
