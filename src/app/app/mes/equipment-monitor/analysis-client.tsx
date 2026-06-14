@@ -25,8 +25,8 @@ function fmtMins(mins: number): string {
   const h = Math.floor(mins / 60)
   const m = mins % 60
   if (h === 0) return `${m}분`
-  if (m === 0) return `${h}h`
-  return `${h}h ${m}분`
+  if (m === 0) return `${h}시간`
+  return `${h}시간 ${m}분`
 }
 
 // ─── Ratio bar ────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ export function EquipmentAnalysisClient({ data, timelineData }: Props) {
                 <th className="text-left py-3 px-4 text-[13px] font-medium text-muted-foreground">설비명</th>
                 <th className="text-right py-3 px-4 text-[13px] font-medium text-muted-foreground">가동시간</th>
                 <th className="text-right py-3 px-4 text-[13px] font-medium text-muted-foreground">정지시간</th>
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-muted-foreground">알람시간</th>
+                <th className="text-right py-3 px-4 text-[13px] font-medium text-muted-foreground">알람 발생</th>
                 <th className="text-right py-3 px-4 text-[13px] font-medium text-muted-foreground">알람 횟수</th>
                 <th className="text-right py-3 px-4 text-[13px] font-medium text-muted-foreground">가동률</th>
                 <th className="py-3 px-4 text-[13px] font-medium text-muted-foreground">상태 비율</th>
@@ -321,7 +321,7 @@ export function EquipmentAnalysisClient({ data, timelineData }: Props) {
                     {fmtMins(row.stopMinutes)}
                   </td>
                   <td className="text-right py-3 px-4 text-[14px] text-red-600">
-                    {fmtMins(row.alarmMinutes)}
+                    {row.lastAlarmAt ? format(new Date(row.lastAlarmAt), "MM/dd HH:mm") : "—"}
                   </td>
                   <td className="text-right py-3 px-4">
                     {row.alarmCount > 0 ? (

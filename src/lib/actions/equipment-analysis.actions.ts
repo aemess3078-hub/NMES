@@ -77,6 +77,7 @@ export type EquipmentAnalysisRow = {
   runRate: number | null    // 0–100 (%)
   alarmRate: number | null  // 0–100 (%)
   alarmCount: number
+  lastAlarmAt: Date | null   // 가장 최근 알람 발생시각
   source: "ncwatch" | "event" | "none"
 }
 
@@ -212,13 +213,14 @@ export async function getEquipmentAnalysisData(
     })
 
     const nowMs = Date.now()
-    const alarmMap = new Map<string, { count: number; minutes: number }>()
+    const alarmMap = new Map<string, { count: number; minutes: number; lastAt: Date | null }>()
     for (const ev of alarmEvents) {
-      const cur = alarmMap.get(ev.equipmentId) ?? { count: 0, minutes: 0 }
+      const cur = alarmMap.get(ev.equipmentId) ?? { count: 0, minutes: 0, lastAt: null }
       cur.count++
       if (ev.duration != null) cur.minutes += ev.duration / 60
       else if (ev.endedAt) cur.minutes += (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
       else cur.minutes += (nowMs - ev.startedAt.getTime()) / 60_000 // 진행 중 알람
+      if (!cur.lastAt || ev.startedAt > cur.lastAt) cur.lastAt = ev.startedAt // 가장 최근 알람 발생시각
       alarmMap.set(ev.equipmentId, cur)
     }
 
@@ -272,7 +274,7 @@ export async function getEquipmentAnalysisData(
     const rows: EquipmentAnalysisRow[] = equipments.map((eq) => {
       const mapping = eq.ncwatchMappings[0]
       const ncwatch = mapping ? ncwatchMap.get(mapping.machineName) : null
-      const alarm = alarmMap.get(eq.id) ?? { count: 0, minutes: 0 }
+      const alarm = alarmMap.get(eq.id) ?? { count: 0, minutes: 0, lastAt: null }
       const stopMins = stopMap.get(eq.id) ?? 0
 
       if (ncwatch) {
@@ -301,6 +303,7 @@ export async function getEquipmentAnalysisData(
           runRate,
           alarmRate,
           alarmCount: alarm.count,
+          lastAlarmAt: alarm.lastAt,
           source: "ncwatch",
         }
       }
@@ -315,6 +318,7 @@ export async function getEquipmentAnalysisData(
           totalMinutes: 0,
           runRate: null, alarmRate: null,
           alarmCount: 0,
+          lastAlarmAt: null,
           source: "none",
         }
       }
@@ -332,6 +336,7 @@ export async function getEquipmentAnalysisData(
         runRate:   totalPeriodMins > 0 ? Math.round((runMins / totalPeriodMins) * 1000) / 10 : null,
         alarmRate: totalPeriodMins > 0 ? Math.round((alarm.minutes / totalPeriodMins) * 1000) / 10 : null,
         alarmCount: alarm.count,
+        lastAlarmAt: alarm.lastAt,
         source: "event",
       }
     })
