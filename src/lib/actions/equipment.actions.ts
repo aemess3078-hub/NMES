@@ -151,7 +151,20 @@ export async function deleteEquipment(id: string) {
   if (repairCount > 0)
     throw new Error(`수리요청 이력이 ${repairCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
 
-  await prisma.equipment.delete({ where: { id } })
+  const checkCount = await prisma.equipmentDailyCheck.count({ where: { equipmentId: id } })
+  if (checkCount > 0)
+    throw new Error(`일상점검 이력이 ${checkCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
+
+  const woCount = await prisma.workOrderOperationAssignment.count({ where: { equipmentId: id } })
+  if (woCount > 0)
+    throw new Error(`작업지시 배정 이력이 ${woCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
+
+  // 자동 생성되는 모니터링 데이터는 함께 삭제 (EquipmentEvent, EquipmentOperationMap)
+  await prisma.$transaction([
+    prisma.equipmentEvent.deleteMany({ where: { equipmentId: id } }),
+    prisma.equipmentOperationMap.deleteMany({ where: { equipmentId: id } }),
+    prisma.equipment.delete({ where: { id } }),
+  ])
   await prisma.auditLog.create({
     data: {
       tenantId,
