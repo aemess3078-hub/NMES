@@ -23,6 +23,27 @@ const EQ_STATUS_CONFIG = {
   INACTIVE: { label: "비가동", dot: "bg-slate-500", card: "border-slate-600/40 bg-slate-900/20" },
 }
 
+const OPERATION_STATUS_TAG_NAMES = new Set(["운전 상태", "NCWatch Status"])
+
+function isOperationStatusTag(tag: EquipmentMonitorRow["recentTags"][number]) {
+  return tag.tagCode === "STATUS" || OPERATION_STATUS_TAG_NAMES.has(tag.displayName)
+}
+
+function getStatusKeyFromOperationValue(value: string | null | undefined) {
+  if (!value || value === "—") return null
+  const text = value.trim()
+  const upper = text.toUpperCase()
+
+  if (text.includes("오프라인") || upper === "OFFLINE") return "INACTIVE"
+  if (text.includes("알람") || upper === "ALARM") return "DOWN"
+  if (text.includes("가동") || upper === "RUN" || upper === "START") return "ACTIVE"
+  if (text.includes("대기") || upper === "READY" || upper === "IDLE") return "IDLE"
+  if (text.includes("정지") || upper === "STOP" || upper === "PAUSE") return "INACTIVE"
+  if (text.includes("수동") || upper === "MANUAL") return "IDLE"
+
+  return null
+}
+
 interface Props {
   equipment: EquipmentMonitorRow[]
   kpis: KPIs
@@ -114,7 +135,15 @@ export function KioskClient({ equipment, kpis }: Props) {
           }}
         >
           {equipment.map((eq) => {
-            const cfg = EQ_STATUS_CONFIG[eq.status as keyof typeof EQ_STATUS_CONFIG] ?? EQ_STATUS_CONFIG.INACTIVE
+            const operationStatusTag = eq.recentTags.find(isOperationStatusTag)
+            const visibleTags = eq.recentTags.filter((tag) => !isOperationStatusTag(tag)).slice(0, 4)
+            const displayStatusKey =
+              getStatusKeyFromOperationValue(operationStatusTag?.latestValue) ??
+              (eq.status as keyof typeof EQ_STATUS_CONFIG)
+            const cfg =
+              EQ_STATUS_CONFIG[displayStatusKey as keyof typeof EQ_STATUS_CONFIG] ??
+              EQ_STATUS_CONFIG.INACTIVE
+            const statusLabel = operationStatusTag?.latestValue ?? cfg.label
             return (
               <div
                 key={eq.id}
@@ -127,15 +156,15 @@ export function KioskClient({ equipment, kpis }: Props) {
                     <p className="text-[13px] text-slate-400">{eq.code}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot} ${eq.status === "ACTIVE" ? "animate-pulse" : ""}`} />
-                    <span className="text-[13px] text-slate-300 font-medium">{cfg.label}</span>
+                    <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot} ${displayStatusKey === "ACTIVE" ? "animate-pulse" : ""}`} />
+                    <span className="text-[13px] text-slate-300 font-medium">{statusLabel}</span>
                   </div>
                 </div>
 
                 {/* Real-time tag values */}
-                {eq.recentTags.length > 0 ? (
+                {visibleTags.length > 0 ? (
                   <div className="grid grid-cols-2 gap-2 flex-1">
-                    {eq.recentTags.slice(0, 4).map((tag) => (
+                    {visibleTags.map((tag) => (
                       <div key={tag.displayName} className="bg-black/30 rounded-lg px-3 py-2">
                         <p className="text-[11px] text-slate-500 truncate">{tag.displayName}</p>
                         <p className="text-[20px] font-bold text-white tabular-nums">

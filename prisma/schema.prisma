@@ -293,6 +293,7 @@ enum ConnectionProtocol {
   S7
   FOCAS
   CUSTOM
+  NCWATCH_AGENT
 }
 
 enum TagDataType {
@@ -797,6 +798,7 @@ model Equipment {
   repairRequests                EquipmentRepairRequest[]
   dailyChecks                   EquipmentDailyCheck[]
   workOrderOperationAssignments WorkOrderOperationAssignment[]
+  ncwatchMappings               NcwatchEquipmentMapping[]      @relation("EquipmentNcwatchMappings")
 
   @@unique([siteId, code])
   @@index([tenantId])
@@ -1718,6 +1720,11 @@ model DataTag {
   samplingMs   Int         @default(1000)
   deadband     Decimal?    @db.Decimal(18, 6)
   isActive     Boolean     @default(true)
+  isEnabled    Boolean     @default(true)  @map("is_enabled")
+  isVisible    Boolean     @default(true)  @map("is_visible")
+  isPrimary    Boolean     @default(false) @map("is_primary")
+  displayOrder Int         @default(0)     @map("display_order")
+  source       String?     @map("source")
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -2317,4 +2324,118 @@ model SupportRequest {
   @@index([status])
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
+}
+
+// ─── NCWatch 설비 연동 ────────────────────────────────────────────────────────
+
+// NCWatch 기계명 ↔ MES Equipment.id 매핑
+model NcwatchEquipmentMapping {
+  id          String   @id @default(cuid())
+  tenantId    String
+  siteId      String?
+  machineName String   @map("machine_name")
+  equipmentId String?  @map("equipment_id")
+  isActive    Boolean  @default(true)  @map("is_active")
+  memo        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  equipment Equipment? @relation("EquipmentNcwatchMappings", fields: [equipmentId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, machineName])
+  @@index([equipmentId])
+  @@map("ncwatch_equipment_mapping")
+}
+
+// NCWatch 기계별 현재 상태 (10초마다 upsert, 기계당 1행)
+model NcwatchStatus {
+  id           String   @id @default(cuid())
+  tenantId     String
+  siteId       String?
+  machineName  String   @map("machine_name")
+  statusCode   Int?     @map("status_code")
+  statusLabel  String?  @map("status_label")
+  runCode      Int?     @map("run_code")
+  modeCode     Int?     @map("mode_code")
+  messageCode  Int?     @map("message_code")
+  programName  String?  @map("program_name")
+  oNumber      String?  @map("o_number")
+  spindleSpeed Int?     @map("spindle_speed")
+  feedRate     Int?     @map("feed_rate")
+  positionX    Decimal? @map("position_x") @db.Decimal(18, 4)
+  positionY    Decimal? @map("position_y") @db.Decimal(18, 4)
+  positionZ    Decimal? @map("position_z") @db.Decimal(18, 4)
+  toolNo       String?  @map("tool_no")
+  partCount    Int?     @map("part_count")
+  blockNumber  Int?     @map("block_number")
+  blockTot     Int?     @map("block_tot")
+  ratio        Decimal? @db.Decimal(5, 2)
+  alarmCode    String?  @map("alarm_code")
+  alarmMessage String?  @map("alarm_message")
+  aliveCount   Int?     @map("alive_count")
+  ncwatchTs    String?  @map("ncwatch_ts")
+  rawPayload   Json?    @map("raw_payload")
+  receivedAt   DateTime @default(now()) @map("received_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  @@unique([tenantId, machineName])
+  @@index([machineName])
+  @@map("ncwatch_status")
+}
+
+// NCWatch 상태 변경 이력 (statusCode 변경 시 append)
+model NcwatchStatusHistory {
+  id           String   @id @default(cuid())
+  tenantId     String
+  machineName  String   @map("machine_name")
+  statusCode   Int?     @map("status_code")
+  statusLabel  String?  @map("status_label")
+  partCount    Int?     @map("part_count")
+  spindleSpeed Int?     @map("spindle_speed")
+  alarmMessage String?  @map("alarm_message")
+  changedAt    DateTime @map("changed_at")
+  receivedAt   DateTime @default(now()) @map("received_at")
+
+  @@index([tenantId, machineName, changedAt])
+  @@map("ncwatch_status_history")
+}
+
+// NCWatch 일간 가동 리포트 (기계+날짜 upsert, 1시간마다)
+model NcwatchReportDaily {
+  id          String   @id @default(cuid())
+  tenantId    String
+  machineName String   @map("machine_name")
+  reportDate  DateTime @map("report_date") @db.Date
+  runTime     String?  @map("run_time")
+  runPct      Decimal? @map("run_pct")     @db.Decimal(5, 2)
+  partCount   Int?     @map("part_count")
+  stopTime    String?  @map("stop_time")
+  stopPct     Decimal? @map("stop_pct")    @db.Decimal(5, 2)
+  manualPct   Decimal? @map("manual_pct")  @db.Decimal(5, 2)
+  alarmPct    Decimal? @map("alarm_pct")   @db.Decimal(5, 2)
+  offlinePct  Decimal? @map("offline_pct") @db.Decimal(5, 2)
+  manualTime  String?  @map("manual_time")
+  alarmTime   String?  @map("alarm_time")
+  offlineTime String?  @map("offline_time")
+  rawPayload  Json?    @map("raw_payload")
+  receivedAt  DateTime @default(now()) @map("received_at")
+
+  @@unique([tenantId, machineName, reportDate])
+  @@map("ncwatch_report_daily")
+}
+
+// NCWatch 수신/변환 로그
+model NcwatchSyncLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  machineName  String?  @map("machine_name")
+  endpoint     String
+  result       String
+  message      String?
+  payloadCount Int?     @map("payload_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@index([result])
+  @@map("ncwatch_sync_log")
 }
