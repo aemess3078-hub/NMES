@@ -318,7 +318,7 @@ export function EquipmentAnalysisClient({ data, timelineData }: Props) {
                     {fmtMins(row.runMinutes)}
                   </td>
                   <td className="text-right py-3 px-4 text-[14px] text-slate-500">
-                    {row.source === "event" ? "—" : fmtMins(row.stopMinutes)}
+                    {fmtMins(row.stopMinutes)}
                   </td>
                   <td className="text-right py-3 px-4 text-[14px] text-red-600">
                     {fmtMins(row.alarmMinutes)}

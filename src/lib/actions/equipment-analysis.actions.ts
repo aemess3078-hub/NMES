@@ -222,6 +222,24 @@ export async function getEquipmentAnalysisData(
       alarmMap.set(ev.equipmentId, cur)
     }
 
+    // 3-2. EquipmentEvent 정지시간 (일간 리포트는 정지시간을 안 보내므로 이벤트로 집계)
+    const stopEvents = await prisma.equipmentEvent.findMany({
+      where: {
+        equipmentId: { in: equipmentIds },
+        eventType: "STOP",
+        startedAt: { gte: eventFrom, lte: eventTo },
+      },
+      select: { equipmentId: true, duration: true, startedAt: true, endedAt: true },
+    })
+    const stopMap = new Map<string, number>()
+    for (const ev of stopEvents) {
+      const mins =
+        ev.duration != null ? ev.duration / 60
+        : ev.endedAt ? (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
+        : (nowMs - ev.startedAt.getTime()) / 60_000
+      stopMap.set(ev.equipmentId, (stopMap.get(ev.equipmentId) ?? 0) + mins)
+    }
+
     // 4. NCWatch 데이터가 없을 때 EquipmentEvent RUN 기반 폴백
     const eventRunMap = new Map<string, number>()
     if (!hasNcwatchData) {
@@ -255,9 +273,13 @@ export async function getEquipmentAnalysisData(
       const mapping = eq.ncwatchMappings[0]
       const ncwatch = mapping ? ncwatchMap.get(mapping.machineName) : null
       const alarm = alarmMap.get(eq.id) ?? { count: 0, minutes: 0 }
+      const stopMins = stopMap.get(eq.id) ?? 0
 
       if (ncwatch) {
-        const total = ncwatch.run + ncwatch.stop + ncwatch.manual + ncwatch.alarm + ncwatch.offline
+        // 정지/알람 시간은 일간 리포트에 없으므로 이벤트 집계값을 우선 사용한다.
+        const stop  = ncwatch.stop  > 0 ? ncwatch.stop  : stopMins
+        const alarmMins = ncwatch.alarm > 0 ? ncwatch.alarm : alarm.minutes
+        const total = ncwatch.run + stop + ncwatch.manual + alarmMins + ncwatch.offline
         const runRate =
           ncwatch.runPctCount > 0
             ? Math.round((ncwatch.runPctSum / ncwatch.runPctCount) * 100) / 100
@@ -265,15 +287,15 @@ export async function getEquipmentAnalysisData(
         const alarmRate =
           ncwatch.alarmPctCount > 0
             ? Math.round((ncwatch.alarmPctSum / ncwatch.alarmPctCount) * 100) / 100
-            : total > 0 ? Math.round((ncwatch.alarm / total) * 1000) / 10 : null
+            : total > 0 ? Math.round((alarmMins / total) * 1000) / 10 : null
         return {
           equipmentId: eq.id,
           equipmentCode: eq.code,
           equipmentName: eq.name,
           runMinutes:     fmtMins(ncwatch.run),
-          stopMinutes:    fmtMins(ncwatch.stop),
+          stopMinutes:    fmtMins(stop),
           manualMinutes:  fmtMins(ncwatch.manual),
-          alarmMinutes:   fmtMins(ncwatch.alarm),
+          alarmMinutes:   fmtMins(alarmMins),
           offlineMinutes: fmtMins(ncwatch.offline),
           totalMinutes:   fmtMins(total),
           runRate,
@@ -302,7 +324,7 @@ export async function getEquipmentAnalysisData(
         equipmentCode: eq.code,
         equipmentName: eq.name,
         runMinutes:     fmtMins(runMins),
-        stopMinutes:    0,
+        stopMinutes:    fmtMins(stopMins),
         manualMinutes:  0,
         alarmMinutes:   fmtMins(alarm.minutes),
         offlineMinutes: 0,
