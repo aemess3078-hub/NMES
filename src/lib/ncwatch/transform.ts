@@ -206,7 +206,18 @@ export async function syncTagValues(
         value = String(rawValue)
       }
       const numericVal  = Number(rawValue)
-      const numericValue = isFinite(numericVal) ? numericVal : null
+      let numericValue = isFinite(numericVal) ? numericVal : null
+
+      // 주축 회전수는 실시간 실제값이라 가동 중에도 급속이송/복귀 순간 0으로 떨어진다.
+      // 가동(RUN=3) 중 순간 0은 직전 비0 회전수를 유지해 표시를 안정화한다.
+      // (정지/알람/오프라인 등 가동이 아니면 실제값 그대로 — 진짜 멈춤은 0으로 표시)
+      if (tag.tagCode === "SPINDLE_SPEED" && m.statusCode === 3 && numericValue === 0) {
+        const prevNum = tag.currentValue ? Number(tag.currentValue.value) : NaN
+        if (isFinite(prevNum) && prevNum > 0) {
+          value = tag.currentValue!.value
+          numericValue = prevNum
+        }
+      }
 
       // TagCurrentValue upsert (항상 최신 수신값+시각 유지)
       await prisma.tagCurrentValue.upsert({
