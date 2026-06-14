@@ -314,6 +314,7 @@ async function fetchAvailabilityStats(
     where: {
       tenantId,
       status: "ACTIVE",
+      equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] },
       ...(f.equipmentId ? { id: f.equipmentId } : {}),
     },
     select: {
@@ -474,7 +475,7 @@ export type EquipmentOption = { id: string; code: string; name: string }
 export async function getEquipmentOptions(): Promise<EquipmentOption[]> {
   const tenantId = await getTenantId()
   return prisma.equipment.findMany({
-    where: { tenantId },
+    where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
     select: { id: true, code: true, name: true },
     orderBy: { code: "asc" },
   })

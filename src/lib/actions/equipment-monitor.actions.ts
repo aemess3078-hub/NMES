@@ -191,7 +191,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
 
   try {
     const equipments = await prisma.equipment.findMany({
-      where: { tenantId },
+      where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
       include: {
         workCenter: { select: { name: true } },
         events: {
@@ -256,7 +256,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
       // connection 전체 객체(protocol 포함) 대신 select로 필요한 필드만 지정.
       // protocol 을 조회하지 않으면 NCWATCH_AGENT 값 역직렬화 실패를 피할 수 있다.
       const equipments = await prisma.equipment.findMany({
-        where: { tenantId },
+        where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
         include: {
           workCenter: { select: { name: true } },
           events: {
@@ -336,7 +336,7 @@ export async function getProductionKPIs() {
           _sum: { goodQty: true, defectQty: true },
         }),
         prisma.equipment.findMany({
-          where: { tenantId },
+          where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
           select: { id: true, status: true },
         }),
       ])
