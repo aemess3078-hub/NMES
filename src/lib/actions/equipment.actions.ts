@@ -147,19 +147,7 @@ export async function deleteEquipment(id: string) {
   if (connCount > 0)
     throw new Error(`연결된 태그가 ${connCount}개 있습니다. 먼저 설비연결 설정에서 제거해주세요.`)
 
-  const repairCount = await prisma.equipmentRepairRequest.count({ where: { equipmentId: id } })
-  if (repairCount > 0)
-    throw new Error(`수리요청 이력이 ${repairCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
-
-  const checkCount = await prisma.equipmentDailyCheck.count({ where: { equipmentId: id } })
-  if (checkCount > 0)
-    throw new Error(`일상점검 이력이 ${checkCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
-
-  const woCount = await prisma.workOrderOperationAssignment.count({ where: { equipmentId: id } })
-  if (woCount > 0)
-    throw new Error(`작업지시 배정 이력이 ${woCount}건 있습니다. 이력이 있는 설비는 삭제 대신 '미사용' 상태로 변경해주세요.`)
-
-  // 자동 생성되는 모니터링 데이터는 함께 삭제 (EquipmentEvent, EquipmentOperationMap)
+  // EquipmentEvent, EquipmentOperationMap은 함께 삭제 (모니터링 자동 생성 데이터)
   await prisma.$transaction([
     prisma.equipmentEvent.deleteMany({ where: { equipmentId: id } }),
     prisma.equipmentOperationMap.deleteMany({ where: { equipmentId: id } }),
