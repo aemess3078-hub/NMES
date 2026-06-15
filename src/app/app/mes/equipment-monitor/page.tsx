@@ -3,6 +3,7 @@ import {
   getEquipmentTimelineData,
 } from "@/lib/actions/equipment-analysis.actions"
 import { EquipmentAnalysisClient } from "./analysis-client"
+import { DailyProductionSummary } from "@/components/common/daily-production-summary"
 import type { AnalysisPeriod } from "@/lib/actions/equipment-analysis.actions"
 
 export const dynamic = "force-dynamic"
@@ -36,6 +37,8 @@ export default async function EquipmentAnalysisPage({ searchParams }: Props) {
           설비별 가동률·비가동·알람 현황을 기간 단위로 분석합니다.
         </p>
       </div>
+
+      <DailyProductionSummary />
 
       <EquipmentAnalysisClient data={data} timelineData={timelineData} />
     </div>

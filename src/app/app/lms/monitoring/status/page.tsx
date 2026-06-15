@@ -1,5 +1,6 @@
 import { getEquipmentMonitorData } from "@/lib/actions/equipment-monitor.actions"
 import { RealtimeMonitorClient } from "./realtime-monitor-client"
+import { DailyProductionSummary } from "@/components/common/daily-production-summary"
 import { Cpu } from "lucide-react"
 
 export const dynamic = "force-dynamic"
@@ -17,6 +18,8 @@ export default async function StatusMonitoringPage() {
           설비 가동 상태를 실시간으로 관제합니다.
         </p>
       </div>
+
+      <DailyProductionSummary />
 
       {equipment.length === 0 ? (
         <div className="rounded-lg border bg-card py-16 text-center">
