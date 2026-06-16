@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useRef, useState } from "react"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { AlertTriangle, RefreshCw } from "lucide-react"
 import { EquipmentMonitorGrid } from "@/app/app/mes/equipment-monitor/equipment-monitor-grid"
 import type { EquipmentMonitorRow } from "@/lib/actions/equipment-monitor.actions"
+import { MONITOR_LIGHT_PATH, reviveEquipmentRows } from "@/lib/monitor-live"
 import type { EquipmentCardMeta } from "@/app/app/mes/equipment-monitor/equipment-monitor-grid"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -60,19 +60,64 @@ interface Props {
   data: EquipmentMonitorRow[]
 }
 
-export function RealtimeMonitorClient({ data }: Props) {
-  const router = useRouter()
+export function RealtimeMonitorClient({ data: initialData }: Props) {
+  const [data, setData] = useState<EquipmentMonitorRow[]>(initialData)
   const [lastRefresh, setLastRefresh] = useState(() => new Date())
   const [now, setNow] = useState(() => Date.now())
+  const inFlightRef = useRef(false)
 
-  // 30초 자동 갱신
+  // 30초 폴링 — 페이지 전체 router.refresh() 대신 경량 API만 호출한다.
+  // 백그라운드 탭(document.hidden)이면 폴링 중단, 다시 보이면 즉시 1회 갱신 후 재개.
   useEffect(() => {
-    const id = setInterval(() => {
-      router.refresh()
-      setLastRefresh(new Date())
-    }, REFRESH_INTERVAL_MS)
-    return () => clearInterval(id)
-  }, [router])
+    let timer: ReturnType<typeof setInterval> | null = null
+    let abort: AbortController | null = null
+    let cancelled = false
+
+    const poll = async () => {
+      if (document.hidden || inFlightRef.current) return
+      inFlightRef.current = true
+      abort = new AbortController()
+      try {
+        const res = await fetch(MONITOR_LIGHT_PATH, { signal: abort.signal, cache: "no-store" })
+        if (!res.ok) throw new Error(`status ${res.status}`)
+        const json = await res.json()
+        if (!cancelled) {
+          setData(reviveEquipmentRows(json.equipment ?? []))
+          setLastRefresh(new Date())
+        }
+      } catch {
+        // 실패 시 기존 데이터를 유지해 화면이 깨지지 않게 한다. (Abort 포함 무시)
+      } finally {
+        inFlightRef.current = false
+      }
+    }
+
+    const start = () => {
+      if (!timer) timer = setInterval(poll, REFRESH_INTERVAL_MS)
+    }
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+      abort?.abort()
+    }
+    const onVisibility = () => {
+      if (document.hidden) stop()
+      else {
+        poll()
+        start()
+      }
+    }
+
+    if (!document.hidden) start()
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      cancelled = true
+      document.removeEventListener("visibilitychange", onVisibility)
+      stop()
+    }
+  }, [])
 
   // 통신지연 감지를 위한 현재 시각 갱신 (10초)
   useEffect(() => {

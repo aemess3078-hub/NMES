@@ -317,6 +317,99 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
   }
 }
 
+// ─── 경량 조회 (모니터링/키오스크 폴링 전용) ──────────────────────────────────
+// getEquipmentMonitorData와 동일한 EquipmentMonitorRow 형태를 반환하되,
+// include(전체 컬럼) 대신 select로 화면 표시에 필요한 컬럼만 가져와 Supabase egress를
+// 줄인다. 30초 폴링으로 반복 호출되므로 반환 페이로드를 최소화하는 것이 목적이다.
+// (표시 항목은 동일 — recentTags 전체/좌표/파일명/알람/최종 수신시간 모두 유지)
+export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> {
+  const tenantId = await getTenantId()
+  const today = getKSTReportDate()
+  const todayEnd = new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1)
+
+  try {
+    const equipments = await prisma.equipment.findMany({
+      where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        equipmentType: true,
+        status: true,
+        workCenter: { select: { name: true } },
+        events: {
+          orderBy: { startedAt: "desc" },
+          take: 1,
+          select: { eventType: true, startedAt: true, endedAt: true },
+        },
+        connections: {
+          where: { isActive: true },
+          select: {
+            tags: {
+              where: { isActive: true, isEnabled: true, isVisible: true },
+              orderBy: [{ displayOrder: "asc" }, { tagCode: "asc" }],
+              select: {
+                tagCode: true,
+                displayName: true,
+                unit: true,
+                displayOrder: true,
+                snapshots: {
+                  orderBy: { timestamp: "desc" },
+                  take: 1,
+                  select: { value: true, timestamp: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { code: "asc" },
+    })
+
+    const todayPartCounts = await getNcwatchTodayPartCounts(
+      tenantId,
+      equipments.map((equipment) => equipment.id),
+      today,
+      todayEnd,
+    )
+
+    return equipments.map((eq) => {
+      const tags = eq.connections
+        .flatMap((connection) => connection.tags)
+        .sort((a, b) => {
+          const orderDiff = a.displayOrder - b.displayOrder
+          return orderDiff !== 0 ? orderDiff : a.tagCode.localeCompare(b.tagCode)
+        })
+
+      return {
+        id: eq.id,
+        code: eq.code,
+        name: eq.name,
+        equipmentType: eq.equipmentType,
+        status: eq.status,
+        workCenter: eq.workCenter,
+        latestEvent: eq.events[0] ?? null,
+        openRepairs: 0,
+        lastCheckResult: null,
+        ncwatchTodayPartCount: todayPartCounts?.get(eq.id) ?? null,
+        recentTags: tags.map((tag) => ({
+          tagCode: tag.tagCode,
+          displayName: tag.displayName,
+          unit: tag.unit,
+          latestValue: tag.snapshots[0]?.value ?? null,
+          timestamp: tag.snapshots[0]?.timestamp ?? null,
+        })),
+      }
+    })
+  } catch (error) {
+    // 안전망: 스키마 호환성/누락 오류 시 검증된 기존 경로로 위임해 표시 데이터 누락을 방지한다.
+    if (isSchemaCompatibilityError(error) || isMissingDbObjectError(error)) {
+      return getEquipmentMonitorData()
+    }
+    throw error
+  }
+}
+
 export async function getProductionKPIs() {
   const tenantId = await getTenantId()
   const today = getKSTReportDate()
