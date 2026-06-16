@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useRef, useState } from "react"
 import { EquipmentMonitorRow } from "@/lib/actions/equipment-monitor.actions"
+import { MONITOR_LIGHT_PATH, reviveEquipmentRows } from "@/lib/monitor-live"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 
@@ -49,20 +49,72 @@ interface Props {
   kpis: KPIs
 }
 
-export function KioskClient({ equipment, kpis }: Props) {
-  const router = useRouter()
+export function KioskClient({ equipment: initialEquipment, kpis: initialKpis }: Props) {
+  const [equipment, setEquipment] = useState<EquipmentMonitorRow[]>(initialEquipment)
+  const [kpis, setKpis] = useState<KPIs>(initialKpis)
   const [now, setNow] = useState(new Date())
+  const inFlightRef = useRef(false)
 
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(tick)
   }, [])
 
-  // Auto-refresh every 30 seconds
+  // 30초 폴링 — 페이지 전체 router.refresh() 대신 경량 API(설비 + KPI)만 호출한다.
+  // 백그라운드 탭이면 폴링 중단, 다시 보이면 즉시 1회 갱신 후 재개.
   useEffect(() => {
-    const refresh = setInterval(() => router.refresh(), 30000)
-    return () => clearInterval(refresh)
-  }, [router])
+    let timer: ReturnType<typeof setInterval> | null = null
+    let abort: AbortController | null = null
+    let cancelled = false
+
+    const poll = async () => {
+      if (document.hidden || inFlightRef.current) return
+      inFlightRef.current = true
+      abort = new AbortController()
+      try {
+        const res = await fetch(`${MONITOR_LIGHT_PATH}?kpis=1`, {
+          signal: abort.signal,
+          cache: "no-store",
+        })
+        if (!res.ok) throw new Error(`status ${res.status}`)
+        const json = await res.json()
+        if (!cancelled) {
+          setEquipment(reviveEquipmentRows(json.equipment ?? []))
+          if (json.kpis) setKpis(json.kpis)
+        }
+      } catch {
+        // 실패 시 기존 데이터 유지 (현황판이 꺼지지 않게)
+      } finally {
+        inFlightRef.current = false
+      }
+    }
+
+    const start = () => {
+      if (!timer) timer = setInterval(poll, 30000)
+    }
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+      abort?.abort()
+    }
+    const onVisibility = () => {
+      if (document.hidden) stop()
+      else {
+        poll()
+        start()
+      }
+    }
+
+    if (!document.hidden) start()
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      cancelled = true
+      document.removeEventListener("visibilitychange", onVisibility)
+      stop()
+    }
+  }, [])
 
   const runningCount = equipment.filter((e) => e.status === "ACTIVE").length
   const downCount = equipment.filter((e) => e.status === "DOWN").length
