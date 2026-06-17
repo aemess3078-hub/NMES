@@ -175,17 +175,7 @@ export async function syncTagValues(
 
   if (tags.length === 0) return
 
-  const tagIds     = tags.map((t) => t.id)
   const receivedAt = parseNcwatchTs(m.ncwatchTs) ?? new Date()
-
-  // 태그별 마지막 스냅샷 1건씩 조회 (1 쿼리로 일괄)
-  const lastSnaps = await prisma.tagSnapshot.findMany({
-    where:    { tagId: { in: tagIds } },
-    distinct: ["tagId"],
-    orderBy:  { timestamp: "desc" },
-    select:   { tagId: true, value: true, timestamp: true },
-  })
-  const lastSnapMap = new Map(lastSnaps.map((s) => [s.tagId, s]))
 
   // 병렬로 처리 (태그 수가 많지 않음)
   await Promise.all(
@@ -226,8 +216,15 @@ export async function syncTagValues(
         create: { tagId: tag.id, value, numericValue, quality: "GOOD", timestamp: receivedAt },
       })
 
-      // TagSnapshot 삽입 여부 결정
-      const lastSnap = lastSnapMap.get(tag.id)
+      // TagSnapshot 삽입 여부 결정 — 직전 스냅샷 "1건"만 조회한다.
+      // (기존: tagIds 전체에 대한 distinct + orderBy 무제한 findMany → 이력이 누적될수록
+      //  TagSnapshot 대량 row가 매 수신(에이전트 10초 주기)마다 DB→서버로 전송되어 egress 폭증.
+      //  태그별 take:1(findFirst) 조회로 바꿔 반환 row를 태그당 1건으로 제한한다. 판정 로직은 동일.)
+      const lastSnap = await prisma.tagSnapshot.findFirst({
+        where:   { tagId: tag.id },
+        orderBy: { timestamp: "desc" },
+        select:  { value: true, timestamp: true },
+      })
       const shouldSnapshot =
         !lastSnap ||                                                        // 최초 수신
         lastSnap.value !== value ||                                         // 값 변경
