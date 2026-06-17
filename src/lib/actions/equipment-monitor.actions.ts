@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { isMissingDbObjectError, isSchemaCompatibilityError } from "@/lib/db/prisma-error"
+import { Prisma } from "@prisma/client"
 
 // reportDate는 Agent가 한국 날짜 문자열("YYYY-MM-DD")을 UTC midnight으로 저장한다.
 // Vercel 서버는 UTC이므로 setHours(0,0,0,0)은 UTC 기준이 돼 KST 날짜와 어긋난다.
@@ -33,6 +34,13 @@ export type EquipmentMonitorRow = {
   }[]
 }
 
+type LatestTagValue = {
+  value: string | null
+  timestamp: Date | null
+}
+
+type LatestEquipmentEvent = EquipmentMonitorRow["latestEvent"]
+
 function parseNcwatchTimeToMinutes(value: string | null | undefined): number {
   if (!value) return 0
   const [hours = 0, minutes = 0, seconds = 0] = value.split(":").map(Number)
@@ -44,6 +52,48 @@ function normalizePercent(value: unknown): number | null {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return null
   return Math.max(0, Math.min(100, numeric))
+}
+
+async function getLatestSnapshotFallbacks(tagIds: string[]): Promise<Map<string, LatestTagValue>> {
+  if (tagIds.length === 0) return new Map()
+
+  const latestSnapshots = await prisma.$queryRaw<Array<{ tagId: string; value: string | null; timestamp: Date }>>(
+    Prisma.sql`
+      SELECT DISTINCT ON ("tagId") "tagId", "value", "timestamp"
+      FROM "TagSnapshot"
+      WHERE "tagId" IN (${Prisma.join(tagIds)})
+      ORDER BY "tagId", "timestamp" DESC
+    `,
+  )
+  const values = new Map<string, LatestTagValue>()
+  for (const snapshot of latestSnapshots) {
+    values.set(snapshot.tagId, snapshot)
+  }
+  return values
+}
+
+async function getLatestEquipmentEvents(equipmentIds: string[]): Promise<Map<string, LatestEquipmentEvent>> {
+  if (equipmentIds.length === 0) return new Map()
+
+  const latestEvents = await prisma.$queryRaw<
+    Array<{
+      equipmentId: string
+      eventType: string
+      startedAt: Date
+      endedAt: Date | null
+    }>
+  >(
+    Prisma.sql`
+      SELECT DISTINCT ON ("equipmentId") "equipmentId", "eventType", "startedAt", "endedAt"
+      FROM "EquipmentEvent"
+      WHERE "equipmentId" IN (${Prisma.join(equipmentIds)})
+      ORDER BY "equipmentId", "startedAt" DESC
+    `,
+  )
+  const values = new Map<string, LatestEquipmentEvent>()
+  for (const equipmentId of equipmentIds) values.set(equipmentId, null)
+  for (const event of latestEvents) values.set(event.equipmentId, event)
+  return values
 }
 
 async function getNcwatchAvailabilityRates(
@@ -337,11 +387,6 @@ export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> 
         equipmentType: true,
         status: true,
         workCenter: { select: { name: true } },
-        events: {
-          orderBy: { startedAt: "desc" },
-          take: 1,
-          select: { eventType: true, startedAt: true, endedAt: true },
-        },
         connections: {
           where: { isActive: true },
           select: {
@@ -349,15 +394,12 @@ export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> 
               where: { isActive: true, isEnabled: true, isVisible: true },
               orderBy: [{ displayOrder: "asc" }, { tagCode: "asc" }],
               select: {
+                id: true,
                 tagCode: true,
                 displayName: true,
                 unit: true,
                 displayOrder: true,
-                snapshots: {
-                  orderBy: { timestamp: "desc" },
-                  take: 1,
-                  select: { value: true, timestamp: true },
-                },
+                currentValue: { select: { value: true, timestamp: true } },
               },
             },
           },
@@ -365,13 +407,24 @@ export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> 
       },
       orderBy: { code: "asc" },
     })
+    const equipmentIds = equipments.map((equipment) => equipment.id)
 
-    const todayPartCounts = await getNcwatchTodayPartCounts(
-      tenantId,
-      equipments.map((equipment) => equipment.id),
-      today,
-      todayEnd,
-    )
+    const missingCurrentValueTagIds = equipments
+      .flatMap((equipment) => equipment.connections)
+      .flatMap((connection) => connection.tags)
+      .filter((tag) => !tag.currentValue)
+      .map((tag) => tag.id)
+
+    const [todayPartCounts, snapshotFallbacks, latestEventByEquipmentId] = await Promise.all([
+      getNcwatchTodayPartCounts(
+        tenantId,
+        equipmentIds,
+        today,
+        todayEnd,
+      ),
+      getLatestSnapshotFallbacks(missingCurrentValueTagIds),
+      getLatestEquipmentEvents(equipmentIds),
+    ])
 
     return equipments.map((eq) => {
       const tags = eq.connections
@@ -388,7 +441,7 @@ export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> 
         equipmentType: eq.equipmentType,
         status: eq.status,
         workCenter: eq.workCenter,
-        latestEvent: eq.events[0] ?? null,
+        latestEvent: latestEventByEquipmentId.get(eq.id) ?? null,
         openRepairs: 0,
         lastCheckResult: null,
         ncwatchTodayPartCount: todayPartCounts?.get(eq.id) ?? null,
@@ -396,8 +449,8 @@ export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> 
           tagCode: tag.tagCode,
           displayName: tag.displayName,
           unit: tag.unit,
-          latestValue: tag.snapshots[0]?.value ?? null,
-          timestamp: tag.snapshots[0]?.timestamp ?? null,
+          latestValue: tag.currentValue?.value ?? snapshotFallbacks.get(tag.id)?.value ?? null,
+          timestamp: tag.currentValue?.timestamp ?? snapshotFallbacks.get(tag.id)?.timestamp ?? null,
         })),
       }
     })
