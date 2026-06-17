@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
-import { AlertTriangle, RefreshCw } from "lucide-react"
+import { AlertTriangle, Cpu, RefreshCw } from "lucide-react"
 import { EquipmentMonitorGrid } from "@/app/app/mes/equipment-monitor/equipment-monitor-grid"
 import type { EquipmentMonitorRow } from "@/lib/actions/equipment-monitor.actions"
 import { MONITOR_LIGHT_PATH, reviveEquipmentRows } from "@/lib/monitor-live"
@@ -54,26 +54,49 @@ function getSortPriority(eq: EquipmentMonitorRow, now: number): number {
   return 5  // 정상 가동
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
 
-interface Props {
-  data: EquipmentMonitorRow[]
+function EquipmentGridSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2.5 flex-wrap">
+        {["전체", "가동", "비가동", "알람", "통신지연"].map((label) => (
+          <div
+            key={label}
+            className="flex items-center gap-3 px-4 py-2.5 rounded-lg border bg-muted/30 animate-pulse"
+          >
+            <span className="text-[13px] text-muted-foreground/50">{label}</span>
+            <span className="text-[24px] font-semibold leading-none text-muted-foreground/30">—</span>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="rounded-lg border bg-card p-4 h-48 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  )
 }
 
-export function RealtimeMonitorClient({ data: initialData }: Props) {
-  const [data, setData] = useState<EquipmentMonitorRow[]>(initialData)
-  const [lastRefresh, setLastRefresh] = useState(() => new Date())
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function RealtimeMonitorClient() {
+  const [data, setData] = useState<EquipmentMonitorRow[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const inFlightRef = useRef(false)
 
-  // 30초 폴링 — 페이지 전체 router.refresh() 대신 경량 API만 호출한다.
+  // 폴링 — 최초 마운트 시 즉시 1회 호출 후 30초 주기.
   // 백그라운드 탭(document.hidden)이면 폴링 중단, 다시 보이면 즉시 1회 갱신 후 재개.
+  // router.refresh()는 사용하지 않는다.
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null
     let abort: AbortController | null = null
     let cancelled = false
 
-    const poll = async () => {
+    const poll = async (initial = false) => {
       if (document.hidden || inFlightRef.current) return
       inFlightRef.current = true
       abort = new AbortController()
@@ -86,32 +109,30 @@ export function RealtimeMonitorClient({ data: initialData }: Props) {
           setLastRefresh(new Date())
         }
       } catch {
-        // 실패 시 기존 데이터를 유지해 화면이 깨지지 않게 한다. (Abort 포함 무시)
+        // 실패(Abort 포함) 시 기존 데이터를 유지해 화면이 깨지지 않게 한다.
       } finally {
         inFlightRef.current = false
+        if (initial && !cancelled) setIsLoading(false)
       }
     }
 
     const start = () => {
-      if (!timer) timer = setInterval(poll, REFRESH_INTERVAL_MS)
+      if (!timer) timer = setInterval(() => poll(), REFRESH_INTERVAL_MS)
     }
     const stop = () => {
-      if (timer) {
-        clearInterval(timer)
-        timer = null
-      }
+      if (timer) { clearInterval(timer); timer = null }
       abort?.abort()
     }
     const onVisibility = () => {
       if (document.hidden) stop()
-      else {
-        poll()
-        start()
-      }
+      else { poll(); start() }
     }
 
+    // 최초 진입: 즉시 데이터 로드 후 30초 주기 시작
+    poll(true)
     if (!document.hidden) start()
     document.addEventListener("visibilitychange", onVisibility)
+
     return () => {
       cancelled = true
       document.removeEventListener("visibilitychange", onVisibility)
@@ -125,15 +146,30 @@ export function RealtimeMonitorClient({ data: initialData }: Props) {
     return () => clearInterval(id)
   }, [])
 
+  // 초기 로딩 중
+  if (isLoading) {
+    return <EquipmentGridSkeleton />
+  }
+
+  // 설비 없음
+  if (data.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card py-16 text-center">
+        <Cpu className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" />
+        <p className="text-[15px] text-muted-foreground">조회할 설비 데이터가 없습니다.</p>
+      </div>
+    )
+  }
+
   // 각 설비에 메타 부착 및 우선순위 정렬
   const classified = data
     .map((eq) => ({
       eq,
-      isAlarm:    detectAlarm(eq),
-      isDelay:    detectCommDelay(eq, now),
-      priority:   getSortPriority(eq, now),
-      lastTs:     getLatestTimestamp(eq),
-      statusVal:  getStatusTagValue(eq),
+      isAlarm:   detectAlarm(eq),
+      isDelay:   detectCommDelay(eq, now),
+      priority:  getSortPriority(eq, now),
+      lastTs:    getLatestTimestamp(eq),
+      statusVal: getStatusTagValue(eq),
     }))
     .sort((a, b) => a.priority - b.priority)
 
@@ -146,14 +182,13 @@ export function RealtimeMonitorClient({ data: initialData }: Props) {
   }))
 
   // KPI 집계
-  const total      = data.length
-  const alarmCount = classified.filter((c) => c.isAlarm).length
-  const delayCount = classified.filter((c) => !c.isAlarm && c.isDelay).length
+  const total        = data.length
+  const alarmCount   = classified.filter((c) => c.isAlarm).length
+  const delayCount   = classified.filter((c) => !c.isAlarm && c.isDelay).length
   const runningCount = classified.filter((c) => {
     if (c.isAlarm || c.isDelay) return false
     if (c.statusVal === "가동") return true
     if (!c.statusVal) {
-      // NCWatch 없음 → EquipmentEvent 기반
       return c.eq.latestEvent?.eventType === "RUN" && c.eq.latestEvent.endedAt === null
     }
     return false
@@ -164,11 +199,11 @@ export function RealtimeMonitorClient({ data: initialData }: Props) {
   const activeAlarms = classified.filter((c) => c.isAlarm)
 
   const kpiItems = [
-    { label: "전체",   value: total,        bg: "bg-slate-50",  border: "border-slate-200",  text: "text-slate-700"  },
-    { label: "가동",   value: runningCount,  bg: "bg-green-50",  border: "border-green-200",  text: "text-green-700"  },
-    { label: "비가동", value: stoppedCount,  bg: "bg-slate-50",  border: "border-slate-200",  text: "text-slate-500"  },
-    { label: "알람",   value: alarmCount,    bg: "bg-red-50",    border: "border-red-200",    text: "text-red-700"    },
-    { label: "통신지연", value: delayCount,  bg: "bg-amber-50",  border: "border-amber-200",  text: "text-amber-700"  },
+    { label: "전체",     value: total,        bg: "bg-slate-50",  border: "border-slate-200",  text: "text-slate-700"  },
+    { label: "가동",     value: runningCount,  bg: "bg-green-50",  border: "border-green-200",  text: "text-green-700"  },
+    { label: "비가동",   value: stoppedCount,  bg: "bg-slate-50",  border: "border-slate-200",  text: "text-slate-500"  },
+    { label: "알람",     value: alarmCount,    bg: "bg-red-50",    border: "border-red-200",    text: "text-red-700"    },
+    { label: "통신지연", value: delayCount,    bg: "bg-amber-50",  border: "border-amber-200",  text: "text-amber-700"  },
   ]
 
   return (
@@ -177,8 +212,12 @@ export function RealtimeMonitorClient({ data: initialData }: Props) {
       <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
         <RefreshCw className="h-3.5 w-3.5" />
         <span>30초마다 자동 갱신</span>
-        <span className="text-muted-foreground/50">·</span>
-        <span>마지막: {format(lastRefresh, "HH:mm:ss")}</span>
+        {lastRefresh && (
+          <>
+            <span className="text-muted-foreground/50">·</span>
+            <span>마지막: {format(lastRefresh, "HH:mm:ss")}</span>
+          </>
+        )}
       </div>
 
       {/* KPI 칩 */}
