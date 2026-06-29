@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { PartnerFormSheet } from "./partner-form-sheet"
+import { PartnerDetailPanel } from "./partner-detail-panel"
 import { PartnerExcelUploadDialog } from "./partner-excel-upload-dialog"
 import downloadPartnerTemplate from "./partner-excel-download"
 import { deleteBusinessPartner, BusinessPartner } from "@/lib/actions/business-partner.actions"
@@ -25,6 +26,7 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
   const [uploadOpen, setUploadOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingPartner, setEditingPartner] = useState<BusinessPartner | null>(null)
+  const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(null)
 
   const handleEdit = (partner: BusinessPartner) => {
     setEditingPartner(partner)
@@ -42,7 +44,15 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
     }
   }
 
-  const columns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
+  const handleToggleExpand = (partner: BusinessPartner) => {
+    setExpandedPartnerId((prev) => (prev === partner.id ? null : partner.id))
+  }
+
+  const columns = getColumns({
+    onEdit: handleEdit,
+    onDelete: handleDelete,
+    onViewCode: handleToggleExpand,
+  })
 
   const defaultValues: Partial<PartnerFormValues> | undefined = editingPartner
     ? {
@@ -50,6 +60,15 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
         name: editingPartner.name,
         partnerType: editingPartner.partnerType,
         status: editingPartner.status,
+        businessNumber: editingPartner.businessNumber ?? "",
+        ceoName: editingPartner.ceoName ?? "",
+        phone: editingPartner.phone ?? "",
+        email: editingPartner.email ?? "",
+        email2: editingPartner.email2 ?? "",
+        address: editingPartner.address ?? "",
+        contactName: editingPartner.contactName ?? "",
+        contactPhone: editingPartner.contactPhone ?? "",
+        remark: editingPartner.remark ?? "",
       }
     : undefined
 
@@ -79,7 +98,17 @@ export function PartnerDataTable({ partners, fixedType, entityName }: PartnerDat
       <DataTable
         columns={columns}
         data={partners}
-        searchableColumns={[{ id: "name", title: "이름" }]}
+        getRowId={(row) => row.id}
+        expandOnRowClick
+        expandedRowId={expandedPartnerId}
+        onExpandedRowIdChange={setExpandedPartnerId}
+        renderExpandedRow={(partner) => (
+          <PartnerDetailPanel
+            partner={partner}
+            onClose={() => setExpandedPartnerId(null)}
+          />
+        )}
+        searchableColumns={[{ id: "name", title: "코드/이름" }]}
         filterableColumns={[
           {
             id: "partnerType",

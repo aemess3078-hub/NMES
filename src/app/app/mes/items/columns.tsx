@@ -45,6 +45,13 @@ export function getColumns(callbacks: {
       cell: ({ row }) => (
         <span className="text-[14px]">{row.getValue("name")}</span>
       ),
+      filterFn: (row, _colId, filterValue: string) => {
+        const q = filterValue.toLowerCase()
+        return (
+          row.original.code.toLowerCase().includes(q) ||
+          row.original.name.toLowerCase().includes(q)
+        )
+      },
     },
     {
       accessorKey: "itemType",

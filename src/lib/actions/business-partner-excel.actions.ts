@@ -16,6 +16,7 @@ const COL_BUSINESS_NO = "사업자등록번호"
 const COL_CEO = "대표자명"
 const COL_PHONE = "전화번호"
 const COL_EMAIL = "이메일"
+const COL_EMAIL2 = "이메일2"
 const COL_ADDRESS = "주소"
 const COL_CONTACT_NAME = "담당자명"
 const COL_CONTACT_PHONE = "담당자연락처"
@@ -51,6 +52,7 @@ export type ValidatedPartnerRow = {
   ceoName: string | null
   phone: string | null
   email: string | null
+  email2: string | null
   address: string | null
   contactName: string | null
   contactPhone: string | null
@@ -164,6 +166,11 @@ function validateRowsSync(
       rowErrors.push({ rowNum, column: COL_EMAIL, message: "올바른 이메일 형식이 아닙니다." })
     }
 
+    const email2 = str(row[COL_EMAIL2])
+    if (email2 && !EMAIL_PATTERN.test(email2)) {
+      rowErrors.push({ rowNum, column: COL_EMAIL2, message: "올바른 이메일 형식이 아닙니다." })
+    }
+
     if (rowErrors.length > 0) {
       errors.push(...rowErrors)
       continue
@@ -179,6 +186,7 @@ function validateRowsSync(
       ceoName: optionalStr(row[COL_CEO], 100),
       phone: optionalStr(row[COL_PHONE], 50),
       email: email || null,
+      email2: email2 || null,
       address: optionalStr(row[COL_ADDRESS], 300),
       contactName: optionalStr(row[COL_CONTACT_NAME], 100),
       contactPhone: optionalStr(row[COL_CONTACT_PHONE], 50),
@@ -256,6 +264,15 @@ export async function importValidatedBusinessPartners(
             name: row.name,
             partnerType: row.partnerType,
             status: row.status,
+            businessNumber: row.businessNumber,
+            ceoName: row.ceoName,
+            phone: row.phone,
+            email: row.email,
+            email2: row.email2,
+            address: row.address,
+            contactName: row.contactName,
+            contactPhone: row.contactPhone,
+            remark: row.remark,
           },
         })
         importedCodes.push(row.code)

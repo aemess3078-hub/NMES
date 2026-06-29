@@ -11,6 +11,15 @@ export type BusinessPartner = {
   name: string
   partnerType: PartnerType
   status: PartnerStatus
+  businessNumber: string | null
+  ceoName: string | null
+  phone: string | null
+  email: string | null
+  email2: string | null
+  address: string | null
+  contactName: string | null
+  contactPhone: string | null
+  remark: string | null
 }
 
 export type BusinessPartnerFormValues = {
@@ -18,6 +27,42 @@ export type BusinessPartnerFormValues = {
   name: string
   partnerType: PartnerType
   status: PartnerStatus
+  businessNumber?: string | null
+  ceoName?: string | null
+  phone?: string | null
+  email?: string | null
+  email2?: string | null
+  address?: string | null
+  contactName?: string | null
+  contactPhone?: string | null
+  remark?: string | null
+}
+
+// 빈 문자열은 null로 저장 (선택 필드)
+function nz(value: string | null | undefined): string | null {
+  if (value == null) return null
+  const trimmed = value.trim()
+  return trimmed === "" ? null : trimmed
+}
+
+const PARTNER_DETAIL_FIELDS = [
+  "businessNumber",
+  "ceoName",
+  "phone",
+  "email",
+  "email2",
+  "address",
+  "contactName",
+  "contactPhone",
+  "remark",
+] as const
+
+function partnerDetailData(data: BusinessPartnerFormValues) {
+  const result: Record<string, string | null> = {}
+  for (const field of PARTNER_DETAIL_FIELDS) {
+    result[field] = nz(data[field])
+  }
+  return result
 }
 
 export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promise<BusinessPartner[]> {
@@ -41,7 +86,7 @@ export async function createBusinessPartner(_tenantId: string, data: BusinessPar
   if (existing) throw new Error("DUPLICATE_CODE")
 
   const partner = await prisma.businessPartner.create({
-    data: { tenantId, code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
+    data: { tenantId, code: data.code, name: data.name, partnerType: data.partnerType, status: data.status, ...partnerDetailData(data) },
   })
   await prisma.auditLog.create({
     data: {
@@ -71,7 +116,7 @@ export async function updateBusinessPartner(id: string, data: BusinessPartnerFor
 
   const updated = await prisma.businessPartner.update({
     where: { id },
-    data: { code: data.code, name: data.name, partnerType: data.partnerType, status: data.status },
+    data: { code: data.code, name: data.name, partnerType: data.partnerType, status: data.status, ...partnerDetailData(data) },
   })
   await prisma.auditLog.create({
     data: {

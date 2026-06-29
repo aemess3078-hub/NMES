@@ -556,6 +556,17 @@ model BusinessPartner {
   partnerType PartnerType
   status      PartnerStatus @default(ACTIVE)
 
+  // 연락처/상세 정보 (전부 선택, 기존 데이터는 null)
+  businessNumber String? // 사업자등록번호
+  ceoName        String? // 대표자명
+  phone          String? // 전화번호
+  email          String? // 이메일1 (대표 이메일)
+  email2         String? // 이메일2 (담당자/추가 이메일)
+  address        String? // 주소
+  contactName    String? // 담당자명
+  contactPhone   String? // 담당자연락처
+  remark         String? // 비고
+
   tenant                  Tenant          @relation(fields: [tenantId], references: [id])
   salesOrders             SalesOrder[]    @relation("CustomerSalesOrders")
   purchaseOrders          PurchaseOrder[] @relation("SupplierPurchaseOrders")
@@ -1808,9 +1819,9 @@ model SalesOrder {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  tenant    Tenant           @relation("TenantSalesOrders", fields: [tenantId], references: [id])
-  site      Site             @relation("SiteSalesOrders", fields: [siteId], references: [id])
-  customer  BusinessPartner  @relation("CustomerSalesOrders", fields: [customerId], references: [id])
+  tenant    Tenant            @relation("TenantSalesOrders", fields: [tenantId], references: [id])
+  site      Site              @relation("SiteSalesOrders", fields: [siteId], references: [id])
+  customer  BusinessPartner   @relation("CustomerSalesOrders", fields: [customerId], references: [id])
   items     SalesOrderItem[]
   shipments ShipmentOrder[]
 

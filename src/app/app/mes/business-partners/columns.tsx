@@ -21,13 +21,21 @@ const partnerTypeVariant: Record<PartnerType, "default" | "secondary" | "outline
 export function getColumns(callbacks: {
   onEdit: (partner: BusinessPartner) => void
   onDelete: (partner: BusinessPartner) => void
+  onViewCode: (partner: BusinessPartner) => void
 }): ColumnDef<BusinessPartner>[] {
   return [
     {
       accessorKey: "code",
       header: ({ column }) => <DataTableColumnHeader column={column} title="코드" />,
       cell: ({ row }) => (
-        <span className="font-medium text-[14px]">{row.getValue("code")}</span>
+        <button
+          type="button"
+          onClick={() => callbacks.onViewCode(row.original)}
+          className="font-medium text-[14px] text-primary hover:underline underline-offset-2"
+          title="클릭하여 상세 정보 보기"
+        >
+          {row.getValue("code")}
+        </button>
       ),
     },
     {
@@ -36,6 +44,13 @@ export function getColumns(callbacks: {
       cell: ({ row }) => (
         <span className="text-[14px]">{row.getValue("name")}</span>
       ),
+      filterFn: (row, _colId, filterValue: string) => {
+        const q = filterValue.toLowerCase()
+        return (
+          row.original.code.toLowerCase().includes(q) ||
+          row.original.name.toLowerCase().includes(q)
+        )
+      },
     },
     {
       accessorKey: "partnerType",
