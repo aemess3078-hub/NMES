@@ -121,7 +121,7 @@ export function RoutingDataTable({
       <DataTable
         columns={columns}
         data={data}
-        searchableColumns={[{ id: "itemName" as keyof RoutingWithDetails, title: "품목명" }]}
+        searchableColumns={[{ id: "itemName" as keyof RoutingWithDetails, title: "코드/품목명" }]}
         filterableColumns={[
           {
             id: "itemType" as keyof RoutingWithDetails,

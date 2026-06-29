@@ -247,24 +247,70 @@ export async function updateItem(id: string, data: ItemFormValues) {
   return updated
 }
 
+export type ItemReferenceCount = {
+  bom: number
+  bomComponent: number
+  routing: number
+  workOrder: number
+  inventory: number
+  salesOrder: number
+  wipUnit: number
+  txHistory: number
+}
+
+/** 품목 삭제 전 참조 건수 조회 (dry-run). DB를 수정하지 않는다. */
+export async function checkItemReferences(id: string): Promise<ItemReferenceCount> {
+  const tenantId = await getTenantId()
+  const [bom, bomComponent, routing, workOrder, inventory, salesOrder, wipUnit, txHistory] =
+    await Promise.all([
+      prisma.bOM.count({ where: { itemId: id, tenantId } }),
+      prisma.bOMItem.count({ where: { componentItemId: id } }),
+      prisma.itemRouting.count({ where: { itemId: id } }),
+      prisma.workOrder.count({ where: { itemId: id, tenantId } }),
+      prisma.inventoryBalance.count({
+        where: { itemId: id, tenantId, OR: [{ qtyOnHand: { gt: 0 } }, { qtyHold: { gt: 0 } }] },
+      }),
+      prisma.salesOrderItem.count({ where: { itemId: id } }),
+      prisma.wipUnit.count({ where: { itemId: id, tenantId } }),
+      prisma.inventoryTransaction.count({ where: { itemId: id, tenantId } }),
+    ])
+  return { bom, bomComponent, routing, workOrder, inventory, salesOrder, wipUnit, txHistory }
+}
+
 export async function deleteItem(id: string) {
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.item.findFirst({ where: { id, tenantId } })
-  const result = await prisma.item.deleteMany({ where: { id, tenantId } })
-  if (owned) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "Item",
-        entityId: id,
-        action: "DELETE",
-        beforeData: { code: owned.code, name: owned.name, status: owned.status },
-        menuName: "품목 관리",
-      },
-    }).catch(() => {})
+  if (!owned) throw new Error("NOT_FOUND")
+
+  // 참조 데이터 존재 시 삭제 차단
+  const refs = await checkItemReferences(id)
+  const blockers: string[] = []
+  if (refs.bom > 0)          blockers.push(`BOM ${refs.bom}건`)
+  if (refs.bomComponent > 0) blockers.push(`BOM 자재 ${refs.bomComponent}건`)
+  if (refs.routing > 0)      blockers.push(`라우팅 ${refs.routing}건`)
+  if (refs.workOrder > 0)    blockers.push(`작업지시 ${refs.workOrder}건`)
+  if (refs.inventory > 0)    blockers.push(`재고 잔량 ${refs.inventory}건`)
+  if (refs.salesOrder > 0)   blockers.push(`수주 ${refs.salesOrder}건`)
+  if (refs.wipUnit > 0)      blockers.push(`WIP 이력 ${refs.wipUnit}건`)
+  if (refs.txHistory > 0)    blockers.push(`입출고 이력 ${refs.txHistory}건`)
+
+  if (blockers.length > 0) {
+    throw new Error(`ITEM_IN_USE:${blockers.join(", ")}`)
   }
+
+  const result = await prisma.item.deleteMany({ where: { id, tenantId } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "Item",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, status: owned.status },
+      menuName: "품목 관리",
+    },
+  }).catch(() => {})
   return result
 }

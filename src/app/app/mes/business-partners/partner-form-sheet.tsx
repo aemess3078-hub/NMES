@@ -9,6 +9,7 @@ import {
   FormSheet,
   FormTextField,
   FormSelectField,
+  FormTextareaField,
 } from "@/components/common/form-sheet"
 import { partnerFormSchema, PartnerFormValues } from "./partner-form-schema"
 import { createBusinessPartner, updateBusinessPartner } from "@/lib/actions/business-partner.actions"
@@ -28,6 +29,15 @@ const DEFAULT_FORM_VALUES: PartnerFormValues = {
   name: "",
   partnerType: "CUSTOMER",
   status: "ACTIVE",
+  businessNumber: "",
+  ceoName: "",
+  phone: "",
+  email: "",
+  email2: "",
+  address: "",
+  contactName: "",
+  contactPhone: "",
+  remark: "",
 }
 
 const typeLabels: Record<PartnerType, string> = {
@@ -124,6 +134,74 @@ export function PartnerFormSheet({
             label="유형"
             options={Object.entries(typeLabels).map(([value, label]) => ({ label, value }))}
           />
+
+          <div className="pt-4 border-t space-y-4">
+            <p className="text-[15px] font-medium text-foreground">연락처 정보 (선택)</p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormTextField
+                control={form.control}
+                name="businessNumber"
+                label="사업자등록번호"
+                placeholder="123-45-67890"
+              />
+              <FormTextField
+                control={form.control}
+                name="ceoName"
+                label="대표자명"
+              />
+            </div>
+
+            <FormTextField
+              control={form.control}
+              name="phone"
+              label="전화번호"
+              placeholder="02-1234-5678"
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormTextField
+                control={form.control}
+                name="email"
+                label="이메일1"
+                type="email"
+                placeholder="partner@example.com"
+              />
+              <FormTextField
+                control={form.control}
+                name="email2"
+                label="이메일2"
+                type="email"
+                placeholder="manager@example.com"
+              />
+            </div>
+
+            <FormTextField
+              control={form.control}
+              name="address"
+              label="주소"
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormTextField
+                control={form.control}
+                name="contactName"
+                label="담당자명"
+              />
+              <FormTextField
+                control={form.control}
+                name="contactPhone"
+                label="담당자연락처"
+                placeholder="010-1234-5678"
+              />
+            </div>
+
+            <FormTextareaField
+              control={form.control}
+              name="remark"
+              label="비고"
+            />
+          </div>
 
           <div className="pt-4 border-t">
             <FormSelectField

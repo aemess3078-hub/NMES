@@ -69,6 +69,16 @@ export function getColumns(callbacks: {
       cell: ({ row }) => (
         <span className="text-[14px]">{row.getValue("itemName")}</span>
       ),
+      filterFn: (row, _colId, filterValue: string) => {
+        const q = filterValue.toLowerCase()
+        const r = row.original
+        return (
+          r.code.toLowerCase().includes(q) ||
+          r.name.toLowerCase().includes(q) ||
+          (r.items?.[0]?.item?.code ?? "").toLowerCase().includes(q) ||
+          (r.items?.[0]?.item?.name ?? "").toLowerCase().includes(q)
+        )
+      },
     },
     {
       accessorKey: "version",

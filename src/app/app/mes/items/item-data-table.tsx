@@ -8,7 +8,7 @@ import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { ItemFormSheet } from "./item-form-sheet"
 import { ItemExcelUploadDialog } from "./item-excel-upload-dialog"
-import { deleteItem, type ItemWithDetails, type WarehouseForItemForm } from "@/lib/actions/item.actions"
+import { deleteItem, updateItem, type ItemWithDetails, type WarehouseForItemForm } from "@/lib/actions/item.actions"
 import { type ItemFormValues } from "./item-form-schema"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
@@ -49,12 +49,47 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
   }
 
   const handleDelete = async (item: ItemWithDetails) => {
-    if (!confirm(`'${item.name}' 품목을 삭제하시겠습니까?`)) return
+    if (!confirm(`'${item.name}' 품목을 삭제하시겠습니까?\n\n삭제 후 복구할 수 없습니다.`)) return
     try {
       await deleteItem(item.id)
       router.refresh()
     } catch (error) {
-      console.error("삭제 실패:", error)
+      const msg = error instanceof Error ? error.message : ""
+      if (msg.startsWith("ITEM_IN_USE:")) {
+        const detail = msg.replace("ITEM_IN_USE:", "")
+        const deactivate = confirm(
+          `이 품목은 다음 데이터에서 사용 중이므로 삭제할 수 없습니다.\n\n${detail}\n\n비활성 처리하시겠습니까? (데이터는 유지됩니다)`
+        )
+        if (deactivate) {
+          try {
+            await updateItem(item.id, { ...buildItemFormValues(item), status: "INACTIVE" })
+            router.refresh()
+          } catch {
+            alert("비활성 처리에 실패했습니다.")
+          }
+        }
+      } else {
+        alert("삭제에 실패했습니다. 잠시 후 다시 시도해주세요.")
+        console.error("삭제 실패:", error)
+      }
+    }
+  }
+
+  function buildItemFormValues(item: ItemWithDetails) {
+    return {
+      code:               item.code,
+      name:               item.name,
+      categoryId:         item.categoryId ?? "",
+      itemGroupId:        item.itemGroupId ?? null,
+      uom:                item.uom,
+      spec:               item.spec ?? null,
+      isLotTracked:       item.isLotTracked,
+      isSerialTracked:    item.isSerialTracked,
+      lotNumberingType:   item.lotNumberingType,
+      lotPrefix:          item.lotPrefix ?? null,
+      manualLotPolicy:    item.manualLotPolicy,
+      status:             item.status,
+      defaultWarehouseId: item.defaultWarehouseId ?? null,
     }
   }
 
@@ -124,7 +159,7 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
       <DataTable
         columns={columns}
         data={items}
-        searchableColumns={[{ id: "name", title: "품목명" }]}
+        searchableColumns={[{ id: "name", title: "코드/품목명" }]}
         filterableColumns={[
           {
             id:    "itemType",
