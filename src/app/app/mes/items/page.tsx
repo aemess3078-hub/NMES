@@ -4,19 +4,23 @@ import {
   getItemGroupsForForm,
   getWarehousesForItemForm,
 } from "@/lib/actions/item.actions"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { ItemDataTable } from "./item-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function ItemsPage() {
-  const [items, categories, itemGroups, warehouses] = await Promise.all([
+  const [items, categories, itemGroups, warehouses, user] = await Promise.all([
     getItems(),
     getItemCategories(),
     getItemGroupsForForm(),
     getWarehousesForItemForm(),
+    getCurrentUser(),
   ])
 
   const tenantId = items[0]?.tenantId ?? ""
+  const canBulkDelete = isDeveloperUser(user) || user?.role === "OWNER" || user?.role === "ADMIN"
 
   return (
     <div className="space-y-6">
@@ -37,6 +41,7 @@ export default async function ItemsPage() {
         itemGroups={itemGroups}
         warehouses={warehouses}
         tenantId={tenantId}
+        canBulkDelete={canBulkDelete}
       />
     </div>
   )
