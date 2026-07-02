@@ -35,18 +35,19 @@ type ItemGroupOption = {
 }
 
 interface ItemDataTableProps {
-  items:      ItemWithDetails[]
-  categories: Category[]
-  itemGroups: ItemGroupOption[]
-  warehouses: WarehouseForItemForm[]
-  tenantId:   string
+  items:         ItemWithDetails[]
+  categories:    Category[]
+  itemGroups:    ItemGroupOption[]
+  warehouses:    WarehouseForItemForm[]
+  tenantId:      string
+  /** ADMIN 이상 또는 개발자 계정(loginId='test') 여부 — 서버에서 role 계층과 무관하게 계산해 전달한다. */
+  canBulkDelete: boolean
 }
 
-export function ItemDataTable({ items, categories, itemGroups, warehouses, tenantId }: ItemDataTableProps) {
+export function ItemDataTable({ items, categories, itemGroups, warehouses, tenantId, canBulkDelete }: ItemDataTableProps) {
   const router        = useRouter()
   const role          = useUserRole()
   const canMutate     = role !== "VIEWER"
-  const canBulkDelete = role === "OWNER" || role === "ADMIN"
   const [formOpen,     setFormOpen]     = useState(false)
   const [formMode,     setFormMode]     = useState<"create" | "edit">("create")
   const [editingItem,  setEditingItem]  = useState<ItemWithDetails | null>(null)

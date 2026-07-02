@@ -1,11 +1,20 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { getTenantId, requireRole } from "@/lib/auth"
+import { getTenantId, requireRole, getCurrentUser, type CurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, ItemStatus, UOM, LotNumberingType, ManualLotPolicy } from "@prisma/client"
 import { ItemFormValues } from "@/app/app/mes/items/item-form-schema"
 import { checkItemReferencesForBulk } from "./reference-check.server"
+
+/** 선택 일괄삭제 권한: ADMIN 이상, 또는 role 계층과 무관한 개발자 계정(loginId='test'). */
+async function requireBulkDeletePermission(): Promise<CurrentUser> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("UNAUTHORIZED")
+  if (isDeveloperUser(user)) return user
+  return requireRole("ADMIN", user)
+}
 
 export type ItemWithDetails = Prisma.ItemGetPayload<{
   include: {
@@ -327,7 +336,7 @@ export type ItemDeleteCandidate = {
 
 /** 선택한 품목들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
 export async function bulkCheckItemsForDelete(ids: string[]): Promise<ItemDeleteCandidate[]> {
-  await requireRole("ADMIN")
+  await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return []
 
@@ -358,7 +367,7 @@ export type BulkDeleteItemsResult = {
  * race condition 방지를 위해 삭제 직전 품목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteItems(ids: string[]): Promise<BulkDeleteItemsResult> {
-  const actor = await requireRole("ADMIN")
+  const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
 
