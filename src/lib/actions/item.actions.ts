@@ -5,7 +5,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, ItemStatus, UOM, LotNumberingType, ManualLotPolicy } from "@prisma/client"
 import { ItemFormValues } from "@/app/app/mes/items/item-form-schema"
-import { buildReferenceCheck, runBulkDelete, type ReferenceCheckResult } from "./reference-check.utils"
+import { checkItemReferencesForBulk } from "./reference-check.server"
 
 export type ItemWithDetails = Prisma.ItemGetPayload<{
   include: {
@@ -317,35 +317,6 @@ export async function deleteItem(id: string) {
   return result
 }
 
-/**
- * 선택 일괄삭제 전용 참조 확인. 위 checkItemReferences(단건 삭제/비활성 제안 UX용)보다
- * 넓은 범위(작업지시/BOM/라우팅/재고/검사/LOT/영업·구매/원가/ECN 등)를 확인한다.
- */
-async function checkItemReferencesForBulk(itemId: string, tenantId: string): Promise<ReferenceCheckResult> {
-  return buildReferenceCheck([
-    { label: "작업지시", count: () => prisma.workOrder.count({ where: { itemId, tenantId } }) },
-    { label: "BOM", count: () => prisma.bOM.count({ where: { itemId, tenantId } }) },
-    { label: "BOM 구성품", count: () => prisma.bOMItem.count({ where: { componentItemId: itemId } }) },
-    { label: "라우팅", count: () => prisma.itemRouting.count({ where: { itemId, tenantId } }) },
-    { label: "재고입출고 이력", count: () => prisma.inventoryTransaction.count({ where: { itemId, tenantId } }) },
-    { label: "재고 보유", count: () => prisma.inventoryBalance.count({ where: { itemId, tenantId, qtyOnHand: { not: 0 } } }) },
-    { label: "LOT", count: () => prisma.lot.count({ where: { itemId, tenantId } }) },
-    { label: "검사 규격", count: () => prisma.inspectionSpec.count({ where: { itemId, tenantId } }) },
-    { label: "자재예약", count: () => prisma.materialReservation.count({ where: { itemId } }) },
-    { label: "자재소비 이력", count: () => prisma.materialConsumption.count({ where: { itemId } }) },
-    { label: "WIP 이력", count: () => prisma.wipUnit.count({ where: { itemId, tenantId } }) },
-    { label: "완성품입고", count: () => prisma.finishedGoodsReceipt.count({ where: { itemId, tenantId } }) },
-    { label: "생산계획", count: () => prisma.productionPlanItem.count({ where: { itemId } }) },
-    { label: "판매주문", count: () => prisma.salesOrderItem.count({ where: { itemId } }) },
-    { label: "구매주문", count: () => prisma.purchaseOrderItem.count({ where: { itemId } }) },
-    { label: "견적", count: () => prisma.quotationItem.count({ where: { itemId } }) },
-    { label: "원가정보", count: () => prisma.itemCost.count({ where: { itemId, tenantId } }) },
-    { label: "ECN", count: () => prisma.engineeringChange.count({ where: { targetItemId: itemId, tenantId } }) },
-    { label: "대체품 설정", count: () => prisma.itemSubstitute.count({ where: { OR: [{ itemId }, { substituteItemId: itemId }] } }) },
-    { label: "자재LOT 사용", count: () => prisma.workOrderMaterialLot.count({ where: { materialItemId: itemId, tenantId } }) },
-  ])
-}
-
 export type ItemDeleteCandidate = {
   id: string
   code: string
@@ -393,11 +364,18 @@ export async function bulkDeleteItems(ids: string[]): Promise<BulkDeleteItemsRes
 
   const items = await prisma.item.findMany({ where: { id: { in: ids }, tenantId } })
 
-  const outcome = await runBulkDelete(
-    items,
-    (item) => checkItemReferencesForBulk(item.id, tenantId),
-    (item) =>
-      prisma.$transaction(async (tx) => {
+  const deleted: BulkDeleteItemsResult["deleted"] = []
+  const blocked: BulkDeleteItemsResult["blocked"] = []
+  const failed: BulkDeleteItemsResult["failed"] = []
+
+  for (const item of items) {
+    const { canDelete, reasons } = await checkItemReferencesForBulk(item.id, tenantId)
+    if (!canDelete) {
+      blocked.push({ id: item.id, code: item.code, name: item.name, reasons })
+      continue
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
         const result = await tx.item.deleteMany({ where: { id: item.id, tenantId } })
         if (result.count === 0) throw new Error("NOT_FOUND")
         await tx.auditLog.create({
@@ -412,9 +390,13 @@ export async function bulkDeleteItems(ids: string[]): Promise<BulkDeleteItemsRes
             menuName: "품목 관리",
           },
         })
-      }).then(() => undefined),
-  )
+      })
+      deleted.push({ id: item.id, code: item.code, name: item.name })
+    } catch {
+      failed.push({ id: item.id, code: item.code, name: item.name, error: "DELETE_FAILED" })
+    }
+  }
 
   revalidatePath("/app/mes/items")
-  return outcome
+  return { deleted, blocked, failed }
 }
