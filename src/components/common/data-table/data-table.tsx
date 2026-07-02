@@ -7,6 +7,7 @@ import {
   ColumnFiltersState,
   ExpandedState,
   type Row,
+  type RowSelectionState,
   SortingState,
   VisibilityState,
   flexRender,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/table"
 import { DataTablePagination } from "./data-table-pagination"
 import { DataTableToolbar } from "./data-table-toolbar"
+import { createSelectColumn } from "./select-column"
 import {
   DataTableFilterableColumn,
   DataTableSearchableColumn,
@@ -47,6 +49,12 @@ interface DataTableProps<TData, TValue> {
   getRowId?: (originalRow: TData, index: number, parent?: Row<TData>) => string
   expandedRowId?: string | null
   onExpandedRowIdChange?: (rowId: string | null) => void
+  /** 좌측에 체크박스 컬럼을 추가하고 현재 페이지 기준 선택을 지원한다. */
+  enableRowSelection?: boolean
+  /** 선택된 행이 바뀔 때마다 원본 데이터 배열로 전달된다. */
+  onSelectionChange?: (selectedRows: TData[]) => void
+  /** 값이 바뀔 때마다 선택 상태를 초기화한다(예: 일괄삭제 완료 후). */
+  clearSelectionSignal?: number | string
 }
 
 function isInteractiveElement(target: EventTarget | null) {
@@ -68,6 +76,9 @@ export function DataTable<TData, TValue>({
   getRowId,
   expandedRowId,
   onExpandedRowIdChange,
+  enableRowSelection = false,
+  onSelectionChange,
+  clearSelectionSignal,
 }: DataTableProps<TData, TValue>) {
   const [internalExpanded, setInternalExpanded] = React.useState<ExpandedState>({})
   const [columnVisibility, setColumnVisibility] =
@@ -76,6 +87,7 @@ export function DataTable<TData, TValue>({
     []
   )
   const [sorting, setSorting] = React.useState<SortingState>(defaultSorting)
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
   const isExpandedControlled = expandedRowId !== undefined
   const expanded = React.useMemo<ExpandedState>(
     () => {
@@ -85,21 +97,29 @@ export function DataTable<TData, TValue>({
     [expandedRowId, internalExpanded, isExpandedControlled]
   )
 
+  const tableColumns = React.useMemo(
+    () => (enableRowSelection ? [createSelectColumn<TData>(), ...columns] : columns),
+    [enableRowSelection, columns]
+  )
+
   const table = useReactTable({
     data,
-    columns,
+    columns: tableColumns,
     getRowId,
     state: {
       sorting,
       columnVisibility,
       columnFilters,
       expanded,
+      rowSelection,
     },
+    enableRowSelection,
     getRowCanExpand: () => Boolean(renderExpandedRow),
     onExpandedChange: isExpandedControlled ? undefined : setInternalExpanded,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -109,6 +129,18 @@ export function DataTable<TData, TValue>({
       pagination: { pageSize },
     },
   })
+
+  React.useEffect(() => {
+    if (!enableRowSelection) return
+    setRowSelection({})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearSelectionSignal])
+
+  React.useEffect(() => {
+    if (!enableRowSelection || !onSelectionChange) return
+    onSelectionChange(table.getSelectedRowModel().rows.map((row) => row.original))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowSelection, enableRowSelection])
 
   return (
     <div className="space-y-4">
@@ -155,7 +187,8 @@ export function DataTable<TData, TValue>({
                     className={cn(
                       "group/row",
                       onRowClick || (expandOnRowClick && renderExpandedRow) ? "cursor-pointer" : undefined,
-                      row.getIsExpanded() ? "bg-slate-50/70 hover:bg-slate-50" : undefined
+                      row.getIsExpanded() ? "bg-slate-50/70 hover:bg-slate-50" : undefined,
+                      row.getIsSelected() ? "bg-primary/5 hover:bg-primary/10" : undefined
                     )}
                   >
                     {row.getVisibleCells().map((cell) => (
@@ -179,7 +212,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={columns.length}
+                  colSpan={tableColumns.length}
                   className="h-24 text-center text-[15px] text-muted-foreground"
                 >
                   데이터가 없습니다.
