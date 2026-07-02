@@ -2,13 +2,21 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Download, Upload } from "lucide-react"
+import { Plus, Download, Upload, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
+import { BulkDeleteDialog, type BulkDeleteCandidate } from "@/components/common/bulk-delete-dialog"
 import { getColumns } from "./columns"
 import { ItemFormSheet } from "./item-form-sheet"
 import { ItemExcelUploadDialog } from "./item-excel-upload-dialog"
-import { deleteItem, updateItem, type ItemWithDetails, type WarehouseForItemForm } from "@/lib/actions/item.actions"
+import {
+  deleteItem,
+  updateItem,
+  bulkCheckItemsForDelete,
+  bulkDeleteItems,
+  type ItemWithDetails,
+  type WarehouseForItemForm,
+} from "@/lib/actions/item.actions"
 import { type ItemFormValues } from "./item-form-schema"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 
@@ -35,12 +43,21 @@ interface ItemDataTableProps {
 }
 
 export function ItemDataTable({ items, categories, itemGroups, warehouses, tenantId }: ItemDataTableProps) {
-  const router     = useRouter()
-  const canMutate  = useUserRole() !== "VIEWER"
+  const router        = useRouter()
+  const role          = useUserRole()
+  const canMutate     = role !== "VIEWER"
+  const canBulkDelete = role === "OWNER" || role === "ADMIN"
   const [formOpen,     setFormOpen]     = useState(false)
   const [formMode,     setFormMode]     = useState<"create" | "edit">("create")
   const [editingItem,  setEditingItem]  = useState<ItemWithDetails | null>(null)
   const [uploadOpen,   setUploadOpen]   = useState(false)
+
+  const [selectedItems, setSelectedItems]   = useState<ItemWithDetails[]>([])
+  const [clearSelectionSignal, setClearSelectionSignal] = useState(0)
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
+  const [bulkChecking,   setBulkChecking]   = useState(false)
+  const [bulkDeleting,   setBulkDeleting]   = useState(false)
+  const [bulkCandidates, setBulkCandidates] = useState<BulkDeleteCandidate[]>([])
 
   const handleEdit = (item: ItemWithDetails) => {
     setEditingItem(item)
@@ -93,6 +110,45 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
     }
   }
 
+  const handleBulkDeleteClick = async () => {
+    setBulkDialogOpen(true)
+    setBulkChecking(true)
+    setBulkCandidates([])
+    try {
+      const result = await bulkCheckItemsForDelete(selectedItems.map((i) => i.id))
+      setBulkCandidates(result)
+    } catch (error) {
+      console.error("참조 확인 실패:", error)
+      setBulkDialogOpen(false)
+      alert("삭제 가능 여부 확인에 실패했습니다.")
+    } finally {
+      setBulkChecking(false)
+    }
+  }
+
+  const handleConfirmBulkDelete = async () => {
+    const deletableIds = bulkCandidates.filter((c) => c.canDelete).map((c) => c.id)
+    if (deletableIds.length === 0) return
+    setBulkDeleting(true)
+    try {
+      const { deleted, blocked, failed } = await bulkDeleteItems(deletableIds)
+      const excluded = blocked.length + failed.length
+      setBulkDialogOpen(false)
+      setSelectedItems([])
+      setClearSelectionSignal((n) => n + 1)
+      router.refresh()
+      alert(
+        excluded > 0
+          ? `${deleted.length}개 삭제 완료, ${excluded}개는 사용 이력으로 인해 삭제 제외되었습니다.`
+          : `${deleted.length}개 삭제 완료`
+      )
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "삭제에 실패했습니다.")
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   const allColumns = getColumns({ onEdit: handleEdit, onDelete: handleDelete })
   const columns    = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
@@ -116,49 +172,68 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 text-[13px] h-9"
-          onClick={async () => {
-            const { default: downloadTemplate } = await import("./item-excel-download")
-            downloadTemplate()
-          }}
-        >
-          <Download className="h-4 w-4" />
-          양식 다운로드
-        </Button>
-        {canMutate && (
-          <>
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          {canBulkDelete && selectedItems.length > 0 && (
             <Button
-              variant="outline"
+              variant="destructive"
               size="sm"
               className="gap-1.5 text-[13px] h-9"
-              onClick={() => setUploadOpen(true)}
+              onClick={handleBulkDeleteClick}
             >
-              <Upload className="h-4 w-4" />
-              엑셀 업로드
+              <Trash2 className="h-4 w-4" />
+              선택 삭제 ({selectedItems.length})
             </Button>
-            <Button
-              size="sm"
-              className="gap-1.5 text-[13px] h-9"
-              onClick={() => {
-                setEditingItem(null)
-                setFormMode("create")
-                setFormOpen(true)
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              품목 등록
-            </Button>
-          </>
-        )}
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-[13px] h-9"
+            onClick={async () => {
+              const { default: downloadTemplate } = await import("./item-excel-download")
+              downloadTemplate()
+            }}
+          >
+            <Download className="h-4 w-4" />
+            양식 다운로드
+          </Button>
+          {canMutate && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-[13px] h-9"
+                onClick={() => setUploadOpen(true)}
+              >
+                <Upload className="h-4 w-4" />
+                엑셀 업로드
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5 text-[13px] h-9"
+                onClick={() => {
+                  setEditingItem(null)
+                  setFormMode("create")
+                  setFormOpen(true)
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                품목 등록
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <DataTable
         columns={columns}
         data={items}
+        getRowId={(item) => item.id}
+        enableRowSelection={canBulkDelete}
+        onSelectionChange={setSelectedItems}
+        clearSelectionSignal={clearSelectionSignal}
         searchableColumns={[{ id: "name", title: "코드/품목명" }]}
         filterableColumns={[
           {
@@ -195,6 +270,16 @@ export function ItemDataTable({ items, categories, itemGroups, warehouses, tenan
         itemGroups={itemGroups}
         warehouses={warehouses}
         tenantId={tenantId}
+      />
+
+      <BulkDeleteDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        entityLabel="품목"
+        loading={bulkChecking}
+        candidates={bulkCandidates}
+        confirming={bulkDeleting}
+        onConfirm={handleConfirmBulkDelete}
       />
     </div>
   )

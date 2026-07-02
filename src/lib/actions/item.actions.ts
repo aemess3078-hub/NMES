@@ -1,9 +1,11 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, ItemStatus, UOM, LotNumberingType, ManualLotPolicy } from "@prisma/client"
 import { ItemFormValues } from "@/app/app/mes/items/item-form-schema"
+import { buildReferenceCheck, runBulkDelete, type ReferenceCheckResult } from "./reference-check.utils"
 
 export type ItemWithDetails = Prisma.ItemGetPayload<{
   include: {
@@ -313,4 +315,106 @@ export async function deleteItem(id: string) {
     },
   }).catch(() => {})
   return result
+}
+
+/**
+ * 선택 일괄삭제 전용 참조 확인. 위 checkItemReferences(단건 삭제/비활성 제안 UX용)보다
+ * 넓은 범위(작업지시/BOM/라우팅/재고/검사/LOT/영업·구매/원가/ECN 등)를 확인한다.
+ */
+async function checkItemReferencesForBulk(itemId: string, tenantId: string): Promise<ReferenceCheckResult> {
+  return buildReferenceCheck([
+    { label: "작업지시", count: () => prisma.workOrder.count({ where: { itemId, tenantId } }) },
+    { label: "BOM", count: () => prisma.bOM.count({ where: { itemId, tenantId } }) },
+    { label: "BOM 구성품", count: () => prisma.bOMItem.count({ where: { componentItemId: itemId } }) },
+    { label: "라우팅", count: () => prisma.itemRouting.count({ where: { itemId, tenantId } }) },
+    { label: "재고입출고 이력", count: () => prisma.inventoryTransaction.count({ where: { itemId, tenantId } }) },
+    { label: "재고 보유", count: () => prisma.inventoryBalance.count({ where: { itemId, tenantId, qtyOnHand: { not: 0 } } }) },
+    { label: "LOT", count: () => prisma.lot.count({ where: { itemId, tenantId } }) },
+    { label: "검사 규격", count: () => prisma.inspectionSpec.count({ where: { itemId, tenantId } }) },
+    { label: "자재예약", count: () => prisma.materialReservation.count({ where: { itemId } }) },
+    { label: "자재소비 이력", count: () => prisma.materialConsumption.count({ where: { itemId } }) },
+    { label: "WIP 이력", count: () => prisma.wipUnit.count({ where: { itemId, tenantId } }) },
+    { label: "완성품입고", count: () => prisma.finishedGoodsReceipt.count({ where: { itemId, tenantId } }) },
+    { label: "생산계획", count: () => prisma.productionPlanItem.count({ where: { itemId } }) },
+    { label: "판매주문", count: () => prisma.salesOrderItem.count({ where: { itemId } }) },
+    { label: "구매주문", count: () => prisma.purchaseOrderItem.count({ where: { itemId } }) },
+    { label: "견적", count: () => prisma.quotationItem.count({ where: { itemId } }) },
+    { label: "원가정보", count: () => prisma.itemCost.count({ where: { itemId, tenantId } }) },
+    { label: "ECN", count: () => prisma.engineeringChange.count({ where: { targetItemId: itemId, tenantId } }) },
+    { label: "대체품 설정", count: () => prisma.itemSubstitute.count({ where: { OR: [{ itemId }, { substituteItemId: itemId }] } }) },
+    { label: "자재LOT 사용", count: () => prisma.workOrderMaterialLot.count({ where: { materialItemId: itemId, tenantId } }) },
+  ])
+}
+
+export type ItemDeleteCandidate = {
+  id: string
+  code: string
+  name: string
+  canDelete: boolean
+  reasons: string[]
+}
+
+/** 선택한 품목들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
+export async function bulkCheckItemsForDelete(ids: string[]): Promise<ItemDeleteCandidate[]> {
+  await requireRole("ADMIN")
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return []
+
+  const items = await prisma.item.findMany({
+    where: { id: { in: ids }, tenantId },
+    select: { id: true, code: true, name: true },
+  })
+
+  const results = await Promise.all(
+    items.map(async (item) => {
+      const { canDelete, reasons } = await checkItemReferencesForBulk(item.id, tenantId)
+      return { id: item.id, code: item.code, name: item.name, canDelete, reasons }
+    }),
+  )
+
+  const byId = new Map(results.map((r) => [r.id, r]))
+  return ids.map((id) => byId.get(id)).filter((r): r is ItemDeleteCandidate => Boolean(r))
+}
+
+export type BulkDeleteItemsResult = {
+  deleted: { id: string; code: string; name: string }[]
+  blocked: { id: string; code: string; name: string; reasons: string[] }[]
+  failed: { id: string; code: string; name: string; error: string }[]
+}
+
+/**
+ * 선택한 품목 중 삭제 가능한 항목만 삭제한다.
+ * race condition 방지를 위해 삭제 직전 품목별로 참조 여부를 다시 확인한다.
+ */
+export async function bulkDeleteItems(ids: string[]): Promise<BulkDeleteItemsResult> {
+  const actor = await requireRole("ADMIN")
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
+
+  const items = await prisma.item.findMany({ where: { id: { in: ids }, tenantId } })
+
+  const outcome = await runBulkDelete(
+    items,
+    (item) => checkItemReferencesForBulk(item.id, tenantId),
+    (item) =>
+      prisma.$transaction(async (tx) => {
+        const result = await tx.item.deleteMany({ where: { id: item.id, tenantId } })
+        if (result.count === 0) throw new Error("NOT_FOUND")
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: actor.id,
+            actorLabel: actor.name,
+            entityType: "Item",
+            entityId: item.id,
+            action: "DELETE",
+            beforeData: { code: item.code, name: item.name, status: item.status },
+            menuName: "품목 관리",
+          },
+        })
+      }).then(() => undefined),
+  )
+
+  revalidatePath("/app/mes/items")
+  return outcome
 }
