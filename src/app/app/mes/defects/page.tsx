@@ -1,5 +1,7 @@
 import { cookies } from "next/headers"
 import { getDefectCodes } from "@/lib/actions/quality.actions"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { DefectDataTable } from "./defect-data-table"
 
 export const dynamic = "force-dynamic"
@@ -8,7 +10,11 @@ export default async function DefectsPage() {
   const cookieStore = await cookies()
   const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
 
-  const defectCodes = await getDefectCodes(tenantId)
+  const [defectCodes, user] = await Promise.all([
+    getDefectCodes(tenantId),
+    getCurrentUser(),
+  ])
+  const canBulkDelete = isDeveloperUser(user) || user?.role === "OWNER" || user?.role === "ADMIN"
 
   return (
     <div className="space-y-6">
@@ -23,7 +29,7 @@ export default async function DefectsPage() {
         </div>
       </div>
 
-      <DefectDataTable data={defectCodes} tenantId={tenantId} />
+      <DefectDataTable data={defectCodes} tenantId={tenantId} canBulkDelete={canBulkDelete} />
     </div>
   )
 }

@@ -1,11 +1,17 @@
 import { Info } from "lucide-react"
 import { getDowntimeReasons } from "@/lib/actions/downtime-reason.actions"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { DowntimeReasonsClient } from "./downtime-reasons-client"
 
 export const dynamic = "force-dynamic"
 
 export default async function DowntimeReasonsPage() {
-  const reasons = await getDowntimeReasons()
+  const [reasons, user] = await Promise.all([
+    getDowntimeReasons(),
+    getCurrentUser(),
+  ])
+  const canBulkDelete = isDeveloperUser(user) || user?.role === "OWNER" || user?.role === "ADMIN"
 
   const total    = reasons.length
   const active   = reasons.filter((r) => r.isActive).length
@@ -37,7 +43,7 @@ export default async function DowntimeReasonsPage() {
       </div>
 
       {/* 테이블 */}
-      <DowntimeReasonsClient data={reasons} />
+      <DowntimeReasonsClient data={reasons} canBulkDelete={canBulkDelete} />
 
       {/* 설비통계분석 연계 안내 */}
       <div className="flex gap-3 rounded-lg border border-border bg-muted/30 px-4 py-4">

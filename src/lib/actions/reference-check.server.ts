@@ -10,6 +10,8 @@
 // "use server" 파일에는 결과(canDelete/reasons)만 반환하는 단순 async 함수만 노출한다.
 
 import { prisma } from "@/lib/db/prisma"
+import { getCurrentUser, requireRole, type CurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 
 export type ReferenceCheckResult = {
   canDelete: boolean
@@ -28,6 +30,17 @@ async function buildReferenceCheck(checks: ReferenceCheckDefinition[]): Promise<
     if (counts[i] > 0) reasons.push(`${c.label} ${counts[i]}건`)
   })
   return { canDelete: reasons.length === 0, reasons }
+}
+
+/**
+ * 기준정보 선택 일괄삭제 공통 권한: ADMIN 이상, 또는 role 계층과 무관한
+ * 개발자 계정(loginId='test'). 품목관리 선택삭제에서 쓰던 정책을 그대로 재사용한다.
+ */
+export async function requireBulkDeletePermission(): Promise<CurrentUser> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("UNAUTHORIZED")
+  if (isDeveloperUser(user)) return user
+  return requireRole("ADMIN", user)
 }
 
 /**
@@ -56,5 +69,55 @@ export async function checkItemReferencesForBulk(itemId: string, tenantId: strin
     { label: "ECN", count: () => prisma.engineeringChange.count({ where: { targetItemId: itemId, tenantId } }) },
     { label: "대체품 설정", count: () => prisma.itemSubstitute.count({ where: { OR: [{ itemId }, { substituteItemId: itemId }] } }) },
     { label: "자재LOT 사용", count: () => prisma.workOrderMaterialLot.count({ where: { materialItemId: itemId, tenantId } }) },
+  ])
+}
+
+/**
+ * 로케이션관리(실제 모델은 Warehouse) 선택 일괄삭제 참조 확인.
+ * warehouseId를 참조하는 모든 FK(세부 로케이션/품목 기본창고/재고/입출고이력/WIP/완성품입고/출하)를 확인한다.
+ */
+export async function checkWarehouseReferencesForBulk(warehouseId: string, tenantId: string): Promise<ReferenceCheckResult> {
+  return buildReferenceCheck([
+    { label: "세부 로케이션", count: () => prisma.location.count({ where: { warehouseId } }) },
+    { label: "기본 입고창고로 지정된 품목", count: () => prisma.item.count({ where: { defaultWarehouseId: warehouseId, tenantId } }) },
+    { label: "재고 보유", count: () => prisma.inventoryBalance.count({ where: { warehouseId, tenantId } }) },
+    { label: "재고입출고 이력", count: () => prisma.inventoryTransaction.count({ where: { tenantId, OR: [{ fromLocationId: warehouseId }, { toLocationId: warehouseId }] } }) },
+    { label: "WIP 현재위치", count: () => prisma.wipUnit.count({ where: { currentWarehouseId: warehouseId, tenantId } }) },
+    { label: "WIP 이동이력", count: () => prisma.wipMovement.count({ where: { tenantId, OR: [{ fromWarehouseId: warehouseId }, { toWarehouseId: warehouseId }] } }) },
+    { label: "완성품입고", count: () => prisma.finishedGoodsReceipt.count({ where: { warehouseId, tenantId } }) },
+    { label: "출하", count: () => prisma.shipmentOrder.count({ where: { warehouseId, tenantId } }) },
+  ])
+}
+
+/** 불량관리(DefectCode) 선택 일괄삭제 참조 확인. */
+export async function checkDefectCodeReferencesForBulk(defectCodeId: string): Promise<ReferenceCheckResult> {
+  return buildReferenceCheck([
+    { label: "불량이력", count: () => prisma.defectRecord.count({ where: { defectCodeId } }) },
+  ])
+}
+
+/**
+ * 비가동사유관리(CommonCode, groupCode='DOWNTIME_REASON') 선택 일괄삭제 참조 확인.
+ * 현재 스키마상 CommonCode를 직접 참조하는 FK가 없다(EquipmentEvent 등 아직 미연결).
+ * 향후 연결이 추가되면 여기에 카운트를 더한다.
+ */
+export async function checkDowntimeReasonReferencesForBulk(): Promise<ReferenceCheckResult> {
+  return buildReferenceCheck([])
+}
+
+/**
+ * 금형/치공구관리(Equipment, equipmentType in TOOL/JIG/FIXTURE) 선택 일괄삭제 참조 확인.
+ * 기존 단건삭제(deleteMold)보다 넓은 범위(설비-공정 매핑/작업지시 공정/설비연결/설비이벤트/
+ * 수리요청/일상점검/작업배정)를 확인한다.
+ */
+export async function checkMoldReferencesForBulk(equipmentId: string, tenantId: string): Promise<ReferenceCheckResult> {
+  return buildReferenceCheck([
+    { label: "설비-공정 매핑", count: () => prisma.equipmentOperationMap.count({ where: { equipmentId } }) },
+    { label: "작업지시 공정", count: () => prisma.workOrderOperation.count({ where: { equipmentId } }) },
+    { label: "설비연결 설정", count: () => prisma.equipmentConnection.count({ where: { equipmentId } }) },
+    { label: "설비이벤트", count: () => prisma.equipmentEvent.count({ where: { equipmentId } }) },
+    { label: "수리요청", count: () => prisma.equipmentRepairRequest.count({ where: { equipmentId, tenantId } }) },
+    { label: "일상점검", count: () => prisma.equipmentDailyCheck.count({ where: { equipmentId, tenantId } }) },
+    { label: "작업배정", count: () => prisma.workOrderOperationAssignment.count({ where: { equipmentId, tenantId } }) },
   ])
 }

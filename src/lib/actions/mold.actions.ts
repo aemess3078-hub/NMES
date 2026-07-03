@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { EquipmentStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { checkMoldReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
 
 const REVALIDATE_PATH = "/app/mes/master/molds"
 
@@ -211,4 +212,90 @@ export async function deleteMold(id: string) {
     },
   }).catch(() => {})
   revalidatePath(REVALIDATE_PATH)
+}
+
+export type MoldDeleteCandidate = {
+  id: string
+  code: string
+  name: string
+  canDelete: boolean
+  reasons: string[]
+}
+
+/** 선택한 금형/치공구들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
+export async function bulkCheckMoldsForDelete(ids: string[]): Promise<MoldDeleteCandidate[]> {
+  await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return []
+
+  const molds = await prisma.equipment.findMany({
+    where: { id: { in: ids }, tenantId, equipmentType: { in: [...MOLD_TYPES] } },
+    select: { id: true, code: true, name: true },
+  })
+
+  const results = await Promise.all(
+    molds.map(async (m) => {
+      const { canDelete, reasons } = await checkMoldReferencesForBulk(m.id, tenantId)
+      return { id: m.id, code: m.code, name: m.name, canDelete, reasons }
+    }),
+  )
+
+  const byId = new Map(results.map((r) => [r.id, r]))
+  return ids.map((id) => byId.get(id)).filter((r): r is MoldDeleteCandidate => Boolean(r))
+}
+
+export type BulkDeleteMoldsResult = {
+  deleted: { id: string; code: string; name: string }[]
+  blocked: { id: string; code: string; name: string; reasons: string[] }[]
+  failed: { id: string; code: string; name: string; error: string }[]
+}
+
+/**
+ * 선택한 금형/치공구 중 삭제 가능한 항목만 삭제한다.
+ * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
+ */
+export async function bulkDeleteMolds(ids: string[]): Promise<BulkDeleteMoldsResult> {
+  const actor = await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
+
+  const molds = await prisma.equipment.findMany({
+    where: { id: { in: ids }, tenantId, equipmentType: { in: [...MOLD_TYPES] } },
+  })
+
+  const deleted: BulkDeleteMoldsResult["deleted"] = []
+  const blocked: BulkDeleteMoldsResult["blocked"] = []
+  const failed: BulkDeleteMoldsResult["failed"] = []
+
+  for (const m of molds) {
+    const { canDelete, reasons } = await checkMoldReferencesForBulk(m.id, tenantId)
+    if (!canDelete) {
+      blocked.push({ id: m.id, code: m.code, name: m.name, reasons })
+      continue
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const result = await tx.equipment.deleteMany({ where: { id: m.id, tenantId } })
+        if (result.count === 0) throw new Error("NOT_FOUND")
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: actor.id,
+            actorLabel: actor.name,
+            entityType: "Equipment",
+            entityId: m.id,
+            action: "DELETE",
+            beforeData: { code: m.code, name: m.name, equipmentType: m.equipmentType, status: m.status },
+            menuName: "금형/치공구 관리",
+          },
+        })
+      })
+      deleted.push({ id: m.id, code: m.code, name: m.name })
+    } catch {
+      failed.push({ id: m.id, code: m.code, name: m.name, error: "DELETE_FAILED" })
+    }
+  }
+
+  revalidatePath(REVALIDATE_PATH)
+  return { deleted, blocked, failed }
 }
