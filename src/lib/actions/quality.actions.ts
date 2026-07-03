@@ -11,7 +11,8 @@ import {
   DefectDisposition,
 } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { requireRole } from "@/lib/auth"
+import { requireRole, getTenantId } from "@/lib/auth"
+import { checkDefectCodeReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
 
 export type DefectCodeRow = {
   id: string
@@ -297,6 +298,90 @@ export async function deleteDefectCode(id: string) {
 
   await prisma.defectCode.delete({ where: { id } })
   revalidatePath("/app/mes/defects")
+}
+
+export type DefectCodeDeleteCandidate = {
+  id: string
+  code: string
+  name: string
+  canDelete: boolean
+  reasons: string[]
+}
+
+/** 선택한 불량코드들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
+export async function bulkCheckDefectCodesForDelete(ids: string[]): Promise<DefectCodeDeleteCandidate[]> {
+  await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return []
+
+  const defectCodes = await prisma.defectCode.findMany({
+    where: { id: { in: ids }, tenantId },
+    select: { id: true, code: true, name: true },
+  })
+
+  const results = await Promise.all(
+    defectCodes.map(async (d) => {
+      const { canDelete, reasons } = await checkDefectCodeReferencesForBulk(d.id)
+      return { id: d.id, code: d.code, name: d.name, canDelete, reasons }
+    }),
+  )
+
+  const byId = new Map(results.map((r) => [r.id, r]))
+  return ids.map((id) => byId.get(id)).filter((r): r is DefectCodeDeleteCandidate => Boolean(r))
+}
+
+export type BulkDeleteDefectCodesResult = {
+  deleted: { id: string; code: string; name: string }[]
+  blocked: { id: string; code: string; name: string; reasons: string[] }[]
+  failed: { id: string; code: string; name: string; error: string }[]
+}
+
+/**
+ * 선택한 불량코드 중 삭제 가능한 항목만 삭제한다.
+ * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
+ */
+export async function bulkDeleteDefectCodes(ids: string[]): Promise<BulkDeleteDefectCodesResult> {
+  const actor = await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
+
+  const defectCodes = await prisma.defectCode.findMany({ where: { id: { in: ids }, tenantId } })
+
+  const deleted: BulkDeleteDefectCodesResult["deleted"] = []
+  const blocked: BulkDeleteDefectCodesResult["blocked"] = []
+  const failed: BulkDeleteDefectCodesResult["failed"] = []
+
+  for (const d of defectCodes) {
+    const { canDelete, reasons } = await checkDefectCodeReferencesForBulk(d.id)
+    if (!canDelete) {
+      blocked.push({ id: d.id, code: d.code, name: d.name, reasons })
+      continue
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const result = await tx.defectCode.deleteMany({ where: { id: d.id, tenantId } })
+        if (result.count === 0) throw new Error("NOT_FOUND")
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: actor.id,
+            actorLabel: actor.name,
+            entityType: "DefectCode",
+            entityId: d.id,
+            action: "DELETE",
+            beforeData: { code: d.code, name: d.name, defectCategory: d.defectCategory },
+            menuName: "불량코드 관리",
+          },
+        })
+      })
+      deleted.push({ id: d.id, code: d.code, name: d.name })
+    } catch {
+      failed.push({ id: d.id, code: d.code, name: d.name, error: "DELETE_FAILED" })
+    }
+  }
+
+  revalidatePath("/app/mes/defects")
+  return { deleted, blocked, failed }
 }
 
 export async function getInspectionSpecs(tenantId: string): Promise<InspectionSpecWithItems[]> {

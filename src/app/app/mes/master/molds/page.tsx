@@ -1,15 +1,19 @@
 import { getMoldsData, getSitesForMold, getWorkCentersForMold } from "@/lib/actions/mold.actions"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { MoldsDataTable } from "./molds-data-table"
 import { Wrench, CheckCircle2, Archive, Hammer } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 
 export default async function MoldsPage() {
-  const [moldsData, sites, workCenters] = await Promise.all([
+  const [moldsData, sites, workCenters, user] = await Promise.all([
     getMoldsData(),
     getSitesForMold(),
     getWorkCentersForMold(),
+    getCurrentUser(),
   ])
+  const canBulkDelete = isDeveloperUser(user) || user?.role === "OWNER" || user?.role === "ADMIN"
 
   const { summary, rows } = moldsData
 
@@ -51,7 +55,7 @@ export default async function MoldsPage() {
         />
       </div>
 
-      <MoldsDataTable data={rows} sites={sites} workCenters={workCenters} />
+      <MoldsDataTable data={rows} sites={sites} workCenters={workCenters} canBulkDelete={canBulkDelete} />
     </div>
   )
 }

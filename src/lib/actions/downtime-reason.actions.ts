@@ -3,6 +3,7 @@
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
+import { checkDowntimeReasonReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
 
 const GROUP_CODE = "DOWNTIME_REASON"
 const REVALIDATE  = "/app/mes/master/downtime-reasons"
@@ -145,4 +146,90 @@ export async function toggleDowntimeReasonActive(id: string, isActive: boolean) 
     },
   }).catch(() => {})
   revalidatePath(REVALIDATE)
+}
+
+export type DowntimeReasonDeleteCandidate = {
+  id: string
+  code: string
+  name: string
+  canDelete: boolean
+  reasons: string[]
+}
+
+/** 선택한 비가동사유들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
+export async function bulkCheckDowntimeReasonsForDelete(ids: string[]): Promise<DowntimeReasonDeleteCandidate[]> {
+  await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return []
+  const groupId = await ensureGroup(tenantId)
+
+  const reasons = await prisma.commonCode.findMany({
+    where: { id: { in: ids }, groupId },
+    select: { id: true, code: true, name: true },
+  })
+
+  const results = await Promise.all(
+    reasons.map(async (r) => {
+      const { canDelete, reasons: blockReasons } = await checkDowntimeReasonReferencesForBulk()
+      return { id: r.id, code: r.code, name: r.name, canDelete, reasons: blockReasons }
+    }),
+  )
+
+  const byId = new Map(results.map((r) => [r.id, r]))
+  return ids.map((id) => byId.get(id)).filter((r): r is DowntimeReasonDeleteCandidate => Boolean(r))
+}
+
+export type BulkDeleteDowntimeReasonsResult = {
+  deleted: { id: string; code: string; name: string }[]
+  blocked: { id: string; code: string; name: string; reasons: string[] }[]
+  failed: { id: string; code: string; name: string; error: string }[]
+}
+
+/**
+ * 선택한 비가동사유 중 삭제 가능한 항목만 삭제한다.
+ * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
+ */
+export async function bulkDeleteDowntimeReasons(ids: string[]): Promise<BulkDeleteDowntimeReasonsResult> {
+  const actor = await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
+  const groupId = await ensureGroup(tenantId)
+
+  const reasons = await prisma.commonCode.findMany({ where: { id: { in: ids }, groupId } })
+
+  const deleted: BulkDeleteDowntimeReasonsResult["deleted"] = []
+  const blocked: BulkDeleteDowntimeReasonsResult["blocked"] = []
+  const failed: BulkDeleteDowntimeReasonsResult["failed"] = []
+
+  for (const r of reasons) {
+    const { canDelete, reasons: blockReasons } = await checkDowntimeReasonReferencesForBulk()
+    if (!canDelete) {
+      blocked.push({ id: r.id, code: r.code, name: r.name, reasons: blockReasons })
+      continue
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const result = await tx.commonCode.deleteMany({ where: { id: r.id, groupId } })
+        if (result.count === 0) throw new Error("NOT_FOUND")
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: actor.id,
+            actorLabel: actor.name,
+            entityType: "CommonCode",
+            entityId: r.id,
+            action: "DELETE",
+            beforeData: { code: r.code, name: r.name, isActive: r.isActive },
+            menuName: "비가동 사유 관리",
+          },
+        })
+      })
+      deleted.push({ id: r.id, code: r.code, name: r.name })
+    } catch {
+      failed.push({ id: r.id, code: r.code, name: r.name, error: "DELETE_FAILED" })
+    }
+  }
+
+  revalidatePath(REVALIDATE)
+  return { deleted, blocked, failed }
 }
