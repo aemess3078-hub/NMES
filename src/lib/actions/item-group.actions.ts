@@ -1,8 +1,10 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma } from "@prisma/client"
+import { checkItemGroupReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
 
 export type ItemGroupWithDetails = Prisma.ItemGroupGetPayload<{
   include: {
@@ -134,4 +136,88 @@ export async function deleteItemGroup(id: string) {
     },
   }).catch(() => {})
   return result
+}
+
+export type ItemGroupDeleteCandidate = {
+  id: string
+  code: string
+  name: string
+  canDelete: boolean
+  reasons: string[]
+}
+
+/** 선택한 품목군들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
+export async function bulkCheckItemGroupsForDelete(ids: string[]): Promise<ItemGroupDeleteCandidate[]> {
+  await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return []
+
+  const groups = await prisma.itemGroup.findMany({
+    where: { id: { in: ids }, tenantId },
+    select: { id: true, code: true, name: true },
+  })
+
+  const results = await Promise.all(
+    groups.map(async (g) => {
+      const { canDelete, reasons } = await checkItemGroupReferencesForBulk(g.id, tenantId)
+      return { id: g.id, code: g.code, name: g.name, canDelete, reasons }
+    }),
+  )
+
+  const byId = new Map(results.map((r) => [r.id, r]))
+  return ids.map((id) => byId.get(id)).filter((r): r is ItemGroupDeleteCandidate => Boolean(r))
+}
+
+export type BulkDeleteItemGroupsResult = {
+  deleted: { id: string; code: string; name: string }[]
+  blocked: { id: string; code: string; name: string; reasons: string[] }[]
+  failed: { id: string; code: string; name: string; error: string }[]
+}
+
+/**
+ * 선택한 품목군 중 삭제 가능한 항목만 삭제한다.
+ * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
+ */
+export async function bulkDeleteItemGroups(ids: string[]): Promise<BulkDeleteItemGroupsResult> {
+  const actor = await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
+
+  const groups = await prisma.itemGroup.findMany({ where: { id: { in: ids }, tenantId } })
+
+  const deleted: BulkDeleteItemGroupsResult["deleted"] = []
+  const blocked: BulkDeleteItemGroupsResult["blocked"] = []
+  const failed: BulkDeleteItemGroupsResult["failed"] = []
+
+  for (const g of groups) {
+    const { canDelete, reasons } = await checkItemGroupReferencesForBulk(g.id, tenantId)
+    if (!canDelete) {
+      blocked.push({ id: g.id, code: g.code, name: g.name, reasons })
+      continue
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const result = await tx.itemGroup.deleteMany({ where: { id: g.id, tenantId } })
+        if (result.count === 0) throw new Error("NOT_FOUND")
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: actor.id,
+            actorLabel: actor.name,
+            entityType: "ItemGroup",
+            entityId: g.id,
+            action: "DELETE",
+            beforeData: { code: g.code, name: g.name, isActive: g.isActive },
+            menuName: "품목 그룹 관리",
+          },
+        })
+      })
+      deleted.push({ id: g.id, code: g.code, name: g.name })
+    } catch {
+      failed.push({ id: g.id, code: g.code, name: g.name, error: "DELETE_FAILED" })
+    }
+  }
+
+  revalidatePath("/app/mes/master/item-groups")
+  return { deleted, blocked, failed }
 }

@@ -198,3 +198,33 @@ export async function checkMoldReferencesForBulk(equipmentId: string, tenantId: 
 
   return { canDelete: reasons.length === 0, reasons }
 }
+
+/**
+ * 품목분류관리(ItemCategory) 선택 일괄삭제 참조 확인.
+ * 기존 단건삭제(deleteItemCategory)와 동일한 2개 참조(품목/품목군)를 확인한다.
+ */
+export async function checkItemCategoryReferencesForBulk(categoryId: string, tenantId: string): Promise<ReferenceCheckResult> {
+  const [item, itemGroup] = await Promise.all([
+    prisma.item.count({ where: { categoryId, tenantId } }),
+    prisma.itemGroup.count({ where: { categoryId, tenantId } }),
+  ])
+
+  const reasons: string[] = []
+  if (item > 0) reasons.push(`품목 ${item}건`)
+  if (itemGroup > 0) reasons.push(`품목군 ${itemGroup}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
+}
+
+/**
+ * 품목군관리(ItemGroup) 선택 일괄삭제 참조 확인.
+ * 기존 단건삭제(deleteItemGroup)와 동일한 참조(품목)를 확인한다.
+ */
+export async function checkItemGroupReferencesForBulk(itemGroupId: string, tenantId: string): Promise<ReferenceCheckResult> {
+  const item = await prisma.item.count({ where: { itemGroupId, tenantId } })
+
+  const reasons: string[] = []
+  if (item > 0) reasons.push(`품목 ${item}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
+}

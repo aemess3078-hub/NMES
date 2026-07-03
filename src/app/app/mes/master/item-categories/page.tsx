@@ -1,10 +1,16 @@
 import { getItemCategoriesForManagement } from "@/lib/actions/item-category.actions"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { ItemCategoryDataTable } from "./item-category-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function ItemCategoriesPage() {
-  const categories = await getItemCategoriesForManagement()
+  const [categories, user] = await Promise.all([
+    getItemCategoriesForManagement(),
+    getCurrentUser(),
+  ])
+  const canBulkDelete = isDeveloperUser(user) || user?.role === "OWNER" || user?.role === "ADMIN"
 
   const total      = categories.length
   const withType   = categories.filter((c) => c.itemType != null).length
@@ -30,7 +36,7 @@ export default async function ItemCategoriesPage() {
       </div>
 
       {/* 테이블 */}
-      <ItemCategoryDataTable data={categories} />
+      <ItemCategoryDataTable data={categories} canBulkDelete={canBulkDelete} />
     </div>
   )
 }
