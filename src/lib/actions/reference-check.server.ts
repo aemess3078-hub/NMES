@@ -1,13 +1,16 @@
-// 품목 선택 일괄삭제 전용 참조 확인 헬퍼.
+// 기준정보 선택 일괄삭제 전용 참조 확인 헬퍼.
 //
 // 이 파일은 절대 "use server"를 붙이지 않는다 — Client Component에서 import하지 말 것.
 // "use server" 서버 액션 파일(item.actions.ts 등)에서만 import해서 사용한다.
 //
-// "use server" 파일 안에서 비동기(async)가 아닌 함수 리터럴을 다른 모듈로 전달/전달받으면
-// Next.js 서버 액션 컴파일러가 이를 액션 참조로 오인해 빌드 산출물에 따라
-// "A 'use server' file can only export async functions" 런타임 오류가 날 수 있다.
-// 그래서 참조 확인에 필요한 카운트 콜백들은 이 파일 안에서만 정의/호출하고,
-// "use server" 파일에는 결과(canDelete/reasons)만 반환하는 단순 async 함수만 노출한다.
+// 중요: 여기서 함수를 "값"으로 만들어(예: 화살표 함수를 배열/객체에 담아) 다른 함수의
+// 인자로 전달하는 고차함수 패턴은 절대 쓰지 않는다. "use server" 파일이 이 모듈을
+// import하면 webpack/SWC가 두 모듈을 같은 청크로 병합(scope hoisting)할 수 있는데,
+// 이때 파일 경계와 무관하게 그 청크 안의 함수 리터럴이 서버 액션 컴파일러의 스캔
+// 대상이 되어 "A 'use server' file can only export async functions" 런타임 오류가
+// 날 수 있다(실제로 한 차례 겪었다). 대신 Promise.all에는 즉시 호출한 결과
+// (prisma.xxx.count(...) — Promise<number> 값)만 담고, 함수 리터럴은 만들지 않는다.
+// 기존 checkItemReferences(단건삭제), deleteMold 등도 전부 이 방식이며 문제된 적이 없다.
 
 import { prisma } from "@/lib/db/prisma"
 import { getCurrentUser, requireRole, type CurrentUser } from "@/lib/auth"
@@ -16,20 +19,6 @@ import { isDeveloperUser } from "@/lib/developer"
 export type ReferenceCheckResult = {
   canDelete: boolean
   reasons: string[]
-}
-
-type ReferenceCheckDefinition = {
-  label: string
-  count: () => Promise<number>
-}
-
-async function buildReferenceCheck(checks: ReferenceCheckDefinition[]): Promise<ReferenceCheckResult> {
-  const counts = await Promise.all(checks.map((c) => c.count()))
-  const reasons: string[] = []
-  checks.forEach((c, i) => {
-    if (counts[i] > 0) reasons.push(`${c.label} ${counts[i]}건`)
-  })
-  return { canDelete: reasons.length === 0, reasons }
 }
 
 /**
@@ -48,28 +37,73 @@ export async function requireBulkDeletePermission(): Promise<CurrentUser> {
  * item.actions.ts의 단건 삭제용 checkItemReferences보다 넓은 범위를 확인한다.
  */
 export async function checkItemReferencesForBulk(itemId: string, tenantId: string): Promise<ReferenceCheckResult> {
-  return buildReferenceCheck([
-    { label: "작업지시", count: () => prisma.workOrder.count({ where: { itemId, tenantId } }) },
-    { label: "BOM", count: () => prisma.bOM.count({ where: { itemId, tenantId } }) },
-    { label: "BOM 구성품", count: () => prisma.bOMItem.count({ where: { componentItemId: itemId } }) },
-    { label: "라우팅", count: () => prisma.itemRouting.count({ where: { itemId, tenantId } }) },
-    { label: "재고입출고 이력", count: () => prisma.inventoryTransaction.count({ where: { itemId, tenantId } }) },
-    { label: "재고 보유", count: () => prisma.inventoryBalance.count({ where: { itemId, tenantId, qtyOnHand: { not: 0 } } }) },
-    { label: "LOT", count: () => prisma.lot.count({ where: { itemId, tenantId } }) },
-    { label: "검사 규격", count: () => prisma.inspectionSpec.count({ where: { itemId, tenantId } }) },
-    { label: "자재예약", count: () => prisma.materialReservation.count({ where: { itemId } }) },
-    { label: "자재소비 이력", count: () => prisma.materialConsumption.count({ where: { itemId } }) },
-    { label: "WIP 이력", count: () => prisma.wipUnit.count({ where: { itemId, tenantId } }) },
-    { label: "완성품입고", count: () => prisma.finishedGoodsReceipt.count({ where: { itemId, tenantId } }) },
-    { label: "생산계획", count: () => prisma.productionPlanItem.count({ where: { itemId } }) },
-    { label: "판매주문", count: () => prisma.salesOrderItem.count({ where: { itemId } }) },
-    { label: "구매주문", count: () => prisma.purchaseOrderItem.count({ where: { itemId } }) },
-    { label: "견적", count: () => prisma.quotationItem.count({ where: { itemId } }) },
-    { label: "원가정보", count: () => prisma.itemCost.count({ where: { itemId, tenantId } }) },
-    { label: "ECN", count: () => prisma.engineeringChange.count({ where: { targetItemId: itemId, tenantId } }) },
-    { label: "대체품 설정", count: () => prisma.itemSubstitute.count({ where: { OR: [{ itemId }, { substituteItemId: itemId }] } }) },
-    { label: "자재LOT 사용", count: () => prisma.workOrderMaterialLot.count({ where: { materialItemId: itemId, tenantId } }) },
+  const [
+    workOrder,
+    bom,
+    bomComponent,
+    routing,
+    inventoryTxn,
+    inventoryBalance,
+    lot,
+    inspectionSpec,
+    materialReservation,
+    materialConsumption,
+    wipUnit,
+    finishedGoodsReceipt,
+    productionPlanItem,
+    salesOrderItem,
+    purchaseOrderItem,
+    quotationItem,
+    itemCost,
+    engineeringChange,
+    itemSubstitute,
+    materialLot,
+  ] = await Promise.all([
+    prisma.workOrder.count({ where: { itemId, tenantId } }),
+    prisma.bOM.count({ where: { itemId, tenantId } }),
+    prisma.bOMItem.count({ where: { componentItemId: itemId } }),
+    prisma.itemRouting.count({ where: { itemId, tenantId } }),
+    prisma.inventoryTransaction.count({ where: { itemId, tenantId } }),
+    prisma.inventoryBalance.count({ where: { itemId, tenantId, qtyOnHand: { not: 0 } } }),
+    prisma.lot.count({ where: { itemId, tenantId } }),
+    prisma.inspectionSpec.count({ where: { itemId, tenantId } }),
+    prisma.materialReservation.count({ where: { itemId } }),
+    prisma.materialConsumption.count({ where: { itemId } }),
+    prisma.wipUnit.count({ where: { itemId, tenantId } }),
+    prisma.finishedGoodsReceipt.count({ where: { itemId, tenantId } }),
+    prisma.productionPlanItem.count({ where: { itemId } }),
+    prisma.salesOrderItem.count({ where: { itemId } }),
+    prisma.purchaseOrderItem.count({ where: { itemId } }),
+    prisma.quotationItem.count({ where: { itemId } }),
+    prisma.itemCost.count({ where: { itemId, tenantId } }),
+    prisma.engineeringChange.count({ where: { targetItemId: itemId, tenantId } }),
+    prisma.itemSubstitute.count({ where: { OR: [{ itemId }, { substituteItemId: itemId }] } }),
+    prisma.workOrderMaterialLot.count({ where: { materialItemId: itemId, tenantId } }),
   ])
+
+  const reasons: string[] = []
+  if (workOrder > 0) reasons.push(`작업지시 ${workOrder}건`)
+  if (bom > 0) reasons.push(`BOM ${bom}건`)
+  if (bomComponent > 0) reasons.push(`BOM 구성품 ${bomComponent}건`)
+  if (routing > 0) reasons.push(`라우팅 ${routing}건`)
+  if (inventoryTxn > 0) reasons.push(`재고입출고 이력 ${inventoryTxn}건`)
+  if (inventoryBalance > 0) reasons.push(`재고 보유 ${inventoryBalance}건`)
+  if (lot > 0) reasons.push(`LOT ${lot}건`)
+  if (inspectionSpec > 0) reasons.push(`검사 규격 ${inspectionSpec}건`)
+  if (materialReservation > 0) reasons.push(`자재예약 ${materialReservation}건`)
+  if (materialConsumption > 0) reasons.push(`자재소비 이력 ${materialConsumption}건`)
+  if (wipUnit > 0) reasons.push(`WIP 이력 ${wipUnit}건`)
+  if (finishedGoodsReceipt > 0) reasons.push(`완성품입고 ${finishedGoodsReceipt}건`)
+  if (productionPlanItem > 0) reasons.push(`생산계획 ${productionPlanItem}건`)
+  if (salesOrderItem > 0) reasons.push(`판매주문 ${salesOrderItem}건`)
+  if (purchaseOrderItem > 0) reasons.push(`구매주문 ${purchaseOrderItem}건`)
+  if (quotationItem > 0) reasons.push(`견적 ${quotationItem}건`)
+  if (itemCost > 0) reasons.push(`원가정보 ${itemCost}건`)
+  if (engineeringChange > 0) reasons.push(`ECN ${engineeringChange}건`)
+  if (itemSubstitute > 0) reasons.push(`대체품 설정 ${itemSubstitute}건`)
+  if (materialLot > 0) reasons.push(`자재LOT 사용 ${materialLot}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
 }
 
 /**
@@ -77,23 +111,47 @@ export async function checkItemReferencesForBulk(itemId: string, tenantId: strin
  * warehouseId를 참조하는 모든 FK(세부 로케이션/품목 기본창고/재고/입출고이력/WIP/완성품입고/출하)를 확인한다.
  */
 export async function checkWarehouseReferencesForBulk(warehouseId: string, tenantId: string): Promise<ReferenceCheckResult> {
-  return buildReferenceCheck([
-    { label: "세부 로케이션", count: () => prisma.location.count({ where: { warehouseId } }) },
-    { label: "기본 입고창고로 지정된 품목", count: () => prisma.item.count({ where: { defaultWarehouseId: warehouseId, tenantId } }) },
-    { label: "재고 보유", count: () => prisma.inventoryBalance.count({ where: { warehouseId, tenantId } }) },
-    { label: "재고입출고 이력", count: () => prisma.inventoryTransaction.count({ where: { tenantId, OR: [{ fromLocationId: warehouseId }, { toLocationId: warehouseId }] } }) },
-    { label: "WIP 현재위치", count: () => prisma.wipUnit.count({ where: { currentWarehouseId: warehouseId, tenantId } }) },
-    { label: "WIP 이동이력", count: () => prisma.wipMovement.count({ where: { tenantId, OR: [{ fromWarehouseId: warehouseId }, { toWarehouseId: warehouseId }] } }) },
-    { label: "완성품입고", count: () => prisma.finishedGoodsReceipt.count({ where: { warehouseId, tenantId } }) },
-    { label: "출하", count: () => prisma.shipmentOrder.count({ where: { warehouseId, tenantId } }) },
+  const [
+    location,
+    defaultForItems,
+    inventoryBalance,
+    inventoryTxn,
+    wipCurrent,
+    wipMovement,
+    finishedGoodsReceipt,
+    shipment,
+  ] = await Promise.all([
+    prisma.location.count({ where: { warehouseId } }),
+    prisma.item.count({ where: { defaultWarehouseId: warehouseId, tenantId } }),
+    prisma.inventoryBalance.count({ where: { warehouseId, tenantId } }),
+    prisma.inventoryTransaction.count({ where: { tenantId, OR: [{ fromLocationId: warehouseId }, { toLocationId: warehouseId }] } }),
+    prisma.wipUnit.count({ where: { currentWarehouseId: warehouseId, tenantId } }),
+    prisma.wipMovement.count({ where: { tenantId, OR: [{ fromWarehouseId: warehouseId }, { toWarehouseId: warehouseId }] } }),
+    prisma.finishedGoodsReceipt.count({ where: { warehouseId, tenantId } }),
+    prisma.shipmentOrder.count({ where: { warehouseId, tenantId } }),
   ])
+
+  const reasons: string[] = []
+  if (location > 0) reasons.push(`세부 로케이션 ${location}건`)
+  if (defaultForItems > 0) reasons.push(`기본 입고창고로 지정된 품목 ${defaultForItems}건`)
+  if (inventoryBalance > 0) reasons.push(`재고 보유 ${inventoryBalance}건`)
+  if (inventoryTxn > 0) reasons.push(`재고입출고 이력 ${inventoryTxn}건`)
+  if (wipCurrent > 0) reasons.push(`WIP 현재위치 ${wipCurrent}건`)
+  if (wipMovement > 0) reasons.push(`WIP 이동이력 ${wipMovement}건`)
+  if (finishedGoodsReceipt > 0) reasons.push(`완성품입고 ${finishedGoodsReceipt}건`)
+  if (shipment > 0) reasons.push(`출하 ${shipment}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
 }
 
 /** 불량관리(DefectCode) 선택 일괄삭제 참조 확인. */
 export async function checkDefectCodeReferencesForBulk(defectCodeId: string): Promise<ReferenceCheckResult> {
-  return buildReferenceCheck([
-    { label: "불량이력", count: () => prisma.defectRecord.count({ where: { defectCodeId } }) },
-  ])
+  const defectRecord = await prisma.defectRecord.count({ where: { defectCodeId } })
+
+  const reasons: string[] = []
+  if (defectRecord > 0) reasons.push(`불량이력 ${defectRecord}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
 }
 
 /**
@@ -102,7 +160,7 @@ export async function checkDefectCodeReferencesForBulk(defectCodeId: string): Pr
  * 향후 연결이 추가되면 여기에 카운트를 더한다.
  */
 export async function checkDowntimeReasonReferencesForBulk(): Promise<ReferenceCheckResult> {
-  return buildReferenceCheck([])
+  return { canDelete: true, reasons: [] }
 }
 
 /**
@@ -111,13 +169,32 @@ export async function checkDowntimeReasonReferencesForBulk(): Promise<ReferenceC
  * 수리요청/일상점검/작업배정)를 확인한다.
  */
 export async function checkMoldReferencesForBulk(equipmentId: string, tenantId: string): Promise<ReferenceCheckResult> {
-  return buildReferenceCheck([
-    { label: "설비-공정 매핑", count: () => prisma.equipmentOperationMap.count({ where: { equipmentId } }) },
-    { label: "작업지시 공정", count: () => prisma.workOrderOperation.count({ where: { equipmentId } }) },
-    { label: "설비연결 설정", count: () => prisma.equipmentConnection.count({ where: { equipmentId } }) },
-    { label: "설비이벤트", count: () => prisma.equipmentEvent.count({ where: { equipmentId } }) },
-    { label: "수리요청", count: () => prisma.equipmentRepairRequest.count({ where: { equipmentId, tenantId } }) },
-    { label: "일상점검", count: () => prisma.equipmentDailyCheck.count({ where: { equipmentId, tenantId } }) },
-    { label: "작업배정", count: () => prisma.workOrderOperationAssignment.count({ where: { equipmentId, tenantId } }) },
+  const [
+    operationMap,
+    workOrderOperation,
+    connection,
+    event,
+    repairRequest,
+    dailyCheck,
+    assignment,
+  ] = await Promise.all([
+    prisma.equipmentOperationMap.count({ where: { equipmentId } }),
+    prisma.workOrderOperation.count({ where: { equipmentId } }),
+    prisma.equipmentConnection.count({ where: { equipmentId } }),
+    prisma.equipmentEvent.count({ where: { equipmentId } }),
+    prisma.equipmentRepairRequest.count({ where: { equipmentId, tenantId } }),
+    prisma.equipmentDailyCheck.count({ where: { equipmentId, tenantId } }),
+    prisma.workOrderOperationAssignment.count({ where: { equipmentId, tenantId } }),
   ])
+
+  const reasons: string[] = []
+  if (operationMap > 0) reasons.push(`설비-공정 매핑 ${operationMap}건`)
+  if (workOrderOperation > 0) reasons.push(`작업지시 공정 ${workOrderOperation}건`)
+  if (connection > 0) reasons.push(`설비연결 설정 ${connection}건`)
+  if (event > 0) reasons.push(`설비이벤트 ${event}건`)
+  if (repairRequest > 0) reasons.push(`수리요청 ${repairRequest}건`)
+  if (dailyCheck > 0) reasons.push(`일상점검 ${dailyCheck}건`)
+  if (assignment > 0) reasons.push(`작업배정 ${assignment}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
 }
