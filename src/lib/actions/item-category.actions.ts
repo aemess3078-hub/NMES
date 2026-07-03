@@ -1,8 +1,10 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, ItemType } from "@prisma/client"
+import { checkItemCategoryReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
 
 export type ItemCategoryWithCounts = Prisma.ItemCategoryGetPayload<{
   include: { _count: { select: { items: true; itemGroups: true } } }
@@ -124,4 +126,88 @@ export async function deleteItemCategory(id: string) {
     },
   }).catch(() => {})
   return result
+}
+
+export type ItemCategoryDeleteCandidate = {
+  id: string
+  code: string
+  name: string
+  canDelete: boolean
+  reasons: string[]
+}
+
+/** 선택한 품목분류들의 삭제 가능 여부를 사전 확인한다(실제 삭제는 수행하지 않음). */
+export async function bulkCheckItemCategoriesForDelete(ids: string[]): Promise<ItemCategoryDeleteCandidate[]> {
+  await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return []
+
+  const categories = await prisma.itemCategory.findMany({
+    where: { id: { in: ids }, tenantId },
+    select: { id: true, code: true, name: true },
+  })
+
+  const results = await Promise.all(
+    categories.map(async (c) => {
+      const { canDelete, reasons } = await checkItemCategoryReferencesForBulk(c.id, tenantId)
+      return { id: c.id, code: c.code, name: c.name, canDelete, reasons }
+    }),
+  )
+
+  const byId = new Map(results.map((r) => [r.id, r]))
+  return ids.map((id) => byId.get(id)).filter((r): r is ItemCategoryDeleteCandidate => Boolean(r))
+}
+
+export type BulkDeleteItemCategoriesResult = {
+  deleted: { id: string; code: string; name: string }[]
+  blocked: { id: string; code: string; name: string; reasons: string[] }[]
+  failed: { id: string; code: string; name: string; error: string }[]
+}
+
+/**
+ * 선택한 품목분류 중 삭제 가능한 항목만 삭제한다.
+ * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
+ */
+export async function bulkDeleteItemCategories(ids: string[]): Promise<BulkDeleteItemCategoriesResult> {
+  const actor = await requireBulkDeletePermission()
+  const tenantId = await getTenantId()
+  if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
+
+  const categories = await prisma.itemCategory.findMany({ where: { id: { in: ids }, tenantId } })
+
+  const deleted: BulkDeleteItemCategoriesResult["deleted"] = []
+  const blocked: BulkDeleteItemCategoriesResult["blocked"] = []
+  const failed: BulkDeleteItemCategoriesResult["failed"] = []
+
+  for (const c of categories) {
+    const { canDelete, reasons } = await checkItemCategoryReferencesForBulk(c.id, tenantId)
+    if (!canDelete) {
+      blocked.push({ id: c.id, code: c.code, name: c.name, reasons })
+      continue
+    }
+    try {
+      await prisma.$transaction(async (tx) => {
+        const result = await tx.itemCategory.deleteMany({ where: { id: c.id, tenantId } })
+        if (result.count === 0) throw new Error("NOT_FOUND")
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: actor.id,
+            actorLabel: actor.name,
+            entityType: "ItemCategory",
+            entityId: c.id,
+            action: "DELETE",
+            beforeData: { code: c.code, name: c.name, itemType: c.itemType },
+            menuName: "품목 카테고리 관리",
+          },
+        })
+      })
+      deleted.push({ id: c.id, code: c.code, name: c.name })
+    } catch {
+      failed.push({ id: c.id, code: c.code, name: c.name, error: "DELETE_FAILED" })
+    }
+  }
+
+  revalidatePath("/app/mes/master/item-categories")
+  return { deleted, blocked, failed }
 }

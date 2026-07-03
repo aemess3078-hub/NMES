@@ -1,14 +1,18 @@
 import { getItemGroupsForManagement } from "@/lib/actions/item-group.actions"
 import { getItemCategoriesForManagement } from "@/lib/actions/item-category.actions"
+import { getCurrentUser } from "@/lib/auth"
+import { isDeveloperUser } from "@/lib/developer"
 import { ItemGroupDataTable } from "./item-group-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function ItemGroupsPage() {
-  const [groups, categories] = await Promise.all([
+  const [groups, categories, user] = await Promise.all([
     getItemGroupsForManagement(),
     getItemCategoriesForManagement(),
+    getCurrentUser(),
   ])
+  const canBulkDelete = isDeveloperUser(user) || user?.role === "OWNER" || user?.role === "ADMIN"
 
   const total    = groups.length
   const active   = groups.filter((g) => g.isActive).length
@@ -40,7 +44,7 @@ export default async function ItemGroupsPage() {
       </div>
 
       {/* 테이블 */}
-      <ItemGroupDataTable data={groups} categories={categoryOptions} />
+      <ItemGroupDataTable data={groups} categories={categoryOptions} canBulkDelete={canBulkDelete} />
     </div>
   )
 }
