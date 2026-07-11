@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
+import { monitoringEligibleEquipmentWhere } from "@/lib/actions/equipment-monitoring.utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -312,9 +313,7 @@ async function fetchAvailabilityStats(
 
   const equipments = await prisma.equipment.findMany({
     where: {
-      tenantId,
-      status: "ACTIVE",
-      equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] },
+      ...monitoringEligibleEquipmentWhere(tenantId),
       ...(f.equipmentId ? { id: f.equipmentId } : {}),
     },
     select: {
@@ -475,7 +474,7 @@ export type EquipmentOption = { id: string; code: string; name: string }
 export async function getEquipmentOptions(): Promise<EquipmentOption[]> {
   const tenantId = await getTenantId()
   return prisma.equipment.findMany({
-    where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+    where: monitoringEligibleEquipmentWhere(tenantId),
     select: { id: true, code: true, name: true },
     orderBy: { code: "asc" },
   })
