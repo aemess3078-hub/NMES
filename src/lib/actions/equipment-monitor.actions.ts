@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { isMissingDbObjectError, isSchemaCompatibilityError } from "@/lib/db/prisma-error"
 import { Prisma } from "@prisma/client"
+import { monitoringEligibleEquipmentWhere } from "@/lib/actions/equipment-monitoring.utils"
 
 // reportDate는 Agent가 한국 날짜 문자열("YYYY-MM-DD")을 UTC midnight으로 저장한다.
 // Vercel 서버는 UTC이므로 setHours(0,0,0,0)은 UTC 기준이 돼 KST 날짜와 어긋난다.
@@ -241,7 +242,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
 
   try {
     const equipments = await prisma.equipment.findMany({
-      where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+      where: monitoringEligibleEquipmentWhere(tenantId),
       include: {
         workCenter: { select: { name: true } },
         events: {
@@ -306,7 +307,7 @@ export async function getEquipmentMonitorData(): Promise<EquipmentMonitorRow[]> 
       // connection 전체 객체(protocol 포함) 대신 select로 필요한 필드만 지정.
       // protocol 을 조회하지 않으면 NCWATCH_AGENT 값 역직렬화 실패를 피할 수 있다.
       const equipments = await prisma.equipment.findMany({
-        where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+        where: monitoringEligibleEquipmentWhere(tenantId),
         include: {
           workCenter: { select: { name: true } },
           events: {
@@ -379,7 +380,7 @@ export async function getEquipmentMonitorLive(): Promise<EquipmentMonitorRow[]> 
 
   try {
     const equipments = await prisma.equipment.findMany({
-      where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+      where: monitoringEligibleEquipmentWhere(tenantId),
       select: {
         id: true,
         code: true,
@@ -482,7 +483,7 @@ export async function getProductionKPIs() {
           _sum: { goodQty: true, defectQty: true },
         }),
         prisma.equipment.findMany({
-          where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+          where: monitoringEligibleEquipmentWhere(tenantId),
           select: { id: true, status: true },
         }),
       ])

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
+import { monitoringEligibleEquipmentWhere } from "@/lib/actions/equipment-monitoring.utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ export async function getEquipmentAnalysisData(
   try {
     // 1. 설비 목록 + NCWatch 매핑 (protocol 컬럼 미접근 — enum 역직렬화 위험 없음)
     const equipments = await prisma.equipment.findMany({
-      where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+      where: monitoringEligibleEquipmentWhere(tenantId),
       select: {
         id: true,
         code: true,
@@ -365,7 +366,7 @@ export async function getEquipmentTimelineData(): Promise<TimelineData> {
 
   try {
     const equipments = await prisma.equipment.findMany({
-      where: { tenantId, equipmentType: { notIn: ["TOOL", "JIG", "FIXTURE"] } },
+      where: monitoringEligibleEquipmentWhere(tenantId),
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     })
