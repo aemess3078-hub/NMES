@@ -132,10 +132,11 @@ export async function getDeliveryStatusRows(tenantId: string) {
   }))
 }
 
-export async function getShippableSalesOrders(tenantId: string) {
+export async function getShippableSalesOrders(tenantId: string, siteId: string) {
   const rows = await prisma.salesOrder.findMany({
     where: {
       tenantId,
+      siteId,
       status: { in: ["CONFIRMED", "IN_PRODUCTION", "PARTIAL_SHIPPED"] },
     },
     select: {
@@ -150,7 +151,7 @@ export async function getShippableSalesOrders(tenantId: string) {
           itemId: true,
           qty: true,
           shippedQty: true,
-          item: { select: { id: true, code: true, name: true } },
+          item: { select: { id: true, code: true, name: true, isLotTracked: true } },
         },
       },
     },
@@ -166,9 +167,9 @@ export async function getShippableSalesOrders(tenantId: string) {
   }))
 }
 
-export async function getWarehouses(tenantId: string) {
+export async function getWarehouses(tenantId: string, siteId: string) {
   return prisma.warehouse.findMany({
-    where: { tenantId },
+    where: { tenantId, siteId },
     orderBy: { name: "asc" },
   })
 }
@@ -184,16 +185,36 @@ export type AvailableFinishedGoodsLot = {
   qtyAvailable: number
 }
 
+export type EmptyLotReason =
+  | "NO_AVAILABLE_LOT"
+  | "UNASSIGNED_STOCK_ONLY"
+  | "ALL_LOTS_DEPLETED"
+
+export type AvailableFinishedGoodsLotResult = {
+  lotsByItem: Record<string, AvailableFinishedGoodsLot[]>
+  emptyReasonByItem: Record<string, EmptyLotReason>
+}
+
 export async function getAvailableFinishedGoodsLots(
   tenantId: string,
   siteId: string,
   warehouseId: string,
   itemIds: string[]
-): Promise<Record<string, AvailableFinishedGoodsLot[]>> {
+): Promise<AvailableFinishedGoodsLotResult> {
   const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)))
-  if (!warehouseId || uniqueItemIds.length === 0) return {}
+  if (!warehouseId || uniqueItemIds.length === 0) {
+    return { lotsByItem: {}, emptyReasonByItem: {} }
+  }
 
-  const balances = await prisma.inventoryBalance.findMany({
+  const warehouse = await prisma.warehouse.findFirst({
+    where: { id: warehouseId, tenantId, siteId },
+    select: { id: true },
+  })
+  if (!warehouse) {
+    throw new Error("선택한 창고는 현재 사업장에 속하지 않습니다.")
+  }
+
+  const availableBalances = await prisma.inventoryBalance.findMany({
     where: {
       tenantId,
       siteId,
@@ -205,14 +226,15 @@ export async function getAvailableFinishedGoodsLots(
     },
     include: {
       warehouse: { select: { id: true, name: true } },
-      lot: { select: { id: true, lotNo: true, itemId: true } },
+      lot: { select: { id: true, lotNo: true, itemId: true, status: true } },
     },
     orderBy: [{ item: { code: "asc" } }, { lot: { lotNo: "asc" } }],
   })
 
-  const validBalances = balances.filter(
+  const validBalances = availableBalances.filter(
     (balance): balance is typeof balance & { lot: NonNullable<typeof balance.lot> } =>
-      balance.lot != null && balance.lot.itemId === balance.itemId,
+      balance.lot != null &&
+      balance.lot.itemId === balance.itemId,
   )
 
   const lotIds = validBalances.map((balance) => balance.lot.id)
@@ -259,7 +281,46 @@ export async function getAvailableFinishedGoodsLots(
     lotsByItem[row.itemId].push(row)
   }
 
-  return lotsByItem
+  const emptyReasonByItem: Record<string, EmptyLotReason> = {}
+  const emptyItemIds = uniqueItemIds.filter(
+    (itemId) => (lotsByItem[itemId]?.length ?? 0) === 0,
+  )
+  const diagnosticBalances = emptyItemIds.length > 0
+    ? await prisma.inventoryBalance.findMany({
+        where: {
+          tenantId,
+          siteId,
+          warehouseId,
+          itemId: { in: emptyItemIds },
+        },
+        select: {
+          itemId: true,
+          lotId: true,
+          qtyAvailable: true,
+        },
+      })
+    : []
+
+  for (const itemId of emptyItemIds) {
+    const itemBalances = diagnosticBalances.filter(
+      (balance) => balance.itemId === itemId,
+    )
+    const hasUnassignedAvailable = itemBalances.some(
+      (balance) => balance.lotId == null && Number(balance.qtyAvailable) > 0,
+    )
+    const lotBalances = itemBalances.filter((balance) => balance.lotId != null)
+    const allLotsDepleted =
+      lotBalances.length > 0 &&
+      lotBalances.every((balance) => Number(balance.qtyAvailable) <= 0)
+
+    emptyReasonByItem[itemId] = hasUnassignedAvailable
+      ? "UNASSIGNED_STOCK_ONLY"
+      : allLotsDepleted
+        ? "ALL_LOTS_DEPLETED"
+        : "NO_AVAILABLE_LOT"
+  }
+
+  return { lotsByItem, emptyReasonByItem }
 }
 
 export async function generateShipmentNo(tenantId: string): Promise<string> {
@@ -362,6 +423,65 @@ export async function createShipment(
   const shipmentNo = await generateShipmentNo(tenantId)
 
   await prisma.$transaction(async (tx) => {
+    const warehouse = await tx.warehouse.findFirst({
+      where: { id: warehouseId, tenantId, siteId },
+      select: { id: true },
+    })
+    if (!warehouse) {
+      throw new Error("선택한 창고는 현재 사업장에 속하지 않습니다.")
+    }
+
+    const salesOrderItemIds = Array.from(
+      new Set(data.items.map((item) => item.salesOrderItemId)),
+    )
+    const salesOrderItems = await tx.salesOrderItem.findMany({
+      where: {
+        id: { in: salesOrderItemIds },
+        salesOrder: {
+          id: data.salesOrderId,
+          tenantId,
+          siteId,
+        },
+      },
+      include: {
+        item: { select: { code: true, name: true, isLotTracked: true } },
+      },
+    })
+    const salesOrderItemById = new Map(
+      salesOrderItems.map((item) => [item.id, item]),
+    )
+    const requestedQtyBySalesOrderItem = new Map<string, number>()
+
+    for (const item of data.items) {
+      if (item.qty <= 0) {
+        throw new Error("출하 수량은 0보다 커야 합니다.")
+      }
+
+      const salesOrderItem = salesOrderItemById.get(item.salesOrderItemId)
+      if (!salesOrderItem) {
+        throw new Error("현재 사업장의 수주 품목을 찾을 수 없습니다.")
+      }
+      if (salesOrderItem.itemId !== item.itemId) {
+        throw new Error("수주 품목과 출하 품목이 일치하지 않습니다.")
+      }
+
+      requestedQtyBySalesOrderItem.set(
+        item.salesOrderItemId,
+        (requestedQtyBySalesOrderItem.get(item.salesOrderItemId) ?? 0) + item.qty,
+      )
+    }
+
+    for (const [salesOrderItemId, requestedQty] of Array.from(requestedQtyBySalesOrderItem)) {
+      const salesOrderItem = salesOrderItemById.get(salesOrderItemId)!
+      const remainingQty =
+        Number(salesOrderItem.qty) - Number(salesOrderItem.shippedQty)
+      if (requestedQty > remainingQty) {
+        throw new Error(
+          `[${salesOrderItem.item.code}] LOT 분할수량 합계(${requestedQty})가 미출하수량(${remainingQty})을 초과합니다.`,
+        )
+      }
+    }
+
     const shipment = await tx.shipmentOrder.create({
       data: {
         tenantId,
@@ -375,32 +495,7 @@ export async function createShipment(
     })
 
     for (const item of data.items) {
-      if (item.qty <= 0) {
-        throw new Error("출하 수량은 0보다 커야 합니다.")
-      }
-
-      const salesOrderItem = await tx.salesOrderItem.findFirst({
-        where: {
-          id: item.salesOrderItemId,
-          salesOrderId: data.salesOrderId,
-        },
-        include: { item: { select: { code: true, name: true, isLotTracked: true } } },
-      })
-      if (!salesOrderItem) {
-        throw new Error("수주 품목을 찾을 수 없습니다.")
-      }
-      if (salesOrderItem.itemId !== item.itemId) {
-        throw new Error("수주 품목과 출하 품목이 일치하지 않습니다.")
-      }
-
-      const orderedQty = Number(salesOrderItem.qty)
-      const alreadyShippedQty = Number(salesOrderItem.shippedQty)
-      const remainingQty = orderedQty - alreadyShippedQty
-      if (item.qty > remainingQty) {
-        throw new Error(
-          `[${salesOrderItem.item.code}] 출하 수량(${item.qty})이 미출하 수량(${remainingQty})을 초과합니다.`,
-        )
-      }
+      const salesOrderItem = salesOrderItemById.get(item.salesOrderItemId)!
 
       const isLotTracked = salesOrderItem.item.isLotTracked
 

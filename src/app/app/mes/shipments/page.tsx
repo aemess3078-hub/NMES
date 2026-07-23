@@ -16,8 +16,8 @@ export default async function ShipmentsPage() {
 
   const [shipments, salesOrders, warehouses] = await Promise.all([
     getShipments(tenantId),
-    getShippableSalesOrders(tenantId),
-    getWarehouses(tenantId),
+    getShippableSalesOrders(tenantId, siteId),
+    getWarehouses(tenantId, siteId),
   ])
 
   return (

@@ -25,7 +25,7 @@ type SalesOrderOption = {
     itemId: string
     qty: number | string
     shippedQty: number | string
-    item: { id: string; code: string; name: string }
+    item: { id: string; code: string; name: string; isLotTracked: boolean }
   }[]
 }
 

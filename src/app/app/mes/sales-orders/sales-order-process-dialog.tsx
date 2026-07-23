@@ -69,7 +69,7 @@ export function SalesOrderProcessDialog({
     setShipmentError(null)
     Promise.all([
       checkInventoryForSalesOrder(salesOrder.id, tenantId),
-      getWarehouses(tenantId),
+      getWarehouses(tenantId, siteId),
     ]).then(([stock, whs]) => {
       setStockStatus(stock)
       setWarehouses(whs)
@@ -81,7 +81,7 @@ export function SalesOrderProcessDialog({
       }
       setLoading(false)
     })
-  }, [open, salesOrder, tenantId])
+  }, [open, salesOrder, tenantId, siteId])
 
   // 창고 변경 시 LOT 목록 로드 (LOT 관리 품목만)
   useEffect(() => {
@@ -100,7 +100,7 @@ export function SalesOrderProcessDialog({
     setLotSelections({})
     setShipmentError(null)
     getAvailableFinishedGoodsLots(tenantId, siteId, warehouseId, lotTrackedIds)
-      .then((lots) => { if (!cancelled) setAvailableLots(lots) })
+      .then((result) => { if (!cancelled) setAvailableLots(result.lotsByItem) })
       .catch(() => { if (!cancelled) setAvailableLots({}) })
       .finally(() => { if (!cancelled) setLotsLoading(false) })
     return () => { cancelled = true }
