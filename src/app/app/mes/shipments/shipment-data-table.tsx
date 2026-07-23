@@ -25,7 +25,7 @@ type SalesOrderOption = {
     itemId: string
     qty: number | string
     shippedQty: number | string
-    item: { id: string; code: string; name: string }
+    item: { id: string; code: string; name: string; isLotTracked: boolean }
   }[]
 }
 
@@ -34,7 +34,6 @@ type WarehouseOption = { id: string; code: string; name: string }
 interface ShipmentDataTableProps {
   data: ShipmentRow[]
   tenantId: string
-  siteId: string
   salesOrders: SalesOrderOption[]
   warehouses: WarehouseOption[]
 }
@@ -48,7 +47,6 @@ const SO_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 export function ShipmentDataTable({
   data,
   tenantId,
-  siteId,
   salesOrders,
   warehouses,
 }: ShipmentDataTableProps) {
@@ -226,7 +224,6 @@ export function ShipmentDataTable({
           if (!open) setPreselectedOrderId(undefined)
         }}
         tenantId={tenantId}
-        siteId={siteId}
         salesOrders={salesOrders}
         warehouses={warehouses}
         defaultSalesOrderId={preselectedOrderId}
