@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import {
   calculateStandardCost,
   calculateActualCost,
@@ -11,11 +11,6 @@ import {
   type CostHistoryItem,
   type CostResult,
 } from "@/lib/services/costing.service"
-
-async function getTenantId() {
-  const cookieStore = await cookies()
-  return cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-}
 
 export async function getItemsForCosting() {
   const tenantId = await getTenantId()

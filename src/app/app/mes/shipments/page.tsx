@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
+import { getSitesSimple } from "@/lib/actions/site.actions"
 import {
   getShipments,
   getShippableSalesOrders,
@@ -9,9 +10,9 @@ import {
 import { ShipmentDataTable } from "./shipment-data-table"
 
 export default async function ShipmentsPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-  const siteId = cookieStore.get("siteId")?.value ?? "site-factory-001"
+  const tenantId = await getTenantId()
+  const sites = await getSitesSimple()
+  const siteId = sites[0]?.id ?? ""
 
   const [shipments, salesOrders, warehouses] = await Promise.all([
     getShipments(tenantId),

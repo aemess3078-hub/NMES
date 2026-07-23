@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { SalesOrderStatus } from "@prisma/client"
 
 import { getSalesOrderStatusRows } from "@/lib/actions/sales-order.actions"
@@ -17,8 +17,7 @@ export default async function SalesOrderStatusPage() {
   // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
   const _pt0 = Date.now()
   // ─────────────────────────────────────────────────────────────────────────
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   const _t1 = Date.now()

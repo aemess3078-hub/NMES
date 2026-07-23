@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { TraceabilityClient } from "./traceability-client"
 
@@ -9,8 +9,7 @@ interface TraceabilityPageProps {
 }
 
 export default async function TraceabilityPage({ searchParams }: TraceabilityPageProps) {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const enabled = await isFeatureEnabled(tenantId, "LOT_TRACKING")
   if (!enabled) {

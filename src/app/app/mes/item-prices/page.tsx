@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getItemPrices, getAllPartners } from "@/lib/actions/item-price.actions"
 import { getItemsForSales } from "@/lib/actions/sales-order.actions"
 import { ItemPriceDataTable } from "./item-price-data-table"
 
 export default async function ItemPricesPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const [prices, partners, items] = await Promise.all([
     getItemPrices(tenantId),

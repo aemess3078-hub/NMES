@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import {
   getInspectionSpecs,
   getItemsForQuality,
@@ -9,8 +9,7 @@ import { InspectionStandardsClient } from "./inspection-standards-client"
 export const dynamic = "force-dynamic"
 
 export default async function InspectionStandardsPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const [specs, items, routingOperations] = await Promise.all([
     getInspectionSpecs(tenantId),

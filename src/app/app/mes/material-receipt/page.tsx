@@ -1,13 +1,14 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
+import { getSitesSimple } from "@/lib/actions/site.actions"
 import { getPendingPurchaseOrdersForReceipt } from "@/lib/actions/purchase-order.actions"
 import { MaterialReceiptDataTable } from "./material-receipt-data-table"
 
 export default async function MaterialReceiptPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-  const siteId = cookieStore.get("siteId")?.value ?? "site-factory-001"
+  const tenantId = await getTenantId()
+  const sites = await getSitesSimple()
+  const siteId = sites[0]?.id ?? ""
 
   // 현재 site 기준 입고 대기 발주만 조회 (status 필터 + 외주 제외는 쿼리에서 처리)
   const pendingOrders = await getPendingPurchaseOrdersForReceipt(tenantId, siteId)

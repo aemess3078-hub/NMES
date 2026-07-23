@@ -1,12 +1,11 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getWorkOrdersForReceipt } from "@/lib/actions/finished-goods.actions"
 import { FinalInspectionDataTable } from "./final-inspection-data-table"
 
 export default async function FinalInspectionPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const workOrders = await getWorkOrdersForReceipt(tenantId)
 

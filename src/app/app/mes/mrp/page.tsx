@@ -1,13 +1,14 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
+import { getSitesSimple } from "@/lib/actions/site.actions"
 import { getPlansForMRP } from "@/lib/actions/mrp.actions"
 import { MrpDashboard } from "./mrp-dashboard"
 
 export default async function MRPPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-  const siteId = cookieStore.get("siteId")?.value ?? "site-a"
+  const tenantId = await getTenantId()
+  const sites = await getSitesSimple()
+  const siteId = sites[0]?.id ?? ""
 
   const plans = await getPlansForMRP()
 

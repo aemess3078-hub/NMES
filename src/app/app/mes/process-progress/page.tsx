@@ -1,12 +1,11 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getOperationProgressList } from "@/lib/actions/process-progress.actions"
 import { ProcessProgressDataTable } from "./process-progress-data-table"
 
 export default async function ProcessProgressPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const operations = await getOperationProgressList(tenantId)
 

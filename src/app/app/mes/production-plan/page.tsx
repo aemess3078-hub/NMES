@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getProductionPlans, getSites, getItemsForPlan } from "@/lib/actions/production-plan.actions"
 import { PlanDataTable } from "./plan-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 
 export default async function ProductionPlanPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const enabled = await isFeatureEnabled(tenantId, "PRODUCTION_PLAN")
 
   if (!enabled) {

@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import {
   getWorkOrders,
   getSites,
@@ -12,8 +12,7 @@ import { WorkOrderDataTable } from "./work-order-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 
 export default async function WorkOrdersPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const enabled = await isFeatureEnabled(tenantId, "WORK_ORDER")
 
   if (!enabled) {
