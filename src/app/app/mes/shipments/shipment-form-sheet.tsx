@@ -18,7 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { FormSheet } from "@/components/common/form-sheet/form-sheet"
-import { shipmentFormSchema, type ShipmentFormValues } from "./shipment-form-schema"
+import {
+  canBulkPrintShipmentLabels,
+  shipmentFormSchema,
+  type ShipmentFormValues,
+} from "./shipment-form-schema"
 import {
   createShipment,
   getAvailableFinishedGoodsLots,
@@ -97,7 +101,7 @@ export function ShipmentFormSheet({
     defaultValues: DEFAULT_VALUES,
   })
 
-  const { fields, replace } = useFieldArray({
+  const { fields, replace, remove } = useFieldArray({
     control: form.control,
     name: "items",
   })
@@ -106,6 +110,24 @@ export function ShipmentFormSheet({
   const selectedWarehouseId = form.watch("warehouseId")
   const watchedItems = form.watch("items")
   const selectedOrder = salesOrders.find((order) => order.id === selectedOrderId)
+  const hasLotTrackedItems = fields.some((item) => item.isLotTracked)
+  const canBulkPrint = canBulkPrintShipmentLabels(watchedItems)
+  const bulkPrintItems = fields.flatMap((field, index) => {
+    const item = watchedItems[index]
+    const quantity = Number(item?.qty) || 0
+    if (item?.isLotTracked || quantity <= 0) return []
+
+    const salesOrderItem = selectedOrder?.items.find(
+      (row) => row.id === field.salesOrderItemId,
+    )
+    if (!salesOrderItem?.item.code) return []
+
+    return [{
+      itemCode: salesOrderItem.item.code,
+      itemName: salesOrderItem.item.name,
+      quantity,
+    }]
+  })
   const trackedItemIdsKey = watchedItems
     .filter((item) => item.isLotTracked)
     .map((item) => item.itemId)
@@ -476,12 +498,19 @@ export function ShipmentFormSheet({
                   size="sm"
                   className="gap-1.5 text-[13px]"
                   onClick={() => setPrintOpen(true)}
+                  disabled={!canBulkPrint || bulkPrintItems.length === 0}
                 >
                   <Printer className="h-3.5 w-3.5" />
                   일괄 출력
                 </Button>
               )}
             </div>
+
+            {hasLotTrackedItems && (
+              <p className="text-right text-[12px] text-muted-foreground">
+                다중 LOT 라벨은 출하 저장 후 LOT별로 출력할 수 있습니다.
+              </p>
+            )}
 
             {selectedOrderId && fields.length > 0 && (
               <BarcodeScanInput
@@ -504,7 +533,7 @@ export function ShipmentFormSheet({
 
             {selectedOrderId && fields.length === 0 && (
               <div className="rounded-md border border-dashed py-8 text-center text-[14px] text-muted-foreground">
-                미출하 품목이 없습니다.
+                이번 출하에 포함된 품목이 없습니다. 수주를 다시 선택하면 전체 미출하 품목을 불러옵니다.
               </div>
             )}
 
@@ -553,11 +582,23 @@ export function ShipmentFormSheet({
                           미출하: {remainingQty.toLocaleString()}
                         </p>
                       </div>
-                      <div className="text-right text-[13px]">
-                        <p>선택 합계: <span className="font-medium">{selectedTotal.toLocaleString()}</span></p>
-                        <p className={afterShipmentQty < 0 ? "text-destructive" : "text-muted-foreground"}>
-                          출하 후 잔량: {afterShipmentQty.toLocaleString()}
-                        </p>
+                      <div className="flex items-start gap-3">
+                        <div className="text-right text-[13px]">
+                          <p>선택 합계: <span className="font-medium">{selectedTotal.toLocaleString()}</span></p>
+                          <p className={afterShipmentQty < 0 ? "text-destructive" : "text-muted-foreground"}>
+                            출하 후 잔량: {afterShipmentQty.toLocaleString()}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-[12px] text-muted-foreground hover:text-destructive"
+                          onClick={() => remove(itemIndex)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          이번 출하 제외
+                        </Button>
                       </div>
                     </div>
 
@@ -758,26 +799,10 @@ export function ShipmentFormSheet({
       </Form>
 
       <BarcodePrintDialog
-        open={printOpen}
+        open={printOpen && canBulkPrint}
         onOpenChange={setPrintOpen}
         title="출하 라벨 출력"
-        items={fields.map((field, index) => {
-          const salesOrderItem = selectedOrder?.items.find(
-            (item) => item.id === field.salesOrderItemId,
-          )
-          const item = watchedItems[index]
-          const quantity = item?.isLotTracked
-            ? item.lotAllocations.reduce(
-                (sum, allocation) => sum + (Number(allocation.qty) || 0),
-                0,
-              )
-            : Number(item?.qty) || 0
-          return {
-            itemCode: salesOrderItem?.item.code ?? "",
-            itemName: salesOrderItem?.item.name ?? "",
-            quantity,
-          }
-        })}
+        items={bulkPrintItems}
       />
     </FormSheet>
   )

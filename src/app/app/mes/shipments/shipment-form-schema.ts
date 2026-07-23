@@ -49,7 +49,17 @@ export const shipmentFormSchema = z.object({
   plannedDate: z.string().min(1, "출하예정일을 입력하세요."),
   warehouseId: z.string().min(1, "출하 창고를 선택하세요."),
   note: z.string().optional(),
-  items: z.array(shipmentItemSchema).min(1, "출하 품목을 1개 이상 추가하세요."),
+  items: z.array(shipmentItemSchema).min(1, "실제 출하 품목을 1개 이상 선택하세요."),
 })
 
 export type ShipmentFormValues = z.infer<typeof shipmentFormSchema>
+
+export function canBulkPrintShipmentLabels(
+  items: Array<{ isLotTracked: boolean; qty?: number }>,
+) {
+  return (
+    items.length > 0 &&
+    items.every((item) => !item.isLotTracked) &&
+    items.some((item) => Number(item.qty) > 0)
+  )
+}
