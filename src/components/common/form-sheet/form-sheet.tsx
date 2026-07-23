@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Loader2 } from "lucide-react"
 
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -23,10 +24,11 @@ export function FormSheet({
   isLoading = false,
   onSubmit,
   children,
+  contentClassName,
 }: FormSheetProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-lg overflow-y-auto flex flex-col">
+      <SheetContent className={cn("sm:max-w-lg overflow-y-auto flex flex-col", contentClassName)}>
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           {description && (

@@ -11,4 +11,6 @@ export interface FormSheetProps {
   isLoading?: boolean
   onSubmit?: () => void
   children: React.ReactNode
+  /** 기본 sm:max-w-lg보다 넓은 폼이 필요할 때만 지정 (예: 컬럼이 많은 품목 표) */
+  contentClassName?: string
 }

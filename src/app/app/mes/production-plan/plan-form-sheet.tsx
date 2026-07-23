@@ -234,6 +234,7 @@ export function PlanFormSheet({
       }
       isLoading={isLoading}
       onSubmit={form.handleSubmit(onSubmit)}
+      contentClassName="sm:max-w-2xl"
     >
       <Form {...form}>
         <div className="space-y-6">
@@ -371,22 +372,22 @@ export function PlanFormSheet({
                 <table className="w-full text-[13px]">
                   <thead>
                     <tr className="bg-muted/50 border-b">
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[160px]">
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[120px]">
                         품목
                       </th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[120px]">
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[90px]">
                         BOM
                       </th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[120px]">
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[90px]">
                         라우팅
                       </th>
-                      <th className="px-3 py-2 text-right font-medium text-muted-foreground min-w-[80px]">
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground min-w-[64px]">
                         계획수량
                       </th>
-                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[120px]">
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground min-w-[90px]">
                         비고
                       </th>
-                      <th className="px-3 py-2 w-[40px]"></th>
+                      <th className="px-3 py-2 w-[36px]"></th>
                     </tr>
                   </thead>
                   <tbody>
