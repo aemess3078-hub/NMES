@@ -29,7 +29,7 @@ export default async function EquipmentMasterPage() {
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           MES &gt; 기준정보관리 · 설비 기준정보를 등록하고 관리합니다.
-          LMS 모니터링·점검·수리의 기준이 됩니다.
+          설비 모니터링·점검·수리의 기준이 됩니다.
         </p>
       </div>
 

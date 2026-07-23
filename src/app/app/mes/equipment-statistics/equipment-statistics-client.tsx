@@ -116,7 +116,7 @@ function PowerUnavailable() {
       <Wifi className="mx-auto h-10 w-10 mb-3 text-slate-300" />
       <p className="text-[15px] font-medium text-muted-foreground">전력 데이터 연동 필요</p>
       <p className="text-[13px] mt-1 text-muted-foreground">
-        전력 측정 태그가 설정되지 않았습니다. LMS 설비연동 설정에서 전력 태그를 등록하세요.
+        전력 측정 태그가 설정되지 않았습니다. 설비 연결 설정에서 전력 태그를 등록하세요.
       </p>
     </div>
   )
