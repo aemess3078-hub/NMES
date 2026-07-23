@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation"
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MoneyInput } from "@/components/ui/money-input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
@@ -244,15 +245,9 @@ export function ItemPriceFormSheet({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>단가</FormLabel>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
-                    {...field}
-                    value={field.value ?? ""}
-                    onChange={(e) =>
-                      field.onChange(e.target.value === "" ? 0 : Number(e.target.value))
-                    }
+                  <MoneyInput
+                    value={field.value}
+                    onChange={(v) => field.onChange(v ?? 0)}
                   />
                   <FormMessage />
                 </FormItem>
