@@ -277,6 +277,8 @@ export function ReceiptDialog({
         items={[{
           itemCode: workOrder.item.code,
           itemName: workOrder.item.name,
+          lotNo: workOrder.receipts[0]?.lotNo,
+          manufacturingNo: workOrder.manufacturingNo,
           quantity: Number(receiptQty) || workOrder.pendingQty,
           uom: workOrder.item.uom,
         }]}
