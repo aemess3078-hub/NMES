@@ -69,7 +69,7 @@ export function SalesOrderProcessDialog({
     setShipmentError(null)
     Promise.all([
       checkInventoryForSalesOrder(salesOrder.id, tenantId),
-      getWarehouses(tenantId, siteId),
+      getWarehouses(tenantId),
     ]).then(([stock, whs]) => {
       setStockStatus(stock)
       setWarehouses(whs)
@@ -81,7 +81,7 @@ export function SalesOrderProcessDialog({
       }
       setLoading(false)
     })
-  }, [open, salesOrder, tenantId, siteId])
+  }, [open, salesOrder, tenantId])
 
   // 창고 변경 시 LOT 목록 로드 (LOT 관리 품목만)
   useEffect(() => {
@@ -99,13 +99,13 @@ export function SalesOrderProcessDialog({
     setLotsLoading(true)
     setLotSelections({})
     setShipmentError(null)
-    getAvailableFinishedGoodsLots(tenantId, siteId, warehouseId, lotTrackedIds)
+    getAvailableFinishedGoodsLots(tenantId, warehouseId, lotTrackedIds)
       .then((result) => { if (!cancelled) setAvailableLots(result.lotsByItem) })
       .catch(() => { if (!cancelled) setAvailableLots({}) })
       .finally(() => { if (!cancelled) setLotsLoading(false) })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- stockStatus를 deps에 포함하면 초기 로드 시 무한 재호출 위험. warehouseId 변경 시에만 LOT 목록을 새로 불러오는 것이 의도된 동작
-  }, [open, warehouseId, tenantId, siteId])
+  }, [open, warehouseId, tenantId])
 
   if (!salesOrder) return null
 
@@ -137,7 +137,7 @@ export function SalesOrderProcessDialog({
         ...(item.isLotTracked ? { lotId: lotSelections[item.itemId] } : {}),
       }))
       try {
-        await createShipment(tenantId, siteId, {
+        await createShipment(tenantId, {
           salesOrderId: salesOrder.id,
           plannedDate: new Date(),
           warehouseId,

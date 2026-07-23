@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 
 import { getTenantId } from "@/lib/auth"
-import { getSitesSimple } from "@/lib/actions/site.actions"
 import {
   getShipments,
   getShippableSalesOrders,
@@ -11,13 +10,11 @@ import { ShipmentDataTable } from "./shipment-data-table"
 
 export default async function ShipmentsPage() {
   const tenantId = await getTenantId()
-  const sites = await getSitesSimple()
-  const siteId = sites[0]?.id ?? ""
 
   const [shipments, salesOrders, warehouses] = await Promise.all([
     getShipments(tenantId),
-    getShippableSalesOrders(tenantId, siteId),
-    getWarehouses(tenantId, siteId),
+    getShippableSalesOrders(tenantId),
+    getWarehouses(tenantId),
   ])
 
   return (
@@ -31,7 +28,6 @@ export default async function ShipmentsPage() {
       <ShipmentDataTable
         data={shipments as any}
         tenantId={tenantId}
-        siteId={siteId}
         salesOrders={salesOrders as any}
         warehouses={warehouses}
       />

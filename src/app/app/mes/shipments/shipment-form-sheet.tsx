@@ -50,7 +50,6 @@ type WarehouseOption = { id: string; code: string; name: string }
 
 interface ShipmentFormSheetProps {
   tenantId: string
-  siteId: string
   salesOrders: SalesOrderOption[]
   warehouses: WarehouseOption[]
   open: boolean
@@ -74,7 +73,6 @@ const EMPTY_LOT_MESSAGES: Record<EmptyLotReason, string> = {
 
 export function ShipmentFormSheet({
   tenantId,
-  siteId,
   salesOrders,
   warehouses,
   open,
@@ -152,7 +150,6 @@ export function ShipmentFormSheet({
       try {
         const result = await getAvailableFinishedGoodsLots(
           tenantId,
-          siteId,
           selectedWarehouseId,
           trackedItemIds,
         )
@@ -176,7 +173,7 @@ export function ShipmentFormSheet({
     return () => {
       cancelled = true
     }
-  }, [form, open, selectedWarehouseId, siteId, tenantId, trackedItemIdsKey])
+  }, [form, open, selectedWarehouseId, tenantId, trackedItemIdsKey])
 
   function toShipmentItems(order: SalesOrderOption): ShipmentFormValues["items"] {
     return order.items
@@ -348,7 +345,7 @@ export function ShipmentFormSheet({
         return allocations
       })
 
-      await createShipment(tenantId, siteId, {
+      await createShipment(tenantId, {
         salesOrderId: values.salesOrderId,
         plannedDate: new Date(values.plannedDate),
         warehouseId: values.warehouseId,
@@ -512,9 +509,13 @@ export function ShipmentFormSheet({
             )}
 
             {fields.length > 0 && selectedWarehouseId && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
-                LOT 관리 품목은 LOT가 지정된 가용재고만 출하할 수 있습니다.
-              </p>
+              <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                <p>LOT 관리 품목은 LOT가 지정된 가용재고만 출하할 수 있습니다.</p>
+                <p>
+                  한 출하에는 하나의 창고만 사용할 수 있습니다. 다른 창고 재고도 필요하면
+                  창고별로 출하를 나누어 등록하세요.
+                </p>
+              </div>
             )}
 
             <div className="space-y-3">

@@ -132,11 +132,15 @@ export async function getDeliveryStatusRows(tenantId: string) {
   }))
 }
 
-export async function getShippableSalesOrders(tenantId: string, siteId: string) {
+export async function getShippableSalesOrders(tenantId: string) {
+  const user = await requireRole("VIEWER")
+  if (user.tenantId !== tenantId) {
+    throw new Error("FORBIDDEN")
+  }
+
   const rows = await prisma.salesOrder.findMany({
     where: {
       tenantId,
-      siteId,
       status: { in: ["CONFIRMED", "IN_PRODUCTION", "PARTIAL_SHIPPED"] },
     },
     select: {
@@ -167,9 +171,14 @@ export async function getShippableSalesOrders(tenantId: string, siteId: string) 
   }))
 }
 
-export async function getWarehouses(tenantId: string, siteId: string) {
+export async function getWarehouses(tenantId: string) {
+  const user = await requireRole("VIEWER")
+  if (user.tenantId !== tenantId) {
+    throw new Error("FORBIDDEN")
+  }
+
   return prisma.warehouse.findMany({
-    where: { tenantId, siteId },
+    where: { tenantId },
     orderBy: { name: "asc" },
   })
 }
@@ -197,27 +206,31 @@ export type AvailableFinishedGoodsLotResult = {
 
 export async function getAvailableFinishedGoodsLots(
   tenantId: string,
-  siteId: string,
   warehouseId: string,
   itemIds: string[]
 ): Promise<AvailableFinishedGoodsLotResult> {
+  const user = await requireRole("VIEWER")
+  if (user.tenantId !== tenantId) {
+    throw new Error("FORBIDDEN")
+  }
+
   const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)))
   if (!warehouseId || uniqueItemIds.length === 0) {
     return { lotsByItem: {}, emptyReasonByItem: {} }
   }
 
   const warehouse = await prisma.warehouse.findFirst({
-    where: { id: warehouseId, tenantId, siteId },
-    select: { id: true },
+    where: { id: warehouseId, tenantId },
+    select: { id: true, siteId: true },
   })
   if (!warehouse) {
-    throw new Error("선택한 창고는 현재 사업장에 속하지 않습니다.")
+    throw new Error("선택한 창고를 사용할 수 없습니다.")
   }
 
   const availableBalances = await prisma.inventoryBalance.findMany({
     where: {
       tenantId,
-      siteId,
+      siteId: warehouse.siteId,
       warehouseId,
       itemId: { in: uniqueItemIds },
       lotId: { not: null },
@@ -242,7 +255,7 @@ export async function getAvailableFinishedGoodsLots(
     ? await prisma.finishedGoodsReceipt.findMany({
         where: {
           tenantId,
-          siteId,
+          siteId: warehouse.siteId,
           warehouseId,
           lotId: { in: lotIds },
         },
@@ -289,7 +302,7 @@ export async function getAvailableFinishedGoodsLots(
     ? await prisma.inventoryBalance.findMany({
         where: {
           tenantId,
-          siteId,
+          siteId: warehouse.siteId,
           warehouseId,
           itemId: { in: emptyItemIds },
         },
@@ -399,10 +412,12 @@ export type CreateShipmentInput = {
 
 export async function createShipment(
   tenantId: string,
-  siteId: string,
   data: CreateShipmentInput
 ) {
-  await requireRole("OPERATOR")
+  const user = await requireRole("OPERATOR")
+  if (user.tenantId !== tenantId) {
+    throw new Error("FORBIDDEN")
+  }
   if (!data.warehouseId) {
     throw new Error("출하 창고를 선택하세요.")
   }
@@ -424,11 +439,19 @@ export async function createShipment(
 
   await prisma.$transaction(async (tx) => {
     const warehouse = await tx.warehouse.findFirst({
-      where: { id: warehouseId, tenantId, siteId },
-      select: { id: true },
+      where: { id: warehouseId, tenantId },
+      select: { id: true, siteId: true },
     })
     if (!warehouse) {
-      throw new Error("선택한 창고는 현재 사업장에 속하지 않습니다.")
+      throw new Error("선택한 창고를 사용할 수 없습니다.")
+    }
+
+    const salesOrder = await tx.salesOrder.findFirst({
+      where: { id: data.salesOrderId, tenantId },
+      select: { id: true, siteId: true },
+    })
+    if (!salesOrder) {
+      throw new Error("수주를 찾을 수 없습니다.")
     }
 
     const salesOrderItemIds = Array.from(
@@ -440,7 +463,6 @@ export async function createShipment(
         salesOrder: {
           id: data.salesOrderId,
           tenantId,
-          siteId,
         },
       },
       include: {
@@ -459,7 +481,7 @@ export async function createShipment(
 
       const salesOrderItem = salesOrderItemById.get(item.salesOrderItemId)
       if (!salesOrderItem) {
-        throw new Error("현재 사업장의 수주 품목을 찾을 수 없습니다.")
+        throw new Error("수주 품목을 찾을 수 없습니다.")
       }
       if (salesOrderItem.itemId !== item.itemId) {
         throw new Error("수주 품목과 출하 품목이 일치하지 않습니다.")
@@ -485,7 +507,7 @@ export async function createShipment(
     const shipment = await tx.shipmentOrder.create({
       data: {
         tenantId,
-        siteId,
+        siteId: salesOrder.siteId,
         salesOrderId: data.salesOrderId,
         shipmentNo,
         plannedDate: data.plannedDate,
@@ -516,7 +538,13 @@ export async function createShipment(
         }
 
         const balance = await tx.inventoryBalance.findFirst({
-          where: { tenantId, siteId, warehouseId, itemId: item.itemId, lotId: lot.id },
+          where: {
+            tenantId,
+            siteId: warehouse.siteId,
+            warehouseId,
+            itemId: item.itemId,
+            lotId: lot.id,
+          },
         })
         if (!balance) {
           throw new Error(`LOT(${lot.lotNo})의 출하 가능 재고가 없습니다.`)
@@ -560,7 +588,7 @@ export async function createShipment(
           where: {
             id: balance.id,
             tenantId,
-            siteId,
+            siteId: warehouse.siteId,
             warehouseId,
             itemId: item.itemId,
             lotId: lot.id,
@@ -578,7 +606,13 @@ export async function createShipment(
       } else {
         // 비LOT 품목: lotId 없이 처리
         const balance = await tx.inventoryBalance.findFirst({
-          where: { tenantId, siteId, warehouseId, itemId: item.itemId, lotId: null },
+          where: {
+            tenantId,
+            siteId: warehouse.siteId,
+            warehouseId,
+            itemId: item.itemId,
+            lotId: null,
+          },
         })
         if (!balance) {
           throw new Error(`[${salesOrderItem.item.code}] 선택한 창고에 출하 가능한 재고가 없습니다.`)
@@ -620,7 +654,7 @@ export async function createShipment(
           where: {
             id: balance.id,
             tenantId,
-            siteId,
+            siteId: warehouse.siteId,
             warehouseId,
             itemId: item.itemId,
             lotId: null,
@@ -673,10 +707,11 @@ export async function confirmShipment(id: string) {
 }
 
 export async function deleteShipment(id: string) {
-  await requireRole("OPERATOR")
-  const shipment = await prisma.shipmentOrder.findUniqueOrThrow({
-    where: { id },
+  const user = await requireRole("OPERATOR")
+  const shipment = await prisma.shipmentOrder.findFirstOrThrow({
+    where: { id, tenantId: user.tenantId },
     include: {
+      warehouse: { select: { siteId: true, tenantId: true } },
       items: {
         include: { item: { select: { isLotTracked: true } } },
       },
@@ -685,12 +720,18 @@ export async function deleteShipment(id: string) {
   if (shipment.status !== "PLANNED") {
     throw new Error("PLANNED 상태의 출하만 삭제할 수 있습니다.")
   }
+  if (shipment.warehouseId && !shipment.warehouse) {
+    throw new Error("출하 창고 정보를 찾을 수 없어 재고를 복구할 수 없습니다.")
+  }
+  if (shipment.warehouse && shipment.warehouse.tenantId !== shipment.tenantId) {
+    throw new Error("출하 창고의 tenant 정보가 일치하지 않습니다.")
+  }
 
   await prisma.$transaction(async (tx) => {
     const shipmentItemIds = shipment.items.map((item) => item.id)
 
     for (const item of shipment.items) {
-      if (shipment.warehouseId) {
+      if (shipment.warehouseId && shipment.warehouse) {
         const isLotTracked = item.item.isLotTracked
 
         if (isLotTracked) {
@@ -699,7 +740,7 @@ export async function deleteShipment(id: string) {
             const balance = await tx.inventoryBalance.findFirst({
               where: {
                 tenantId: shipment.tenantId,
-                siteId: shipment.siteId,
+                siteId: shipment.warehouse.siteId,
                 warehouseId: shipment.warehouseId,
                 itemId: item.itemId,
                 lotId: item.lotId,
@@ -721,7 +762,7 @@ export async function deleteShipment(id: string) {
           const balance = await tx.inventoryBalance.findFirst({
             where: {
               tenantId: shipment.tenantId,
-              siteId: shipment.siteId,
+              siteId: shipment.warehouse.siteId,
               warehouseId: shipment.warehouseId,
               itemId: item.itemId,
               lotId: null,
