@@ -398,102 +398,100 @@ export function SalesOrderFormSheet({
 
             {fields.length > 0 && (
               <div className="overflow-x-auto rounded-md border">
-                <div className="min-w-[620px]">
-                  {/* 헤더 */}
-                  <div className="grid grid-cols-[minmax(220px,1fr)_128px_112px_36px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
-                    <span>품목</span>
-                    <span className="text-right">수량</span>
-                    <span className="text-right">단가</span>
-                    <span></span>
-                  </div>
-
-                  {fields.map((field, index) => (
-                    <div
-                      key={field.id}
-                      className="grid grid-cols-[minmax(220px,1fr)_128px_112px_36px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
-                    >
-                    {/* 품목 Select */}
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.itemId`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Select
-                            onValueChange={f.onChange}
-                            value={f.value ?? undefined}
-                            disabled={isItemEditDisabled}
-                          >
-                            <SelectTrigger className="h-8 text-[13px]">
-                              <SelectValue placeholder="품목 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {items.map((item) => (
-                                <SelectItem key={item.id} value={item.id} className="text-[13px]">
-                                  [{item.code}] {item.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 수량 */}
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.qty`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            min={1}
-                            step={1}
-                            className="h-8 min-w-28 text-right text-[14px] tabular-nums"
-                            disabled={isItemEditDisabled}
-                            value={f.value ?? ""}
-                            onChange={(e) =>
-                              f.onChange(e.target.value === "" ? "" : parseFloat(e.target.value))
-                            }
-                          />
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 단가 */}
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.unitPrice`}
-                      render={({ field: f }) => (
-                        <FormItem className="pr-2">
-                          <MoneyInput
-                            placeholder="—"
-                            className="h-8 min-w-24 text-right text-[14px] tabular-nums"
-                            disabled={isItemEditDisabled}
-                            value={f.value}
-                            onChange={f.onChange}
-                          />
-                          <FormMessage className="text-[12px]" />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* 삭제 */}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      disabled={isItemEditDisabled}
-                      onClick={() => remove(index)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                    </div>
-                  ))}
+                {/* 헤더 */}
+                <div className="grid grid-cols-[minmax(96px,1fr)_72px_96px_36px] gap-0 bg-muted/50 px-3 py-2 text-[13px] font-medium text-muted-foreground">
+                  <span>품목</span>
+                  <span className="text-right">수량</span>
+                  <span className="text-right">단가</span>
+                  <span></span>
                 </div>
+
+                {fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="grid grid-cols-[minmax(96px,1fr)_72px_96px_36px] gap-0 items-start px-3 py-2 border-t first:border-t-0 hover:bg-muted/20"
+                  >
+                  {/* 품목 Select */}
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.itemId`}
+                    render={({ field: f }) => (
+                      <FormItem className="min-w-0 pr-2">
+                        <Select
+                          onValueChange={f.onChange}
+                          value={f.value ?? undefined}
+                          disabled={isItemEditDisabled}
+                        >
+                          <SelectTrigger className="h-8 text-[13px]">
+                            <SelectValue placeholder="품목 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {items.map((item) => (
+                              <SelectItem key={item.id} value={item.id} className="text-[13px]">
+                                [{item.code}] {item.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage className="text-[12px]" />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* 수량 */}
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.qty`}
+                    render={({ field: f }) => (
+                      <FormItem className="min-w-0 pr-2">
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={1}
+                          step={1}
+                          className="h-8 text-right text-[14px] tabular-nums"
+                          disabled={isItemEditDisabled}
+                          value={f.value ?? ""}
+                          onChange={(e) =>
+                            f.onChange(e.target.value === "" ? "" : parseFloat(e.target.value))
+                          }
+                        />
+                        <FormMessage className="text-[12px]" />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* 단가 */}
+                  <FormField
+                    control={form.control}
+                    name={`items.${index}.unitPrice`}
+                    render={({ field: f }) => (
+                      <FormItem className="min-w-0 pr-2">
+                        <MoneyInput
+                          placeholder="—"
+                          className="h-8 text-right text-[14px] tabular-nums"
+                          disabled={isItemEditDisabled}
+                          value={f.value}
+                          onChange={f.onChange}
+                        />
+                        <FormMessage className="text-[12px]" />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* 삭제 */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    disabled={isItemEditDisabled}
+                    onClick={() => remove(index)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  </div>
+                ))}
               </div>
             )}
 
