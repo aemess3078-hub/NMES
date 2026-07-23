@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 
 import { getWipInventoryRows } from "@/lib/actions/work-order.actions"
 import { WipInventoryDataTable } from "./wip-inventory-data-table"
@@ -6,8 +6,7 @@ import { WipInventoryDataTable } from "./wip-inventory-data-table"
 export const dynamic = "force-dynamic"
 
 export default async function WipInventoryPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const rows = await getWipInventoryRows(tenantId)
 
   const totalOrders = new Set(rows.map((row) => row.workOrder.id)).size

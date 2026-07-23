@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,8 +55,7 @@ export type ProductionResultFilters = {
 export async function getProductionResults(
   filters?: ProductionResultFilters
 ): Promise<ProductionResultWithDetails[]> {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const results = await prisma.productionResult.findMany({
     where: {

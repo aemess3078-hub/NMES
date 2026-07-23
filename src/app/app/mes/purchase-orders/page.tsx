@@ -1,13 +1,14 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
+import { getSitesSimple } from "@/lib/actions/site.actions"
 import { getPurchaseOrders, getSuppliers, getRawMaterials } from "@/lib/actions/purchase-order.actions"
 import { PurchaseOrderDataTable } from "./purchase-order-data-table"
 
 export default async function PurchaseOrdersPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-  const siteId = cookieStore.get("siteId")?.value ?? "site-factory-001"
+  const tenantId = await getTenantId()
+  const sites = await getSitesSimple()
+  const siteId = sites[0]?.id ?? ""
 
   const [orders, suppliers, items] = await Promise.all([
     getPurchaseOrders(tenantId),

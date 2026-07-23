@@ -1,12 +1,11 @@
 import { notFound } from "next/navigation"
-import { cookies } from "next/headers"
 import {
   getConnections,
   getEquipmentsForConnection,
   getGatewaysForConnection,
 } from "@/lib/actions/equipment-integration.actions"
 import { ConnectionDataTable } from "./connection-data-table"
-import { getCurrentUser } from "@/lib/auth"
+import { getCurrentUser, getTenantId } from "@/lib/auth"
 import { isDeveloperUser } from "@/lib/developer"
 
 export const dynamic = "force-dynamic"
@@ -14,8 +13,7 @@ export const dynamic = "force-dynamic"
 export default async function EquipmentConnectionsPage() {
   const user = await getCurrentUser()
   if (!isDeveloperUser(user)) notFound()
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const [connections, equipments, gateways] = await Promise.all([
     getConnections(tenantId),

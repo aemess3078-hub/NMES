@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { ShipmentStatus } from "@prisma/client"
 
 import { getDeliveryStatusRows } from "@/lib/actions/shipment.actions"
@@ -13,8 +13,7 @@ export default async function DeliveryStatusPage() {
   // ── [PERF-TEMP] 성능 계측 임시 코드 — 측정 완료 후 제거 ──────────────────
   const _pt0 = Date.now()
   // ─────────────────────────────────────────────────────────────────────────
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   const _t1 = Date.now()

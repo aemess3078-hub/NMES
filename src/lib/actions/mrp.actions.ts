@@ -1,15 +1,10 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { calculateMRP } from "@/lib/services/mrp.service"
 import { suggestOptimalOrder } from "@/lib/services/mrp-ai.service"
 import type { MRPResult } from "@/lib/services/mrp.service"
-
-async function getTenantId(): Promise<string> {
-  const cookieStore = await cookies()
-  return cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
-}
 
 export async function getPlansForMRP() {
   const tenantId = await getTenantId()

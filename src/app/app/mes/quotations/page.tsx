@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getQuotations, getCustomersForQuotation, getFinishedItems } from "@/lib/actions/quotation.actions"
 import { getSites } from "@/lib/actions/production-plan.actions"
 import { QuotationDataTable } from "./quotation-data-table"
 
 export default async function QuotationsPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const [quotations, customers, items, sites] = await Promise.all([
     getQuotations(),

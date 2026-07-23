@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import {
   getInventoryTransactions,
@@ -10,8 +10,7 @@ import { InventoryTransactionDataTable } from "./inventory-transaction-data-tabl
 export const dynamic = "force-dynamic"
 
 export default async function InventoryTransactionsPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const enabled = await isFeatureEnabled(tenantId, "INVENTORY")
 
   if (!enabled) {

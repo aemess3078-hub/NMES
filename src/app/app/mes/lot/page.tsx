@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { getLots, getItemsForLot } from "@/lib/actions/lot.actions"
 import { LotDataTable } from "./lot-data-table"
@@ -6,8 +6,7 @@ import { LotDataTable } from "./lot-data-table"
 export const dynamic = "force-dynamic"
 
 export default async function LotPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const enabled = await isFeatureEnabled(tenantId, "LOT_TRACKING")
   if (!enabled) {

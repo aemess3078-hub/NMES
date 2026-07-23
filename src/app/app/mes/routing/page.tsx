@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic"
 
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getRoutings, getItemsForRouting, getWorkCenters } from "@/lib/actions/routing.actions"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { RoutingDataTable } from "./routing-data-table"
 
 export default async function RoutingPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const enabled = await isFeatureEnabled(tenantId, "ROUTING")
 
   if (!enabled) {

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
-import { cookies } from "next/headers"
 import OpenAI from "openai"
 import { isAIEnabled } from "@/lib/services/openai.service"
+import { getTenantId } from "@/lib/auth"
 import {
   getProductionSummary,
   getInventorySummary,
@@ -87,8 +87,7 @@ export async function POST(req: NextRequest) {
     return new Response("AI 기능이 비활성화되어 있습니다.", { status: 503 })
   }
 
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   let message: string
   let context: string | undefined

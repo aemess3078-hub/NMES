@@ -1,11 +1,10 @@
 import { notFound } from "next/navigation"
-import { cookies } from "next/headers"
 import {
   getTags,
   getConnectionsForTag,
 } from "@/lib/actions/equipment-integration.actions"
 import { TagDataTable } from "./tag-data-table"
-import { getCurrentUser } from "@/lib/auth"
+import { getCurrentUser, getTenantId } from "@/lib/auth"
 import { isDeveloperUser } from "@/lib/developer"
 
 export const dynamic = "force-dynamic"
@@ -13,8 +12,7 @@ export const dynamic = "force-dynamic"
 export default async function TagsPage() {
   const user = await getCurrentUser()
   if (!isDeveloperUser(user)) notFound()
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const [tags, connections] = await Promise.all([
     getTags(tenantId),

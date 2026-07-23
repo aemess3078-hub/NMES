@@ -1,4 +1,4 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { ManufacturingTraceabilityClient } from "./manufacturing-traceability-client"
 
@@ -11,8 +11,7 @@ interface ManufacturingTraceabilityPageProps {
 export default async function ManufacturingTraceabilityPage({
   searchParams,
 }: ManufacturingTraceabilityPageProps) {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const params = searchParams ? await searchParams : {}
   const initialManufacturingNo = params.manufacturingNo?.trim() || undefined
 

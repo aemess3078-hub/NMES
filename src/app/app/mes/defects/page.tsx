@@ -1,12 +1,11 @@
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 import { getDefectCodes } from "@/lib/actions/quality.actions"
 import { DefectDataTable } from "./defect-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function DefectsPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
 
   const defectCodes = await getDefectCodes(tenantId)
 

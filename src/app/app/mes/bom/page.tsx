@@ -1,13 +1,12 @@
 import { getBoms, getItemsForBom, getComponentItems } from "@/lib/actions/bom.actions"
 import { BomDataTable } from "./bom-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
-import { cookies } from "next/headers"
+import { getTenantId } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
 export default async function BomPage() {
-  const cookieStore = await cookies()
-  const tenantId = cookieStore.get("tenantId")?.value ?? "tenant-demo-001"
+  const tenantId = await getTenantId()
   const enabled = await isFeatureEnabled(tenantId, "BOM")
 
   if (!enabled) {
