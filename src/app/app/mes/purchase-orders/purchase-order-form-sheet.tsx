@@ -9,6 +9,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MoneyInput } from "@/components/ui/money-input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
@@ -339,16 +340,10 @@ export function PurchaseOrderFormSheet({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>총금액 (선택)</FormLabel>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
+                  <MoneyInput
                     placeholder="0"
-                    {...field}
-                    value={field.value ?? ""}
-                    onChange={(e) =>
-                      field.onChange(e.target.value === "" ? undefined : Number(e.target.value))
-                    }
+                    value={field.value}
+                    onChange={field.onChange}
                   />
                   <FormMessage />
                 </FormItem>
@@ -480,19 +475,12 @@ export function PurchaseOrderFormSheet({
                         name={`items.${index}.unitPrice`}
                         render={({ field: f }) => (
                           <FormItem className="pr-1">
-                            <Input
-                              type="number"
-                              min={0}
-                              step={1}
+                            <MoneyInput
                               placeholder="—"
                               className="h-8 text-[13px] text-right"
                               disabled={isItemEditDisabled}
-                              value={f.value ?? ""}
-                              onChange={(e) =>
-                                f.onChange(
-                                  e.target.value === "" ? 0 : parseFloat(e.target.value)
-                                )
-                              }
+                              value={f.value}
+                              onChange={(v) => f.onChange(v ?? 0)}
                             />
                             <FormMessage className="text-[12px]" />
                           </FormItem>

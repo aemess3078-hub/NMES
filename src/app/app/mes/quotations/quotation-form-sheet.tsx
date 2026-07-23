@@ -9,6 +9,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { MoneyInput } from "@/components/ui/money-input"
 import {
   Select,
   SelectContent,
@@ -303,10 +304,16 @@ export function QuotationFormSheet({
                           />
                         </td>
                         <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            className="h-8 text-right text-[13px]"
-                            {...form.register(`items.${index}.unitPrice`, { valueAsNumber: true })}
+                          <FormField
+                            control={form.control}
+                            name={`items.${index}.unitPrice`}
+                            render={({ field: f }) => (
+                              <MoneyInput
+                                className="h-8 text-right text-[13px]"
+                                value={f.value}
+                                onChange={f.onChange}
+                              />
+                            )}
                           />
                         </td>
                         <td className="px-3 py-2 text-right font-medium">
