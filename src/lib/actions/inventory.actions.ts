@@ -1,9 +1,11 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { TransactionType } from "@prisma/client"
+import { Prisma, TransactionType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
-import { requireRole } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
+import { generateReceivingLotNo } from "@/lib/actions/receiving.actions"
+import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -488,6 +490,17 @@ export async function getItemsForSite(siteId: string) {
   return Array.from(map.values())
 }
 
+// ─── 전체 품목 목록 (입고/반품용 — 사이트 재고 보유 여부와 무관) ────────────────
+
+export async function getAllItemsForInventory() {
+  const tenantId = await getTenantId()
+  return prisma.item.findMany({
+    where: { tenantId, status: "ACTIVE" },
+    select: { id: true, code: true, name: true, itemType: true, uom: true },
+    orderBy: { code: "asc" },
+  })
+}
+
 // ─── CreateTransaction 타입 ───────────────────────────────────────────────────
 
 export type CreateTransactionInput = {
@@ -495,7 +508,7 @@ export type CreateTransactionInput = {
   fromLocationId?: string | null
   toLocationId?: string | null
   itemId: string
-  lotId?: string | null
+  lotNo?: string | null
   txType: TransactionType
   qty: number
   refType?: string | null
@@ -588,110 +601,226 @@ async function generateTxNo(tenantId: string, txType: TransactionType): Promise<
   return `${prefix}-${yyyymmdd}-${String(count + 1).padStart(4, "0")}`
 }
 
+// ─── LOT 번호 해석 (입고/반품 시 자동발행 포함) ─────────────────────────────────
+
+type ItemLotConfig = {
+  code: string
+  itemType: string
+  isLotTracked: boolean
+  lotNumberingType: string
+  lotPrefix: string | null
+  manualLotPolicy: string
+  itemGroup: { code: string } | null
+  category: { code: string } | null
+}
+
+const AUTO_LOT_COLLISION = "AUTO_LOT_COLLISION"
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
+}
+
+/** LOT 번호(사용자 입력 문자열)를 실제 Lot.id로 해석한다.
+ * - 입고/반품(isInbound): LOT 관리 품목이면 입력값 사용 또는 자동발행, 없으면 신규 Lot 생성
+ * - 출고/이동/조정/폐기: 기존 LOT만 참조 가능 (신규 생성 없음)
+ */
+async function resolveLotId(
+  tx: any,
+  tenantId: string,
+  itemId: string,
+  item: ItemLotConfig,
+  manualLotNo: string | null,
+  isInbound: boolean,
+  attempt: number,
+): Promise<string | null> {
+  if (!item.isLotTracked) return null
+
+  if (!isInbound) {
+    if (!manualLotNo) return null
+    const lot = await tx.lot.findFirst({ where: { tenantId, itemId, lotNo: manualLotNo } })
+    if (!lot) {
+      throw new Error(`LOT 번호 '${manualLotNo}'를 찾을 수 없습니다. 등록된 LOT 번호인지 확인해주세요.`)
+    }
+    return lot.id
+  }
+
+  const manualLotPolicy = item.manualLotPolicy ?? "ALLOWED"
+  const lotNumberingType = item.lotNumberingType ?? "DEFAULT"
+  if ((lotNumberingType === "MANUAL" || manualLotPolicy === "REQUIRED") && !manualLotNo) {
+    throw new Error("LOT 번호를 직접 입력해야 하는 품목입니다.")
+  }
+
+  const itemRuleContext: CnsItemRuleContext = {
+    itemCode: item.code,
+    itemGroupCode: item.itemGroup?.code,
+    itemCategoryCode: item.category?.code,
+    itemType: item.itemType,
+    lotNumberingType,
+    lotPrefix: item.lotPrefix,
+    manualLotPolicy,
+  }
+
+  const resolvedLotNo = manualLotNo ?? (await generateReceivingLotNo(tenantId, itemRuleContext, attempt))
+
+  const existingLot = await tx.lot.findFirst({ where: { tenantId, lotNo: resolvedLotNo } })
+  if (existingLot) {
+    if (existingLot.itemId !== itemId) {
+      throw new Error(`LOT 번호 '${resolvedLotNo}'는 다른 품목에 이미 사용 중입니다. 다른 번호를 입력해주세요.`)
+    }
+    if (!manualLotNo) {
+      throw new Error(AUTO_LOT_COLLISION)
+    }
+    return existingLot.id
+  }
+
+  const newLot = await tx.lot.create({
+    data: { tenantId, itemId, lotNo: resolvedLotNo, status: "ACTIVE", manufactureDate: new Date() },
+  })
+  return newLot.id
+}
+
 // ─── 트랜잭션 등록 + Balance 자동 갱신 ───────────────────────────────────────
 
 export async function createTransaction(
   data: CreateTransactionInput,
   tenantId: string
 ) {
-  const txNo = await generateTxNo(tenantId, data.txType)
+  const isInbound = data.txType === TransactionType.RECEIPT || data.txType === TransactionType.RETURN
 
-  await prisma.$transaction(async (tx) => {
-    // 1. InventoryTransaction 생성
-    await tx.inventoryTransaction.create({
-      data: {
-        tenantId,
-        itemId: data.itemId,
-        lotId: data.lotId ?? null,
-        fromLocationId: data.fromLocationId ?? null,
-        toLocationId: data.toLocationId ?? null,
-        txNo,
-        txType: data.txType,
-        qty: data.qty,
-        refType: data.refType ?? null,
-        refId: data.refId ?? null,
-        note: data.note ?? null,
-        txAt: new Date(),
-      },
-    })
-
-    // 2. Balance 갱신 (txType별 분기)
-    switch (data.txType) {
-      case TransactionType.RECEIPT:
-      case TransactionType.RETURN: {
-        // 입고 / 반품 → toLocation (Warehouse) + qtyOnHand 증가
-        if (!data.toLocationId) throw new Error("입고/반품 시 입고 로케이션이 필요합니다.")
-        const wh = await tx.warehouse.findUnique({ where: { id: data.toLocationId } })
-        if (!wh) throw new Error("유효하지 않은 로케이션입니다.")
-        await adjustBalance(tx, {
-          tenantId,
-          siteId: data.siteId,
-          warehouseId: data.toLocationId,
-          itemId: data.itemId,
-          lotId: data.lotId ?? null,
-          qtyDelta: +data.qty,
-        })
-        break
-      }
-
-      case TransactionType.ISSUE:
-      case TransactionType.SCRAP: {
-        // 출고 / 폐기 → fromLocation (Warehouse) + qtyOnHand 감소
-        if (!data.fromLocationId) throw new Error("출고/폐기 시 출고 로케이션이 필요합니다.")
-        await adjustBalance(tx, {
-          tenantId,
-          siteId: data.siteId,
-          warehouseId: data.fromLocationId,
-          itemId: data.itemId,
-          lotId: data.lotId ?? null,
-          qtyDelta: -data.qty,
-        })
-        break
-      }
-
-      case TransactionType.ADJUST: {
-        // 재고조정 → fromLocation (또는 toLocation, Warehouse) + qtyOnHand 절대값 세팅
-        const warehouseId = data.fromLocationId ?? data.toLocationId
-        if (!warehouseId) throw new Error("재고조정 시 로케이션이 필요합니다.")
-        await adjustBalance(tx, {
-          tenantId,
-          siteId: data.siteId,
-          warehouseId,
-          itemId: data.itemId,
-          lotId: data.lotId ?? null,
-          qtyAbsolute: data.qty,
-        })
-        break
-      }
-
-      case TransactionType.TRANSFER: {
-        // 이동 → fromLocation 감소 + toLocation 증가 (모두 Warehouse)
-        if (!data.fromLocationId || !data.toLocationId) {
-          throw new Error("이동 시 출발 로케이션과 도착 로케이션이 모두 필요합니다.")
-        }
-        await adjustBalance(tx, {
-          tenantId,
-          siteId: data.siteId,
-          warehouseId: data.fromLocationId,
-          itemId: data.itemId,
-          lotId: data.lotId ?? null,
-          qtyDelta: -data.qty,
-        })
-        await adjustBalance(tx, {
-          tenantId,
-          siteId: data.siteId,
-          warehouseId: data.toLocationId,
-          itemId: data.itemId,
-          lotId: data.lotId ?? null,
-          qtyDelta: +data.qty,
-        })
-        break
-      }
-
-      default:
-        throw new Error(`지원하지 않는 트랜잭션 유형입니다: ${data.txType}`)
-    }
+  const item = await prisma.item.findUniqueOrThrow({
+    where: { id: data.itemId },
+    select: {
+      code: true,
+      itemType: true,
+      isLotTracked: true,
+      lotNumberingType: true,
+      lotPrefix: true,
+      manualLotPolicy: true,
+      itemGroup: { select: { code: true } },
+      category: { select: { code: true } },
+    },
   })
+
+  const manualLotNo = data.lotNo?.trim() || null
+  const shouldAutoGenerateLotNo = item.isLotTracked && isInbound && !manualLotNo
+  const maxAttempts = shouldAutoGenerateLotNo ? 5 : 1
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const txNo = await generateTxNo(tenantId, data.txType)
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const lotId = await resolveLotId(tx, tenantId, data.itemId, item, manualLotNo, isInbound, attempt)
+
+        // 1. InventoryTransaction 생성
+        await tx.inventoryTransaction.create({
+          data: {
+            tenantId,
+            itemId: data.itemId,
+            lotId,
+            fromLocationId: data.fromLocationId ?? null,
+            toLocationId: data.toLocationId ?? null,
+            txNo,
+            txType: data.txType,
+            qty: data.qty,
+            refType: data.refType ?? null,
+            refId: data.refId ?? null,
+            note: data.note ?? null,
+            txAt: new Date(),
+          },
+        })
+
+        // 2. Balance 갱신 (txType별 분기)
+        switch (data.txType) {
+          case TransactionType.RECEIPT:
+          case TransactionType.RETURN: {
+            // 입고 / 반품 → toLocation (Warehouse) + qtyOnHand 증가
+            if (!data.toLocationId) throw new Error("입고/반품 시 입고 로케이션이 필요합니다.")
+            const wh = await tx.warehouse.findUnique({ where: { id: data.toLocationId } })
+            if (!wh) throw new Error("유효하지 않은 로케이션입니다.")
+            await adjustBalance(tx, {
+              tenantId,
+              siteId: data.siteId,
+              warehouseId: data.toLocationId,
+              itemId: data.itemId,
+              lotId,
+              qtyDelta: +data.qty,
+            })
+            break
+          }
+
+          case TransactionType.ISSUE:
+          case TransactionType.SCRAP: {
+            // 출고 / 폐기 → fromLocation (Warehouse) + qtyOnHand 감소
+            if (!data.fromLocationId) throw new Error("출고/폐기 시 출고 로케이션이 필요합니다.")
+            await adjustBalance(tx, {
+              tenantId,
+              siteId: data.siteId,
+              warehouseId: data.fromLocationId,
+              itemId: data.itemId,
+              lotId,
+              qtyDelta: -data.qty,
+            })
+            break
+          }
+
+          case TransactionType.ADJUST: {
+            // 재고조정 → fromLocation (또는 toLocation, Warehouse) + qtyOnHand 절대값 세팅
+            const warehouseId = data.fromLocationId ?? data.toLocationId
+            if (!warehouseId) throw new Error("재고조정 시 로케이션이 필요합니다.")
+            await adjustBalance(tx, {
+              tenantId,
+              siteId: data.siteId,
+              warehouseId,
+              itemId: data.itemId,
+              lotId,
+              qtyAbsolute: data.qty,
+            })
+            break
+          }
+
+          case TransactionType.TRANSFER: {
+            // 이동 → fromLocation 감소 + toLocation 증가 (모두 Warehouse)
+            if (!data.fromLocationId || !data.toLocationId) {
+              throw new Error("이동 시 출발 로케이션과 도착 로케이션이 모두 필요합니다.")
+            }
+            await adjustBalance(tx, {
+              tenantId,
+              siteId: data.siteId,
+              warehouseId: data.fromLocationId,
+              itemId: data.itemId,
+              lotId,
+              qtyDelta: -data.qty,
+            })
+            await adjustBalance(tx, {
+              tenantId,
+              siteId: data.siteId,
+              warehouseId: data.toLocationId,
+              itemId: data.itemId,
+              lotId,
+              qtyDelta: +data.qty,
+            })
+            break
+          }
+
+          default:
+            throw new Error(`지원하지 않는 트랜잭션 유형입니다: ${data.txType}`)
+        }
+      })
+      break
+    } catch (error) {
+      const canRetry = shouldAutoGenerateLotNo &&
+        (isUniqueConstraintError(error) || (error instanceof Error && error.message === AUTO_LOT_COLLISION))
+
+      if (canRetry && attempt < maxAttempts - 1) {
+        continue
+      }
+      if (canRetry) {
+        throw new Error("LOT 자동발행 중 번호 충돌이 반복되었습니다. 다시 시도해 주세요.")
+      }
+      throw error
+    }
+  }
 
   revalidatePath("/app/mes/inventory")
   revalidatePath("/app/mes/inventory-transactions")

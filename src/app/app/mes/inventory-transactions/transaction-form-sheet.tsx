@@ -23,6 +23,7 @@ import { transactionFormSchema, TransactionFormValues } from "./transaction-form
 import {
   createTransaction,
   getItemsForSite,
+  getAllItemsForInventory,
   getSalesOrdersForSite,
   getWorkOrdersForSite,
 } from "@/lib/actions/inventory.actions"
@@ -30,7 +31,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type WarehouseOption = { id: string; code: string; name: string; siteId: string }
-type SiteItem = { id: string; code: string; name: string; itemType: string; uom: string; qtyOnHand: number }
+type SiteItem = { id: string; code: string; name: string; itemType: string; uom: string; qtyOnHand?: number }
 type SalesOrderOption = { id: string; orderNo: string; customer: { name: string } }
 type WorkOrderOption = { id: string; orderNo: string; item: { name: string }; status: string }
 
@@ -66,12 +67,14 @@ const ISSUE_DEST_OPTIONS = [
   { label: "기타", value: "OTHER" },
 ]
 
+const INBOUND_TYPES = ["RECEIPT", "RETURN"]
+
 const DEFAULT_VALUES: TransactionFormValues = {
   siteId: "",
   fromLocationId: null,
   toLocationId: null,
   itemId: "",
-  lotId: null,
+  lotNo: null,
   txType: "",
   qty: 1,
   refType: null,
@@ -92,6 +95,7 @@ export function TransactionFormSheet({
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [siteItems, setSiteItems] = useState<SiteItem[]>([])
+  const [allItems, setAllItems] = useState<SiteItem[]>([])
   const [itemsLoading, setItemsLoading] = useState(false)
   const [salesOrders, setSalesOrders] = useState<SalesOrderOption[]>([])
   const [workOrders, setWorkOrders] = useState<WorkOrderOption[]>([])
@@ -104,20 +108,35 @@ export function TransactionFormSheet({
   const txType = form.watch("txType")
   const siteId = form.watch("siteId")
   const issueDestType = form.watch("issueDestType")
+  const isInbound = INBOUND_TYPES.includes(txType)
 
   // 사이트 필터링된 창고 목록
   const siteLocations = siteId
     ? locations.filter((loc) => loc.siteId === siteId)
     : []
 
+  // 입고/반품: 전체 품목(사이트 재고 무관) / 그 외: 사이트 재고 보유 품목만
+  const itemOptions = isInbound ? allItems : siteItems
+
   useEffect(() => {
     if (open) {
       form.reset(DEFAULT_VALUES)
       setSiteItems([])
+      setAllItems([])
       setSalesOrders([])
       setWorkOrders([])
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ensureAllItemsLoaded = async () => {
+    if (allItems.length > 0) return
+    setItemsLoading(true)
+    try {
+      setAllItems(await getAllItemsForInventory())
+    } finally {
+      setItemsLoading(false)
+    }
+  }
 
   const handleSiteChange = async (newSiteId: string) => {
     form.setValue("siteId", newSiteId)
@@ -141,15 +160,22 @@ export function TransactionFormSheet({
     } finally {
       setItemsLoading(false)
     }
+    if (isInbound) {
+      await ensureAllItemsLoaded()
+    }
   }
 
-  const handleTxTypeChange = (value: string) => {
+  const handleTxTypeChange = async (value: string) => {
     form.setValue("txType", value)
+    form.setValue("itemId", "")
     form.setValue("fromLocationId", null)
     form.setValue("toLocationId", null)
     form.setValue("issueDestType", null)
     form.setValue("refType", null)
     form.setValue("refId", null)
+    if (INBOUND_TYPES.includes(value)) {
+      await ensureAllItemsLoaded()
+    }
   }
 
   const handleIssueDestTypeChange = (value: string) => {
@@ -167,7 +193,7 @@ export function TransactionFormSheet({
           fromLocationId: values.fromLocationId,
           toLocationId: values.toLocationId,
           itemId: values.itemId,
-          lotId: values.lotId,
+          lotNo: values.lotNo,
           txType: values.txType as TransactionType,
           qty: values.qty,
           refType: values.refType,
@@ -278,18 +304,20 @@ export function TransactionFormSheet({
                             ? "사이트를 먼저 선택하세요"
                             : itemsLoading
                             ? "품목 불러오는 중..."
-                            : siteItems.length === 0
-                            ? "해당 사이트에 재고 없음"
+                            : itemOptions.length === 0
+                            ? (isInbound ? "등록된 품목이 없습니다" : "해당 사이트에 재고 없음")
                             : "품목 선택"
                         }
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {siteItems.map((item) => (
+                      {itemOptions.map((item) => (
                         <SelectItem key={item.id} value={item.id}>
                           <div className="flex items-center justify-between gap-4 w-full">
                             <span>[{item.code}] {item.name} ({ITEM_TYPE_LABELS[item.itemType] ?? item.itemType} / {item.uom})</span>
-                            <span className="text-muted-foreground text-[12px] shrink-0">재고 {item.qtyOnHand.toLocaleString()}</span>
+                            {item.qtyOnHand !== undefined && (
+                              <span className="text-muted-foreground text-[12px] shrink-0">재고 {item.qtyOnHand.toLocaleString()}</span>
+                            )}
                           </div>
                         </SelectItem>
                       ))}
@@ -324,12 +352,17 @@ export function TransactionFormSheet({
                 )}
               />
 
-              {/* LOT ID */}
+              {/* LOT 번호 */}
               <FormTextField
                 control={form.control}
-                name="lotId"
-                label="LOT ID (선택)"
+                name="lotNo"
+                label="LOT 번호 (선택)"
                 placeholder="LOT 번호 입력"
+                description={
+                  isInbound
+                    ? "미입력 시 LOT 관리 품목은 자동으로 번호가 발급됩니다."
+                    : undefined
+                }
               />
             </div>
           </div>
