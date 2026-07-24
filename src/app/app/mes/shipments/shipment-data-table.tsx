@@ -13,6 +13,13 @@ import { getColumns, ShipmentRow } from "./columns"
 import { ShipmentFormSheet } from "./shipment-form-sheet"
 import { confirmShipment, deleteShipment } from "@/lib/actions/shipment.actions"
 import { useUserRole } from "@/lib/contexts/user-role-context"
+import {
+  BarcodePrintDialog,
+} from "@/components/common/barcode/barcode-print-dialog"
+import {
+  buildShipmentLabelItems,
+  type ShipmentLabelData,
+} from "./shipment-label.utils"
 
 type SalesOrderOption = {
   id: string
@@ -54,6 +61,8 @@ export function ShipmentDataTable({
   const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [preselectedOrderId, setPreselectedOrderId] = useState<string | undefined>()
+  const [printOpen, setPrintOpen] = useState(false)
+  const [printItems, setPrintItems] = useState<ShipmentLabelData[]>([])
 
   const openFormWithOrder = (orderId?: string) => {
     setPreselectedOrderId(orderId)
@@ -88,7 +97,22 @@ export function ShipmentDataTable({
     }
   }
 
-  const allColumns = getColumns(handleConfirm, handleDelete)
+  const handlePrintLabels = (id: string) => {
+    const shipment = data.find((row) => row.id === id)
+    if (!shipment) return
+
+    const labels = buildShipmentLabelItems(shipment.items)
+
+    if (labels.length === 0) {
+      alert("출력할 수 있는 출하 라벨이 없습니다.")
+      return
+    }
+
+    setPrintItems(labels)
+    setPrintOpen(true)
+  }
+
+  const allColumns = getColumns(handleConfirm, handleDelete, handlePrintLabels)
   const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const filterableColumns = [
@@ -227,6 +251,13 @@ export function ShipmentDataTable({
         salesOrders={salesOrders}
         warehouses={warehouses}
         defaultSalesOrderId={preselectedOrderId}
+      />
+
+      <BarcodePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title="출하 LOT 라벨 출력"
+        items={printItems}
       />
     </div>
   )
