@@ -445,6 +445,7 @@ export function ReceivingFormDialog({
         items={inspections.map((ins) => ({
           itemCode: ins.itemCode,
           itemName: ins.itemName,
+          lotNo: ins.lotNo,
           quantity: parseFloat(ins.thisReceivedQty) || ins.pendingQty,
           uom: ins.uom,
         }))}

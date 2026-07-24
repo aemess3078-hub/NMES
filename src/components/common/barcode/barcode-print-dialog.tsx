@@ -17,6 +17,8 @@ interface BarcodePrintItem {
   itemCode: string
   itemName: string
   lotId?: string
+  lotNo?: string | null
+  manufacturingNo?: string | null
   quantity?: number
   uom?: string
 }
@@ -56,6 +58,23 @@ export function BarcodePrintDialog({
     `,
   })
 
+  const handleDownload = async () => {
+    if (!printRef.current) return
+
+    const html2canvas = (await import("html2canvas")).default
+    const canvas = await html2canvas(printRef.current, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+    })
+    const link = document.createElement("a")
+    link.download = `바코드_${today.replaceAll(". ", "-").replace(".", "")}.png`
+    link.href = canvas.toDataURL("image/png")
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -78,6 +97,8 @@ export function BarcodePrintDialog({
                 itemCode={item.itemCode}
                 itemName={item.itemName}
                 lotId={item.lotId}
+                lotNo={item.lotNo}
+                manufacturingNo={item.manufacturingNo}
                 quantity={item.quantity}
                 uom={item.uom}
                 date={today}
@@ -89,6 +110,10 @@ export function BarcodePrintDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             닫기
+          </Button>
+          <Button variant="outline" onClick={() => void handleDownload()}>
+            <Download className="h-4 w-4 mr-2" />
+            이미지 저장
           </Button>
           <Button onClick={() => handlePrint()}>
             <Printer className="h-4 w-4 mr-2" />
