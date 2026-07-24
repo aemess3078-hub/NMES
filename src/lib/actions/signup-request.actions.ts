@@ -65,7 +65,6 @@ async function findDuplicatePopPin(
 }
 
 export type CreateSignupRequestInput = {
-  tenantId: string
   loginId: string
   email: string
   name: string
@@ -99,8 +98,8 @@ export type SignupRequestRow = {
 export async function createSignupRequest(
   input: CreateSignupRequestInput,
 ): Promise<{ success: boolean; message: string }> {
+  const tenantId = await getTenantId()
   const {
-    tenantId,
     loginId,
     email,
     name,
@@ -483,9 +482,9 @@ export async function rejectSignupRequest(
 }
 
 export async function checkSignupPopPinAvailability(
-  tenantId: string,
   pin: string,
 ): Promise<{ available: boolean; message: string }> {
+  const tenantId = await getTenantId()
   try {
     assertValidPopPin(pin)
   } catch {
