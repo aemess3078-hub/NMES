@@ -38,14 +38,6 @@ export default function SignupRequestPage() {
   const [pinCheckLoading, setPinCheckLoading] = useState(false)
   const [pinCheckMessage, setPinCheckMessage] = useState<{ available: boolean; text: string } | null>(null)
 
-  const tenantId =
-    typeof document !== "undefined"
-      ? document.cookie
-          .split("; ")
-          .find((c) => c.startsWith("tenantId="))
-          ?.split("=")[1] ?? "tenant-demo-001"
-      : "tenant-demo-001"
-
   function updatePinField(field: "popPin" | "confirmPopPin", value: string) {
     setForm((prev) => ({ ...prev, [field]: value.replace(/\D/g, "").slice(0, 4) }))
     if (field === "popPin") {
@@ -90,7 +82,7 @@ export default function SignupRequestPage() {
     }
     setPinCheckLoading(true)
     try {
-      const res = await checkSignupPopPinAvailability(tenantId, form.popPin)
+      const res = await checkSignupPopPinAvailability(form.popPin)
       setPinChecked(res.available)
       setPinCheckMessage({ available: res.available, text: res.message })
     } catch {
@@ -113,7 +105,6 @@ export default function SignupRequestPage() {
     setLoading(true)
     try {
       const res = await createSignupRequest({
-        tenantId,
         loginId: form.loginId.trim().toLowerCase(),
         email: form.email.trim(),
         name: form.name.trim(),
