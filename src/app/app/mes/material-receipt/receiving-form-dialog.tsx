@@ -43,6 +43,8 @@ type ItemInspection = {
   itemName: string
   uom: string
   isLotTracked: boolean
+  lotNumberingType: string
+  manualLotPolicy: string
   defaultWarehouseId: string | null
   warehouseId: string   // 품목별 입고창고 (사용자 변경 가능)
   orderedQty: number
@@ -55,6 +57,18 @@ type ItemInspection = {
   result: ReceivingInspectionResult
   note: string
   lotNo: string   // 비워두면 isLotTracked 시 자동생성, 비LOT 품목은 미할당
+}
+
+// 품목의 LOT 정책 상태 — 서버(receiving.actions.ts)의 판정 조건과 동일하게 유지
+//  - REQUIRED: lotNumberingType이 진짜 MANUAL이거나 manualLotPolicy가 REQUIRED → 직접 입력 필수
+//  - DISABLED: manualLotPolicy가 DISABLED → 직접 입력 불가, 자동 발행만 수행
+//  - AUTO:     그 외(ALLOWED + 자동번호 방식) → 미입력 시 자동 발행, 직접 입력도 가능
+type LotPolicyState = "REQUIRED" | "DISABLED" | "AUTO"
+
+function getLotPolicyState(lotNumberingType: string, manualLotPolicy: string): LotPolicyState {
+  if (lotNumberingType === "MANUAL" || manualLotPolicy === "REQUIRED") return "REQUIRED"
+  if (manualLotPolicy === "DISABLED") return "DISABLED"
+  return "AUTO"
 }
 
 const RESULT_OPTIONS: { label: string; value: ReceivingInspectionResult }[] = [
@@ -91,6 +105,8 @@ export function ReceivingFormDialog({
         itemName: oi.item.name,
         uom: oi.item.uom,
         isLotTracked: oi.item.isLotTracked ?? false,
+        lotNumberingType: oi.item.lotNumberingType ?? "DEFAULT",
+        manualLotPolicy: oi.item.manualLotPolicy ?? "ALLOWED",
         defaultWarehouseId: oi.item.defaultWarehouseId ?? null,
         warehouseId: "",
         orderedQty,
@@ -166,6 +182,15 @@ export function ReceivingFormDialog({
 
       if (!ins.warehouseId) {
         alert(`[${ins.itemCode}] ${ins.itemName}\n입고 창고를 선택해 주세요.`)
+        return
+      }
+
+      if (
+        ins.isLotTracked &&
+        getLotPolicyState(ins.lotNumberingType, ins.manualLotPolicy) === "REQUIRED" &&
+        !ins.lotNo.trim()
+      ) {
+        alert(`[${ins.itemCode}] ${ins.itemName}\nLOT 번호를 직접 입력해야 하는 품목입니다.`)
         return
       }
     }
@@ -264,29 +289,59 @@ export function ReceivingFormDialog({
                 </div>
               </div>
 
-              {/* LOT 번호 입력 — LOT 관리 품목만 표시 */}
-              {ins.isLotTracked && (
-                <div className="space-y-1.5">
-                  <Label className="text-[13px]">
-                    LOT 번호
-                    <span className="ml-1 text-[11px] text-blue-600 font-normal">
-                      (미입력 시 자동 발행)
-                    </span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={ins.lotNo}
-                    onChange={(e) => updateInspection(index, { lotNo: e.target.value })}
-                    placeholder="자동 생성 예: 26A01-1 / 공급사 LOT 직접 입력 가능"
-                    className="h-8 text-[13px] font-mono"
-                  />
-                  {!ins.lotNo && (
-                    <p className="text-[12px] text-muted-foreground">
-                      미입력 시 26A01-1 형식으로 자동 발행됩니다. 공급사 LOT가 있으면 직접 입력할 수 있습니다.
-                    </p>
-                  )}
-                </div>
-              )}
+              {/* LOT 번호 입력 — LOT 관리 품목만 표시, 품목별 LOT 정책에 따라 안내/필수여부가 달라짐 */}
+              {ins.isLotTracked && (() => {
+                const policy = getLotPolicyState(ins.lotNumberingType, ins.manualLotPolicy)
+                return (
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">
+                      LOT 번호
+                      {policy === "REQUIRED" && (
+                        <span className="ml-1 text-destructive">*</span>
+                      )}
+                      {policy === "AUTO" && (
+                        <span className="ml-1 text-[11px] text-blue-600 font-normal">
+                          (미입력 시 자동 발행)
+                        </span>
+                      )}
+                      {policy === "DISABLED" && (
+                        <span className="ml-1 text-[11px] text-muted-foreground font-normal">
+                          (자동 발행 전용)
+                        </span>
+                      )}
+                    </Label>
+                    <Input
+                      type="text"
+                      value={ins.lotNo}
+                      onChange={(e) => updateInspection(index, { lotNo: e.target.value })}
+                      disabled={policy === "DISABLED"}
+                      placeholder={
+                        policy === "REQUIRED"
+                          ? "공급사 LOT 번호를 입력하세요"
+                          : policy === "DISABLED"
+                            ? "자동 발행됩니다"
+                            : "자동 생성 예: 26A01-1 / 공급사 LOT 직접 입력 가능"
+                      }
+                      className="h-8 text-[13px] font-mono"
+                    />
+                    {policy === "REQUIRED" && (
+                      <p className="text-[12px] text-destructive">
+                        이 품목은 LOT 번호를 직접 입력해야 합니다.
+                      </p>
+                    )}
+                    {policy === "DISABLED" && (
+                      <p className="text-[12px] text-muted-foreground">
+                        26A01-1 형식으로 자동 발행됩니다. 이 품목은 직접 입력을 지원하지 않습니다.
+                      </p>
+                    )}
+                    {policy === "AUTO" && !ins.lotNo && (
+                      <p className="text-[12px] text-muted-foreground">
+                        미입력 시 26A01-1 형식으로 자동 발행됩니다. 공급사 LOT가 있으면 직접 입력할 수 있습니다.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* 품목별 입고창고 */}
               <div className="space-y-1.5">
