@@ -176,7 +176,7 @@ export function ReceivingFormDialog({
         const received = parseFloat(ins.thisReceivedQty) || 0
         if (received <= 0) continue
 
-        await createReceivingInspection({
+        const result = await createReceivingInspection({
           purchaseOrderItemId: ins.purchaseOrderItemId,
           purchaseOrderId: purchaseOrder.id,
           warehouseId: ins.warehouseId,
@@ -188,6 +188,13 @@ export function ReceivingFormDialog({
           note: ins.note || undefined,
           lotNo: ins.lotNo.trim() || undefined,
         })
+        if (!result.success) {
+          alert(
+            `[${ins.itemCode}] ${ins.itemName}\n` +
+            (result.message ?? "저장 중 오류가 발생했습니다.")
+          )
+          return
+        }
       }
       onClose()
       router.refresh()

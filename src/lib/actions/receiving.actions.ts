@@ -64,7 +64,26 @@ async function generateTxNo(tenantId: string): Promise<string> {
   return `${prefix}${String(seq).padStart(4, "0")}`
 }
 
-export async function createReceivingInspection(data: CreateReceivingInspectionInput) {
+export async function createReceivingInspection(
+  data: CreateReceivingInspectionInput,
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    return await createReceivingInspectionInternal(data)
+  } catch (error) {
+    // Next.js는 프로덕션에서 Server Action이 throw한 에러 메시지를 자동으로
+    // 지우므로(보안상 기본 동작), 여기서 잡아 메시지를 그대로 반환값에 담아
+    // 클라이언트가 실제 원인을 표시할 수 있게 한다.
+    console.error("[createReceivingInspection] error:", error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "입고 처리 중 오류가 발생했습니다.",
+    }
+  }
+}
+
+async function createReceivingInspectionInternal(
+  data: CreateReceivingInspectionInput,
+): Promise<{ success: boolean; message?: string }> {
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -302,4 +321,6 @@ export async function createReceivingInspection(data: CreateReceivingInspectionI
   revalidatePath("/app/mes/material-receipt")
   revalidatePath("/app/mes/material/stock")
   revalidatePath("/app/mes/inventory-transactions")
+
+  return { success: true }
 }
