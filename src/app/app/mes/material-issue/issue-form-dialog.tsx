@@ -727,6 +727,13 @@ export function IssueFormDialog({
         items={pendingMaterials.map((material) => ({
           itemCode: material.item.code,
           itemName: material.item.name,
+          lotNo: isLotManaged(material.item)
+            ? getLotSplits(material.itemId)
+                .map((row) => getLotFromSplitRow(material.itemId, row)?.lotNo)
+                .filter((lotNo): lotNo is string => Boolean(lotNo))
+                .join(", ")
+            : undefined,
+          manufacturingNo: workOrder.manufacturingNo,
           quantity: isLotManaged(material.item)
             ? getLotSplitTotal(material.itemId)
             : Number(qtyMap[material.itemId] ?? material.pendingQty),

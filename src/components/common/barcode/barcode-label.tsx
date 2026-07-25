@@ -7,6 +7,8 @@ interface BarcodeLabelProps {
   itemCode: string
   itemName: string
   lotId?: string
+  lotNo?: string | null
+  manufacturingNo?: string | null
   quantity?: number
   uom?: string
   date?: string
@@ -21,6 +23,8 @@ export function BarcodeLabel({
   itemCode,
   itemName,
   lotId,
+  lotNo,
+  manufacturingNo,
   quantity,
   uom,
   date,
@@ -28,6 +32,9 @@ export function BarcodeLabel({
 }: BarcodeLabelProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const barcodeValue = lotId ? `${itemCode}|${lotId}` : itemCode
+  const displayLotNo = lotNo?.trim()
+  const displayManufacturingNo = manufacturingNo?.trim()
+  const hasTrackingInfo = Boolean(displayLotNo || displayManufacturingNo)
 
   useEffect(() => {
     if (!svgRef.current) return
@@ -56,11 +63,24 @@ export function BarcodeLabel({
       {/* 바코드 값 텍스트 */}
       <p className="text-[9px] text-gray-400 mt-0.5 font-mono">{barcodeValue}</p>
 
-      {/* LOT / 수량 / 날짜 */}
-      <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex flex-wrap justify-center gap-x-3 gap-y-0.5">
-        {lotId && (
-          <span className="text-[10px] text-gray-600">LOT: <span className="font-medium">{lotId}</span></span>
-        )}
+      {/* 표시 전용 LOT / 제조번호: 바코드 인코딩 값과 분리 */}
+      {hasTrackingInfo && (
+        <div className="mt-1.5 border-t border-gray-100 pt-1.5 text-left">
+          {displayLotNo && (
+            <p className="break-all text-[10px] leading-[1.25] text-gray-700">
+              LOT: <span className="font-medium font-mono">{displayLotNo}</span>
+            </p>
+          )}
+          {displayManufacturingNo && (
+            <p className="break-all text-[10px] leading-[1.25] text-gray-700">
+              제조번호: <span className="font-medium font-mono">{displayManufacturingNo}</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* 수량 / 날짜 */}
+      <div className={`${hasTrackingInfo ? "mt-1" : "mt-1.5 pt-1.5 border-t border-gray-100"} flex flex-wrap justify-center gap-x-3 gap-y-0.5`}>
         {quantity !== undefined && (
           <span className="text-[10px] text-gray-600">수량: <span className="font-medium">{quantity.toLocaleString()} {uom}</span></span>
         )}

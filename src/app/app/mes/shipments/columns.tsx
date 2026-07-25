@@ -2,7 +2,7 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { ShipmentStatus } from "@prisma/client"
-import { CheckCircle, MoreHorizontal, Trash2 } from "lucide-react"
+import { CheckCircle, MoreHorizontal, Printer, Trash2 } from "lucide-react"
 import { format } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,12 @@ export type ShipmentRow = {
     qty: number | string
     lotId?: string | null
     lot?: { id: string; lotNo: string } | null
+    item: {
+      code: string
+      name: string
+      uom?: string | null
+      isLotTracked: boolean
+    }
   }[]
 }
 
@@ -46,7 +52,8 @@ const STATUS_CONFIG: Record<
 
 export function getColumns(
   onConfirm: (id: string) => void,
-  onDelete: (id: string) => void
+  onDelete: (id: string) => void,
+  onPrintLabels: (id: string) => void,
 ): ColumnDef<ShipmentRow>[] {
   return [
     {
@@ -158,13 +165,16 @@ export function getColumns(
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => onPrintLabels(row.original.id)}>
+              <Printer className="mr-2 h-4 w-4" /> 라벨 출력
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => onConfirm(row.original.id)}
               disabled={row.original.status !== "PLANNED"}
             >
               <CheckCircle className="mr-2 h-4 w-4" /> 출하 확정
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={() => onDelete(row.original.id)}
