@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import {
   Dialog,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
+import { reserveReceivingLotNumber, releaseLotReservation } from "@/lib/actions/lot-reservation.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
@@ -57,6 +58,11 @@ type ItemInspection = {
   result: ReceivingInspectionResult
   note: string
   lotNo: string   // 비워두면 isLotTracked 시 자동생성, 비LOT 품목은 미할당
+  // 자동채번 미리보기 상태
+  lotReservationId: string | null
+  lotReservationExpiresAt: string | null
+  isAutoNumbered: boolean   // lotNo가 자동채번 예약으로 채워진 값인지 (true면 lotReservationId가 유효)
+  isReserving: boolean      // 자동채번/재채번 버튼 클릭 중 — 중복 클릭 방지용
 }
 
 // 품목의 LOT 정책 상태 — 서버(receiving.actions.ts)의 판정 조건과 동일하게 유지
@@ -118,6 +124,10 @@ export function ReceivingFormDialog({
         result: "PASS",
         note: "",
         lotNo: "",
+        lotReservationId: null,
+        lotReservationExpiresAt: null,
+        isAutoNumbered: false,
+        isReserving: false,
       }
     })
   )
@@ -148,6 +158,69 @@ export function ReceivingFormDialog({
     setInspections((prev) =>
       prev.map((item, i) => (i === index ? { ...item, ...patch } : item))
     )
+  }
+
+  // 최신 inspections를 effect cleanup(unmount 시점)에서도 참조할 수 있도록 ref로 미러링
+  const inspectionsRef = useRef(inspections)
+  useEffect(() => {
+    inspectionsRef.current = inspections
+  }, [inspections])
+
+  function releaseReservationBestEffort(reservationId: string | null) {
+    if (!reservationId) return
+    releaseLotReservation({ reservationId }).catch(() => {
+      // best-effort — 실패해도 서버의 만료(expiresAt) 정책이 최종 안전망
+    })
+  }
+
+  function releaseAllTrackedReservations(list: ItemInspection[] = inspections) {
+    list.forEach((ins) => releaseReservationBestEffort(ins.lotReservationId))
+  }
+
+  // 다이얼로그가 언마운트될 때(취소/닫기 외의 경로 포함) 남아있는 예약을 best-effort로 정리
+  useEffect(() => {
+    return () => {
+      releaseAllTrackedReservations(inspectionsRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 발주가 바뀌면(동일 다이얼로그 인스턴스가 재사용되는 경우) 이전 발주의 예약을 정리
+  const prevPurchaseOrderIdRef = useRef(purchaseOrder.id)
+  useEffect(() => {
+    if (prevPurchaseOrderIdRef.current !== purchaseOrder.id) {
+      releaseAllTrackedReservations(inspectionsRef.current)
+      prevPurchaseOrderIdRef.current = purchaseOrder.id
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseOrder.id])
+
+  function handleCloseDialog() {
+    releaseAllTrackedReservations()
+    onClose()
+  }
+
+  async function handleReserveLotNumber(index: number) {
+    const ins = inspections[index]
+    if (!ins || ins.isReserving) return
+    updateInspection(index, { isReserving: true })
+    const result = await reserveReceivingLotNumber({
+      purchaseOrderId: purchaseOrder.id,
+      purchaseOrderItemId: ins.purchaseOrderItemId,
+      previousReservationId: ins.lotReservationId ?? undefined,
+    })
+    if (result.success) {
+      updateInspection(index, {
+        lotNo: result.lotNo,
+        lotReservationId: result.reservationId,
+        lotReservationExpiresAt: result.expiresAt,
+        isAutoNumbered: true,
+        isReserving: false,
+      })
+    } else {
+      updateInspection(index, { isReserving: false })
+      alert(`[${ins.itemCode}] ${ins.itemName}\n${result.message}`)
+    }
   }
 
   async function handleConfirm() {
@@ -212,6 +285,7 @@ export function ReceivingFormDialog({
           result: ins.result,
           note: ins.note || undefined,
           lotNo: ins.lotNo.trim() || undefined,
+          lotReservationId: ins.isAutoNumbered ? ins.lotReservationId ?? undefined : undefined,
         })
         if (!result.success) {
           alert(
@@ -221,6 +295,7 @@ export function ReceivingFormDialog({
           return
         }
       }
+      releaseAllTrackedReservations()
       onClose()
       router.refresh()
     } catch (error) {
@@ -231,8 +306,12 @@ export function ReceivingFormDialog({
     }
   }
 
+  // 라벨 출력 대상: 금회 입고수량 > 0인 품목만. LOT 관리 품목은 lotNo가 있어야 출력 가능.
+  const printableItems = inspections.filter((ins) => (parseFloat(ins.thisReceivedQty) || 0) > 0)
+  const hasMissingLotForPrint = printableItems.some((ins) => ins.isLotTracked && !ins.lotNo.trim())
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && handleCloseDialog()}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-[18px] font-semibold">
@@ -289,9 +368,10 @@ export function ReceivingFormDialog({
                 </div>
               </div>
 
-              {/* LOT 번호 입력 — LOT 관리 품목만 표시, 품목별 LOT 정책에 따라 안내/필수여부가 달라짐 */}
+              {/* LOT 번호 입력 — LOT 관리 품목만 표시, 품목별 LOT 정책에 따라 안내/필수여부/자동채번 버튼이 달라짐 */}
               {ins.isLotTracked && (() => {
                 const policy = getLotPolicyState(ins.lotNumberingType, ins.manualLotPolicy)
+                const showReserveButton = policy === "AUTO" || policy === "DISABLED"
                 return (
                   <div className="space-y-1.5">
                     <Label className="text-[13px]">
@@ -299,7 +379,7 @@ export function ReceivingFormDialog({
                       {policy === "REQUIRED" && (
                         <span className="ml-1 text-destructive">*</span>
                       )}
-                      {policy === "AUTO" && (
+                      {policy === "AUTO" && !ins.isAutoNumbered && (
                         <span className="ml-1 text-[11px] text-blue-600 font-normal">
                           (미입력 시 자동 발행)
                         </span>
@@ -309,35 +389,84 @@ export function ReceivingFormDialog({
                           (자동 발행 전용)
                         </span>
                       )}
+                      {ins.isAutoNumbered && (
+                        <Badge
+                          variant="outline"
+                          className="ml-1.5 align-middle text-[10px] border-blue-300 text-blue-700 bg-blue-50 px-1.5 py-0"
+                        >
+                          자동채번
+                        </Badge>
+                      )}
                     </Label>
-                    <Input
-                      type="text"
-                      value={ins.lotNo}
-                      onChange={(e) => updateInspection(index, { lotNo: e.target.value })}
-                      disabled={policy === "DISABLED"}
-                      placeholder={
-                        policy === "REQUIRED"
-                          ? "공급사 LOT 번호를 입력하세요"
-                          : policy === "DISABLED"
-                            ? "자동 발행됩니다"
-                            : "자동 생성 예: 26A01-1 / 공급사 LOT 직접 입력 가능"
-                      }
-                      className="h-8 text-[13px] font-mono"
-                    />
-                    {policy === "REQUIRED" && (
-                      <p className="text-[12px] text-destructive">
-                        이 품목은 LOT 번호를 직접 입력해야 합니다.
-                      </p>
-                    )}
-                    {policy === "DISABLED" && (
-                      <p className="text-[12px] text-muted-foreground">
-                        26A01-1 형식으로 자동 발행됩니다. 이 품목은 직접 입력을 지원하지 않습니다.
-                      </p>
-                    )}
-                    {policy === "AUTO" && !ins.lotNo && (
-                      <p className="text-[12px] text-muted-foreground">
-                        미입력 시 26A01-1 형식으로 자동 발행됩니다. 공급사 LOT가 있으면 직접 입력할 수 있습니다.
-                      </p>
+                    <div className="flex gap-1.5">
+                      <Input
+                        type="text"
+                        value={ins.lotNo}
+                        onChange={(e) => {
+                          const newValue = e.target.value
+                          if (ins.isAutoNumbered) {
+                            // 자동채번된 값을 사용자가 직접 수정 → 기존 예약 해제, 이후 수동입력 LOT로 취급
+                            releaseReservationBestEffort(ins.lotReservationId)
+                            updateInspection(index, {
+                              lotNo: newValue,
+                              isAutoNumbered: false,
+                              lotReservationId: null,
+                              lotReservationExpiresAt: null,
+                            })
+                            return
+                          }
+                          updateInspection(index, { lotNo: newValue })
+                        }}
+                        disabled={policy === "DISABLED"}
+                        placeholder={
+                          policy === "REQUIRED"
+                            ? "공급사 LOT 번호를 입력하세요"
+                            : policy === "DISABLED"
+                              ? "자동 발행됩니다"
+                              : "자동 생성 예: 26A01-1 / 공급사 LOT 직접 입력 가능"
+                        }
+                        className="h-8 text-[13px] font-mono flex-1"
+                      />
+                      {showReserveButton && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 shrink-0 text-[12px]"
+                          disabled={ins.isReserving}
+                          onClick={() => void handleReserveLotNumber(index)}
+                        >
+                          {ins.isReserving ? "발행 중..." : ins.isAutoNumbered ? "재채번" : "자동채번"}
+                        </Button>
+                      )}
+                    </div>
+                    {ins.isAutoNumbered ? (
+                      <div className="space-y-0.5">
+                        <p className="text-[12px] text-blue-700">
+                          예정 LOT: <span className="font-mono font-medium">{ins.lotNo}</span> — 입고 확정 시 이 번호로 저장됩니다.
+                        </p>
+                        <p className="text-[12px] text-muted-foreground">
+                          버튼을 누르지 않아도 입고 확정 시 LOT가 자동 발행됩니다.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {policy === "REQUIRED" && (
+                          <p className="text-[12px] text-destructive">
+                            이 품목은 LOT 번호를 직접 입력해야 합니다.
+                          </p>
+                        )}
+                        {policy === "DISABLED" && (
+                          <p className="text-[12px] text-muted-foreground">
+                            26A01-1 형식으로 자동 발행됩니다. 이 품목은 직접 입력을 지원하지 않습니다.
+                          </p>
+                        )}
+                        {policy === "AUTO" && !ins.lotNo && (
+                          <p className="text-[12px] text-muted-foreground">
+                            미입력 시 26A01-1 형식으로 자동 발행됩니다. 공급사 LOT가 있으면 직접 입력할 수 있습니다.
+                          </p>
+                        )}
+                      </>
                     )}
                   </div>
                 )
@@ -390,11 +519,19 @@ export function ReceivingFormDialog({
                     value={ins.thisReceivedQty}
                     onChange={(e) => {
                       const v = e.target.value
-                      updateInspection(index, {
+                      const patch: Partial<ItemInspection> = {
                         thisReceivedQty: v,
                         thisAcceptedQty: v,
                         thisRejectedQty: "0",
-                      })
+                      }
+                      if ((parseFloat(v) || 0) <= 0 && ins.lotReservationId) {
+                        // 입고수량을 0으로 바꾸면 해당 품목의 자동채번 예약은 더 이상 쓸 곳이 없으므로 정리
+                        releaseReservationBestEffort(ins.lotReservationId)
+                        patch.lotReservationId = null
+                        patch.lotReservationExpiresAt = null
+                        patch.isAutoNumbered = false
+                      }
+                      updateInspection(index, patch)
                     }}
                     className={`h-8 text-[13px] ${(parseFloat(ins.thisReceivedQty) || 0) > ins.pendingQty ? "border-red-400 focus-visible:ring-red-400" : ""}`}
                   />
@@ -472,14 +609,22 @@ export function ReceivingFormDialog({
         </div>
 
         <DialogFooter className="pt-2 flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setPrintOpen(true)}
-            className="mr-auto"
-          >
-            바코드 라벨 출력
-          </Button>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+          <div className="mr-auto flex flex-col gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPrintOpen(true)}
+              disabled={printableItems.length === 0 || hasMissingLotForPrint}
+            >
+              바코드 라벨 출력
+            </Button>
+            {hasMissingLotForPrint && (
+              <p className="text-[11px] text-muted-foreground">
+                LOT 번호를 직접 입력하거나 자동채번한 후 라벨을 출력하세요.
+              </p>
+            )}
+          </div>
+          <Button variant="outline" onClick={handleCloseDialog} disabled={isLoading}>
             취소
           </Button>
           <Button
@@ -504,9 +649,10 @@ export function ReceivingFormDialog({
         open={printOpen}
         onOpenChange={setPrintOpen}
         title={`바코드 라벨 — ${purchaseOrder.orderNo}`}
-        items={inspections.map((ins) => ({
+        items={printableItems.map((ins) => ({
           itemCode: ins.itemCode,
           itemName: ins.itemName,
+          lotNo: ins.isLotTracked ? ins.lotNo.trim() || undefined : undefined,
           quantity: parseFloat(ins.thisReceivedQty) || ins.pendingQty,
           uom: ins.uom,
         }))}

@@ -3,6 +3,7 @@
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { generateCnsMaterialReceiptLotNo } from "@/lib/lot-numbering/lot-number-generator"
+import { computeNextMaterialReceiptLotNo } from "@/lib/lot-numbering/lot-reservation"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { Prisma, ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
@@ -19,6 +20,7 @@ export type CreateReceivingInspectionInput = {
   result: ReceivingInspectionResult
   note?: string
   lotNo?: string               // 입력 시 해당 LOT 사용, 미입력 + isLotTracked 시 자동생성
+  lotReservationId?: string    // 자동채번 미리보기(reserveReceivingLotNumber)로 발급받은 예약 id
   // 하위 호환용 (무시됨)
   tenantId?: string
 }
@@ -149,7 +151,11 @@ async function createReceivingInspectionInternal(
 
   // ── 3. LOT 번호 결정 ───────────────────────────────────────────────────────
   // isLotTracked=false → 입력값 무시, 항상 null (비LOT 출고 흐름 보존)
-  // isLotTracked=true  → 사용자 입력 우선, 미입력 시 자동생성
+  // isLotTracked=true  → 아래 4가지 모드 중 하나
+  //   RESERVED: 자동채번 미리보기(lotReservationId)로 확정된 번호 그대로 사용
+  //   MANUAL:   공급사 LOT 직접 입력
+  //   AUTO:     미입력(또는 DISABLED 정책) → 입고 확정 시 서버가 즉시 채번
+  //   NONE:     비LOT 품목
   const manualLotNo = isLotTracked ? data.lotNo?.trim() || null : null
   const manualLotPolicy = purchaseOrderItem.item.manualLotPolicy ?? "ALLOWED"
   const lotNumberingType = purchaseOrderItem.item.lotNumberingType ?? "DEFAULT"
@@ -157,7 +163,25 @@ async function createReceivingInspectionInternal(
   if (isLotTracked && (lotNumberingType === "MANUAL" || manualLotPolicy === "REQUIRED") && !manualLotNo) {
     throw new Error("LOT 번호를 직접 입력해야 하는 품목입니다.")
   }
-  const shouldAutoGenerateLotNo = isLotTracked && !manualLotNo
+
+  type LotResolutionMode = "NONE" | "AUTO" | "MANUAL" | "RESERVED"
+  let lotResolutionMode: LotResolutionMode
+  if (!isLotTracked) {
+    lotResolutionMode = "NONE"
+  } else if (data.lotReservationId) {
+    // 유효한 예약(자동채번 미리보기)이 있으면 정책(ALLOWED/DISABLED)과 무관하게 그 번호를 그대로 사용한다.
+    // reserveReceivingLotNumber 자체가 REQUIRED/MANUAL 품목에는 예약 발급을 거부하므로 안전하다.
+    // 이미 라벨이 출력됐을 수 있으므로 미리보기 번호와 실제 저장 번호가 달라지면 안 된다.
+    lotResolutionMode = "RESERVED"
+  } else if (shouldIgnoreManualLotNo) {
+    // DISABLED 정책 + 예약 미사용 → 입력값과 무관하게 서버가 즉시 자동 발행한다.
+    lotResolutionMode = "AUTO"
+  } else if (manualLotNo) {
+    lotResolutionMode = "MANUAL"
+  } else {
+    lotResolutionMode = "AUTO"
+  }
+
   const itemRuleContext: CnsItemRuleContext = {
     itemCode: purchaseOrderItem.item.code,
     itemGroupCode: purchaseOrderItem.item.itemGroup?.code,
@@ -171,18 +195,67 @@ async function createReceivingInspectionInternal(
   const txNo = data.acceptedQty > 0 ? await generateTxNo(tenantId) : null
 
   // ── 4. 트랜잭션 처리 ───────────────────────────────────────────────────────
-  const maxAttempts = shouldAutoGenerateLotNo || shouldIgnoreManualLotNo ? 5 : 1
+  // AUTO만 충돌 시 재시도(최대 5회). RESERVED/MANUAL/NONE은 재시도 없이 그대로 확정하거나 실패시킨다.
+  const maxAttempts = lotResolutionMode === "AUTO" ? 5 : 1
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const resolvedLotNo = shouldIgnoreManualLotNo
-      ? await generateReceivingLotNo(tenantId, itemRuleContext, attempt)
-      : manualLotNo ?? (
-      shouldAutoGenerateLotNo
-        ? await generateReceivingLotNo(tenantId, itemRuleContext, attempt)
-        : null
-    )
+    const resolvedLotNo =
+      lotResolutionMode === "AUTO"
+        ? await computeNextMaterialReceiptLotNo(prisma, tenantId, itemRuleContext, new Date(), attempt)
+        : lotResolutionMode === "MANUAL" || lotResolutionMode === "RESERVED"
+          ? manualLotNo
+          : null
 
     try {
       await prisma.$transaction(async (tx) => {
+    let consumedReservationId: string | null = null
+
+    // 4-0. 자동채번 미리보기(RESERVED) 검증 — 예약이 유효할 때만 그 번호를 그대로 사용한다.
+    //      임의로 다른 순번을 대신 발행하지 않는다: 이미 라벨이 출력됐을 수 있기 때문.
+    if (lotResolutionMode === "RESERVED") {
+      const reservation = await tx.lotNumberReservation.findFirst({
+        where: { id: data.lotReservationId!, tenantId },
+      })
+      if (
+        !reservation ||
+        reservation.itemId !== purchaseOrderItem.itemId ||
+        reservation.purchaseOrderItemId !== data.purchaseOrderItemId ||
+        reservation.lotNo !== resolvedLotNo
+      ) {
+        throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
+      }
+      if (reservation.status !== "RESERVED" || reservation.expiresAt < new Date()) {
+        throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
+      }
+      consumedReservationId = reservation.id
+    }
+
+    // 4-0-B. AUTO: 방금 다른 사용자가 예약(RESERVED)한 번호와 겹치면 재시도
+    if (lotResolutionMode === "AUTO") {
+      const activeReservation = await tx.lotNumberReservation.findFirst({
+        where: { tenantId, lotNo: resolvedLotNo!, status: "RESERVED" },
+      })
+      if (activeReservation) {
+        throw new Error(AUTO_LOT_COLLISION)
+      }
+    }
+
+    // 4-0-C. MANUAL: 다른 발주품목이 예약(RESERVED, 미만료) 중인 번호를 그대로 수동입력하면 차단
+    if (lotResolutionMode === "MANUAL") {
+      const conflictingReservation = await tx.lotNumberReservation.findFirst({
+        where: {
+          tenantId,
+          lotNo: resolvedLotNo!,
+          status: "RESERVED",
+          purchaseOrderItemId: { not: data.purchaseOrderItemId },
+        },
+      })
+      if (conflictingReservation && conflictingReservation.expiresAt > new Date()) {
+        throw new Error(
+          `LOT 번호 '${resolvedLotNo}'는 다른 입고 건에 예약되어 있습니다. 잠시 후 다시 시도해주세요.`
+        )
+      }
+    }
+
     // 4-1. LOT 조회 또는 생성
     let lotId: string | null = null
     if (resolvedLotNo) {
@@ -195,7 +268,7 @@ async function createReceivingInspectionInternal(
             `LOT 번호 '${resolvedLotNo}'는 다른 품목에 이미 사용 중입니다. 다른 번호를 입력해주세요.`
           )
         }
-        if (shouldAutoGenerateLotNo) {
+        if (lotResolutionMode === "AUTO") {
           throw new Error(AUTO_LOT_COLLISION)
         }
         lotId = existingLot.id
@@ -211,6 +284,15 @@ async function createReceivingInspectionInternal(
         })
         lotId = newLot.id
       }
+    }
+
+    // 4-1-B. 예약을 사용했다면 실제 Lot 생성과 같은 트랜잭션에서 CONSUMED 처리
+    //        (트랜잭션이 실패하면 이 갱신도 함께 롤백되어 "입고 실패 시 CONSUMED 처리 금지"가 보장된다)
+    if (consumedReservationId) {
+      await tx.lotNumberReservation.update({
+        where: { id: consumedReservationId },
+        data: { status: "CONSUMED", consumedAt: new Date() },
+      })
     }
 
     // 4-2. ReceivingInspection 생성
@@ -301,7 +383,7 @@ async function createReceivingInspectionInternal(
       })
       break
     } catch (error) {
-      const canRetry = (shouldAutoGenerateLotNo || shouldIgnoreManualLotNo) &&
+      const canRetry = lotResolutionMode === "AUTO" &&
         (isUniqueConstraintError(error) ||
           (error instanceof Error && error.message === AUTO_LOT_COLLISION))
 

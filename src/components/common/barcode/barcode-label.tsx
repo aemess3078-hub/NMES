@@ -7,6 +7,8 @@ interface BarcodeLabelProps {
   itemCode: string
   itemName: string
   lotId?: string
+  /** 사람이 읽는 LOT 번호 표시 전용 — 바코드 인코딩 값(barcodeValue)에는 영향을 주지 않는다. */
+  lotNo?: string | null
   quantity?: number
   uom?: string
   date?: string
@@ -21,6 +23,7 @@ export function BarcodeLabel({
   itemCode,
   itemName,
   lotId,
+  lotNo,
   quantity,
   uom,
   date,
@@ -60,6 +63,9 @@ export function BarcodeLabel({
       <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex flex-wrap justify-center gap-x-3 gap-y-0.5">
         {lotId && (
           <span className="text-[10px] text-gray-600">LOT: <span className="font-medium">{lotId}</span></span>
+        )}
+        {!lotId && lotNo && (
+          <span className="text-[10px] text-gray-600">LOT: <span className="font-medium font-mono">{lotNo}</span></span>
         )}
         {quantity !== undefined && (
           <span className="text-[10px] text-gray-600">수량: <span className="font-medium">{quantity.toLocaleString()} {uom}</span></span>
