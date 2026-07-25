@@ -59,13 +59,14 @@ export function BarcodeLabel({
       {/* 바코드 값 텍스트 */}
       <p className="text-[9px] text-gray-400 mt-0.5 font-mono">{barcodeValue}</p>
 
-      {/* LOT / 수량 / 날짜 */}
+      {/* LOT / 수량 / 날짜 — 표시 우선순위: lotNo(사람이 읽는 LOT 번호) > lotId(하위호환).
+          바코드 인코딩(barcodeValue)은 위에서 lotId만 사용하며 이 우선순위와 무관하게 그대로 유지된다. */}
       <div className="mt-1.5 pt-1.5 border-t border-gray-100 flex flex-wrap justify-center gap-x-3 gap-y-0.5">
-        {lotId && (
-          <span className="text-[10px] text-gray-600">LOT: <span className="font-medium">{lotId}</span></span>
-        )}
-        {!lotId && lotNo && (
+        {lotNo && (
           <span className="text-[10px] text-gray-600">LOT: <span className="font-medium font-mono">{lotNo}</span></span>
+        )}
+        {!lotNo && lotId && (
+          <span className="text-[10px] text-gray-600">LOT: <span className="font-medium">{lotId}</span></span>
         )}
         {quantity !== undefined && (
           <span className="text-[10px] text-gray-600">수량: <span className="font-medium">{quantity.toLocaleString()} {uom}</span></span>

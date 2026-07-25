@@ -2,7 +2,7 @@
 
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
-import { computeNextMaterialReceiptLotNo, LOT_RESERVATION_TTL_MS } from "@/lib/lot-numbering/lot-reservation"
+import { computeNextMaterialReceiptLotNo, expireStaleReservations, LOT_RESERVATION_TTL_MS } from "@/lib/lot-numbering/lot-reservation"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { Prisma } from "@prisma/client"
 
@@ -76,6 +76,9 @@ async function reserveReceivingLotNumberInternal(
   if (lotNumberingType === "MANUAL" || manualLotPolicy === "REQUIRED") {
     return { success: false, message: "이 품목은 LOT 번호를 직접 입력해야 하는 품목입니다." }
   }
+
+  // 새 예약 발급 전 lazy expiration — 만료된 RESERVED를 EXPIRED로 정리(별도 스케줄러 없음)
+  await expireStaleReservations(prisma, tenantId)
 
   // 재채번: 기존 예약을 먼저 해제(같은 tenant·발주품목 소유일 때만 — 타 tenant/타 예약 보호)
   if (input.previousReservationId) {

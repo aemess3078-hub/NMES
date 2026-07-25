@@ -86,7 +86,7 @@ export async function createReceivingInspection(
 async function createReceivingInspectionInternal(
   data: CreateReceivingInspectionInput,
 ): Promise<{ success: boolean; message?: string }> {
-  await requireRole("OPERATOR")
+  const user = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
   // ── 1. 창고 존재 및 테넌트 소속 확인 ──────────────────────────────────────
@@ -196,22 +196,23 @@ async function createReceivingInspectionInternal(
 
   // ── 4. 트랜잭션 처리 ───────────────────────────────────────────────────────
   // AUTO만 충돌 시 재시도(최대 5회). RESERVED/MANUAL/NONE은 재시도 없이 그대로 확정하거나 실패시킨다.
+  //
+  // AUTO 경로도 LotNumberReservation을 "단일 발행 원장"으로 사용한다: 번호를 계산한 뒤 곧바로
+  // 같은 트랜잭션 안에서 CONSUMED 상태로 예약 행을 만들어(=원자적 클레임) Lot을 생성한다.
+  // 이렇게 하면 자동채번 미리보기(RESERVED)와 버튼 미사용 AUTO 확정이 서로 다른 트랜잭션에서
+  // 동시에 실행되어도, 두 경로 모두 같은 테이블의 (tenantId, lotNo) unique 제약을 통해서만
+  // 번호를 "소유"할 수 있으므로 Lot 테이블과 예약 테이블 사이의 경합이 사라진다.
   const maxAttempts = lotResolutionMode === "AUTO" ? 5 : 1
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const resolvedLotNo =
-      lotResolutionMode === "AUTO"
-        ? await computeNextMaterialReceiptLotNo(prisma, tenantId, itemRuleContext, new Date(), attempt)
-        : lotResolutionMode === "MANUAL" || lotResolutionMode === "RESERVED"
-          ? manualLotNo
-          : null
-
     try {
       await prisma.$transaction(async (tx) => {
     let consumedReservationId: string | null = null
+    let resolvedLotNo: string | null = null
 
     // 4-0. 자동채번 미리보기(RESERVED) 검증 — 예약이 유효할 때만 그 번호를 그대로 사용한다.
     //      임의로 다른 순번을 대신 발행하지 않는다: 이미 라벨이 출력됐을 수 있기 때문.
     if (lotResolutionMode === "RESERVED") {
+      resolvedLotNo = manualLotNo
       const reservation = await tx.lotNumberReservation.findFirst({
         where: { id: data.lotReservationId!, tenantId },
       })
@@ -223,24 +224,23 @@ async function createReceivingInspectionInternal(
       ) {
         throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
       }
-      if (reservation.status !== "RESERVED" || reservation.expiresAt < new Date()) {
+      if (reservation.status === "RESERVED" && reservation.expiresAt < new Date()) {
+        // lazy expiration: 검증 시점에 만료가 확인되면 그 자리에서 EXPIRED로 정리한다.
+        await tx.lotNumberReservation.update({
+          where: { id: reservation.id },
+          data: { status: "EXPIRED" },
+        })
+        throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
+      }
+      if (reservation.status !== "RESERVED") {
         throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
       }
       consumedReservationId = reservation.id
     }
 
-    // 4-0-B. AUTO: 방금 다른 사용자가 예약(RESERVED)한 번호와 겹치면 재시도
-    if (lotResolutionMode === "AUTO") {
-      const activeReservation = await tx.lotNumberReservation.findFirst({
-        where: { tenantId, lotNo: resolvedLotNo!, status: "RESERVED" },
-      })
-      if (activeReservation) {
-        throw new Error(AUTO_LOT_COLLISION)
-      }
-    }
-
-    // 4-0-C. MANUAL: 다른 발주품목이 예약(RESERVED, 미만료) 중인 번호를 그대로 수동입력하면 차단
+    // 4-0-B. MANUAL: 다른 발주품목이 예약(RESERVED, 미만료) 중인 번호를 그대로 수동입력하면 차단
     if (lotResolutionMode === "MANUAL") {
+      resolvedLotNo = manualLotNo
       const conflictingReservation = await tx.lotNumberReservation.findFirst({
         where: {
           tenantId,
@@ -254,6 +254,26 @@ async function createReceivingInspectionInternal(
           `LOT 번호 '${resolvedLotNo}'는 다른 입고 건에 예약되어 있습니다. 잠시 후 다시 시도해주세요.`
         )
       }
+    }
+
+    // 4-0-C. AUTO: 번호 계산과 "예약 원장에 CONSUMED로 즉시 클레임"을 같은 트랜잭션에서 원자적으로 수행.
+    //        claim insert가 unique 충돌(P2002)나면 트랜잭션 전체가 롤백되고 바깥 루프가 다음 attempt로 재시도한다.
+    if (lotResolutionMode === "AUTO") {
+      resolvedLotNo = await computeNextMaterialReceiptLotNo(tx, tenantId, itemRuleContext, new Date(), attempt)
+      const claimed = await tx.lotNumberReservation.create({
+        data: {
+          tenantId,
+          itemId: purchaseOrderItem.itemId,
+          purchaseOrderId: data.purchaseOrderId,
+          purchaseOrderItemId: data.purchaseOrderItemId,
+          lotNo: resolvedLotNo,
+          status: "CONSUMED",
+          reservedBy: user.id,
+          expiresAt: new Date(),
+          consumedAt: new Date(),
+        },
+      })
+      consumedReservationId = claimed.id
     }
 
     // 4-1. LOT 조회 또는 생성

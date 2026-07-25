@@ -45,3 +45,22 @@ export async function computeNextMaterialReceiptLotNo(
   }
   return generateCnsMaterialReceiptLotNo(combinedLookup, tenantId, context, date, sequenceOffset)
 }
+
+type ReservationExpiryClient = {
+  lotNumberReservation: Pick<PrismaClient["lotNumberReservation"], "updateMany">
+}
+
+/**
+ * Lazy expiration — 별도 스케줄러 없이, 만료 시각이 지난 RESERVED 예약을 EXPIRED로 정리한다.
+ * 새 예약을 발급하기 직전, 그리고 기존 예약을 사용(RESERVED 모드 검증)하기 직전에 호출된다.
+ * EXPIRED로 전환된 번호는 (tenantId, lotNo) unique 제약 때문에 이후에도 재사용되지 않는다.
+ */
+export async function expireStaleReservations(
+  db: ReservationExpiryClient,
+  tenantId: string,
+): Promise<void> {
+  await db.lotNumberReservation.updateMany({
+    where: { tenantId, status: "RESERVED", expiresAt: { lt: new Date() } },
+    data: { status: "EXPIRED" },
+  })
+}
