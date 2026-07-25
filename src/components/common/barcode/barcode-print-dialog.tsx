@@ -17,6 +17,8 @@ interface BarcodePrintItem {
   itemCode: string
   itemName: string
   lotId?: string
+  /** 사람이 읽는 LOT 번호 표시 전용 — 바코드 인코딩 값에는 영향을 주지 않는다. */
+  lotNo?: string | null
   quantity?: number
   uom?: string
 }
@@ -78,6 +80,7 @@ export function BarcodePrintDialog({
                 itemCode={item.itemCode}
                 itemName={item.itemName}
                 lotId={item.lotId}
+                lotNo={item.lotNo}
                 quantity={item.quantity}
                 uom={item.uom}
                 date={today}

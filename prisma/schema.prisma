@@ -143,6 +143,13 @@ enum LotStatus {
   EXPIRED
 }
 
+enum LotReservationStatus {
+  RESERVED
+  CONSUMED
+  RELEASED
+  EXPIRED
+}
+
 enum TransactionType {
   RECEIPT
   ISSUE
@@ -370,6 +377,7 @@ model Tenant {
   warehouses                    Warehouse[]
   numberingRules                NumberingRule[]
   lots                          Lot[]
+  lotNumberReservations         LotNumberReservation[]
   inventoryBalances             InventoryBalance[]
   inventoryTxns                 InventoryTransaction[]
   workOrders                    WorkOrder[]
@@ -652,6 +660,7 @@ model Item {
   bomItems                BOMItem[]
   itemRoutings            ItemRouting[]
   lots                    Lot[]
+  lotNumberReservations   LotNumberReservation[]
   inspectionSpecs         InspectionSpec[]
   inventoryBalances       InventoryBalance[]
   inventoryTxns           InventoryTransaction[]
@@ -1154,6 +1163,32 @@ model Lot {
   @@unique([tenantId, lotNo])
   @@index([tenantId])
   @@index([itemId])
+}
+
+// 자재입고 자동채번 미리보기(라벨 선출력용) — 실제 Lot 생성 전 번호를 선점한다.
+// RELEASED/EXPIRED 상태가 되어도 row는 삭제하지 않고 lotNo unique 제약으로 영구히 재사용을 막는다.
+model LotNumberReservation {
+  id                  String                @id @default(cuid())
+  tenantId            String
+  itemId              String
+  purchaseOrderId     String
+  purchaseOrderItemId String
+  lotNo               String
+  status              LotReservationStatus  @default(RESERVED)
+  reservedBy          String
+  expiresAt           DateTime
+  createdAt           DateTime              @default(now())
+  consumedAt          DateTime?
+  releasedAt          DateTime?
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  item              Item               @relation(fields: [itemId], references: [id])
+  purchaseOrder     PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderItem PurchaseOrderItem  @relation(fields: [purchaseOrderItemId], references: [id])
+
+  @@unique([tenantId, lotNo])
+  @@index([tenantId, purchaseOrderItemId])
+  @@index([status, expiresAt])
 }
 
 model InventoryBalance {
@@ -1932,6 +1967,7 @@ model PurchaseOrder {
   site     Site                @relation("SitePurchaseOrders", fields: [siteId], references: [id])
   supplier BusinessPartner     @relation("SupplierPurchaseOrders", fields: [supplierId], references: [id])
   items    PurchaseOrderItem[]
+  lotNumberReservations LotNumberReservation[]
 
   @@unique([tenantId, orderNo])
   @@index([tenantId])
@@ -1952,6 +1988,7 @@ model PurchaseOrderItem {
   purchaseOrder        PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id])
   item                 Item                  @relation("ItemPurchaseOrderItems", fields: [itemId], references: [id])
   receivingInspections ReceivingInspection[]
+  lotNumberReservations LotNumberReservation[]
 
   @@unique([purchaseOrderId, itemId])
   @@index([purchaseOrderId])
