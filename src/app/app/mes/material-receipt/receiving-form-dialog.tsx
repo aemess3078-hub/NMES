@@ -22,7 +22,11 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
-import { reserveReceivingLotNumber, releaseLotReservation } from "@/lib/actions/lot-reservation.actions"
+import {
+  reserveReceivingLotNumber,
+  releaseLotReservation,
+  markLotReservationPrinted,
+} from "@/lib/actions/lot-reservation.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
@@ -97,6 +101,7 @@ export function ReceivingFormDialog({
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
 
   const [inspections, setInspections] = useState<ItemInspection[]>(() =>
@@ -217,6 +222,12 @@ export function ReceivingFormDialog({
         isAutoNumbered: true,
         isReserving: false,
       })
+      if (result.previousWasPrinted) {
+        alert(
+          `[${ins.itemCode}] ${ins.itemName}\n` +
+          `이미 라벨이 출력된 LOT 번호는 재사용할 수 없습니다. 새 번호 ${result.lotNo}(으)로 재채번되었습니다.`
+        )
+      }
     } else {
       updateInspection(index, { isReserving: false })
       alert(`[${ins.itemCode}] ${ins.itemName}\n${result.message}`)
@@ -309,6 +320,31 @@ export function ReceivingFormDialog({
   // 라벨 출력 대상: 금회 입고수량 > 0인 품목만. LOT 관리 품목은 lotNo가 있어야 출력 가능.
   const printableItems = inspections.filter((ins) => (parseFloat(ins.thisReceivedQty) || 0) > 0)
   const hasMissingLotForPrint = printableItems.some((ins) => ins.isLotTracked && !ins.lotNo.trim())
+
+  // 자동채번 예약을 사용 중인 품목은 라벨을 실제로 열기 전에 서버에서 예약을 "출력됨"으로 확정한다.
+  // 이 확정이 모두 성공해야만 다이얼로그를 연다 — 성공 전에는 번호가 여전히 미출력 상태로 남아
+  // 취소 시 재사용 가능해야 하기 때문이다.
+  async function handleOpenPrintDialog() {
+    if (isPreparingPrint) return
+    setIsPreparingPrint(true)
+    try {
+      for (const ins of printableItems) {
+        if (ins.isLotTracked && ins.isAutoNumbered && ins.lotReservationId) {
+          const result = await markLotReservationPrinted({
+            reservationId: ins.lotReservationId,
+            purchaseOrderItemId: ins.purchaseOrderItemId,
+          })
+          if (!result.success) {
+            alert(`[${ins.itemCode}] ${ins.itemName}\n${result.message}`)
+            return
+          }
+        }
+      }
+      setPrintOpen(true)
+    } finally {
+      setIsPreparingPrint(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleCloseDialog()}>
@@ -613,10 +649,10 @@ export function ReceivingFormDialog({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setPrintOpen(true)}
-              disabled={printableItems.length === 0 || hasMissingLotForPrint}
+              onClick={() => void handleOpenPrintDialog()}
+              disabled={printableItems.length === 0 || hasMissingLotForPrint || isPreparingPrint}
             >
-              바코드 라벨 출력
+              {isPreparingPrint ? "준비 중..." : "바코드 라벨 출력"}
             </Button>
             {hasMissingLotForPrint && (
               <p className="text-[11px] text-muted-foreground">

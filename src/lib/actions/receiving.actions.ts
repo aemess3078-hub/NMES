@@ -225,11 +225,16 @@ async function createReceivingInspectionInternal(
         throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
       }
       if (reservation.status === "RESERVED" && reservation.expiresAt < new Date()) {
-        // lazy expiration: 검증 시점에 만료가 확인되면 그 자리에서 EXPIRED로 정리한다.
-        await tx.lotNumberReservation.update({
-          where: { id: reservation.id },
-          data: { status: "EXPIRED" },
-        })
+        // lazy expiration: 검증 시점에 만료가 확인되면 그 자리에서 정리한다.
+        //   - 라벨 미출력: 행 삭제(번호 재사용 가능) / 라벨 출력됨: EXPIRED로 남김(번호 영구 재사용 금지)
+        if (reservation.printedAt) {
+          await tx.lotNumberReservation.update({
+            where: { id: reservation.id },
+            data: { status: "EXPIRED" },
+          })
+        } else {
+          await tx.lotNumberReservation.delete({ where: { id: reservation.id } })
+        }
         throw new Error("자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요.")
       }
       if (reservation.status !== "RESERVED") {
