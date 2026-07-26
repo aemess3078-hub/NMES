@@ -46,7 +46,6 @@ export function ReceiptDialog({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [warehouseId, setWarehouseId] = useState("")
-  const [locationId, setLocationId] = useState("")
   const [receiptQty, setReceiptQty] = useState("")
   const [scanVerified, setScanVerified] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
@@ -55,6 +54,7 @@ export function ReceiptDialog({
 
   const isSemiFinished = workOrder.item.itemType === "SEMI_FINISHED"
   const receiptLabel = isSemiFinished ? "반제품" : "완제품"
+  const availableWarehouses = warehouses.filter((warehouse) => warehouse.siteId === workOrder.site.id)
 
   function handleScan(parsed: ParsedBarcode) {
     if (parsed.itemCode !== workOrder!.item.code) {
@@ -64,17 +64,9 @@ export function ReceiptDialog({
     setScanVerified(true)
   }
 
-  const selectedWarehouse = warehouses.find((wh) => wh.id === warehouseId)
-
-  const handleWarehouseChange = (id: string) => {
-    setWarehouseId(id)
-    setLocationId("")
-  }
-
   const handleOpen = (v: boolean) => {
     if (!v) {
       setWarehouseId("")
-      setLocationId("")
       setReceiptQty("")
       setScanVerified(false)
     } else {
@@ -90,10 +82,6 @@ export function ReceiptDialog({
       return
     }
     if (!warehouseId) {
-      alert("창고를 선택하세요.")
-      return
-    }
-    if (!locationId) {
       alert("로케이션을 선택하세요.")
       return
     }
@@ -105,7 +93,6 @@ export function ReceiptDialog({
           itemId: workOrder.item.id,
           siteId: workOrder.site.id,
           warehouseId,
-          locationId,
           receiptQty: qty,
         },
         tenantId
@@ -183,40 +170,17 @@ export function ReceiptDialog({
             </div>
           </div>
 
-          {/* 창고 선택 */}
-          <div className="space-y-1.5">
-            <Label className="text-[14px]">창고</Label>
-            <Select value={warehouseId} onValueChange={handleWarehouseChange}>
-              <SelectTrigger className="text-[14px]">
-                <SelectValue placeholder="창고 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {warehouses.map((wh) => (
-                  <SelectItem key={wh.id} value={wh.id} className="text-[14px]">
-                    [{wh.code}] {wh.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 로케이션 선택 */}
+          {/* 입고 로케이션 선택 (실제 값은 Warehouse.id) */}
           <div className="space-y-1.5">
             <Label className="text-[14px]">로케이션</Label>
-            <Select
-              value={locationId}
-              onValueChange={setLocationId}
-              disabled={!warehouseId}
-            >
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
               <SelectTrigger className="text-[14px]">
-                <SelectValue
-                  placeholder={warehouseId ? "로케이션 선택" : "창고를 먼저 선택하세요"}
-                />
+                <SelectValue placeholder="로케이션 선택" />
               </SelectTrigger>
               <SelectContent>
-                {selectedWarehouse?.locations.map((loc) => (
-                  <SelectItem key={loc.id} value={loc.id} className="text-[14px]">
-                    [{loc.code}] {loc.name}
+                {availableWarehouses.map((wh) => (
+                  <SelectItem key={wh.id} value={wh.id} className="text-[14px]">
+                    [{wh.code}] {wh.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -261,7 +225,7 @@ export function ReceiptDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isPending || Boolean(workOrder.receiptBlockedReason) || !warehouseId || !locationId || !receiptQty}
+            disabled={isPending || Boolean(workOrder.receiptBlockedReason) || !warehouseId || !receiptQty}
             className="gap-1.5"
           >
             <PackagePlus className="h-4 w-4" />
