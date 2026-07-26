@@ -101,7 +101,6 @@ export function ReceivingFormDialog({
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
-  const [isPreparingPrint, setIsPreparingPrint] = useState(false)
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
 
   const [inspections, setInspections] = useState<ItemInspection[]>(() =>
@@ -321,29 +320,23 @@ export function ReceivingFormDialog({
   const printableItems = inspections.filter((ins) => (parseFloat(ins.thisReceivedQty) || 0) > 0)
   const hasMissingLotForPrint = printableItems.some((ins) => ins.isLotTracked && !ins.lotNo.trim())
 
-  // 자동채번 예약을 사용 중인 품목은 라벨을 실제로 열기 전에 서버에서 예약을 "출력됨"으로 확정한다.
-  // 이 확정이 모두 성공해야만 다이얼로그를 연다 — 성공 전에는 번호가 여전히 미출력 상태로 남아
-  // 취소 시 재사용 가능해야 하기 때문이다.
-  async function handleOpenPrintDialog() {
-    if (isPreparingPrint) return
-    setIsPreparingPrint(true)
-    try {
-      for (const ins of printableItems) {
-        if (ins.isLotTracked && ins.isAutoNumbered && ins.lotReservationId) {
-          const result = await markLotReservationPrinted({
-            reservationId: ins.lotReservationId,
-            purchaseOrderItemId: ins.purchaseOrderItemId,
-          })
-          if (!result.success) {
-            alert(`[${ins.itemCode}] ${ins.itemName}\n${result.message}`)
-            return
-          }
+  // "바코드 라벨 출력" 버튼은 미리보기 다이얼로그만 연다 — 이 시점에는 번호를 소모하지 않는다.
+  // 실제 번호 소모(printedAt 기록)는 BarcodePrintDialog 내부의 진짜 "인쇄" 버튼을 누를 때
+  // onBeforePrint로 전달되는 handleBeforePrint에서만 일어난다. 미리보기만 열고 닫으면
+  // 자동채번 번호는 여전히 미출력 상태라 취소 시 재사용 가능하다.
+  async function handleBeforePrint(): Promise<{ success: true } | { success: false; message: string }> {
+    for (const ins of printableItems) {
+      if (ins.isLotTracked && ins.isAutoNumbered && ins.lotReservationId) {
+        const result = await markLotReservationPrinted({
+          reservationId: ins.lotReservationId,
+          purchaseOrderItemId: ins.purchaseOrderItemId,
+        })
+        if (!result.success) {
+          return { success: false, message: `[${ins.itemCode}] ${ins.itemName}\n${result.message}` }
         }
       }
-      setPrintOpen(true)
-    } finally {
-      setIsPreparingPrint(false)
     }
+    return { success: true }
   }
 
   return (
@@ -649,10 +642,10 @@ export function ReceivingFormDialog({
             <Button
               type="button"
               variant="outline"
-              onClick={() => void handleOpenPrintDialog()}
-              disabled={printableItems.length === 0 || hasMissingLotForPrint || isPreparingPrint}
+              onClick={() => setPrintOpen(true)}
+              disabled={printableItems.length === 0 || hasMissingLotForPrint}
             >
-              {isPreparingPrint ? "준비 중..." : "바코드 라벨 출력"}
+              바코드 라벨 출력
             </Button>
             {hasMissingLotForPrint && (
               <p className="text-[11px] text-muted-foreground">
@@ -692,6 +685,7 @@ export function ReceivingFormDialog({
           quantity: parseFloat(ins.thisReceivedQty) || ins.pendingQty,
           uom: ins.uom,
         }))}
+        onBeforePrint={handleBeforePrint}
       />
     </Dialog>
   )
