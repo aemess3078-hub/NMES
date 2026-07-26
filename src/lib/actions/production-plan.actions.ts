@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { PlanStatus, PlanType, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { getAvailableRoutingsForItem, validateRoutingForItem } from "@/lib/actions/routing.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -255,25 +256,9 @@ export async function getBomsForPlanItem(itemId: string) {
   })
 }
 
+// 범용(COMMON) + 품목전용(ITEM_SPECIFIC) 라우팅을 함께 조회한다 — routing.actions.ts의 공용 헬퍼 재사용.
 export async function getRoutingsForPlanItem(itemId: string) {
-  const itemRoutings = await prisma.itemRouting.findMany({
-    where: {
-      itemId,
-      routing: { status: "ACTIVE" },
-    },
-    include: {
-      routing: {
-        select: { id: true, version: true },
-      },
-    },
-    orderBy: { routing: { version: "asc" } },
-  })
-
-  return itemRoutings.map((ir) => ({
-    id: ir.routing.id,
-    version: ir.routing.version,
-    isDefault: ir.isDefault,
-  }))
+  return getAvailableRoutingsForItem(itemId)
 }
 
 // ─── Business Logic ───────────────────────────────────────────────────────────
@@ -327,6 +312,12 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
 export async function createPlan(data: CreatePlanInput, tenantId: string) {
   const { items, startDate, endDate, note, ...headerFields } = data
 
+  for (const item of items) {
+    if (item.routingId) {
+      await validateRoutingForItem({ tenantId, itemId: item.itemId, routingId: item.routingId })
+    }
+  }
+
   await prisma.productionPlan.create({
     data: {
       ...headerFields,
@@ -352,7 +343,7 @@ export async function createPlan(data: CreatePlanInput, tenantId: string) {
 export async function updatePlan(id: string, data: CreatePlanInput) {
   const existing = await prisma.productionPlan.findUnique({
     where: { id },
-    select: { status: true },
+    select: { status: true, tenantId: true },
   })
 
   if (!existing) {
@@ -367,6 +358,12 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
   }
 
   const { items, startDate, endDate, note, ...headerFields } = data
+
+  for (const item of items) {
+    if (item.routingId) {
+      await validateRoutingForItem({ tenantId: existing.tenantId, itemId: item.itemId, routingId: item.routingId })
+    }
+  }
 
   await prisma.$transaction([
     prisma.productionPlanItem.deleteMany({ where: { planId: id } }),

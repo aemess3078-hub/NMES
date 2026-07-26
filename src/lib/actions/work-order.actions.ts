@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { requireRole } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
 import { generateCnsManufacturingNo } from "@/lib/lot-numbering/lot-number-generator"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { WorkOrderStatus, OperationStatus, Prisma } from "@prisma/client"
@@ -11,6 +11,7 @@ import {
   syncProductionPlanStatusForWorkOrder,
   syncProductionPlanStatusFromWorkOrders,
 } from "@/lib/actions/production-plan.actions"
+import { validateRoutingForItem } from "@/lib/actions/routing.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -476,35 +477,50 @@ export async function getBomsForItem(itemId: string) {
   })
 }
 
+// 범용(COMMON) + 품목전용(ITEM_SPECIFIC) 라우팅을 함께 조회한다. 작업지시 화면은 공정 자동 채움을
+// 위해 operations까지 필요해 routing.actions.ts의 getAvailableRoutingsForItem(요약본)과 별도로 둔다.
 export async function getRoutingsForItem(itemId: string) {
-  const itemRoutings = await prisma.itemRouting.findMany({
-    where: {
-      itemId,
-      routing: { status: "ACTIVE" },
-    },
-    include: {
-      routing: {
-        include: {
-          operations: {
-            orderBy: { seq: "asc" },
-            include: {
-              workCenter: {
-                select: { id: true, code: true, name: true },
-              },
-            },
-          },
-        },
-      },
-    },
-    orderBy: { routing: { version: "asc" } },
-  })
+  const tenantId = await getTenantId()
+  const operationsInclude = {
+    orderBy: { seq: "asc" as const },
+    include: { workCenter: { select: { id: true, code: true, name: true } } },
+  }
 
-  return itemRoutings.map((ir) => ({
-    id: ir.routing.id,
-    version: ir.routing.version,
-    isDefault: ir.isDefault,
-    operations: ir.routing.operations,
-  }))
+  const [itemSpecific, common] = await Promise.all([
+    prisma.itemRouting.findMany({
+      where: { itemId, routing: { tenantId, status: "ACTIVE", scope: "ITEM_SPECIFIC" } },
+      include: {
+        routing: { include: { operations: operationsInclude } },
+      },
+      orderBy: { routing: { version: "asc" } },
+    }),
+    prisma.routing.findMany({
+      where: { tenantId, status: "ACTIVE", scope: "COMMON" },
+      include: { operations: operationsInclude },
+      orderBy: { version: "asc" },
+    }),
+  ])
+
+  return [
+    ...itemSpecific.map((ir) => ({
+      id: ir.routing.id,
+      code: ir.routing.code,
+      name: ir.routing.name,
+      version: ir.routing.version,
+      isDefault: ir.isDefault,
+      scope: "ITEM_SPECIFIC" as const,
+      operations: ir.routing.operations,
+    })),
+    ...common.map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      version: r.version,
+      isDefault: false,
+      scope: "COMMON" as const,
+      operations: r.operations,
+    })),
+  ]
 }
 
 export async function getEquipments() {
@@ -849,6 +865,7 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
   const user = await requireRole("OPERATOR")
   if (tenantId !== user.tenantId) throw new Error("FORBIDDEN")
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
+  await validateRoutingForItem({ tenantId, itemId: headerFields.itemId, routingId: headerFields.routingId })
   await validateProductionPlanItemForWorkOrder(
     headerFields.productionPlanItemId,
     headerFields,
@@ -930,6 +947,7 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
   if (existing.tenantId !== user.tenantId) throw new Error("FORBIDDEN")
 
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
+  await validateRoutingForItem({ tenantId: existing.tenantId, itemId: headerFields.itemId, routingId: headerFields.routingId })
   await validateProductionPlanItemForWorkOrder(
     headerFields.productionPlanItemId,
     headerFields,
