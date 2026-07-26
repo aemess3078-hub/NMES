@@ -336,12 +336,31 @@ export async function inspectOutsourcedWipUnit(
     )
   }
 
-  // 4. 중복 검사처리 방지 (이미 OutsourcingInspection sourceType 이동이 있으면 처리됨)
+  // 4. 중복 검사처리 방지 — 현재 외주 사이클로 한정
+  //
+  //   재공은 재외주로 여러 번 외주 사이클을 돌 수 있다. 따라서 "과거에 검사된 적이
+  //   있는가"가 아니라 "이번 입고분이 이미 검사됐는가"를 판단해야 한다.
+  //   가장 최근 RETURNED(외주입고) 시점을 현재 사이클의 시작으로 보고,
+  //   그 이후에 생성된 OutsourcingInspection 이동만 중복으로 취급한다.
+  const latestReturned = await prisma.wipMovement.findFirst({
+    where: {
+      tenantId,
+      wipUnitId: input.wipUnitId,
+      movementType: "RETURNED",
+    },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  })
+  if (!latestReturned) {
+    throw new Error("외주입고 이력을 찾을 수 없습니다.")
+  }
+
   const existingInspection = await prisma.wipMovement.findFirst({
     where: {
       tenantId,
       wipUnitId: input.wipUnitId,
       sourceType: "OutsourcingInspection",
+      createdAt: { gte: latestReturned.createdAt },
     },
     select: { id: true },
   })
@@ -361,11 +380,18 @@ export async function inspectOutsourcedWipUnit(
 
     // ── 합격분: 부모 WipUnit 복귀 ────────────────────────────────────────────
     //   acceptedQty=0이면 부모는 qty=0 / SCRAPPED (배치 전량 불합격)
+    //
+    //   status='RECEIVED' 를 where 에 포함한 updateMany 로 갱신하여 검사대기 상태를
+    //   원자적으로 선점한다. 앞의 조회 기반 중복 검사는 동시 요청 사이에 틈이 있으므로
+    //   더블클릭·동시 요청은 이 조건에서 count=0 이 되어 차단된다.
     const parentNewStatus = acceptedQty > 0 ? "IN_PROCESS" : "SCRAPPED"
-    await tx.wipUnit.update({
-      where: { id: input.wipUnitId },
+    const parentUpdate = await tx.wipUnit.updateMany({
+      where: { id: input.wipUnitId, tenantId, status: "RECEIVED" },
       data: { status: parentNewStatus, qty: acceptedQty },
     })
+    if (parentUpdate.count !== 1) {
+      throw new Error("이미 검사처리되었거나 검사대기 상태가 아닙니다.")
+    }
 
     if (acceptedQty > 0) {
       movements.push({
