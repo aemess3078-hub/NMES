@@ -24,6 +24,16 @@ export const planFormSchema = z
     message: "종료일은 시작일 이후여야 합니다",
     path: ["endDate"],
   })
+  .refine(
+    (data) => {
+      const itemIds = data.items.map((item) => item.itemId).filter(Boolean)
+      return new Set(itemIds).size === itemIds.length
+    },
+    {
+      message: "동일한 품목을 생산계획에 중복으로 등록할 수 없습니다.",
+      path: ["items"],
+    }
+  )
 
 export type PlanItemFormValues = z.infer<typeof planItemFormSchema>
 export type PlanFormValues = z.infer<typeof planFormSchema>
