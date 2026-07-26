@@ -23,6 +23,7 @@ import {
   FormNumberField,
   FormDateField,
 } from "@/components/common/form-sheet"
+import { SearchableItemCombobox } from "@/components/common/searchable-item-combobox"
 import { workOrderFormSchema, WorkOrderFormValues } from "./work-order-form-schema"
 import {
   createWorkOrder,
@@ -86,13 +87,6 @@ const workOrderStatusOptions = [
   { label: "초안", value: WorkOrderStatus.DRAFT },
   { label: "작업대기", value: WorkOrderStatus.RELEASED },
 ]
-
-const itemTypeLabels: Record<string, string> = {
-  RAW_MATERIAL: "원자재",
-  SEMI_FINISHED: "반제품",
-  FINISHED: "완제품",
-  CONSUMABLE: "소모품",
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -469,22 +463,13 @@ export function WorkOrderFormSheet({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>품목</FormLabel>
-                  <Select
-                    onValueChange={(val) => handleItemChange(val)}
-                    value={field.value ?? undefined}
+                  <SearchableItemCombobox
+                    items={items}
+                    value={field.value ?? ""}
+                    onSelect={handleItemChange}
                     disabled={mode === "edit"}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="완제품 또는 반제품 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {items.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          [{item.code}] {item.name} ({itemTypeLabels[item.itemType] ?? item.itemType})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="완제품 또는 반제품 선택"
+                  />
                   <FormMessage />
                 </FormItem>
               )}
