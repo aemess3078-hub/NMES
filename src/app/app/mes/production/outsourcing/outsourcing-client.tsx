@@ -109,7 +109,6 @@ function CreateOrderDialog({
 }: CreateOrderDialogProps) {
   const [supplierId, setSupplierId] = useState("")
   const [processName, setProcessName] = useState("")
-  const [qty, setQty] = useState("")
   const [expectedDate, setExpectedDate] = useState("")
   const [note, setNote] = useState("")
   const [isPending, startTransition] = useTransition()
@@ -118,7 +117,6 @@ function CreateOrderDialog({
   function resetForm() {
     setSupplierId("")
     setProcessName("")
-    setQty("")
     setExpectedDate("")
     setNote("")
   }
@@ -139,18 +137,13 @@ function CreateOrderDialog({
       return
     }
 
-    const noteParts: string[] = []
-    if (qty) noteParts.push(`수량: ${qty}`)
-    if (note.trim()) noteParts.push(note.trim())
-    const combinedNote = noteParts.join("\n") || undefined
-
     startTransition(async () => {
       try {
         await createOutsourcingOrder({
           supplierId,
           outsourcingProcessName: trimmed,
           expectedDate: expectedDate || undefined,
-          note: combinedNote,
+          note: note.trim() || undefined,
         })
         router.refresh()
         handleClose()
@@ -207,27 +200,14 @@ function CreateOrderDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">수량</Label>
-              <Input
-                type="number"
-                min="0"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder="0"
-                className="text-[14px] h-9"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[13px]">납기일</Label>
-              <Input
-                type="date"
-                value={expectedDate}
-                onChange={(e) => setExpectedDate(e.target.value)}
-                className="text-[14px] h-9"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">납기일</Label>
+            <Input
+              type="date"
+              value={expectedDate}
+              onChange={(e) => setExpectedDate(e.target.value)}
+              className="text-[14px] h-9"
+            />
           </div>
 
           <div className="space-y-1.5">
