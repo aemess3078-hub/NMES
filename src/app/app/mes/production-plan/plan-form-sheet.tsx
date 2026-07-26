@@ -1,16 +1,15 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect } from "react"
 import { useForm, useFieldArray, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
-import { Check, ChevronsUpDown, Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -25,6 +24,7 @@ import {
   FormTextField,
   FormSelectField,
 } from "@/components/common/form-sheet"
+import { SearchableItemCombobox } from "@/components/common/searchable-item-combobox"
 import { planFormSchema, PlanFormValues } from "./plan-form-schema"
 import {
   createPlan,
@@ -35,7 +35,6 @@ import {
   PlanWithDetails,
 } from "@/lib/actions/production-plan.actions"
 import { PlanType, PlanStatus } from "@prisma/client"
-import { cn } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,20 +46,6 @@ type RoutingOption = {
   version: string
   isDefault: boolean
   scope: "COMMON" | "ITEM_SPECIFIC"
-}
-type ItemOption = {
-  id: string
-  code: string
-  name: string
-  itemType: string
-  searchText: string
-}
-
-interface ItemComboboxProps {
-  items: ItemOption[]
-  value: string
-  selectedInOtherRows: Set<string>
-  onSelect: (itemId: string) => void
 }
 
 // 자동선택 규칙: 이미 선택된 routingId가 새 후보 목록에 있으면 유지 → 품목전용 기본 라우팅이
@@ -105,172 +90,12 @@ const planStatusOptions = [
   { label: "취소", value: PlanStatus.CANCELLED },
 ]
 
-const itemTypeLabels: Record<string, string> = {
-  RAW_MATERIAL: "원자재",
-  SEMI_FINISHED: "반제품",
-  FINISHED: "완제품",
-  CONSUMABLE: "소모품",
-}
-
 const DEFAULT_ITEM = {
   itemId: "",
   bomId: null,
   routingId: null,
   plannedQty: 1,
   note: "",
-}
-
-function ItemCombobox({
-  items,
-  value,
-  selectedInOtherRows,
-  onSelect,
-}: ItemComboboxProps) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
-  const [activeIndex, setActiveIndex] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const selectedItem = items.find((item) => item.id === value)
-  const normalizedSearch = search.trim().toLocaleLowerCase()
-  const filteredItems = useMemo(
-    () =>
-      normalizedSearch
-        ? items.filter((item) => item.searchText.includes(normalizedSearch))
-        : items,
-    [items, normalizedSearch]
-  )
-  const selectableItems = filteredItems.filter(
-    (item) => !selectedInOtherRows.has(item.id)
-  )
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen)
-    setSearch("")
-    setActiveIndex(0)
-    if (nextOpen) {
-      requestAnimationFrame(() => inputRef.current?.focus())
-    }
-  }
-
-  const chooseItem = (itemId: string) => {
-    if (selectedInOtherRows.has(itemId)) return
-    onSelect(itemId)
-    setOpen(false)
-    setSearch("")
-  }
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="h-8 w-full min-w-[220px] justify-between px-2 text-[13px] font-normal"
-        >
-          <span className="min-w-0 truncate text-left">
-            {selectedItem ? `[${selectedItem.code}] ${selectedItem.name}` : "품목 선택"}
-          </span>
-          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="z-50 w-[max(var(--radix-popover-trigger-width),320px)] p-0"
-        align="start"
-      >
-        <div>
-          <div className="border-b p-2">
-            <Input
-              ref={inputRef}
-              value={search}
-              placeholder="품목코드 또는 품목명 검색"
-              className="h-8 text-[13px]"
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setActiveIndex(0)
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault()
-                  setActiveIndex((current) =>
-                    Math.min(current + 1, Math.max(selectableItems.length - 1, 0))
-                  )
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault()
-                  setActiveIndex((current) => Math.max(current - 1, 0))
-                } else if (event.key === "Enter") {
-                  event.preventDefault()
-                  const item = selectableItems[activeIndex]
-                  if (item) chooseItem(item.id)
-                } else if (event.key === "Escape") {
-                  event.preventDefault()
-                  setOpen(false)
-                }
-              }}
-            />
-          </div>
-          <div role="listbox" className="max-h-[300px] overflow-y-auto p-1">
-            {filteredItems.length === 0 && (
-              <p className="py-5 text-center text-[13px] text-muted-foreground">
-                검색 결과가 없습니다.
-              </p>
-            )}
-            {filteredItems.map((item) => {
-              const disabled = selectedInOtherRows.has(item.id)
-              const selectableIndex = selectableItems.findIndex(
-                (selectableItem) => selectableItem.id === item.id
-              )
-              const active = selectableIndex === activeIndex && !disabled
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="option"
-                  aria-selected={item.id === value}
-                  disabled={disabled}
-                  onMouseEnter={() => {
-                    if (selectableIndex >= 0) setActiveIndex(selectableIndex)
-                  }}
-                  onClick={() => chooseItem(item.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-[13px] outline-none",
-                    active && "bg-accent text-accent-foreground",
-                    disabled
-                      ? "cursor-not-allowed opacity-50"
-                      : "cursor-pointer hover:bg-accent hover:text-accent-foreground"
-                  )}
-                >
-                  <Check
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      item.id === value ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 items-baseline gap-1.5">
-                      <span className="shrink-0 font-mono text-muted-foreground">
-                        [{item.code}]
-                      </span>
-                      <span className="truncate">{item.name}</span>
-                    </span>
-                    <span className="block text-[12px] text-muted-foreground">
-                      {itemTypeLabels[item.itemType] ?? item.itemType}
-                    </span>
-                  </span>
-                  {disabled && (
-                    <span className="shrink-0 text-[12px] text-muted-foreground">
-                      이미 선택됨
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  )
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -308,19 +133,6 @@ export function PlanFormSheet({
     name: "items",
   })
   const watchedItems = useWatch({ control: form.control, name: "items" }) ?? []
-  const searchableItems = useMemo<ItemOption[]>(
-    () =>
-      items.map((item) => {
-        const typeLabel = itemTypeLabels[item.itemType] ?? item.itemType
-        return {
-          ...item,
-          searchText: `${item.code} ${item.name} ${typeLabel}`
-            .trim()
-            .toLocaleLowerCase(),
-        }
-      }),
-    [items]
-  )
 
   // ─── create 모드 초기화 ──────────────────────────────────────────────────────
 
@@ -628,13 +440,14 @@ export function PlanFormSheet({
                               name={`items.${index}.itemId`}
                               render={({ field: f }) => (
                                 <FormItem>
-                                  <ItemCombobox
-                                    items={searchableItems}
+                                  <SearchableItemCombobox
+                                    items={items}
                                     value={f.value ?? ""}
-                                    selectedInOtherRows={selectedInOtherRows}
+                                    disabledItemIds={selectedInOtherRows}
                                     onSelect={(itemId) =>
                                       handleItemChangeForRow(index, itemId)
                                     }
+                                    triggerClassName="h-8 min-w-[220px] px-2 text-[13px]"
                                   />
                                   <FormMessage className="text-[12px]" />
                                 </FormItem>
