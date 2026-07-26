@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { createFinishedGoodsLot } from "./finished-goods-lot.helpers"
+import { resolveFinishedGoodsReceiptDestination } from "./finished-goods-location.helpers"
 import { createLotGenealogyLink } from "./lot-genealogy.helpers"
 import {
   WIP_RECEIPT_BLOCK_REASONS,
@@ -260,51 +261,6 @@ function isPrismaTransactionTimeoutError(error: unknown): boolean {
   )
 }
 
-type FinishedGoodsReceiptTransaction = Parameters<
-  Parameters<typeof prisma.$transaction>[0]
->[0]
-
-async function resolveFinishedGoodsReceiptLocation(
-  tx: FinishedGoodsReceiptTransaction,
-  warehouseId: string,
-) {
-  const locations = await tx.location.findMany({
-    where: { warehouseId },
-    select: { id: true, code: true },
-    orderBy: { code: "asc" },
-  })
-
-  const defaultLocation = locations.find((location) => location.code === "DEFAULT")
-  if (defaultLocation) return defaultLocation
-  if (locations.length === 1) return locations[0]
-
-  // createMany + skipDuplicates는 DB의 ON CONFLICT DO NOTHING을 사용한다.
-  // 동시 입고가 DEFAULT를 먼저 생성해도 복합 unique 키를 재조회해 같은 위치를 사용한다.
-  await tx.location.createMany({
-    data: {
-      warehouseId,
-      code: "DEFAULT",
-      name: "기본 위치",
-      locationType: "DEFAULT",
-    },
-    skipDuplicates: true,
-  })
-
-  const resolvedLocation = await tx.location.findUnique({
-    where: {
-      warehouseId_code: {
-        warehouseId,
-        code: "DEFAULT",
-      },
-    },
-    select: { id: true, code: true },
-  })
-  if (!resolvedLocation) {
-    throw new Error("입고 기본 위치를 결정할 수 없습니다.")
-  }
-  return resolvedLocation
-}
-
 export async function createFinishedGoodsReceiptAction(
   data: CreateReceiptInput,
   requestedTenantId?: string
@@ -379,19 +335,11 @@ export async function createFinishedGoodsReceiptAction(
         throw new Error("입고 창고가 올바르지 않습니다.")
       }
 
-      const warehouse = await tx.warehouse.findFirst({
-        where: {
-          id: data.warehouseId,
-          tenantId,
-          siteId: workOrder.siteId,
-        },
-        select: { id: true },
+      const { warehouse, location } = await resolveFinishedGoodsReceiptDestination(tx, {
+        warehouseId: data.warehouseId,
+        tenantId,
+        siteId: workOrder.siteId,
       })
-      if (!warehouse) {
-        throw new Error("입고 창고가 올바르지 않습니다.")
-      }
-
-      const location = await resolveFinishedGoodsReceiptLocation(tx, warehouse.id)
 
       // 품목 유형 조회 — 반제품(SEMI_FINISHED) 여부에 따라 LOT 발번 prefix 결정
       const itemRecord = await tx.item.findUnique({
@@ -503,7 +451,7 @@ export async function createFinishedGoodsReceiptAction(
           workOrderId: data.workOrderId,
           itemId: data.itemId,
           lotId: lot.id,
-          warehouseId: data.warehouseId,
+          warehouseId: warehouse.id,
           locationId: location.id,
           receiptQty: data.receiptQty,
           receiptAt: new Date(),
@@ -518,7 +466,7 @@ export async function createFinishedGoodsReceiptAction(
           tenantId,
           itemId: data.itemId,
           lotId: lot.id,
-          toLocationId: data.warehouseId,
+          toLocationId: warehouse.id,
           txNo,
           txType: "RECEIPT",
           qty: data.receiptQty,
@@ -534,7 +482,7 @@ export async function createFinishedGoodsReceiptAction(
         where: {
           tenantId,
           siteId: data.siteId,
-          warehouseId: data.warehouseId,
+          warehouseId: warehouse.id,
           itemId: data.itemId,
           lotId: lot.id,
         },
@@ -554,7 +502,7 @@ export async function createFinishedGoodsReceiptAction(
           data: {
             tenantId,
             siteId: data.siteId,
-            warehouseId: data.warehouseId,
+            warehouseId: warehouse.id,
             itemId: data.itemId,
             lotId: lot.id,
             qtyOnHand: data.receiptQty,
