@@ -314,7 +314,7 @@ export function PlanFormSheet({
         const typeLabel = itemTypeLabels[item.itemType] ?? item.itemType
         return {
           ...item,
-          searchText: `${item.code} ${item.name} ${typeLabel} ${item.code} ${item.name}`
+          searchText: `${item.code} ${item.name} ${typeLabel}`
             .trim()
             .toLocaleLowerCase(),
         }
@@ -818,16 +818,13 @@ export function PlanFormSheet({
               </div>
             )}
 
-            {/* items 전체 에러 메시지 */}
-            <FormField
-              control={form.control}
-              name="items"
-              render={() => (
-                <FormItem>
-                  <FormMessage className="text-[13px]" />
-                </FormItem>
-              )}
-            />
+            {/* 품목 배열 자체의 오류(예: 최소 1개 필요)만 표시한다.
+                행 단위 오류 객체를 FormMessage에 넘기면 "undefined"가 렌더링될 수 있다. */}
+            {typeof form.formState.errors.items?.message === "string" && (
+              <p className="text-[13px] font-medium text-destructive">
+                {form.formState.errors.items.message}
+              </p>
+            )}
           </div>
         </div>
       </Form>
