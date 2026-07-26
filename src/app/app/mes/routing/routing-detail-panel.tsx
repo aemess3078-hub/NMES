@@ -27,7 +27,8 @@ export function RoutingDetailPanel({ routing, onClose }: Props) {
     ROUTING_STATUS_CONFIG[routing.status as keyof typeof ROUTING_STATUS_CONFIG] ??
     ROUTING_STATUS_CONFIG.DRAFT
 
-  const linkedItem = routing.items?.[0]
+  const linkedItems = routing.items ?? []
+  const isCommon = routing.scope === "COMMON"
   const totalTime = routing.operations.reduce(
     (sum, op) => sum + Number(op.standardTime),
     0
@@ -49,22 +50,39 @@ export function RoutingDetailPanel({ routing, onClose }: Props) {
             <span className="text-[12px] text-muted-foreground border rounded px-1.5 py-0.5">
               v{routing.version}
             </span>
-            {linkedItem?.isDefault && (
-              <span className="text-[11px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                기본 라우팅
-              </span>
-            )}
+            <span
+              className={`text-[11px] px-2 py-0.5 rounded-full font-medium border ${
+                isCommon
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-muted text-muted-foreground border-border"
+              }`}
+            >
+              {isCommon ? "범용" : "품목 전용"}
+            </span>
           </div>
-          {linkedItem && (
-            <p className="text-[13px] text-muted-foreground">
-              <span className="font-mono">{linkedItem.item.code}</span>
-              {" "}·{" "}
-              {linkedItem.item.name}
-              {" "}
-              <span className="text-[12px]">
-                ({ITEM_TYPE_LABELS[linkedItem.item.itemType] ?? linkedItem.item.itemType})
-              </span>
-            </p>
+          {isCommon ? (
+            <p className="text-[13px] text-muted-foreground">모든 완제품·반제품에서 선택 가능</p>
+          ) : linkedItems.length > 0 ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {linkedItems.map((li) => (
+                <p key={li.id} className="text-[13px] text-muted-foreground">
+                  <span className="font-mono">{li.item.code}</span>
+                  {" "}·{" "}
+                  {li.item.name}
+                  {" "}
+                  <span className="text-[12px]">
+                    ({ITEM_TYPE_LABELS[li.item.itemType] ?? li.item.itemType})
+                  </span>
+                  {li.isDefault && (
+                    <span className="ml-1 text-[11px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">
+                      기본
+                    </span>
+                  )}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[13px] text-destructive">연결된 품목이 없습니다.</p>
           )}
         </div>
 

@@ -1,14 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Check, ChevronsUpDown, X } from "lucide-react"
 
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -22,9 +25,10 @@ import {
   FormSelectField,
   FormSwitchField,
 } from "@/components/common/form-sheet"
+import { cn } from "@/lib/utils"
 import { routingFormSchema, RoutingFormValues } from "./routing-form-schema"
 import { createRouting, updateRouting, RoutingWithDetails } from "@/lib/actions/routing.actions"
-import { RoutingStatus } from "@prisma/client"
+import { RoutingStatus, RoutingScope } from "@prisma/client"
 
 interface WorkCenter {
   id: string
@@ -54,7 +58,8 @@ const DEFAULT_FORM_VALUES: RoutingFormValues = {
   name: "",
   version: "1.0",
   status: RoutingStatus.DRAFT,
-  itemId: "",
+  scope: RoutingScope.ITEM_SPECIFIC,
+  itemIds: [],
   isDefault: false,
   operations: [],
 }
@@ -76,6 +81,8 @@ export function RoutingFormSheet({
   tenantId,
 }: RoutingFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
+  const [itemPickerOpen, setItemPickerOpen] = useState(false)
+  const [itemSearch, setItemSearch] = useState("")
   const router = useRouter()
 
   const form = useForm<RoutingFormValues>({
@@ -90,14 +97,16 @@ export function RoutingFormSheet({
 
   useEffect(() => {
     if (mode === "edit" && routing && open) {
-      const firstItemRouting = routing.items?.[0]
+      const linkedItemIds = routing.items?.map((ir) => ir.itemId) ?? []
+      const isDefault = routing.items?.some((ir) => ir.isDefault) ?? false
       form.reset({
         code: routing.code,
         name: routing.name,
         version: routing.version,
         status: routing.status,
-        itemId: firstItemRouting?.itemId ?? "",
-        isDefault: firstItemRouting?.isDefault ?? false,
+        scope: routing.scope,
+        itemIds: linkedItemIds,
+        isDefault,
         operations: routing.operations.map((op) => ({
           seq: op.seq,
           operationCode: op.operationCode,
@@ -120,8 +129,9 @@ export function RoutingFormSheet({
         name: values.name,
         version: values.version,
         status: values.status,
-        itemId: values.itemId,
-        isDefault: values.isDefault,
+        scope: values.scope,
+        itemIds: values.scope === RoutingScope.COMMON ? [] : values.itemIds,
+        isDefault: values.scope === RoutingScope.COMMON ? false : values.isDefault,
         operations: values.operations.map((op) => ({
           seq: op.seq,
           operationCode: op.operationCode,
@@ -140,6 +150,7 @@ export function RoutingFormSheet({
       router.refresh()
     } catch (error) {
       console.error("저장 실패:", error)
+      alert(error instanceof Error ? error.message : "저장 중 오류가 발생했습니다.")
     } finally {
       setIsLoading(false)
     }
@@ -154,6 +165,44 @@ export function RoutingFormSheet({
       workCenterId: "",
       standardTime: 0,
     })
+  }
+
+  const scope = form.watch("scope")
+  const selectedItemIds = form.watch("itemIds")
+
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedItemIds.includes(item.id)),
+    [items, selectedItemIds]
+  )
+
+  const filteredItems = useMemo(() => {
+    const q = itemSearch.trim().toLowerCase()
+    if (!q) return items
+    return items.filter(
+      (item) =>
+        item.code.toLowerCase().includes(q) || item.name.toLowerCase().includes(q)
+    )
+  }, [items, itemSearch])
+
+  function toggleItemSelected(itemId: string) {
+    const current = form.getValues("itemIds")
+    if (current.includes(itemId)) {
+      form.setValue(
+        "itemIds",
+        current.filter((id) => id !== itemId),
+        { shouldValidate: true }
+      )
+    } else {
+      form.setValue("itemIds", [...current, itemId], { shouldValidate: true })
+    }
+  }
+
+  function removeSelectedItem(itemId: string) {
+    form.setValue(
+      "itemIds",
+      form.getValues("itemIds").filter((id) => id !== itemId),
+      { shouldValidate: true }
+    )
   }
 
   return (
@@ -210,28 +259,168 @@ export function RoutingFormSheet({
             />
           </div>
 
-          {/* 품목 연결 정보 */}
-          <div className="space-y-4 pt-4 border-t">
-            <p className="text-[15px] font-medium text-foreground">품목 연결</p>
+          {/* 라우팅 적용 범위 */}
+          <div className="space-y-3 pt-4 border-t">
+            <p className="text-[15px] font-medium text-foreground">라우팅 적용 범위</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => form.setValue("scope", RoutingScope.COMMON, { shouldValidate: true })}
+                className={cn(
+                  "text-left rounded-lg border-2 p-3 space-y-1 transition-colors",
+                  scope === RoutingScope.COMMON
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-muted-foreground/40"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      scope === RoutingScope.COMMON ? "border-primary" : "border-muted-foreground/40"
+                    )}
+                  >
+                    {scope === RoutingScope.COMMON && (
+                      <span className="w-2 h-2 rounded-full bg-primary" />
+                    )}
+                  </span>
+                  <span className="text-[14px] font-medium">범용 라우팅</span>
+                </div>
+                <p className="text-[12px] text-muted-foreground pl-6">
+                  모든 완제품·반제품에서 선택할 수 있습니다.
+                </p>
+              </button>
 
-            <FormSelectField
-              control={form.control}
-              name="itemId"
-              label="대상 품목"
-              placeholder="완제품 또는 반제품 선택"
-              options={items.map((item) => ({
-                label: `[${item.code}] ${item.name} (${itemTypeLabels[item.itemType] ?? item.itemType})`,
-                value: item.id,
-              }))}
-            />
+              <button
+                type="button"
+                onClick={() => form.setValue("scope", RoutingScope.ITEM_SPECIFIC, { shouldValidate: true })}
+                className={cn(
+                  "text-left rounded-lg border-2 p-3 space-y-1 transition-colors",
+                  scope === RoutingScope.ITEM_SPECIFIC
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-muted-foreground/40"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
+                      scope === RoutingScope.ITEM_SPECIFIC ? "border-primary" : "border-muted-foreground/40"
+                    )}
+                  >
+                    {scope === RoutingScope.ITEM_SPECIFIC && (
+                      <span className="w-2 h-2 rounded-full bg-primary" />
+                    )}
+                  </span>
+                  <span className="text-[14px] font-medium">품목 전용 라우팅</span>
+                </div>
+                <p className="text-[12px] text-muted-foreground pl-6">
+                  연결된 품목에서만 선택할 수 있습니다.
+                </p>
+              </button>
+            </div>
 
-            <FormSwitchField
-              control={form.control}
-              name="isDefault"
-              label="기본 라우팅"
-              description="이 라우팅을 해당 품목의 기본 라우팅으로 설정합니다."
-            />
+            {scope === RoutingScope.COMMON && (
+              <p className="text-[12px] text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                이 라우팅은 품목 연결 없이 모든 완제품·반제품의 생산계획 및 작업지시에서 선택할 수 있습니다.
+              </p>
+            )}
           </div>
+
+          {/* 품목 연결 정보 — 품목 전용일 때만 표시 */}
+          {scope === RoutingScope.ITEM_SPECIFIC && (
+            <div className="space-y-4 pt-4 border-t">
+              <p className="text-[15px] font-medium text-foreground">품목 연결</p>
+
+              <FormField
+                control={form.control}
+                name="itemIds"
+                render={() => (
+                  <FormItem>
+                    <FormLabel className="text-[13px]">
+                      대상 품목 <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          className="w-full justify-between h-9 text-[13px] font-normal"
+                        >
+                          {selectedItems.length > 0
+                            ? `${selectedItems.length}개 품목 선택됨`
+                            : "완제품 또는 반제품 검색"}
+                          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                        <div className="p-2 border-b">
+                          <Input
+                            placeholder="품목코드 또는 품목명 검색"
+                            value={itemSearch}
+                            onChange={(e) => setItemSearch(e.target.value)}
+                            className="h-8 text-[13px]"
+                          />
+                        </div>
+                        <div className="max-h-64 overflow-y-auto p-1">
+                          {filteredItems.length === 0 && (
+                            <p className="text-[13px] text-muted-foreground text-center py-4">
+                              검색 결과가 없습니다.
+                            </p>
+                          )}
+                          {filteredItems.map((item) => {
+                            const checked = selectedItemIds.includes(item.id)
+                            return (
+                              <div
+                                key={item.id}
+                                role="button"
+                                onClick={() => toggleItemSelected(item.id)}
+                                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 cursor-pointer text-[13px]"
+                              >
+                                <Checkbox checked={checked} onCheckedChange={() => toggleItemSelected(item.id)} />
+                                <span className="font-mono text-muted-foreground">[{item.code}]</span>
+                                <span className="flex-1 truncate">{item.name}</span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {itemTypeLabels[item.itemType] ?? item.itemType}
+                                </span>
+                                {checked && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage className="text-[12px]" />
+                  </FormItem>
+                )}
+              />
+
+              {selectedItems.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedItems.map((item) => (
+                    <Badge key={item.id} variant="secondary" className="text-[12px] gap-1 pr-1">
+                      [{item.code}] {item.name}
+                      <button
+                        type="button"
+                        onClick={() => removeSelectedItem(item.id)}
+                        className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <FormSwitchField
+                control={form.control}
+                name="isDefault"
+                label="기본 라우팅"
+                description="선택된 품목의 기본 라우팅으로 설정합니다."
+              />
+            </div>
+          )}
 
           {/* 공정 목록 */}
           <div className="pt-4 border-t space-y-3">

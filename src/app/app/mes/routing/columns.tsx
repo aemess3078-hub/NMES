@@ -1,7 +1,7 @@
 "use client"
 
 import { ColumnDef } from "@tanstack/react-table"
-import { RoutingStatus } from "@prisma/client"
+import { RoutingStatus, RoutingScope } from "@prisma/client"
 
 import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
@@ -12,6 +12,19 @@ const routingStatusLabels: Record<RoutingStatus, string> = {
   DRAFT: "초안",
   ACTIVE: "활성",
   INACTIVE: "비활성",
+}
+
+const routingScopeLabels: Record<RoutingScope, string> = {
+  COMMON: "범용",
+  ITEM_SPECIFIC: "품목 전용",
+}
+
+function formatLinkedItems(routing: RoutingWithDetails): string {
+  if (routing.scope === "COMMON") return "모든 품목"
+  const items = routing.items ?? []
+  if (items.length === 0) return "-"
+  if (items.length === 1) return items[0].item.code
+  return `${items[0].item.code} 외 ${items.length - 1}개`
 }
 
 const itemTypeLabels: Record<string, string> = {
@@ -51,32 +64,45 @@ export function getColumns(callbacks: {
       ),
     },
     {
-      id: "itemCode",
-      accessorFn: (row) => row.items?.[0]?.item?.code ?? "-",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목코드" />
-      ),
-      cell: ({ row }) => (
-        <span className="font-mono text-[14px]">{row.getValue("itemCode")}</span>
-      ),
+      id: "scope",
+      accessorFn: (row) => row.scope,
+      header: "적용 범위",
+      cell: ({ row }) => {
+        const r = row.original
+        return (
+          <Badge
+            variant={r.scope === "COMMON" ? "outline" : "secondary"}
+            className={`text-[12px] ${r.scope === "COMMON" ? "border-blue-300 text-blue-700 bg-blue-50" : ""}`}
+          >
+            {routingScopeLabels[r.scope]}
+          </Badge>
+        )
+      },
+      filterFn: (row, id, filterValues: string[]) =>
+        filterValues.includes(row.getValue(id)),
     },
     {
-      id: "itemName",
-      accessorFn: (row) => row.items?.[0]?.item?.name ?? "-",
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="품목명" />
-      ),
-      cell: ({ row }) => (
-        <span className="text-[14px]">{row.getValue("itemName")}</span>
-      ),
+      id: "linkedItems",
+      accessorFn: (row) => formatLinkedItems(row),
+      header: "연결 품목",
+      cell: ({ row }) => {
+        const r = row.original
+        if (r.scope === "COMMON") {
+          return <span className="text-[14px] text-muted-foreground">모든 품목</span>
+        }
+        return <span className="text-[14px] font-mono">{formatLinkedItems(r)}</span>
+      },
       filterFn: (row, _colId, filterValue: string) => {
         const q = filterValue.toLowerCase()
         const r = row.original
         return (
           r.code.toLowerCase().includes(q) ||
           r.name.toLowerCase().includes(q) ||
-          (r.items?.[0]?.item?.code ?? "").toLowerCase().includes(q) ||
-          (r.items?.[0]?.item?.name ?? "").toLowerCase().includes(q)
+          routingScopeLabels[r.scope].toLowerCase().includes(q) ||
+          (r.items ?? []).some(
+            (ir) =>
+              ir.item.code.toLowerCase().includes(q) || ir.item.name.toLowerCase().includes(q)
+          )
         )
       },
     },

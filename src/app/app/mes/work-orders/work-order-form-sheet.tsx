@@ -40,8 +40,11 @@ import { WorkOrderStatus } from "@prisma/client"
 type BomOption = { id: string; version: string; isDefault: boolean }
 type RoutingOption = {
   id: string
+  code: string
+  name: string
   version: string
   isDefault: boolean
+  scope: "COMMON" | "ITEM_SPECIFIC"
   operations: {
     id: string
     seq: number
@@ -543,8 +546,9 @@ export function WorkOrderFormSheet({
                       <SelectContent>
                         {routings.map((routing) => (
                           <SelectItem key={routing.id} value={routing.id}>
-                            {routing.version}
+                            [{routing.code}] {routing.name} v{routing.version}
                             {routing.isDefault ? " (기본)" : ""}
+                            {routing.scope === "COMMON" ? " · 범용" : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>

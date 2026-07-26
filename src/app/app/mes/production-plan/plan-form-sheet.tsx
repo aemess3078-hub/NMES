@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
+  SelectGroup,
+  SelectLabel,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -36,7 +38,30 @@ import { PlanType, PlanStatus } from "@prisma/client"
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type BomOption = { id: string; version: string; isDefault: boolean }
-type RoutingOption = { id: string; version: string; isDefault: boolean }
+type RoutingOption = {
+  id: string
+  code: string
+  name: string
+  version: string
+  isDefault: boolean
+  scope: "COMMON" | "ITEM_SPECIFIC"
+}
+
+// 자동선택 규칙: 이미 선택된 routingId가 새 후보 목록에 있으면 유지 → 품목전용 기본 라우팅이
+// 정확히 1개면 그것 → 그 외 선택 가능 라우팅이 정확히 1개면 그것 → 그 외에는 사용자가 직접 선택.
+// 범용 라우팅은 후보가 여러 개일 수 있으므로 절대 자동 기본값으로 지정하지 않는다.
+function resolveAutoSelectedRoutingId(
+  routings: RoutingOption[],
+  currentRoutingId: string | null
+): string | null {
+  if (currentRoutingId && routings.some((r) => r.id === currentRoutingId)) {
+    return currentRoutingId
+  }
+  const defaultItemSpecific = routings.filter((r) => r.scope === "ITEM_SPECIFIC" && r.isDefault)
+  if (defaultItemSpecific.length === 1) return defaultItemSpecific[0].id
+  if (routings.length === 1) return routings[0].id
+  return null
+}
 
 interface PlanFormSheetProps {
   mode: "create" | "edit"
@@ -156,14 +181,18 @@ export function PlanFormSheet({
         })),
       })
 
-      // 각 행의 BOM/라우팅 로딩
+      // 각 행의 BOM/라우팅 로딩 — 기존 routingId가 새 후보 목록에서 여전히 유효하면 유지, 아니면 자동선택 규칙 적용
       plan.items.forEach(async (item, index) => {
         const [boms, routings] = await Promise.all([
           getBomsForPlanItem(item.itemId),
-          getRoutingsForPlanItem(item.itemId),
+          getRoutingsForPlanItem(item.itemId) as Promise<RoutingOption[]>,
         ])
         setRowBoms((prev) => ({ ...prev, [index]: boms }))
         setRowRoutings((prev) => ({ ...prev, [index]: routings }))
+        const resolved = resolveAutoSelectedRoutingId(routings, item.routingId ?? null)
+        if (resolved !== (item.routingId ?? null)) {
+          form.setValue(`items.${index}.routingId`, resolved)
+        }
       })
     }
   }, [mode, plan, open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -193,10 +222,12 @@ export function PlanFormSheet({
 
     const [boms, routings] = await Promise.all([
       getBomsForPlanItem(itemId),
-      getRoutingsForPlanItem(itemId),
+      getRoutingsForPlanItem(itemId) as Promise<RoutingOption[]>,
     ])
     setRowBoms((prev) => ({ ...prev, [index]: boms }))
     setRowRoutings((prev) => ({ ...prev, [index]: routings }))
+    // 품목이 방금 바뀌었으므로 이전 routingId는 무의미 — 자동선택 규칙(2·3번)만 적용
+    form.setValue(`items.${index}.routingId`, resolveAutoSelectedRoutingId(routings, null))
   }
 
   // ─── 저장 핸들러 ────────────────────────────────────────────────────────────
@@ -477,42 +508,71 @@ export function PlanFormSheet({
                             />
                           </td>
 
-                          {/* 라우팅 */}
+                          {/* 라우팅 — 추천(품목전용 기본) / 품목전용 / 범용 3그룹으로 표시 */}
                           <td className="px-2 py-1.5">
                             <FormField
                               control={form.control}
                               name={`items.${index}.routingId`}
-                              render={({ field: f }) => (
-                                <FormItem>
-                                  <Select
-                                    onValueChange={(val) =>
-                                      f.onChange(val === "__none__" ? null : val)
-                                    }
-                                    value={f.value ?? "__none__"}
-                                    disabled={!currentItemId}
-                                  >
-                                    <SelectTrigger className="h-8 text-[13px]">
-                                      <SelectValue placeholder="라우팅 선택" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="__none__" className="text-[13px]">
-                                        선택 안함
-                                      </SelectItem>
-                                      {routingsForRow.map((routing) => (
-                                        <SelectItem
-                                          key={routing.id}
-                                          value={routing.id}
-                                          className="text-[13px]"
-                                        >
-                                          {routing.version}
-                                          {routing.isDefault ? " (기본)" : ""}
+                              render={({ field: f }) => {
+                                const recommended = routingsForRow.filter(
+                                  (r) => r.scope === "ITEM_SPECIFIC" && r.isDefault
+                                )
+                                const itemSpecific = routingsForRow.filter(
+                                  (r) => r.scope === "ITEM_SPECIFIC" && !r.isDefault
+                                )
+                                const common = routingsForRow.filter((r) => r.scope === "COMMON")
+                                return (
+                                  <FormItem>
+                                    <Select
+                                      onValueChange={(val) =>
+                                        f.onChange(val === "__none__" ? null : val)
+                                      }
+                                      value={f.value ?? "__none__"}
+                                      disabled={!currentItemId}
+                                    >
+                                      <SelectTrigger className="h-8 text-[13px]">
+                                        <SelectValue placeholder="라우팅 선택" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__" className="text-[13px]">
+                                          선택 안함
                                         </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage className="text-[12px]" />
-                                </FormItem>
-                              )}
+                                        {recommended.length > 0 && (
+                                          <SelectGroup>
+                                            <SelectLabel className="text-[11px]">추천 라우팅</SelectLabel>
+                                            {recommended.map((routing) => (
+                                              <SelectItem key={routing.id} value={routing.id} className="text-[13px]">
+                                                [{routing.code}] {routing.name} v{routing.version} (기본)
+                                              </SelectItem>
+                                            ))}
+                                          </SelectGroup>
+                                        )}
+                                        {itemSpecific.length > 0 && (
+                                          <SelectGroup>
+                                            <SelectLabel className="text-[11px]">품목 전용 라우팅</SelectLabel>
+                                            {itemSpecific.map((routing) => (
+                                              <SelectItem key={routing.id} value={routing.id} className="text-[13px]">
+                                                [{routing.code}] {routing.name} v{routing.version}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectGroup>
+                                        )}
+                                        {common.length > 0 && (
+                                          <SelectGroup>
+                                            <SelectLabel className="text-[11px]">범용 라우팅</SelectLabel>
+                                            {common.map((routing) => (
+                                              <SelectItem key={routing.id} value={routing.id} className="text-[13px]">
+                                                [{routing.code}] {routing.name} v{routing.version}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectGroup>
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                    <FormMessage className="text-[12px]" />
+                                  </FormItem>
+                                )
+                              }}
                             />
                           </td>
 

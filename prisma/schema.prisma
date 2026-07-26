@@ -91,6 +91,11 @@ enum RoutingStatus {
   INACTIVE
 }
 
+enum RoutingScope {
+  COMMON
+  ITEM_SPECIFIC
+}
+
 enum WorkCenterKind {
   ASSEMBLY
   MACHINING
@@ -745,6 +750,8 @@ model Routing {
   name      String
   version   String
   status    RoutingStatus @default(DRAFT)
+  // COMMON: 품목 연결 없이 모든 완제품/반제품에서 선택 가능. ITEM_SPECIFIC: ItemRouting으로 연결된 품목에서만 선택 가능.
+  scope     RoutingScope  @default(ITEM_SPECIFIC)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 

@@ -121,8 +121,16 @@ export function RoutingDataTable({
       <DataTable
         columns={columns}
         data={data}
-        searchableColumns={[{ id: "itemName" as keyof RoutingWithDetails, title: "코드/품목명" }]}
+        searchableColumns={[{ id: "linkedItems" as keyof RoutingWithDetails, title: "코드/품목명" }]}
         filterableColumns={[
+          {
+            id: "scope" as keyof RoutingWithDetails,
+            title: "적용 범위",
+            options: [
+              { label: "범용", value: "COMMON" },
+              { label: "품목 전용", value: "ITEM_SPECIFIC" },
+            ],
+          },
           {
             id: "itemType" as keyof RoutingWithDetails,
             title: "품목유형",
