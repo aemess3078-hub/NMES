@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { createFinishedGoodsLot } from "./finished-goods-lot.helpers"
+import { resolveFinishedGoodsReceiptDestination } from "./finished-goods-location.helpers"
 import { createLotGenealogyLink } from "./lot-genealogy.helpers"
 import {
   WIP_RECEIPT_BLOCK_REASONS,
@@ -43,9 +44,9 @@ export type WorkOrderForReceipt = {
 
 export type WarehouseWithLocations = {
   id: string
+  siteId: string
   code: string
   name: string
-  locations: { id: string; code: string; name: string }[]
 }
 
 export type CreateReceiptInput = {
@@ -53,7 +54,6 @@ export type CreateReceiptInput = {
   itemId: string
   siteId: string
   warehouseId: string
-  locationId: string
   receiptQty: number
   lotId?: string | null
 }
@@ -222,27 +222,22 @@ export async function getWorkOrdersForReceipt(
   })
 }
 
-// ─── 완제품 창고 + 로케이션 목록 ────────────────────────────────────────────
+// ─── 완제품 입고 로케이션 목록 (Warehouse) ─────────────────────────────────
 
 export async function getFinishedGoodsWarehouses(
   tenantId: string
 ): Promise<WarehouseWithLocations[]> {
   const warehouses = await prisma.warehouse.findMany({
     where: { tenantId },
-    include: {
-      locations: {
-        select: { id: true, code: true, name: true },
-        orderBy: { code: "asc" },
-      },
-    },
+    select: { id: true, siteId: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
 
   return warehouses.map((wh) => ({
     id: wh.id,
+    siteId: wh.siteId,
     code: wh.code,
     name: wh.name,
-    locations: wh.locations,
   }))
 }
 
@@ -340,28 +335,11 @@ export async function createFinishedGoodsReceiptAction(
         throw new Error("입고 창고가 올바르지 않습니다.")
       }
 
-      const warehouse = await tx.warehouse.findFirst({
-        where: {
-          id: data.warehouseId,
-          tenantId,
-          siteId: workOrder.siteId,
-        },
-        select: { id: true },
+      const { warehouse, location } = await resolveFinishedGoodsReceiptDestination(tx, {
+        warehouseId: data.warehouseId,
+        tenantId,
+        siteId: workOrder.siteId,
       })
-      if (!warehouse) {
-        throw new Error("입고 창고가 올바르지 않습니다.")
-      }
-
-      const location = await tx.location.findFirst({
-        where: {
-          id: data.locationId,
-          warehouseId: data.warehouseId,
-        },
-        select: { id: true },
-      })
-      if (!location) {
-        throw new Error("입고 위치가 올바르지 않습니다.")
-      }
 
       // 품목 유형 조회 — 반제품(SEMI_FINISHED) 여부에 따라 LOT 발번 prefix 결정
       const itemRecord = await tx.item.findUnique({
@@ -473,8 +451,8 @@ export async function createFinishedGoodsReceiptAction(
           workOrderId: data.workOrderId,
           itemId: data.itemId,
           lotId: lot.id,
-          warehouseId: data.warehouseId,
-          locationId: data.locationId,
+          warehouseId: warehouse.id,
+          locationId: location.id,
           receiptQty: data.receiptQty,
           receiptAt: new Date(),
         },
@@ -488,7 +466,7 @@ export async function createFinishedGoodsReceiptAction(
           tenantId,
           itemId: data.itemId,
           lotId: lot.id,
-          toLocationId: data.warehouseId,
+          toLocationId: warehouse.id,
           txNo,
           txType: "RECEIPT",
           qty: data.receiptQty,
@@ -504,7 +482,7 @@ export async function createFinishedGoodsReceiptAction(
         where: {
           tenantId,
           siteId: data.siteId,
-          warehouseId: data.warehouseId,
+          warehouseId: warehouse.id,
           itemId: data.itemId,
           lotId: lot.id,
         },
@@ -524,7 +502,7 @@ export async function createFinishedGoodsReceiptAction(
           data: {
             tenantId,
             siteId: data.siteId,
-            warehouseId: data.warehouseId,
+            warehouseId: warehouse.id,
             itemId: data.itemId,
             lotId: lot.id,
             qtyOnHand: data.receiptQty,
