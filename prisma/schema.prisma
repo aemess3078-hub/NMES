@@ -1180,6 +1180,9 @@ model LotNumberReservation {
   createdAt           DateTime              @default(now())
   consumedAt          DateTime?
   releasedAt          DateTime?
+  // 라벨을 실제로 출력한 시각. null이면 "미출력" — 취소/재채번/만료 시 행을 삭제해 번호를 재사용 가능하게 한다.
+  // 값이 있으면 "출력됨" — 이후 취소/재채번/만료돼도 행을 삭제하지 않고 상태만 바꿔 번호를 영구히 재사용 금지한다.
+  printedAt           DateTime?
 
   tenant            Tenant             @relation(fields: [tenantId], references: [id])
   item              Item               @relation(fields: [itemId], references: [id])

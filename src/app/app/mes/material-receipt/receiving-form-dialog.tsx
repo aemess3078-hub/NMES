@@ -22,7 +22,11 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
-import { reserveReceivingLotNumber, releaseLotReservation } from "@/lib/actions/lot-reservation.actions"
+import {
+  reserveReceivingLotNumber,
+  releaseLotReservation,
+  markLotReservationPrinted,
+} from "@/lib/actions/lot-reservation.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
@@ -217,6 +221,12 @@ export function ReceivingFormDialog({
         isAutoNumbered: true,
         isReserving: false,
       })
+      if (result.previousWasPrinted) {
+        alert(
+          `[${ins.itemCode}] ${ins.itemName}\n` +
+          `이미 라벨이 출력된 LOT 번호는 재사용할 수 없습니다. 새 번호 ${result.lotNo}(으)로 재채번되었습니다.`
+        )
+      }
     } else {
       updateInspection(index, { isReserving: false })
       alert(`[${ins.itemCode}] ${ins.itemName}\n${result.message}`)
@@ -309,6 +319,25 @@ export function ReceivingFormDialog({
   // 라벨 출력 대상: 금회 입고수량 > 0인 품목만. LOT 관리 품목은 lotNo가 있어야 출력 가능.
   const printableItems = inspections.filter((ins) => (parseFloat(ins.thisReceivedQty) || 0) > 0)
   const hasMissingLotForPrint = printableItems.some((ins) => ins.isLotTracked && !ins.lotNo.trim())
+
+  // "바코드 라벨 출력" 버튼은 미리보기 다이얼로그만 연다 — 이 시점에는 번호를 소모하지 않는다.
+  // 실제 번호 소모(printedAt 기록)는 BarcodePrintDialog 내부의 진짜 "인쇄" 버튼을 누를 때
+  // onBeforePrint로 전달되는 handleBeforePrint에서만 일어난다. 미리보기만 열고 닫으면
+  // 자동채번 번호는 여전히 미출력 상태라 취소 시 재사용 가능하다.
+  async function handleBeforePrint(): Promise<{ success: true } | { success: false; message: string }> {
+    for (const ins of printableItems) {
+      if (ins.isLotTracked && ins.isAutoNumbered && ins.lotReservationId) {
+        const result = await markLotReservationPrinted({
+          reservationId: ins.lotReservationId,
+          purchaseOrderItemId: ins.purchaseOrderItemId,
+        })
+        if (!result.success) {
+          return { success: false, message: `[${ins.itemCode}] ${ins.itemName}\n${result.message}` }
+        }
+      }
+    }
+    return { success: true }
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleCloseDialog()}>
@@ -656,6 +685,7 @@ export function ReceivingFormDialog({
           quantity: parseFloat(ins.thisReceivedQty) || ins.pendingQty,
           uom: ins.uom,
         }))}
+        onBeforePrint={handleBeforePrint}
       />
     </Dialog>
   )

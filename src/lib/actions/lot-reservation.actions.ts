@@ -2,7 +2,12 @@
 
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
-import { computeNextMaterialReceiptLotNo, expireStaleReservations, LOT_RESERVATION_TTL_MS } from "@/lib/lot-numbering/lot-reservation"
+import {
+  computeNextMaterialReceiptLotNo,
+  expireStaleReservations,
+  releaseOrDeleteReservation,
+  LOT_RESERVATION_TTL_MS,
+} from "@/lib/lot-numbering/lot-reservation"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { Prisma } from "@prisma/client"
 
@@ -15,12 +20,22 @@ function isUniqueConstraintError(error: unknown): boolean {
 export type ReserveReceivingLotNumberInput = {
   purchaseOrderId: string
   purchaseOrderItemId: string
-  /** 재채번 시 기존 예약 id — 서버에서 먼저 RELEASED 처리 후 새로 발행한다. */
+  /**
+   * 재채번 시 기존 예약 id — 서버에서 먼저 정리한 뒤 새로 발행한다.
+   * 라벨 미출력이었으면 행을 삭제(번호 재사용 가능), 라벨 출력됐었으면 RELEASED로 남긴다(번호 영구 재사용 금지).
+   */
   previousReservationId?: string
 }
 
 export type ReserveReceivingLotNumberResult =
-  | { success: true; reservationId: string; lotNo: string; expiresAt: string }
+  | {
+      success: true
+      reservationId: string
+      lotNo: string
+      expiresAt: string
+      /** 재채번 대상이었던 이전 예약이 라벨 출력된 상태였으면 true — 클라이언트가 안내 문구를 보여줄 때 사용 */
+      previousWasPrinted?: boolean
+    }
   | { success: false; message: string }
 
 /** 자재입고 LOT 자동채번 "미리보기" — 실제 Lot을 만들지 않고 번호만 예약해 라벨 선출력을 지원한다. */
@@ -77,20 +92,21 @@ async function reserveReceivingLotNumberInternal(
     return { success: false, message: "이 품목은 LOT 번호를 직접 입력해야 하는 품목입니다." }
   }
 
-  // 새 예약 발급 전 lazy expiration — 만료된 RESERVED를 EXPIRED로 정리(별도 스케줄러 없음)
+  // 새 예약 발급 전 lazy expiration — 만료된 RESERVED를 정리(라벨 미출력이면 삭제, 출력됐으면 EXPIRED 유지)
   await expireStaleReservations(prisma, tenantId)
 
-  // 재채번: 기존 예약을 먼저 해제(같은 tenant·발주품목 소유일 때만 — 타 tenant/타 예약 보호)
+  // 재채번: 기존 예약을 먼저 정리(같은 tenant·발주품목 소유일 때만 — 타 tenant/타 예약 보호)
+  //   - 라벨 미출력: 행 삭제 → 경쟁자가 없다면 같은 번호가 다시 나올 수 있음
+  //   - 라벨 출력됨: RELEASED로 남김 → 번호 영구 재사용 금지, 사용자에게 안내 필요
+  let previousWasPrinted = false
   if (input.previousReservationId) {
-    await prisma.lotNumberReservation.updateMany({
-      where: {
-        id: input.previousReservationId,
-        tenantId,
-        purchaseOrderItemId: input.purchaseOrderItemId,
-        status: "RESERVED",
-      },
-      data: { status: "RELEASED", releasedAt: new Date() },
-    })
+    const result = await releaseOrDeleteReservation(
+      prisma,
+      input.previousReservationId,
+      tenantId,
+      input.purchaseOrderItemId,
+    )
+    previousWasPrinted = result.wasPrinted
   }
 
   const itemRuleContext: CnsItemRuleContext = {
@@ -125,6 +141,7 @@ async function reserveReceivingLotNumberInternal(
         reservationId: reservation.id,
         lotNo: reservation.lotNo,
         expiresAt: expiresAt.toISOString(),
+        previousWasPrinted,
       }
     } catch (error) {
       if (isUniqueConstraintError(error) && attempt < MAX_RESERVE_ATTEMPTS - 1) continue
@@ -138,9 +155,12 @@ async function reserveReceivingLotNumberInternal(
 }
 
 /**
- * 예약 정리(best-effort) — 재채번, 수동입력 전환, 다이얼로그 취소/닫기, 발주·품목 변경,
- * 입고수량 0 변경 등에서 호출된다. 실패해도 서버의 만료(expiresAt) 정책이 최종 안전망이 되므로
+ * 예약 정리(best-effort) — 취소, X 닫기, 수동입력 전환, 발주·품목 변경, 입고수량 0 변경,
+ * 다이얼로그 정상 종료 등에서 호출된다. 실패해도 서버의 만료(expiresAt) 정책이 최종 안전망이 되므로
  * 클라이언트는 이 호출의 실패를 무시해도 된다.
+ *
+ * 라벨 미출력 상태였으면 행을 삭제해 번호를 바로 재사용 가능하게 하고, 라벨 출력됐었으면
+ * RELEASED로 남겨 번호를 영구히 재사용하지 않는다.
  */
 export async function releaseLotReservation(input: {
   reservationId: string
@@ -148,13 +168,71 @@ export async function releaseLotReservation(input: {
   try {
     await requireRole("OPERATOR")
     const tenantId = await getTenantId()
-    await prisma.lotNumberReservation.updateMany({
-      where: { id: input.reservationId, tenantId, status: "RESERVED" },
-      data: { status: "RELEASED", releasedAt: new Date() },
-    })
+    await releaseOrDeleteReservation(prisma, input.reservationId, tenantId)
     return { success: true }
   } catch (error) {
     console.error("[releaseLotReservation] error:", error)
     return { success: false }
+  }
+}
+
+export type MarkLotReservationPrintedResult =
+  | { success: true }
+  | { success: false; message: string }
+
+/**
+ * 바코드 라벨을 실제로 출력하기 직전에 호출 — 예약을 "출력됨"으로 확정한다.
+ * 이 호출이 성공한 뒤에만 클라이언트가 라벨 다이얼로그를 열어야 한다.
+ * 출력이 확정된 예약은 이후 취소/재채번/만료되어도 번호가 영구히 재사용되지 않는다.
+ * 이미 printedAt이 설정된 예약을 다시 호출해도 안전(idempotent)하다.
+ */
+export async function markLotReservationPrinted(input: {
+  reservationId: string
+  purchaseOrderItemId: string
+}): Promise<MarkLotReservationPrintedResult> {
+  try {
+    await requireRole("OPERATOR")
+    const tenantId = await getTenantId()
+
+    const reservation = await prisma.lotNumberReservation.findFirst({
+      where: {
+        id: input.reservationId,
+        tenantId,
+        purchaseOrderItemId: input.purchaseOrderItemId,
+      },
+    })
+
+    if (!reservation) {
+      return { success: false, message: "자동채번 예약을 찾을 수 없습니다. 다시 자동채번한 후 라벨을 출력해주세요." }
+    }
+    if (reservation.status === "CONSUMED") {
+      // 이미 입고 확정까지 끝난 예약(정상적으로는 여기까지 오지 않지만 방어적으로 허용)
+      return { success: true }
+    }
+    if (reservation.status !== "RESERVED") {
+      return { success: false, message: "자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요." }
+    }
+    if (reservation.expiresAt < new Date()) {
+      if (reservation.printedAt) {
+        await prisma.lotNumberReservation.update({ where: { id: reservation.id }, data: { status: "EXPIRED" } })
+      } else {
+        await prisma.lotNumberReservation.delete({ where: { id: reservation.id } })
+      }
+      return { success: false, message: "자동채번 예약이 만료되었습니다. 다시 자동채번한 후 라벨을 출력해주세요." }
+    }
+
+    if (!reservation.printedAt) {
+      await prisma.lotNumberReservation.update({
+        where: { id: reservation.id },
+        data: { printedAt: new Date() },
+      })
+    }
+    return { success: true }
+  } catch (error) {
+    console.error("[markLotReservationPrinted] error:", error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "라벨 출력 확정 중 오류가 발생했습니다.",
+    }
   }
 }
