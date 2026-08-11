@@ -191,6 +191,7 @@ async function fetchLaborEffort(
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
+        ...(f.equipmentIds?.length && { equipmentId: { in: f.equipmentIds } }),
       },
     },
     select: { startedAt: true, endedAt: true, goodQty: true },
@@ -307,6 +308,7 @@ async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
+        ...(f.equipmentIds?.length && { equipmentId: { in: f.equipmentIds } }),
       },
     },
     select: { startedAt: true, endedAt: true, goodQty: true },

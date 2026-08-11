@@ -316,7 +316,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
       label: "UPH",
       value: data.uph.avgUph != null ? String(data.uph.avgUph) : null,
       subtitle: "시간당 생산량",
-      meta: `양품 ${data.uph.totalGoodQty.toLocaleString()}개`,
+      meta: `양품 ${data.uph.totalGoodQty.toLocaleString()}개 · ${data.uph.totalHours}h`,
     },
     {
       id: "equipmentAvailability",
