@@ -172,9 +172,11 @@ function UphDetail({ data }: { data: UphKpi }) {
     <div className="space-y-3">
       <p className="text-[14px] font-medium text-foreground">일별 UPH</p>
       <SimpleTable
-        headers={["날짜", "양품수", "작업시간(h)", "UPH"]}
+        headers={["날짜", "품목코드", "품목명", "양품수", "작업시간(h)", "UPH"]}
         rows={data.rows.map((r) => [
           r.date,
+          r.itemCode,
+          r.itemName,
           r.goodQty.toLocaleString(),
           r.hours,
           r.uph != null ? r.uph : "—",

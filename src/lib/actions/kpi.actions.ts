@@ -296,7 +296,15 @@ export type UphKpi = {
   avgUph: number | null
   totalGoodQty: number
   totalHours: number
-  rows: Array<{ date: string; goodQty: number; hours: number; uph: number | null }>
+  rows: Array<{
+    date: string
+    itemId: string
+    itemCode: string
+    itemName: string
+    goodQty: number
+    hours: number
+    uph: number | null
+  }>
 }
 
 async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
@@ -311,10 +319,23 @@ async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
         ...(f.equipmentIds?.length && { equipmentId: { in: f.equipmentIds } }),
       },
     },
-    select: { startedAt: true, endedAt: true, goodQty: true },
+    select: {
+      startedAt: true,
+      endedAt: true,
+      goodQty: true,
+      workOrderOperation: {
+        select: { workOrder: { select: { item: { select: { id: true, code: true, name: true } } } } },
+      },
+    },
   })
 
-  const dayMap = new Map<string, { goodQty: number; hours: number }>()
+  // 상세 rows는 날짜+품목 단위로 집계한다 (상단 총계와는 독립적으로 계산 —
+  // avgUph 는 아래에서 raw SUM(goodQty)/SUM(hours) 로만 산출하고, rows 는
+  // 표시용으로만 사용한다).
+  const rowMap = new Map<
+    string,
+    { date: string; itemId: string; itemCode: string; itemName: string; goodQty: number; hours: number }
+  >()
   let totalGoodQty = 0
   let totalHours = 0
 
@@ -325,16 +346,28 @@ async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
     totalGoodQty += gq
     totalHours += h
     const date = r.startedAt.toISOString().slice(0, 10)
-    const e = dayMap.get(date) ?? { goodQty: 0, hours: 0 }
+    const item = r.workOrderOperation.workOrder.item
+    const key = `${date}|${item.id}`
+    const e = rowMap.get(key) ?? {
+      date,
+      itemId: item.id,
+      itemCode: item.code,
+      itemName: item.name,
+      goodQty: 0,
+      hours: 0,
+    }
     e.goodQty += gq
     e.hours += h
-    dayMap.set(date, e)
+    rowMap.set(key, e)
   }
 
-  const rows = Array.from(dayMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, v]) => ({
-      date,
+  const rows = Array.from(rowMap.values())
+    .sort((a, b) => a.date.localeCompare(b.date) || a.itemCode.localeCompare(b.itemCode))
+    .map((v) => ({
+      date: v.date,
+      itemId: v.itemId,
+      itemCode: v.itemCode,
+      itemName: v.itemName,
       goodQty: Math.round(v.goodQty),
       hours: Math.round(v.hours * 10) / 10,
       uph: v.hours > 0 ? Math.round((v.goodQty / v.hours) * 10) / 10 : null,
