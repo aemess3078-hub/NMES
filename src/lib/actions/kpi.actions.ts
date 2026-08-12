@@ -51,7 +51,11 @@ function defaultKpiDateRange(): KpiFilter {
 }
 
 // ─── 1. 제조리드타임 ──────────────────────────────────────────────────────────
-// 완료된 작업지시의 createdAt → updatedAt 기간 (완료 시각 근사치)
+// 완료된 작업지시의 createdAt → 완료일(completedAt) 기간.
+// completedAt은 실제 생산 종료일(마지막 ProductionResult.endedAt)을 우선 사용하고,
+// 생산실적이 없는 작업지시만 updatedAt으로 폴백한다. updatedAt은 담당자가 다른
+// 항목을 나중에 한 번만 고쳐도 갱신되는 시스템 필드라 "완료일"의 근거로 쓰기
+// 취약하다 — 실제 업무 완료 시점을 나타내는 생산 데이터를 우선한다.
 
 export type ManufacturingLeadTimeKpi = {
   avgDays: number | null
@@ -75,7 +79,6 @@ async function fetchManufacturingLeadTime(
     where: {
       tenantId,
       status: "COMPLETED",
-      updatedAt: { gte: from, lte: to },
       ...(f.itemId && { itemId: f.itemId }),
     },
     select: {
@@ -83,21 +86,46 @@ async function fetchManufacturingLeadTime(
       createdAt: true,
       updatedAt: true,
       item: { select: { name: true } },
+      operations: {
+        select: {
+          productionResults: { select: { endedAt: true } },
+        },
+      },
     },
-    orderBy: { updatedAt: "desc" },
-    take: 20,
   })
 
-  const rows = orders.map((wo) => ({
-    orderNo: wo.orderNo,
-    itemName: wo.item.name,
-    createdAt: wo.createdAt.toISOString(),
-    completedAt: wo.updatedAt.toISOString(),
-    leadTimeDays:
-      Math.round(
-        ((wo.updatedAt.getTime() - wo.createdAt.getTime()) / 86_400_000) * 10
-      ) / 10,
-  }))
+  const rows = orders
+    .map((wo) => {
+      const productionEndTimes = wo.operations
+        .flatMap((op) => op.productionResults)
+        .map((pr) => pr.endedAt)
+        .filter((d): d is Date => d != null)
+      const completedAt =
+        productionEndTimes.length > 0
+          ? new Date(Math.max(...productionEndTimes.map((d) => d.getTime())))
+          : wo.updatedAt
+
+      return {
+        orderNo: wo.orderNo,
+        itemName: wo.item.name,
+        createdAt: wo.createdAt,
+        completedAt,
+        leadTimeDays:
+          Math.round(
+            ((completedAt.getTime() - wo.createdAt.getTime()) / 86_400_000) * 10
+          ) / 10,
+      }
+    })
+    .filter((r) => r.completedAt >= from && r.completedAt <= to)
+    .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime())
+    .slice(0, 20)
+    .map((r) => ({
+      orderNo: r.orderNo,
+      itemName: r.itemName,
+      createdAt: r.createdAt.toISOString(),
+      completedAt: r.completedAt.toISOString(),
+      leadTimeDays: r.leadTimeDays,
+    }))
 
   const avgDays =
     rows.length > 0
