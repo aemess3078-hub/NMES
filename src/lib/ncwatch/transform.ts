@@ -1,5 +1,6 @@
-import { EquipmentEventType } from "@prisma/client"
+import { EquipmentEventType, Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
+import { planEquipmentEventTransition } from "./equipment-event-plan"
 import type { MachineStatusPayload } from "./types"
 
 // ─── 설정 ────────────────────────────────────────────────────────────────────
@@ -69,32 +70,58 @@ export async function syncEquipmentEvent(
   const startedAt = parseNcwatchTs(m.ncwatchTs) ?? now
 
   // 기존 열린 이벤트 닫기 + 새 이벤트 열기 (단일 트랜잭션)
-  await prisma.$transaction(async (tx) => {
-    const openEvent = await tx.equipmentEvent.findFirst({
-      where:   { equipmentId, endedAt: null },
-      orderBy: { startedAt: "desc" },
-      select:  { id: true, startedAt: true },
-    })
+  try {
+    await prisma.$transaction(async (tx) => {
+      // prevStatusCode는 ncwatch_status upsert "이전" 값이라, 동일 payload가 동시에/연달아
+      // 들어오면 두 요청 모두 "상태 변경"으로 판정해 이벤트를 중복 생성할 수 있다.
+      // 설비 단위 advisory lock으로 직렬화한 뒤, 실제 열린 이벤트를 보고 다시 판정한다.
+      // (트랜잭션 종료 시 자동 해제 — pgbouncer transaction pooling에서도 안전)
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${equipmentId}))`
 
-    if (openEvent) {
-      const durationSec = Math.round(
-        (now.getTime() - openEvent.startedAt.getTime()) / 1000
-      )
-      await tx.equipmentEvent.update({
-        where: { id: openEvent.id },
-        data:  { endedAt: now, duration: durationSec },
+      const openEvents = await tx.equipmentEvent.findMany({
+        where:   { equipmentId, endedAt: null },
+        orderBy: { startedAt: "asc" },
+        select:  { id: true, eventType: true, startedAt: true },
       })
-    }
 
-    await tx.equipmentEvent.create({
-      data: {
-        equipmentId,
-        eventType: newEventType,
-        message:   buildEventMessage(m),
-        startedAt,
-      },
+      const plan = planEquipmentEventTransition(openEvents, newEventType)
+
+      // 닫아야 할 이벤트는 각자의 startedAt 기준으로 duration을 계산해야 하므로 개별 update.
+      // (정상 상황에서는 0~1건, 과거에 쌓인 고아 이벤트가 있을 때만 2건 이상)
+      for (const ev of openEvents) {
+        if (!plan.closeIds.includes(ev.id)) continue
+        const durationSec = Math.max(
+          0,
+          Math.round((now.getTime() - ev.startedAt.getTime()) / 1000)
+        )
+        await tx.equipmentEvent.update({
+          where: { id: ev.id },
+          data:  { endedAt: now, duration: durationSec },
+        })
+      }
+
+      if (plan.createNew) {
+        await tx.equipmentEvent.create({
+          data: {
+            equipmentId,
+            eventType: newEventType,
+            message:   buildEventMessage(m),
+            startedAt,
+          },
+        })
+      }
     })
-  })
+  } catch (err) {
+    // 설비당 열린 이벤트 1건 부분 유니크 인덱스 위반 = 다른 요청이 이미 같은 이벤트를 연 것.
+    // 중복 수신이므로 정상 처리로 간주하고 넘어간다.
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return
+    }
+    throw err
+  }
 }
 
 // ─── TagCurrentValue + TagSnapshot 동기화 ───────────────────────────────────

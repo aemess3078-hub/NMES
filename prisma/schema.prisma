@@ -1827,6 +1827,10 @@ model EquipmentEvent {
   equipment Equipment @relation(fields: [equipmentId], references: [id])
 
   @@index([equipmentId, startedAt])
+  // 설비당 열린 이벤트(endedAt IS NULL)는 1건만 허용한다.
+  // partial unique index는 Prisma schema로 표현할 수 없어 raw SQL 마이그레이션으로 관리한다.
+  //   migrations/20260813000000_equipment_event_single_open_guard
+  //   → UNIQUE INDEX "EquipmentEvent_equipmentId_open_key" ("equipmentId") WHERE "endedAt" IS NULL
 }
 
 // ─── Phase 2d-5: 영업관리 ─────────────────────────────────────────────────────
