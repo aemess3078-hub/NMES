@@ -5,7 +5,9 @@ import { Prisma, WipMovementType, WipUnitStatus } from "@prisma/client"
 
 export type WipTraceabilityTx = Prisma.TransactionClient
 
-const REUSABLE_WIP_STATUSES: WipUnitStatus[] = [
+// production-progress.service.ts(생산진행 현황 집계)에서도 "활성 재공" 정의를
+// 동일하게 재사용하기 위해 export한다. 값 자체는 변경하지 않음.
+export const REUSABLE_WIP_STATUSES: WipUnitStatus[] = [
   WipUnitStatus.WAITING,
   WipUnitStatus.IN_PROCESS,
   WipUnitStatus.ON_HOLD,
