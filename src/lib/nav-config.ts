@@ -48,6 +48,13 @@ export const MES_NAV: NavItem[] = [
         children: [
           { id: 'nav-prod-equip-output', parentId: 'nav-production', label: '설비별생산현황', icon: 'BarChart2', href: '/app/mes/production/equipment-output', displayOrder: 1, children: [] },
           { id: 'nav-prod-plan-output', parentId: 'nav-production', label: '생산계획별생산현황', icon: 'CalendarDays', href: '/app/mes/production-plan', displayOrder: 2, children: [] },
+          // NewMES 전용 화면(assertNewMesBrand()로 Server Action/Page 이중 보호됨, production-progress.actions.ts 참고).
+          // nav-config.ts에는 브랜드 분기 자체가 없어(전체 파일 확인 결과 브랜드 조건 0건) 이 메뉴 항목 하나에만
+          // 기존 NEXT_PUBLIC_BRAND 관례를 그대로 재사용해 조건부로 넣는다 — 새 NavItem 필드나 별도 브랜드 필터링
+          // 체계를 nav-config/layout에 추가하지 않는다.
+          ...(process.env.NEXT_PUBLIC_BRAND === 'newmes'
+            ? [{ id: 'nav-production-progress', parentId: 'nav-production', label: '생산진행 현황', icon: 'Activity', href: '/app/mes/production-progress', displayOrder: 2.5, children: [] }]
+            : []),
           { id: 'nav-work-orders', parentId: 'nav-production', label: '작업지시', icon: 'ClipboardList', href: '/app/mes/work-orders', displayOrder: 3, children: [] },
           { id: 'nav-production-results', parentId: 'nav-production', label: '작업일지', icon: 'FileText', href: '/app/mes/production-results', displayOrder: 4, children: [] },
           { id: 'nav-finished-goods-receipt', parentId: 'nav-production', label: '완제품입고', icon: 'PackagePlus', href: '/app/mes/finished-goods-receipt', displayOrder: 4.5, children: [] },
