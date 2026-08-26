@@ -121,6 +121,61 @@ function SummaryCard({
   )
 }
 
+// ─── 원형 진행률 게이지 (전체 진행률 KPI 전용) ────────────────────────────────────
+// 값은 summary.overallProgressRate를 그대로 표시만 한다 — 여기서 재계산하지 않는다.
+// recharts를 추가로 마운트하지 않도록 순수 SVG로 그린다(불필요한 차트 인스턴스 방지).
+
+function CircularProgress({ value, size = 44 }: { value: number; size?: number }) {
+  const clamped = Math.min(100, Math.max(0, value))
+  const strokeWidth = 5
+  const radius = (size - strokeWidth) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference * (1 - clamped / 100)
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="hsl(var(--muted))"
+        strokeWidth={strokeWidth}
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="#3b82f6"
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function ProgressGaugeCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3">
+      <div>
+        <p className="text-[13px] text-muted-foreground">{label}</p>
+        <p className="mt-1 text-[20px] font-semibold tabular-nums text-foreground">
+          {formatPercent(value)}
+        </p>
+      </div>
+      <div className="relative h-11 w-11 shrink-0">
+        <CircularProgress value={value} />
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-foreground">
+          {Math.round(Math.min(100, Math.max(0, value)))}%
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function EmptyState() {
   return (
     <div className="rounded-lg border bg-card py-16 text-center">
@@ -342,7 +397,7 @@ export function ProductionProgressClient({
           value={summary.totalProductionOutputQty.toLocaleString()}
           suffix="EA"
         />
-        <SummaryCard label="전체 진행률" value={formatPercent(summary.overallProgressRate)} />
+        <ProgressGaugeCard label="전체 진행률" value={summary.overallProgressRate} />
         <SummaryCard
           label="정상"
           value={summary.normalCount.toLocaleString()}
@@ -391,7 +446,6 @@ export function ProductionProgressClient({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* 공정별 진행 현황 — data.rows의 currentOperation 위치만 집계, 별도 DB 조회 없음 */}
         <OperationProgressSummary rows={data.rows} />
-
         {/* 일별 생산실적 추이 — dailyTrend를 그대로 표시, 이 컴포넌트 내부 재계산 없음 */}
         <DailyProductionTrendChart data={dailyTrend} />
       </div>
