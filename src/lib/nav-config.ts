@@ -102,11 +102,11 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-kpi-dashboard', parentId: 'nav-kpi', label: 'KPI 대시보드', icon: 'LayoutDashboard', href: '/app/mes/kpi', displayOrder: 1, children: [] },
         ],
       },
-      // 6. 품질관리
+      // 6. 품질검사
       {
         id: 'nav-quality',
         parentId: 'section-mes',
-        label: '품질관리',
+        label: '품질검사',
         icon: 'ShieldCheck',
         displayOrder: 60,
         children: [
