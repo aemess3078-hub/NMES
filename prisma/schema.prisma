@@ -420,6 +420,7 @@ model Tenant {
   aiUsageLogs                   AIUsageLog[]                   @relation("TenantAIUsageLogs")
   quotations                    Quotation[]                    @relation("TenantQuotations")
   projectOrders                 ProjectOrder[]                 @relation("TenantProjectOrders")
+  projectStages                 ProjectStage[]
   itemCosts                     ItemCost[]                     @relation("TenantItemCosts")
   engineeringChanges            EngineeringChange[]            @relation("TenantECNs")
   signupRequests                SignupRequest[]
@@ -811,6 +812,7 @@ model RoutingOperation {
   equipmentMaps       EquipmentOperationMap[]
   workOrderOperations WorkOrderOperation[]
   inspectionSpecs     InspectionSpec[]
+  projectStages       ProjectStage[]
 
   @@unique([routingId, seq])
   @@index([routingId])
@@ -2223,6 +2225,7 @@ model ProjectOrder {
   item       Item?           @relation("ItemProjectOrders", fields: [itemId], references: [id])
   salesOrder SalesOrder?     @relation("SalesOrderProjectOrders", fields: [salesOrderId], references: [id])
   owner      Profile         @relation("ProjectOrderOwner", fields: [ownerId], references: [id])
+  stages     ProjectStage[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2230,6 +2233,48 @@ model ProjectOrder {
   @@index([tenantId, dueDate])
   @@index([customerId])
   @@index([salesOrderId])
+}
+
+// ─── Phase 2d-8c: 프로젝트관리 — 프로젝트 진행현황(ProjectStage) ───────────────────
+//
+// 프로젝트관리 > 프로젝트 진행현황: ProjectOrder 하위의 순차 단계 관리.
+// sourceRoutingOperationId는 "어디서 가져온 단계인지" 추적용 nullable 참조일 뿐,
+// RoutingOperation의 실시간 mirror가 아니다 — 라우팅에서 가져오는 순간 name/seq를
+// snapshot으로 복사해 저장하며, 이후 Routing이 수정되어도 기존 ProjectStage는
+// 자동으로 바뀌지 않는다(§4). 진행률/현재단계/지연여부는 DB에 저장하지 않고
+// 화면/서비스에서 매번 계산한다(§5,§6,§13). 생산실적(ProductionPlan/WorkOrder)과의
+// 직접 FK 연결은 이번 PR 범위 밖이다(§17).
+
+enum ProjectStageStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model ProjectStage {
+  id                       String             @id @default(cuid())
+  tenantId                 String
+  projectOrderId           String
+  seq                      Int
+  name                     String
+  status                   ProjectStageStatus @default(PENDING)
+  plannedStartDate         DateTime?
+  dueDate                  DateTime?
+  startedAt                DateTime?
+  completedAt              DateTime?
+  sourceRoutingOperationId String? // 가져온 출처 추적용(nullable) — mirror 아님, snapshot임
+  note                     String?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  tenant                 Tenant            @relation(fields: [tenantId], references: [id])
+  projectOrder           ProjectOrder      @relation(fields: [projectOrderId], references: [id])
+  sourceRoutingOperation RoutingOperation? @relation(fields: [sourceRoutingOperationId], references: [id])
+
+  @@unique([projectOrderId, seq])
+  @@index([tenantId])
+  @@index([projectOrderId])
+  @@index([sourceRoutingOperationId])
 }
 
 // ─── Phase 2d-9: 원가관리 ─────────────────────────────────────────────────────

@@ -66,6 +66,7 @@ import {
   LifeBuoy,
   MessageSquare,
   UserCog,
+  GanttChart,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -133,6 +134,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   LifeBuoy,
   MessageSquare,
   UserCog,
+  GanttChart,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
