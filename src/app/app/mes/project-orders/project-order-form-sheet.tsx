@@ -18,6 +18,10 @@ import {
 import { FormSheet } from "@/components/common/form-sheet/form-sheet"
 import { projectOrderFormSchema, ProjectOrderFormValues } from "./project-order-form-schema"
 import { createProjectOrder, updateProjectOrder } from "@/lib/actions/project-order.actions"
+import {
+  PROJECT_ORDER_STATUS_TRANSITIONS,
+  PROJECT_ORDER_CREATABLE_STATUSES,
+} from "@/lib/project-order-status"
 import { ProjectOrderStatus, ProjectOrderPriority } from "@prisma/client"
 import type { ProjectOrderRow } from "./columns"
 
@@ -31,7 +35,7 @@ type SalesOrderOption = {
   orderNo: string
   customerId: string
   deliveryDate: Date | string
-  firstItemId: string | null
+  items: ItemOption[]
 }
 
 interface ProjectOrderFormSheetProps {
@@ -97,6 +101,23 @@ export function ProjectOrderFormSheet({
     defaultValues: DEFAULT_VALUES,
   })
 
+  // ─── 상태 Select 옵션 제한 (§4) ─────────────────────────────────────────────
+  // 서버가 최종 검증하지만, 클라이언트에서도 애초에 갈 수 없는 상태는 보여주지 않는다.
+  // create: DRAFT/CONFIRMED만. edit: 현재 상태에서 허용된 전이만(현재 상태 자체 포함).
+
+  const allowedStatusValues =
+    mode === "create"
+      ? PROJECT_ORDER_CREATABLE_STATUSES
+      : PROJECT_ORDER_STATUS_TRANSITIONS[projectOrder?.status ?? "DRAFT"]
+  const statusOptions = STATUS_OPTIONS.filter((opt) => allowedStatusValues.includes(opt.value))
+
+  // ─── 연결 수주 선택 시 거래처 고정 / 품목 목록 제한 (§2) ────────────────────────
+
+  const selectedSalesOrderId = form.watch("salesOrderId")
+  const selectedSalesOrder = salesOrders.find((s) => s.id === selectedSalesOrderId)
+  const isSalesOrderLinked = Boolean(selectedSalesOrder)
+  const itemOptions = selectedSalesOrder ? selectedSalesOrder.items : items
+
   // ─── create 모드 초기화 ──────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -128,19 +149,28 @@ export function ProjectOrderFormSheet({
     }
   }, [mode, projectOrder, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── 연결 수주 선택 시 거래처/납기일/품목 자동 제안 (§12) ─────────────────────
-  // 사용자가 이후 직접 값을 바꿀 수 있다 — 자동 동기화가 아니라 최초 제안일 뿐이다.
+  // ─── 연결 수주 선택 시 거래처 고정 + 납기일 제안 + 품목 목록 제한 (§2, §12) ──────
+  // 거래처는 연결 중에는 임의 변경 불가하도록 수주 거래처로 고정한다(서버도 동일하게
+  // 검증한다). 품목은 연결된 수주의 품목 목록으로 제한하므로, 기존 선택이 새 목록에
+  // 없으면 초기화한다. 납기일은 비어 있을 때만 제안하고 이후에는 사용자가 자유롭게
+  // 조정할 수 있다 — 자동 동기화가 아니라 최초 제안일 뿐이다.
 
   function handleSalesOrderChange(salesOrderId: string) {
-    form.setValue("salesOrderId", salesOrderId === NONE_VALUE ? "" : salesOrderId)
-    if (salesOrderId === NONE_VALUE) return
-    const so = salesOrders.find((s) => s.id === salesOrderId)
+    const nextId = salesOrderId === NONE_VALUE ? "" : salesOrderId
+    form.setValue("salesOrderId", nextId)
+
+    if (!nextId) return
+    const so = salesOrders.find((s) => s.id === nextId)
     if (!so) return
-    if (!form.getValues("customerId")) form.setValue("customerId", so.customerId)
+
+    form.setValue("customerId", so.customerId)
     if (!form.getValues("dueDate")) {
       form.setValue("dueDate", new Date(so.deliveryDate).toISOString().split("T")[0])
     }
-    if (!form.getValues("itemId") && so.firstItemId) form.setValue("itemId", so.firstItemId)
+    const currentItemId = form.getValues("itemId")
+    if (currentItemId && !so.items.some((i) => i.id === currentItemId)) {
+      form.setValue("itemId", "")
+    }
   }
 
   // ─── 저장 핸들러 ────────────────────────────────────────────────────────────
@@ -219,7 +249,11 @@ export function ProjectOrderFormSheet({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>거래처</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value || undefined}>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value || undefined}
+                  disabled={isSalesOrderLinked}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="거래처 선택" />
                   </SelectTrigger>
@@ -231,6 +265,11 @@ export function ProjectOrderFormSheet({
                     ))}
                   </SelectContent>
                 </Select>
+                {isSalesOrderLinked && (
+                  <p className="text-[12px] text-muted-foreground">
+                    연결된 수주의 거래처로 고정됩니다. 변경하려면 연결 수주를 먼저 해제하세요.
+                  </p>
+                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -298,7 +337,7 @@ export function ProjectOrderFormSheet({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {STATUS_OPTIONS.map((opt) => (
+                    {statusOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
                       </SelectItem>
@@ -354,13 +393,18 @@ export function ProjectOrderFormSheet({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NONE_VALUE}>선택 안 함</SelectItem>
-                    {items.map((item) => (
+                    {itemOptions.map((item) => (
                       <SelectItem key={item.id} value={item.id}>
                         [{item.code}] {item.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isSalesOrderLinked && (
+                  <p className="text-[12px] text-muted-foreground">
+                    연결된 수주에 포함된 품목만 선택할 수 있습니다.
+                  </p>
+                )}
                 <FormMessage />
               </FormItem>
             )}

@@ -88,6 +88,16 @@ export function DataTable<TData, TValue>({
   )
   const [sorting, setSorting] = React.useState<SortingState>(defaultSorting)
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
+  const [globalFilter, setGlobalFilter] = React.useState("")
+
+  // searchableColumns가 2개 이상이면 단일 입력으로 여러 컬럼을 OR 검색하는
+  // 전역 필터를 쓴다(1개일 때는 기존 per-column 필터 동작을 그대로 유지 —
+  // 다른 화면의 기존 동작에 영향 없음).
+  const useCombinedSearch = searchableColumns.length > 1
+  const searchableColumnIds = React.useMemo(
+    () => searchableColumns.map((c) => c.id),
+    [searchableColumns]
+  )
   const isExpandedControlled = expandedRowId !== undefined
   const expanded = React.useMemo<ExpandedState>(
     () => {
@@ -112,6 +122,7 @@ export function DataTable<TData, TValue>({
       columnFilters,
       expanded,
       rowSelection,
+      ...(useCombinedSearch ? { globalFilter } : {}),
     },
     enableRowSelection,
     getRowCanExpand: () => Boolean(renderExpandedRow),
@@ -120,6 +131,19 @@ export function DataTable<TData, TValue>({
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
+    ...(useCombinedSearch
+      ? {
+          onGlobalFilterChange: setGlobalFilter,
+          globalFilterFn: (row: Row<TData>, _columnId: string, filterValue: string) => {
+            if (!filterValue) return true
+            const needle = filterValue.toLowerCase()
+            return searchableColumnIds.some((id) => {
+              const value = row.getValue(id as string)
+              return value != null && String(value).toLowerCase().includes(needle)
+            })
+          },
+        }
+      : {}),
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),

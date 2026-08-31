@@ -20,7 +20,7 @@ type SalesOrderOption = {
   orderNo: string
   customerId: string
   deliveryDate: Date | string
-  firstItemId: string | null
+  items: ItemOption[]
 }
 
 interface ProjectOrderDataTableProps {
@@ -123,6 +123,8 @@ export function ProjectOrderDataTable({
         data={data}
         searchableColumns={[
           { id: "code" as keyof ProjectOrderRow, title: "오더번호" },
+          { id: "name" as keyof ProjectOrderRow, title: "프로젝트명" },
+          { id: "customer" as keyof ProjectOrderRow, title: "거래처" },
         ]}
         filterableColumns={filterableColumns}
       />
