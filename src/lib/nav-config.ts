@@ -137,6 +137,18 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-project-orders', parentId: 'nav-sales', label: '프로젝트 오더', icon: 'FolderKanban', href: '/app/mes/project-orders', displayOrder: 5, children: [] },
         ],
       },
+      // 8. 프로젝트관리 (청운커팅 사업계획서 정본 신규 상위 그룹, PR #48)
+      // 프로젝트 오더는 계속 영업관리에 남긴다 — 이 그룹으로 이동하지 않는다.
+      {
+        id: 'nav-project-management',
+        parentId: 'section-mes',
+        label: '프로젝트관리',
+        icon: 'GanttChart',
+        displayOrder: 80,
+        children: [
+          { id: 'nav-project-progress', parentId: 'nav-project-management', label: '프로젝트 진행현황', icon: 'GanttChart', href: '/app/mes/project-progress', displayOrder: 1, children: [] },
+        ],
+      },
     ],
   },
 
