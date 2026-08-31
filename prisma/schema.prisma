@@ -193,6 +193,14 @@ enum WipMovementType {
   ADJUSTED
 }
 
+// 청운커팅 사업계획서 "재작업/보류관리" — WipUnit.status=ON_HOLD 등록/해제/취소 이력의 상태.
+// REWORK(불량 재작업)와는 별개 개념이다: ON_HOLD는 정상/진행 중 WIP을 업무상 일시 정지한 상태.
+enum WipHoldStatus {
+  ACTIVE
+  RELEASED
+  CANCELLED
+}
+
 enum InspectionResult {
   PASS
   FAIL
@@ -396,6 +404,7 @@ model Tenant {
   wipUnits                      WipUnit[]
   wipMovements                  WipMovement[]
   wipUnitMaterialLots           WipUnitMaterialLot[]
+  wipHolds                      WipHold[]
   boms                          BOM[]
   routings                      Routing[]
   itemRoutings                  ItemRouting[]
@@ -473,6 +482,7 @@ model Site {
   finishedGoodsReceipts FinishedGoodsReceipt[]
   wipUnits              WipUnit[]
   wipMovements          WipMovement[]
+  wipHolds              WipHold[]
   productionPlans       ProductionPlan[]
   gateways              EdgeGateway[]
   salesOrders           SalesOrder[]             @relation("SiteSalesOrders")
@@ -1317,6 +1327,7 @@ model WipUnit {
   movements              WipMovement[]        @relation("WipUnitMovements")
   relatedMovements       WipMovement[]        @relation("WipMovementRelatedWipUnit")
   materialLots           WipUnitMaterialLot[]
+  holds                  WipHold[]
 
   @@index([tenantId, workOrderId])
   @@index([tenantId, manufacturingNo])
@@ -1406,6 +1417,46 @@ model WipUnitMaterialLot {
   @@index([tenantId, materialItemId])
   @@index([tenantId, materialLotId])
   @@index([tenantId, materialLotNo])
+}
+
+// 청운커팅 사업계획서 "재작업/보류관리" — 보류(ON_HOLD) 등록·해제·취소 이력.
+// REWORK(불량 재작업, WipUnit.status=REWORK)와는 완전히 별개 흐름이며, 이 모델은
+// dispositionDefects/completeRework의 책임(재작업 종결)을 절대 건드리지 않는다.
+// 진행 방식은 WipMovement(HOLD/RELEASED movementType)로도 표현 가능하지만, "누가 어떤
+// 사유로/어떤 이전상태에서 보류했고 언제 해제·취소됐는지"를 조회 가능한 형태로 추적하려면
+// WipMovement 단독으로는 부족해 이 모델을 별도로 둔다(WipMovement는 이 모델의 액션마다
+// 보조적으로 함께 기록해 LOT 추적 화면의 이동이력에도 노출되게 한다).
+model WipHold {
+  id             String        @id @default(cuid())
+  tenantId       String
+  siteId         String?
+  wipUnitId      String
+  previousStatus WipUnitStatus
+  status         WipHoldStatus @default(ACTIVE)
+  reason         String
+  note           String?
+  heldAt         DateTime      @default(now())
+  heldById       String?
+  heldByName     String?
+  releasedAt     DateTime?
+  releasedById   String?
+  releasedByName String?
+  releaseNote    String?
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancelledByName String?
+  cancelNote     String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  site    Site?   @relation(fields: [siteId], references: [id])
+  wipUnit WipUnit @relation(fields: [wipUnitId], references: [id])
+
+  @@index([tenantId, wipUnitId])
+  @@index([tenantId, status])
+  @@index([wipUnitId, status])
+  @@index([tenantId, heldAt])
 }
 
 model ProductionResult {

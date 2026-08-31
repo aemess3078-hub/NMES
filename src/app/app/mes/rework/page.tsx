@@ -2,12 +2,19 @@ export const dynamic = "force-dynamic"
 
 import { getTenantId } from "@/lib/auth"
 import { getReworkPendingList } from "@/lib/actions/process-progress.actions"
+import { getHolds, getHoldableWipUnits } from "@/lib/actions/wip-hold.actions"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ReworkDataTable } from "./rework-data-table"
+import { HoldDataTable } from "./hold-data-table"
 
 export default async function ReworkPage() {
   const tenantId = await getTenantId()
 
-  const reworkItems = await getReworkPendingList(tenantId)
+  const [reworkItems, holds, holdableWipUnits] = await Promise.all([
+    getReworkPendingList(tenantId),
+    getHolds("ACTIVE"),
+    getHoldableWipUnits(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -16,19 +23,32 @@ export default async function ReworkPage() {
           재작업/보류관리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
-          미해결 재작업 분리 재공품을 확인하고, 최종공정에서 발생한 수량만 복귀 또는 폐기로 종결합니다.
+          재작업 대상의 처리현황과 생산 보류·해제 이력을 관리합니다.
         </p>
       </div>
 
-      {reworkItems.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-12 text-center">
-          <p className="text-[15px] text-muted-foreground">
-            현재 재작업 대기 중인 항목이 없습니다.
-          </p>
-        </div>
-      ) : (
-        <ReworkDataTable data={reworkItems} />
-      )}
+      <Tabs defaultValue="rework">
+        <TabsList className="h-9">
+          <TabsTrigger value="rework" className="text-[13px]">재작업</TabsTrigger>
+          <TabsTrigger value="hold" className="text-[13px]">보류</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="rework" className="mt-4">
+          {reworkItems.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-12 text-center">
+              <p className="text-[15px] text-muted-foreground">
+                현재 재작업 대기 중인 항목이 없습니다.
+              </p>
+            </div>
+          ) : (
+            <ReworkDataTable data={reworkItems} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="hold" className="mt-4">
+          <HoldDataTable initialData={holds} holdableWipUnits={holdableWipUnits} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
