@@ -16,6 +16,7 @@ import {
 } from "@/lib/auth/pop-worker-session"
 import {
   advanceWipUnitOnOperationComplete,
+  assertWipUnitNotOnHold,
   findActiveWipUnitForWorkOrder,
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
@@ -781,6 +782,12 @@ export async function submitProductionResult(
         tenantId: op.workOrder.tenantId,
         workOrderId: op.workOrderId,
       })
+      // 재작업/보류관리(wip-hold.actions.ts) 방어: ON_HOLD는 REUSABLE_WIP_STATUSES에 포함되어
+      // findActiveWipUnitForWorkOrder가 여전히 찾아내므로, 이미 IN_PROGRESS로 시작된 작업이
+      // 실적등록 시점에 보류로 전환됐다면 여기서 막는다. assignment 유무와 무관하게 공통 경로.
+      if (rootWip?.status === WipUnitStatus.ON_HOLD) {
+        throw new Error("보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 실적을 등록해 주세요.")
+      }
       let wipExhaustedAfterThisResult = false
       if (rootWip) {
         const rootQtyScaled = toScaledQty(rootWip.qty, "이동 가능 수량", { allowZero: true })
@@ -1152,6 +1159,20 @@ export async function startOperation(
       if (assignment.status === "COMPLETED") {
         return { success: false, error: "Equipment assignment is already completed." }
       }
+    }
+
+    // 재작업/보류관리 방어: op.status가 이미 IN_PROGRESS인 경우(새 설비배정만 시작하는 경로)에는
+    // transitionWipUnitOnStart를 거치지 않아 그 안의 ON_HOLD 체크도 건너뛴다. operation이
+    // PENDING이든 IN_PROGRESS이든 관계없이 root WIP이 보류 중이면 여기서 공통으로 차단한다.
+    const rootWipForHoldCheck = await findActiveWipUnitForWorkOrder(prisma, {
+      tenantId,
+      workOrderId: op.workOrderId,
+    })
+    if (rootWipForHoldCheck) {
+      assertWipUnitNotOnHold(
+        rootWipForHoldCheck.status,
+        "보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 작업을 시작해 주세요."
+      )
     }
 
     await prisma.$transaction(async (tx) => {

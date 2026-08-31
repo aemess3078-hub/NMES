@@ -33,6 +33,16 @@ export async function findActiveWipUnitForWorkOrder(
   })
 }
 
+// 재작업/보류관리(wip-hold.actions.ts) 방어: ON_HOLD는 REUSABLE_WIP_STATUSES에 포함되어
+// findActiveWipUnitForWorkOrder가 여전히 찾아내므로(생산현황/재공 집계에서 "활성 WIP"로
+// 계속 표시하려는 기존 의도는 유지), WIP 상태를 실제로 전진시키는 지점마다 개별적으로
+// 보류를 차단해야 한다. 중복 코드 없이 한 곳에서 관리하기 위한 공용 가드.
+export function assertWipUnitNotOnHold(status: WipUnitStatus, message: string): void {
+  if (status === WipUnitStatus.ON_HOLD) {
+    throw new Error(message)
+  }
+}
+
 export async function transitionWipUnitOnStart(
   tx: WipTraceabilityTx,
   params: {
@@ -56,12 +66,10 @@ export async function transitionWipUnitOnStart(
     return
   }
 
-  // 재작업/보류관리(wip-hold.actions.ts) 방어: ON_HOLD는 REUSABLE_WIP_STATUSES에 포함되어
-  // findActiveWipUnitForWorkOrder가 여전히 찾아내므로, 여기서 막지 않으면 보류 중인 WIP이
-  // POP 작업시작으로 그대로 IN_PROCESS 전환되어 보류가 무력화된다. 최소 범위 방어로 여기서만 차단한다.
-  if (wipUnit.status === WipUnitStatus.ON_HOLD) {
-    throw new Error("보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 작업을 시작해 주세요.")
-  }
+  assertWipUnitNotOnHold(
+    wipUnit.status,
+    "보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 작업을 시작해 주세요."
+  )
 
   // 멱등 처리: 이미 같은 공정에서 IN_PROCESS면 추가 기록 없음
   if (
@@ -126,6 +134,13 @@ export async function advanceWipUnitOnOperationComplete(
     )
     return
   }
+
+  // defense-in-depth: submitProductionResult가 이미 rootWip.status===ON_HOLD를 사전 차단하지만,
+  // 이 헬퍼가 향후 다른 경로에서 호출되더라도 ON_HOLD를 WAITING/COMPLETED로 덮어쓰지 않도록 재확인한다.
+  assertWipUnitNotOnHold(
+    wipUnit.status,
+    "보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 공정을 진행해 주세요."
+  )
 
   const wipQty = Number(wipUnit.qty)
   if (wipQty <= 0) {
@@ -244,6 +259,13 @@ export async function recordProductionResultQualityMovements(
     )
     return
   }
+
+  // defense-in-depth: submitProductionResult가 이미 rootWip.status===ON_HOLD를 사전 차단하지만,
+  // 이 헬퍼가 향후 다른 경로에서 호출되더라도 보류 중 WIP의 수량을 분리/차감하지 않도록 재확인한다.
+  assertWipUnitNotOnHold(
+    wipUnit.status,
+    "보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 실적을 등록해 주세요."
+  )
 
   const existingMovements = await tx.wipMovement.findMany({
     where: {

@@ -21,6 +21,7 @@ CREATE TABLE "WipHold" (
     "cancelledAt" TIMESTAMP(3),
     "cancelledById" TEXT,
     "cancelledByName" TEXT,
+    "cancelNote" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 

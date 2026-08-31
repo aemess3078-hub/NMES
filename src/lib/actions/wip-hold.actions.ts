@@ -57,6 +57,7 @@ export type WipHoldRow = {
   releaseNote: string | null
   cancelledAt: Date | null
   cancelledByName: string | null
+  cancelNote: string | null
   wipUnit: {
     id: string
     qty: number
@@ -166,6 +167,7 @@ export async function getHolds(statusFilter: HoldStatusFilter = "ACTIVE"): Promi
     releaseNote: h.releaseNote,
     cancelledAt: h.cancelledAt,
     cancelledByName: h.cancelledByName,
+    cancelNote: h.cancelNote,
     wipUnit: {
       id: h.wipUnit.id,
       qty: Number(h.wipUnit.qty),
@@ -320,10 +322,16 @@ export async function updateHold(input: UpdateHoldInput): Promise<{ ok: boolean;
 
       const before = { reason: hold.reason, note: hold.note }
 
-      await tx.wipHold.update({
-        where: { id: hold.id },
+      // release/cancel과 경쟁할 수 있으므로 동일한 조건부 updateMany+count 패턴으로 확정한다.
+      // findFirst 이후 update(where:{id})만 쓰면, 그 사이 release/cancel이 먼저 끝난
+      // RELEASED/CANCELLED 이력을 되돌아와 덮어쓸 수 있다.
+      const claimed = await tx.wipHold.updateMany({
+        where: { id: hold.id, tenantId, status: WipHoldStatus.ACTIVE },
         data: { reason, note },
       })
+      if (claimed.count !== 1) {
+        throw new Error("다른 요청에 의해 이미 처리되었습니다.")
+      }
 
       await tx.auditLog.create({
         data: {
@@ -495,6 +503,7 @@ export async function cancelHold(input: CancelHoldInput): Promise<{ ok: boolean;
           cancelledAt: new Date(),
           cancelledById: actor.id,
           cancelledByName: actor.name,
+          cancelNote,
         },
       })
       if (claimedHold.count !== 1) {

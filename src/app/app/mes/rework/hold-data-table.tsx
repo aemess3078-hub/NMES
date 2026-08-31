@@ -134,8 +134,18 @@ export function HoldDataTable({ initialData, holdableWipUnits }: HoldDataTablePr
       id: "reason",
       header: "보류 사유",
       cell: ({ row }) => (
-        <div className="max-w-56 text-[13px] text-muted-foreground truncate" title={row.original.reason}>
-          {row.original.reason}
+        <div className="max-w-56">
+          <div className="text-[13px] text-muted-foreground truncate" title={row.original.reason}>
+            {row.original.reason}
+          </div>
+          {row.original.status === "CANCELLED" && row.original.cancelNote && (
+            <div
+              className="mt-0.5 text-[12px] text-slate-500 truncate"
+              title={`취소 메모: ${row.original.cancelNote}`}
+            >
+              취소 메모: {row.original.cancelNote}
+            </div>
+          )}
         </div>
       ),
     },

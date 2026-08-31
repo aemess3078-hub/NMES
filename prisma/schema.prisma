@@ -1445,6 +1445,7 @@ model WipHold {
   cancelledAt    DateTime?
   cancelledById  String?
   cancelledByName String?
+  cancelNote     String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
