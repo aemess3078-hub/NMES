@@ -37,6 +37,9 @@ export const MES_NAV: NavItem[] = [
           // 금형관리 + 금형재고관리 → 금형/치공구관리 단일 메뉴 (미구현)
           { id: 'nav-mold-management', parentId: 'nav-master', label: '금형/치공구관리', icon: 'Wrench', href: '/app/mes/master/molds', displayOrder: 13, children: [] },
           { id: 'nav-downtime-reasons', parentId: 'nav-master', label: '비가동사유', icon: 'AlertTriangle', href: '/app/mes/master/downtime-reasons', displayOrder: 14, children: [] },
+          // Gap Analysis Rev.2 계층 정렬: 사업계획서 기준정보관리 산하로 이동(기존 시스템관리 아래 있던 항목).
+          // developerOnly는 원래 부모(nav-sysadmin)에서 상속되던 것이므로, 이동하면서 항목 자체에 명시해 보호를 그대로 유지한다.
+          { id: 'nav-common-codes', parentId: 'nav-master', label: '코드관리', icon: 'BookOpen', href: '/app/mes/common-codes', displayOrder: 15, developerOnly: true, children: [] },
         ],
       },
       // 2. 생산관리
@@ -49,22 +52,17 @@ export const MES_NAV: NavItem[] = [
         children: [
           { id: 'nav-prod-equip-output', parentId: 'nav-production', label: '설비별생산현황', icon: 'BarChart2', href: '/app/mes/production/equipment-output', displayOrder: 1, children: [] },
           { id: 'nav-prod-plan-output', parentId: 'nav-production', label: '생산계획', icon: 'CalendarDays', href: '/app/mes/production-plan', displayOrder: 2, children: [] },
-          // NewMES 전용 화면(assertNewMesBrand()로 Server Action/Page 이중 보호됨, production-progress.actions.ts 참고).
-          // nav-config.ts에는 브랜드 분기 자체가 없어(전체 파일 확인 결과 브랜드 조건 0건) 이 메뉴 항목 하나에만
-          // 기존 NEXT_PUBLIC_BRAND 관례를 그대로 재사용해 조건부로 넣는다 — 새 NavItem 필드나 별도 브랜드 필터링
-          // 체계를 nav-config/layout에 추가하지 않는다.
-          ...(process.env.NEXT_PUBLIC_BRAND === 'newmes'
-            ? [{ id: 'nav-production-progress', parentId: 'nav-production', label: '생산현황', icon: 'Activity', href: '/app/mes/production-progress', displayOrder: 2.5, children: [] }]
-            : []),
           { id: 'nav-work-orders', parentId: 'nav-production', label: '작업지시', icon: 'ClipboardList', href: '/app/mes/work-orders', displayOrder: 3, children: [] },
           { id: 'nav-production-results', parentId: 'nav-production', label: '생산실적조회', icon: 'FileText', href: '/app/mes/production-results', displayOrder: 4, children: [] },
           { id: 'nav-finished-goods-receipt', parentId: 'nav-production', label: '완제품입고', icon: 'PackagePlus', href: '/app/mes/finished-goods-receipt', displayOrder: 4.5, children: [] },
           { id: 'nav-outsourcing', parentId: 'nav-production', label: '외주관리', icon: 'Truck', href: '/app/mes/production/outsourcing', displayOrder: 5, children: [] },
           // Gap Analysis Rev.2: 기존 route(/app/mes/rework)는 이미 동작 — nav 노출만 추가(업무로직 변경 없음)
           { id: 'nav-rework', parentId: 'nav-production', label: '재작업/보류관리', icon: 'RefreshCw', href: '/app/mes/rework', displayOrder: 5.5, children: [] },
+          // Gap Analysis Rev.2 계층 정렬: 사업계획서 생산관리 산하로 이동(기존 시스템 > 추적성 아래 있던 항목). route/id 불변.
+          { id: 'nav-traceability', parentId: 'nav-production', label: 'LOT 추적 조회', icon: 'Network', href: '/app/mes/traceability', displayOrder: 6, children: [] },
         ],
       },
-      // 3. 재고관리
+      // 3. 재고관리 (NMES 기존 공통기능 — 재고현황은 자재관리로 이동, 나머지는 유지)
       {
         id: 'nav-inventory-section',
         parentId: 'section-mes',
@@ -72,7 +70,6 @@ export const MES_NAV: NavItem[] = [
         icon: 'Boxes',
         displayOrder: 30,
         children: [
-          { id: 'nav-inventory', parentId: 'nav-inventory-section', label: '재고현황', icon: 'Package', href: '/app/mes/inventory', displayOrder: 1, children: [] },
           { id: 'nav-inventory-txns', parentId: 'nav-inventory-section', label: '전체입출고내역', icon: 'ArrowLeftRight', href: '/app/mes/inventory-transactions', displayOrder: 2, children: [] },
           { id: 'nav-wip-inventory', parentId: 'nav-inventory-section', label: '재공품재고', icon: 'RefreshCw', href: '/app/mes/production/wip-inventory', displayOrder: 3, children: [] },
         ],
@@ -88,6 +85,9 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-purchase-orders', parentId: 'nav-material', label: '자재발주', icon: 'ShoppingCart', href: '/app/mes/purchase-orders', displayOrder: 1, children: [] },
           { id: 'nav-material-receipt', parentId: 'nav-material', label: '자재입고', icon: 'PackagePlus', href: '/app/mes/material-receipt', displayOrder: 2, children: [] },
           { id: 'nav-material-issue', parentId: 'nav-material', label: '자재출고', icon: 'FileInput', href: '/app/mes/material-issue', displayOrder: 3, children: [] },
+          // Gap Analysis Rev.2 계층 정렬: 사업계획서 자재관리 산하로 이동(기존 재고관리 아래 있던 항목). route/id 불변.
+          { id: 'nav-inventory', parentId: 'nav-material', label: '재고현황', icon: 'Package', href: '/app/mes/inventory', displayOrder: 3.5, children: [] },
+          // 기존 NMES 공통기능 — 재고현황(정본)과 별개로 유지. 두 화면의 기능 중복 정리는 후속 업무분석 대상.
           { id: 'nav-material-stock', parentId: 'nav-material', label: '자재재고현황', icon: 'Boxes', href: '/app/mes/material/stock', displayOrder: 4, children: [] },
         ],
       },
@@ -148,7 +148,7 @@ export const MES_NAV: NavItem[] = [
     icon: 'Cpu',
     displayOrder: 2,
     children: [
-      // 1. 설비 모니터링
+      // 1. 설비 모니터링 (설비현황은 대시보드로 이동, 분석모니터링은 그대로 유지)
       {
         id: 'nav-lms-monitoring',
         parentId: 'section-lms',
@@ -157,7 +157,6 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 10,
         children: [
           { id: 'nav-lms-analysis', parentId: 'nav-lms-monitoring', label: '분석모니터링', icon: 'Activity', href: '/app/mes/equipment-monitor', displayOrder: 1, children: [] },
-          { id: 'nav-lms-status', parentId: 'nav-lms-monitoring', label: '설비현황', icon: 'LayoutDashboard', href: '/app/lms/monitoring/status', displayOrder: 2, children: [] },
         ],
       },
       // 2. 설비점검/수리 (기존 '설비관리' 하위 메뉴명 변경 — 중복 방지)
@@ -206,6 +205,29 @@ export const MES_NAV: NavItem[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════
+  // 대시보드 (사업계획서 정본 모듈 — 생산현황/설비현황을 기존 위치에서 이동)
+  // 품질현황은 아직 구현된 기능이 없어 이번 PR에서 만들지 않는다.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: 'section-dashboard',
+    parentId: null,
+    label: '대시보드',
+    icon: 'LayoutDashboard',
+    displayOrder: 2.5,
+    children: [
+      // NewMES 전용 화면(assertNewMesBrand()로 Server Action/Page 이중 보호됨, production-progress.actions.ts 참고).
+      // nav-config.ts에는 브랜드 분기 자체가 없어(전체 파일 확인 결과 브랜드 조건 0건) 이 메뉴 항목 하나에만
+      // 기존 NEXT_PUBLIC_BRAND 관례를 그대로 재사용해 조건부로 넣는다 — 새 NavItem 필드나 별도 브랜드 필터링
+      // 체계를 nav-config/layout에 추가하지 않는다. (기존 생산관리 하위에서 이 조건부 항목을 그대로 이동)
+      ...(process.env.NEXT_PUBLIC_BRAND === 'newmes'
+        ? [{ id: 'nav-production-progress', parentId: 'section-dashboard', label: '생산현황', icon: 'Activity', href: '/app/mes/production-progress', displayOrder: 1, children: [] }]
+        : []),
+      // Gap Analysis Rev.2 계층 정렬: 기존 설비관리 > 설비 모니터링 아래 있던 항목을 이동. route/id 불변.
+      { id: 'nav-lms-status', parentId: 'section-dashboard', label: '설비현황', icon: 'Monitor', href: '/app/lms/monitoring/status', displayOrder: 2, children: [] },
+    ],
+  },
+
+  // ═══════════════════════════════════════════════════════════════
   // 시스템
   // ═══════════════════════════════════════════════════════════════
   {
@@ -223,7 +245,6 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 10,
         developerOnly: true,
         children: [
-          { id: 'nav-common-codes', parentId: 'nav-sysadmin', label: '코드관리', icon: 'BookOpen', href: '/app/mes/common-codes', displayOrder: 1, children: [] },
           { id: 'nav-features', parentId: 'nav-sysadmin', label: '기능 관리', icon: 'Puzzle', href: '/app/mes/features', displayOrder: 2, children: [] },
           { id: 'nav-lot-rules', parentId: 'nav-sysadmin', label: '번호 규칙', icon: 'Fingerprint', href: '/app/mes/lot-rules', displayOrder: 3, children: [] },
         ],
@@ -236,8 +257,6 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 20,
         children: [
           { id: 'nav-lot', parentId: 'nav-traceability-section', label: 'LOT/Serial 관리', icon: 'Tag', href: '/app/mes/lot', displayOrder: 1, children: [] },
-          // Gap Analysis Rev.2: '추적성' 그룹의 대표 표시명을 정본명으로 맞춘다(라우팅/모델/세부 기능 route는 유지)
-          { id: 'nav-traceability', parentId: 'nav-traceability-section', label: 'LOT 추적 조회', icon: 'Network', href: '/app/mes/traceability', displayOrder: 2, children: [] },
           { id: 'nav-manufacturing-traceability', parentId: 'nav-traceability-section', label: '제조번호 추적성', icon: 'Fingerprint', href: '/app/mes/manufacturing-traceability', displayOrder: 3, children: [] },
           // { id: 'nav-costing', parentId: 'nav-traceability-section', label: '원가분석', icon: 'Calculator', href: '/app/mes/costing', displayOrder: 4, children: [] },
         ],
