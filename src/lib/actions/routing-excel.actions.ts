@@ -425,7 +425,7 @@ export async function importValidatedRoutings(
             importedOperationCount,
             routingKeys: routingKeys.slice(0, 20),
           },
-          menuName: "라우팅 관리",
+          menuName: "공정라우팅관리",
         },
       })
     })

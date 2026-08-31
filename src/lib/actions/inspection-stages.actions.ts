@@ -143,7 +143,7 @@ export async function updateStagedInspection(
         inspectedQty: String(updated.inspectedQty),
         inspectedAt: updated.inspectedAt.toISOString(),
       },
-      menuName: "초중종검사관리",
+      menuName: "검사결과 관리",
     },
   })
 

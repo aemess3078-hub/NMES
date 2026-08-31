@@ -57,7 +57,7 @@ export default async function DefectStatsPage({
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          불량통계 (자주검사)
+          불량분석
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           공정검사 데이터를 기준으로 기간·품목·공정·제조번호별 불량률을 분석합니다.

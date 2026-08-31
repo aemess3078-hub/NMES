@@ -51,7 +51,7 @@ export async function downloadBomTemplate() {
   XLSX.utils.book_append_sheet(wb, ws, "BOM업로드")
   XLSX.utils.book_append_sheet(wb, wsGuide, "작성가이드")
 
-  XLSX.writeFile(wb, "BOM관리_업로드양식.xlsx")
+  XLSX.writeFile(wb, "BOM_업로드양식.xlsx")
 }
 
 export async function downloadBomData(rows: BomExportRow[]) {

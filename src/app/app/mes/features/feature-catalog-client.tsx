@@ -6,7 +6,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   MASTER: "기준정보",
   PRODUCTION: "생산관리",
   MATERIAL: "자재/재고",
-  QUALITY: "품질관리",
+  QUALITY: "품질검사",
   EQUIPMENT: "설비관리",
   SYSTEM: "시스템",
   SALES: "영업관리",

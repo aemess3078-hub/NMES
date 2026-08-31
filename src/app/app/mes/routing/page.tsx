@@ -30,7 +30,7 @@ export default async function RoutingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            공정/라우팅 관리
+            공정라우팅관리
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             생산 공정 순서와 라우팅을 등록하고 관리합니다.

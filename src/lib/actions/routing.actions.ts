@@ -265,7 +265,7 @@ export async function createRouting(data: CreateRoutingInput, _tenantId?: string
         isDefault: finalIsDefault,
         operationCount: operations.length,
       },
-      menuName: "라우팅 관리",
+      menuName: "공정라우팅관리",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/routing")
@@ -409,7 +409,7 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
         operationsChanged,
         scopeChanged: beforeScope !== scope,
       },
-      menuName: "라우팅 관리",
+      menuName: "공정라우팅관리",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/routing")
@@ -518,7 +518,7 @@ export async function deleteRouting(id: string) {
       entityId: id,
       action: "DELETE",
       beforeData: { code: owned.code, name: owned.name, version: owned.version, status: owned.status, scope: owned.scope },
-      menuName: "라우팅 관리",
+      menuName: "공정라우팅관리",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/routing")

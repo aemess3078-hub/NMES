@@ -29,7 +29,7 @@ export default async function TraceabilityPage({ searchParams }: TraceabilityPag
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          LOT Traceability
+          LOT 추적 조회
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           LOT 번호로 원자재부터 완제품까지 정/역추적합니다.

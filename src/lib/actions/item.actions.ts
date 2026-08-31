@@ -196,7 +196,7 @@ export async function createItem(data: ItemFormValues) {
       entityId: item.id,
       action: "CREATE",
       afterData: { code: item.code, name: item.name, itemType: item.itemType, status: item.status },
-      menuName: "품목 관리",
+      menuName: "품목정보",
     },
   }).catch(() => {})
   return item
@@ -252,7 +252,7 @@ export async function updateItem(id: string, data: ItemFormValues) {
       action: "UPDATE",
       beforeData: { code: owned.code, name: owned.name, status: owned.status },
       afterData: { code: data.code, name: data.name, status: data.status },
-      menuName: "품목 관리",
+      menuName: "품목정보",
     },
   }).catch(() => {})
   return updated
@@ -320,7 +320,7 @@ export async function deleteItem(id: string) {
       entityId: id,
       action: "DELETE",
       beforeData: { code: owned.code, name: owned.name, status: owned.status },
-      menuName: "품목 관리",
+      menuName: "품목정보",
     },
   }).catch(() => {})
   return result
@@ -396,7 +396,7 @@ export async function bulkDeleteItems(ids: string[]): Promise<BulkDeleteItemsRes
             entityId: item.id,
             action: "DELETE",
             beforeData: { code: item.code, name: item.name, status: item.status },
-            menuName: "품목 관리",
+            menuName: "품목정보",
           },
         })
       })

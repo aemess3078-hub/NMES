@@ -329,7 +329,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
         <div>
           <p className="text-[15px] font-medium text-slate-500">POP</p>
           <h1 className="mt-1 text-[28px] font-bold tracking-tight text-slate-900">
-            POP 작업대기
+            작업지시
           </h1>
           <p className="mt-2 text-[16px] text-slate-500">
             작업자가 수행해야 할 작업지시와 공정 단위 대기 목록을 확인합니다.

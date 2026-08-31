@@ -25,7 +25,7 @@ export default async function EquipmentMasterPage() {
       {/* 헤더 */}
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          설비관리
+          설비정보
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           MES &gt; 기준정보관리 · 설비 기준정보를 등록하고 관리합니다.

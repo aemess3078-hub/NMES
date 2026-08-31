@@ -225,7 +225,7 @@ export function ProductionProgressClient({
         setDailyTrend(trendResult)
       } catch {
         // Prisma/서버 내부 오류를 그대로 노출하지 않는다.
-        setLoadError("생산진행 현황을 조회하지 못했습니다.")
+        setLoadError("생산현황을 조회하지 못했습니다.")
       }
     })
   }

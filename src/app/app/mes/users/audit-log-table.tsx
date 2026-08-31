@@ -271,7 +271,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-[14px] text-muted-foreground">
-                  기록된 이용 로그가 없습니다.
+                  기록된 감사로그가 없습니다.
                 </td>
               </tr>
             ) : (

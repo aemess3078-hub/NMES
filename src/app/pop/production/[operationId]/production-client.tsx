@@ -293,7 +293,7 @@ export function ProductionClient({ operation }: Props) {
       {/* 수량 입력 (IN_PROGRESS일 때만, 자재출고 완료 시) */}
       {status === "IN_PROGRESS" && !materialBlocked && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-          <h2 className="font-bold text-lg text-slate-800">실적 입력</h2>
+          <h2 className="font-bold text-lg text-slate-800">생산실적등록</h2>
           <PopQuantityInput label="양품" value={goodQty} onChange={setGoodQty} steps={[1, 10, 100]} />
           <PopQuantityInput label="불량" value={defectQty} onChange={setDefectQty} steps={[1, 10]} />
 

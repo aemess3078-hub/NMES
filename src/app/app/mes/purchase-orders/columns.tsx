@@ -163,7 +163,7 @@ export function getColumns(
                   className="h-7 text-[12px] gap-1 text-primary border-primary/30 hover:bg-primary/5"
                 >
                   <ArrowRight className="h-3.5 w-3.5" />
-                  자재입고 관리
+                  자재입고
                 </Button>
               </Link>
             )}
