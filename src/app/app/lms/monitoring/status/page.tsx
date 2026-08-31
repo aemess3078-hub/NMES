@@ -33,7 +33,7 @@ export default function StatusMonitoringPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          현황 모니터링
+          설비현황
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           설비 가동 상태를 실시간으로 관제합니다.

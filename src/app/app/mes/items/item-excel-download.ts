@@ -52,5 +52,5 @@ export default async function downloadItemTemplate() {
   XLSX.utils.book_append_sheet(wb, ws,      "품목업로드")
   XLSX.utils.book_append_sheet(wb, wsGuide, "작성가이드")
 
-  XLSX.writeFile(wb, "품목관리_업로드양식.xlsx")
+  XLSX.writeFile(wb, "품목정보_업로드양식.xlsx")
 }

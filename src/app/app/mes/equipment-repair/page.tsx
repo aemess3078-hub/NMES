@@ -24,7 +24,7 @@ export default async function EquipmentRepairPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          설비점검/수리
+          설비수리관리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           수리 요청부터 완료까지 설비 점검·수리 이력을 한 화면에서 관리합니다.

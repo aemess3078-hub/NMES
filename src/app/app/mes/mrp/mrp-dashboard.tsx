@@ -258,7 +258,7 @@ export function MrpDashboard({ plans, tenantId, siteId }: Props) {
           <p className="text-[15px]">
             BOM이 등록된 품목이 없어 소요량을 계산할 수 없습니다.
           </p>
-          <p className="text-[13px] mt-1">BOM 관리에서 자재 구성을 등록해주세요.</p>
+          <p className="text-[13px] mt-1">BOM에서 자재 구성을 등록해주세요.</p>
         </div>
       )}
 

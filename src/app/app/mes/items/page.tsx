@@ -27,7 +27,7 @@ export default async function ItemsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            품목관리
+            품목정보
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             원자재, 반제품, 완제품 품목을 관리합니다.

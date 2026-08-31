@@ -454,7 +454,7 @@ export function ErrorsClient({
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">
           <Wrench className="h-4 w-4 shrink-0" />
           <span>
-            미해제 에러 {summary.activeCount}건이 있습니다. 설비점검/수리 메뉴에서
+            미해제 에러 {summary.activeCount}건이 있습니다. 설비수리관리 메뉴에서
             수리요청을 등록할 수 있습니다.
           </span>
         </div>

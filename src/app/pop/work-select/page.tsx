@@ -18,7 +18,7 @@ export default async function WorkSelectPage() {
     <div className="flex flex-col min-h-screen">
       <PopHeader workerName={workerName} />
       <main className="flex-1 p-6">
-        <h1 className="text-2xl font-bold text-slate-800 mb-6">오늘의 작업</h1>
+        <h1 className="text-2xl font-bold text-slate-800 mb-6">작업지시</h1>
         <WorkSelectClient workOrders={workOrders} />
       </main>
     </div>

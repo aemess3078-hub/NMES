@@ -51,7 +51,7 @@ export default async function ProductionProgressPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          생산진행 현황
+          생산현황
         </h1>
         <p className="mt-1 text-[15px] text-muted-foreground">
           작업지시별 생산 진행상태와 실적을 확인합니다.

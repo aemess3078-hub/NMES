@@ -16,7 +16,7 @@ export default async function MaterialReceiptPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-[26px] font-bold leading-tight">자재입고 관리</h1>
+        <h1 className="text-[26px] font-bold leading-tight">자재입고</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
           입고 대기 중인 발주를 확인하고 입고 처리합니다
         </p>

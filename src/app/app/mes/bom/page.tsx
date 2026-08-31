@@ -30,7 +30,7 @@ export default async function BomPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            BOM 관리
+            BOM
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             품목별 자재 명세(BOM)를 관리합니다.

@@ -140,7 +140,7 @@ export async function createBom(data: CreateBomInput, _tenantId?: string) {
       entityId: bom.id,
       action: "CREATE",
       afterData: { itemId: bom.itemId, version: bom.version, status: bom.status, bomItemCount: bomItems.length },
-      menuName: "BOM 관리",
+      menuName: "BOM",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/bom")
@@ -184,7 +184,7 @@ export async function updateBom(id: string, data: CreateBomInput) {
       action: "UPDATE",
       beforeData: { itemId: owned.itemId, version: owned.version, status: owned.status },
       afterData: { itemId, version, status, bomItemCount: bomItems.length },
-      menuName: "BOM 관리",
+      menuName: "BOM",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/bom")
@@ -209,7 +209,7 @@ export async function deleteBom(id: string) {
       entityId: id,
       action: "DELETE",
       beforeData: { itemId: owned.itemId, version: owned.version, status: owned.status },
-      menuName: "BOM 관리",
+      menuName: "BOM",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/bom")

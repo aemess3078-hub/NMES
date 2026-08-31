@@ -97,7 +97,7 @@ export async function createEquipment(data: CreateEquipmentInput) {
       entityId: created.id,
       action: "CREATE",
       afterData: { code: created.code, name: created.name, equipmentType: created.equipmentType, status: created.status },
-      menuName: "설비 관리",
+      menuName: "설비정보",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/master/equipment")
@@ -129,7 +129,7 @@ export async function updateEquipment(id: string, data: UpdateEquipmentInput) {
       action: "UPDATE",
       beforeData: { code: owned.code, name: owned.name, equipmentType: owned.equipmentType, status: owned.status },
       afterData: { code: owned.code, name: data.name ?? owned.name, equipmentType: data.equipmentType ?? owned.equipmentType, status: data.status ?? owned.status },
-      menuName: "설비 관리",
+      menuName: "설비정보",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/master/equipment")
@@ -162,7 +162,7 @@ export async function deleteEquipment(id: string) {
       entityId: id,
       action: "DELETE",
       beforeData: { code: owned.code, name: owned.name, equipmentType: owned.equipmentType, status: owned.status },
-      menuName: "설비 관리",
+      menuName: "설비정보",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/master/equipment")

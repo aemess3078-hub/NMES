@@ -19,7 +19,7 @@ export default async function PurchaseOrdersPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-[26px] font-bold leading-tight">발주관리</h1>
+        <h1 className="text-[26px] font-bold leading-tight">자재발주</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
           공급사 발주를 등록하고 입고 현황을 관리합니다
         </p>

@@ -26,7 +26,7 @@ export default async function CommonCodesPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-[26px] font-bold leading-tight">공통코드 관리</h1>
+        <h1 className="text-[26px] font-bold leading-tight">코드관리</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
           시스템에서 사용하는 공통 코드를 관리합니다
         </p>

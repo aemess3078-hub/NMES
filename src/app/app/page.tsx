@@ -32,7 +32,7 @@ export default async function AppHomePage() {
           {
             href: '/app/mes/bom',
             icon: Package,
-            label: 'BOM 관리',
+            label: 'BOM',
             desc: '자재 명세서 조회 및 편집',
           },
           {

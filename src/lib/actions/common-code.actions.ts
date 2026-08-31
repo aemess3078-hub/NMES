@@ -68,7 +68,7 @@ export async function createCodeGroup(data: CreateCodeGroupInput, tenantId: stri
       entityId: created.id,
       action: "CREATE",
       afterData: { groupCode: created.groupCode, groupName: created.groupName },
-      menuName: "공통코드 관리",
+      menuName: "코드관리",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
@@ -91,7 +91,7 @@ export async function updateCodeGroup(id: string, data: Partial<CreateCodeGroupI
         action: "UPDATE",
         beforeData: { groupCode: owned.groupCode, groupName: owned.groupName, isActive: owned.isActive },
         afterData: { groupCode: data.groupCode ?? owned.groupCode, groupName: data.groupName ?? owned.groupName, isActive: data.isActive ?? owned.isActive },
-        menuName: "공통코드 관리",
+        menuName: "코드관리",
       },
     }).catch(() => {})
   }
@@ -116,7 +116,7 @@ export async function deleteCodeGroup(id: string) {
         entityId: id,
         action: "DELETE",
         beforeData: { groupCode: group.groupCode, groupName: group.groupName },
-        menuName: "공통코드 관리",
+        menuName: "코드관리",
       },
     }).catch(() => {})
   }
@@ -148,7 +148,7 @@ export async function createCommonCode(data: CreateCommonCodeInput) {
       entityId: created.id,
       action: "CREATE",
       afterData: { code: created.code, name: created.name, groupId: created.groupId },
-      menuName: "공통코드 관리",
+      menuName: "코드관리",
     },
   }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
@@ -174,7 +174,7 @@ export async function updateCommonCode(
         action: "UPDATE",
         beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
         afterData: { code: data.code ?? owned.code, name: data.name ?? owned.name, isActive: data.isActive ?? owned.isActive },
-        menuName: "공통코드 관리",
+        menuName: "코드관리",
       },
     }).catch(() => {})
   }
@@ -197,7 +197,7 @@ export async function deleteCommonCode(id: string) {
         entityId: id,
         action: "DELETE",
         beforeData: { code: owned.code, name: owned.name, groupId: owned.groupId },
-        menuName: "공통코드 관리",
+        menuName: "코드관리",
       },
     }).catch(() => {})
   }
@@ -221,7 +221,7 @@ export async function toggleCodeActive(id: string, isActive: boolean) {
         action: "UPDATE",
         beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
         afterData: { code: owned.code, name: owned.name, isActive },
-        menuName: "공통코드 관리",
+        menuName: "코드관리",
       },
     }).catch(() => {})
   }

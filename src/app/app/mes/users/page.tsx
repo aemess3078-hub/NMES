@@ -81,7 +81,7 @@ export default async function UsersPage() {
           {/* full-access 전용 탭 */}
           {fullAccess && (
             <TabsTrigger value="permissions" className="text-[13px]">
-              권한 매트릭스
+              권한관리
             </TabsTrigger>
           )}
 
@@ -102,10 +102,10 @@ export default async function UsersPage() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="login-history" className="text-[13px]">
-                접속 기록
+                로그관리
               </TabsTrigger>
               <TabsTrigger value="audit-log" className="text-[13px]">
-                이용 로그
+                감사로그
               </TabsTrigger>
             </>
           )}

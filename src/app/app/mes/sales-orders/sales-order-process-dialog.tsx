@@ -308,7 +308,7 @@ export function SalesOrderProcessDialog({
                             {lots.length === 0 ? (
                               <div className="flex items-center gap-1.5 text-[13px] text-red-600">
                                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-                                선택한 창고에 출하 가능한 LOT가 없습니다. 다른 창고를 선택하거나 출하관리 화면을 이용하세요.
+                                선택한 창고에 출하 가능한 LOT가 없습니다. 다른 창고를 선택하거나 출하등록 화면을 이용하세요.
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">

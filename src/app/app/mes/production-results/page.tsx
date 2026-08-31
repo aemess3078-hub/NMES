@@ -25,7 +25,7 @@ export default async function ProductionResultsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          작업실적 관리
+          생산실적조회
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           공정별 생산 실적을 조회하고 양품·불량·재작업 수량을 분석합니다.

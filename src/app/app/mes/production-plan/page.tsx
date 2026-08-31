@@ -28,7 +28,7 @@ export default async function ProductionPlanPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            생산계획 관리
+            생산계획
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             생산계획을 등록하고 관리합니다.

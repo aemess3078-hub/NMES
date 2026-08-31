@@ -19,7 +19,7 @@ export default async function InspectionStagesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          초·중·종 검사 관리
+          검사결과 관리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           생산 공정별 초물, 중간, 종물 검사를 등록하고 이력을 관리합니다.

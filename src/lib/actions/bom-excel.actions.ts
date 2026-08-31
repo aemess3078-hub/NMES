@@ -377,7 +377,7 @@ export async function importValidatedBoms(
             importedItemCount,
             bomKeys: bomKeys.slice(0, 20),
           },
-          menuName: "BOM 관리",
+          menuName: "BOM",
         },
       })
     })
