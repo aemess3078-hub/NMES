@@ -427,7 +427,28 @@ export async function updateProjectOrder(
     // 있도록 relation connect/disconnect 대신 scalar FK 필드를 직접 대입한다 —
     // updateMany의 data는 ProjectOrderUpdateManyMutationInput이라 relation 문법을
     // 받지 않는다.
+    const isCompletingOrder = isStatusChange && input.status === "COMPLETED"
+
     await prisma.$transaction(async (tx) => {
+      // PR #48 ProjectStage 도입에 따른 보완: COMPLETED로 전환할 때 미완료 단계가
+      // 있으면 차단한다 — COMPLETED 상태에서는 단계 실행 자체가 막혀 복구가
+      // 어려워지기 때문이다. ProjectStage 쪽(createProjectStage/startProjectStage/
+      // importProjectStagesFromRouting)과 동일하게 ProjectOrder 행을 FOR UPDATE로
+      // 잠근 뒤 확인해, 단계 추가/시작과의 race를 막는다. 반대 방향(ProjectStage
+      // 완료가 ProjectOrder.status를 자동 COMPLETED로 바꾸는 것)은 여전히 하지
+      // 않는다 — 기존 원칙 그대로.
+      if (isCompletingOrder) {
+        await tx.$queryRaw`SELECT id FROM "ProjectOrder" WHERE id = ${current.id} FOR UPDATE`
+
+        const incompleteStage = await tx.projectStage.findFirst({
+          where: { projectOrderId: current.id, tenantId, status: { not: "COMPLETED" } },
+          select: { id: true },
+        })
+        if (incompleteStage) {
+          throw new Error("미완료 프로젝트 단계가 있어 프로젝트를 완료할 수 없습니다.")
+        }
+      }
+
       const updateData: Prisma.ProjectOrderUpdateManyMutationInput = {
         ...(name !== undefined && { name }),
         ...(input.customerId !== undefined && { customerId: input.customerId }),
