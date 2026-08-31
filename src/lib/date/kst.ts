@@ -39,3 +39,17 @@ export function buildKstDateKeyRange(fromKey: string, toKey: string): string[] {
   }
   return keys
 }
+
+/** 대상일까지 남은 KST 달력일 수(오늘 = 0, 지남 = 음수). DB에 저장하지 않고 표시 시점에 계산한다. */
+export function kstDaysUntil(target: Date, now: Date = new Date()): number {
+  const targetStart = kstDateKeyToUtcStart(toKstDateKey(target))
+  const nowStart = kstDateKeyToUtcStart(toKstDateKey(now))
+  return Math.round((targetStart.getTime() - nowStart.getTime()) / ONE_DAY_MS)
+}
+
+/** D-Day 표시 문자열(D-10 / D-3 / D-Day / D+2). */
+export function formatDDay(target: Date, now: Date = new Date()): string {
+  const diff = kstDaysUntil(target, now)
+  if (diff === 0) return "D-Day"
+  return diff > 0 ? `D-${diff}` : `D+${Math.abs(diff)}`
+}

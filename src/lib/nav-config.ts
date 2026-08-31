@@ -133,6 +133,8 @@ export const MES_NAV: NavItem[] = [
           // Gap Analysis Rev.2: 사업계획서 정본 '출하등록'을 대표 라벨로 사용. 납품현황은 하위 상세 화면으로 유지.
           { id: 'nav-shipments', parentId: 'nav-sales', label: '출하등록', icon: 'Truck', href: '/app/mes/shipments', displayOrder: 3, children: [] },
           { id: 'nav-delivery-status', parentId: 'nav-sales', label: '납품현황', icon: 'FileBarChart', href: '/app/mes/sales/delivery-status', displayOrder: 4, children: [] },
+          // 청운커팅 사업계획서 정본 '영업관리 > 프로젝트 오더' (PR #47)
+          { id: 'nav-project-orders', parentId: 'nav-sales', label: '프로젝트 오더', icon: 'FolderKanban', href: '/app/mes/project-orders', displayOrder: 5, children: [] },
         ],
       },
     ],

@@ -419,6 +419,7 @@ model Tenant {
   itemPrices                    ItemPrice[]                    @relation("TenantItemPrices")
   aiUsageLogs                   AIUsageLog[]                   @relation("TenantAIUsageLogs")
   quotations                    Quotation[]                    @relation("TenantQuotations")
+  projectOrders                 ProjectOrder[]                 @relation("TenantProjectOrders")
   itemCosts                     ItemCost[]                     @relation("TenantItemCosts")
   engineeringChanges            EngineeringChange[]            @relation("TenantECNs")
   signupRequests                SignupRequest[]
@@ -461,6 +462,7 @@ model Profile {
   loginHistories       LoginHistory[]
   supportAuthored      SupportRequest[]         @relation("SupportAuthor")
   supportHandled       SupportRequest[]         @relation("SupportHandler")
+  projectOrdersOwned   ProjectOrder[]           @relation("ProjectOrderOwner")
 }
 
 model Site {
@@ -489,6 +491,7 @@ model Site {
   shipmentOrders        ShipmentOrder[]          @relation("SiteShipmentOrders")
   purchaseOrders        PurchaseOrder[]          @relation("SitePurchaseOrders")
   quotations            Quotation[]              @relation("SiteQuotations")
+  projectOrders         ProjectOrder[]            @relation("SiteProjectOrders")
   equipmentRepairs      EquipmentRepairRequest[]
   equipmentDailyChecks  EquipmentDailyCheck[]
 
@@ -595,6 +598,7 @@ model BusinessPartner {
   purchaseOrders          PurchaseOrder[] @relation("SupplierPurchaseOrders")
   itemPrices              ItemPrice[]     @relation("PartnerPrices")
   quotations              Quotation[]     @relation("CustomerQuotations")
+  projectOrders           ProjectOrder[]  @relation("CustomerProjectOrders")
   outsourcedWipUnits      WipUnit[]       @relation("WipUnitOutsourcingPartner")
   wipMovementsFromPartner WipMovement[]   @relation("WipMovementFromPartner")
   wipMovementsToPartner   WipMovement[]   @relation("WipMovementToPartner")
@@ -691,6 +695,7 @@ model Item {
   purchaseOrderItems      PurchaseOrderItem[]    @relation("ItemPurchaseOrderItems")
   itemPrices              ItemPrice[]            @relation("ItemPrices")
   quotationItems          QuotationItem[]        @relation("ItemQuotationItems")
+  projectOrders           ProjectOrder[]         @relation("ItemProjectOrders")
   itemCosts               ItemCost[]             @relation("ItemCosts")
   engineeringChanges      EngineeringChange[]    @relation("ItemECNs")
   materialLotConsumptions WorkOrderMaterialLot[] @relation("MaterialLotItem")
@@ -1917,9 +1922,10 @@ model SalesOrder {
 
   tenant    Tenant            @relation("TenantSalesOrders", fields: [tenantId], references: [id])
   site      Site              @relation("SiteSalesOrders", fields: [siteId], references: [id])
-  customer  BusinessPartner   @relation("CustomerSalesOrders", fields: [customerId], references: [id])
-  items     SalesOrderItem[]
-  shipments ShipmentOrder[]
+  customer      BusinessPartner   @relation("CustomerSalesOrders", fields: [customerId], references: [id])
+  items         SalesOrderItem[]
+  shipments     ShipmentOrder[]
+  projectOrders ProjectOrder[]    @relation("SalesOrderProjectOrders")
 
   @@unique([tenantId, orderNo])
   @@index([tenantId])
@@ -2167,6 +2173,63 @@ model QuotationItem {
   @@unique([quotationId, itemId])
   @@index([quotationId])
   @@index([itemId])
+}
+
+// ─── Phase 2d-8b: 영업관리 — 프로젝트 오더 ───────────────────────────────────────
+//
+// 청운커팅 사업계획서 "영업관리 > 프로젝트 오더": 수주와 생산실행 사이를 잇는
+// 프로젝트 단위 업무 Header. §3 개념도(거래처→수주관리→프로젝트오더)와 §9/§15
+// 필드 목록에 따라 연결 대상은 SalesOrder만 다룬다 — 견적(Quotation) 연동은
+// 이번 PR의 명시적 범위 밖이라 quotationId는 두지 않는다(§22). 견적금액/납품
+// 완료일 등은 이미 SalesOrder/Quotation에 있으므로 여기서 중복 저장하지 않고
+// salesOrderId로만 참조한다 (§4). 프로젝트 진행률/단계/이슈/대금관리는 PR #48+.
+
+enum ProjectOrderStatus {
+  DRAFT
+  CONFIRMED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectOrderPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model ProjectOrder {
+  id               String               @id @default(cuid())
+  tenantId         String
+  siteId           String
+  code             String // 프로젝트 오더번호, 예: PROJ-2026-001
+  name             String // 프로젝트명
+  customerId       String
+  itemId           String?
+  salesOrderId     String? // 연결 수주 (수주확정 시)
+  ownerId          String // 담당자
+  priority         ProjectOrderPriority @default(MEDIUM)
+  status           ProjectOrderStatus   @default(DRAFT)
+  plannedStartDate DateTime?
+  dueDate          DateTime?
+  description      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  tenant     Tenant          @relation("TenantProjectOrders", fields: [tenantId], references: [id])
+  site       Site            @relation("SiteProjectOrders", fields: [siteId], references: [id])
+  customer   BusinessPartner @relation("CustomerProjectOrders", fields: [customerId], references: [id])
+  item       Item?           @relation("ItemProjectOrders", fields: [itemId], references: [id])
+  salesOrder SalesOrder?     @relation("SalesOrderProjectOrders", fields: [salesOrderId], references: [id])
+  owner      Profile         @relation("ProjectOrderOwner", fields: [ownerId], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([customerId])
+  @@index([salesOrderId])
 }
 
 // ─── Phase 2d-9: 원가관리 ─────────────────────────────────────────────────────
