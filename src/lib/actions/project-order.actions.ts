@@ -33,6 +33,7 @@ export type ProjectOrderRow = {
   id: string
   code: string
   name: string
+  siteId: string
   priority: ProjectOrderPriority
   status: ProjectOrderStatus
   plannedStartDate: Date | null
@@ -54,6 +55,7 @@ export async function getProjectOrders(): Promise<ProjectOrderRow[]> {
       id: true,
       code: true,
       name: true,
+      siteId: true,
       priority: true,
       status: true,
       plannedStartDate: true,
@@ -101,11 +103,15 @@ export type ProjectOrderSalesOrderOption = {
   id: string
   orderNo: string
   customerId: string
+  siteId: string
   deliveryDate: Date
   items: { id: string; code: string; name: string }[]
 }
 
 // 연결 수주 선택지 — CANCELLED 수주는 애초에 연결 대상에서 제외한다(§2).
+// siteId도 함께 내려준다 — 수정 모드에서는 현재 ProjectOrder.siteId와 같은
+// 수주만 고르게 해서 연결 시점에 사업장 불일치가 아예 발생하지 않도록 한다
+// (최종 검증은 여전히 updateProjectOrder 서버에서 한다).
 export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrderOption[]> {
   const tenantId = await getTenantId()
   const orders = await prisma.salesOrder.findMany({
@@ -114,6 +120,7 @@ export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrd
       id: true,
       orderNo: true,
       customerId: true,
+      siteId: true,
       deliveryDate: true,
       items: {
         select: { item: { select: { id: true, code: true, name: true } } },
@@ -126,6 +133,7 @@ export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrd
     id: o.id,
     orderNo: o.orderNo,
     customerId: o.customerId,
+    siteId: o.siteId,
     deliveryDate: o.deliveryDate,
     items: o.items.map((i) => i.item),
   }))
@@ -369,13 +377,29 @@ export async function updateProjectOrder(
     const current = await prisma.projectOrder.findFirst({ where: { id: input.id, tenantId } })
     if (!current) throw new Error("프로젝트 오더를 찾을 수 없습니다.")
 
+    const effectiveSalesOrderId =
+      input.salesOrderId !== undefined ? input.salesOrderId : current.salesOrderId
+
     if (input.customerId || input.ownerId || input.itemId !== undefined || input.salesOrderId !== undefined) {
       await assertReferencesValid(tenantId, {
         customerId: input.customerId ?? current.customerId,
         ownerId: input.ownerId ?? current.ownerId,
         itemId: input.itemId !== undefined ? input.itemId : current.itemId,
-        salesOrderId: input.salesOrderId !== undefined ? input.salesOrderId : current.salesOrderId,
+        salesOrderId: effectiveSalesOrderId,
       })
+    }
+
+    // ProjectOrder 생성 이후 siteId는 자동 변경하지 않는다 — 연결(변경)하려는
+    // 수주가 현재 ProjectOrder.siteId와 다른 사업장이면 차단한다. 존재/tenant
+    // 검증은 위 assertReferencesValid가 이미 했으므로 여기서는 siteId만 본다.
+    if (effectiveSalesOrderId) {
+      const linkedSalesOrder = await prisma.salesOrder.findFirst({
+        where: { id: effectiveSalesOrderId, tenantId },
+        select: { siteId: true },
+      })
+      if (linkedSalesOrder && linkedSalesOrder.siteId !== current.siteId) {
+        throw new Error("다른 사업장의 수주는 연결할 수 없습니다.")
+      }
     }
 
     const nextPlannedStartDate =

@@ -19,6 +19,7 @@ type SalesOrderOption = {
   id: string
   orderNo: string
   customerId: string
+  siteId: string
   deliveryDate: Date | string
   items: ItemOption[]
 }

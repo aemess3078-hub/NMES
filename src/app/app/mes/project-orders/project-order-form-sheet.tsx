@@ -34,6 +34,7 @@ type SalesOrderOption = {
   id: string
   orderNo: string
   customerId: string
+  siteId: string
   deliveryDate: Date | string
   items: ItemOption[]
 }
@@ -111,10 +112,18 @@ export function ProjectOrderFormSheet({
       : PROJECT_ORDER_STATUS_TRANSITIONS[projectOrder?.status ?? "DRAFT"]
   const statusOptions = STATUS_OPTIONS.filter((opt) => allowedStatusValues.includes(opt.value))
 
-  // ─── 연결 수주 선택 시 거래처 고정 / 품목 목록 제한 (§2) ────────────────────────
+  // ─── 연결 수주 선택지: 사업장 일치 + 거래처 고정 / 품목 목록 제한 (§2, siteId 정합성) ──
+  // edit 모드에서는 현재 ProjectOrder.siteId와 다른 사업장의 수주는 애초에 선택지에
+  // 보여주지 않는다(서버도 동일하게 최종 검증한다). create는 수주 선택 자체가
+  // ProjectOrder의 siteId를 결정하므로 전체 목록을 보여준다.
+
+  const availableSalesOrders =
+    mode === "edit" && projectOrder
+      ? salesOrders.filter((so) => so.siteId === projectOrder.siteId)
+      : salesOrders
 
   const selectedSalesOrderId = form.watch("salesOrderId")
-  const selectedSalesOrder = salesOrders.find((s) => s.id === selectedSalesOrderId)
+  const selectedSalesOrder = availableSalesOrders.find((s) => s.id === selectedSalesOrderId)
   const isSalesOrderLinked = Boolean(selectedSalesOrder)
   const itemOptions = selectedSalesOrder ? selectedSalesOrder.items : items
 
@@ -160,7 +169,7 @@ export function ProjectOrderFormSheet({
     form.setValue("salesOrderId", nextId)
 
     if (!nextId) return
-    const so = salesOrders.find((s) => s.id === nextId)
+    const so = availableSalesOrders.find((s) => s.id === nextId)
     if (!so) return
 
     form.setValue("customerId", so.customerId)
@@ -365,7 +374,7 @@ export function ProjectOrderFormSheet({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={NONE_VALUE}>연결 안 함</SelectItem>
-                    {salesOrders.map((so) => (
+                    {availableSalesOrders.map((so) => (
                       <SelectItem key={so.id} value={so.id}>
                         {so.orderNo}
                       </SelectItem>
