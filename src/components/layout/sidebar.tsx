@@ -67,6 +67,7 @@ import {
   MessageSquare,
   UserCog,
   GanttChart,
+  FolderKanban,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -135,6 +136,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   MessageSquare,
   UserCog,
   GanttChart,
+  FolderKanban,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {

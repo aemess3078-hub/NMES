@@ -516,6 +516,18 @@ export async function deleteProjectOrder(id: string): Promise<{ ok: boolean; err
     }
 
     await prisma.$transaction(async (tx) => {
+      // PR #48에서 ProjectStage → ProjectOrder FK가 추가됨에 따라, DB FK 오류에
+      // 기대지 않고 참조 존재 여부를 먼저 명시적으로 확인해 차단한다(§1). 동시에
+      // 단계가 추가되는 race를 막기 위해 ProjectOrder 행을 잠근 뒤 확인한다 —
+      // project-stage.actions.ts의 createProjectStage도 같은 행을 잠그므로 서로
+      // 직렬화된다.
+      await tx.$queryRaw`SELECT id FROM "ProjectOrder" WHERE id = ${current.id} FOR UPDATE`
+
+      const stageCount = await tx.projectStage.count({ where: { projectOrderId: current.id, tenantId } })
+      if (stageCount > 0) {
+        throw new Error("프로젝트 단계가 등록되어 있어 삭제할 수 없습니다.")
+      }
+
       const deleted = await tx.projectOrder.deleteMany({
         where: { id: current.id, tenantId, status: { in: DELETABLE_STATUSES } },
       })

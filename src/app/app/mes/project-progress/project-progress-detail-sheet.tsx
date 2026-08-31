@@ -133,6 +133,12 @@ export function ProjectProgressDetailSheet({
 
   if (!projectOrderId) return null
 
+  // §2: 서버가 최종 정본이지만, UI에서도 애초에 시도할 수 없는 조작은 숨기거나
+  // 비활성화해 불필요한 오류를 줄인다. 구조 변경(추가/수정/삭제/import)은
+  // 완료/취소된 프로젝트에서 차단, 단계 시작/완료는 진행중 프로젝트에서만 허용.
+  const isStructureEditable = header ? !["COMPLETED", "CANCELLED"].includes(header.status) : false
+  const isProjectExecutable = header?.status === "IN_PROGRESS"
+
   const { completedCount, totalCount, percent } = computeStageSummary(stages)
   const delay = header ? resolveProjectDelayStatus(header.dueDate, header.status) : "NORMAL"
   const delayCfg = DELAY_CONFIG[delay]
@@ -199,6 +205,7 @@ export function ProjectProgressDetailSheet({
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={!isStructureEditable}
                     onClick={() => setImportDialogOpen(true)}
                   >
                     <Workflow className="h-3.5 w-3.5 mr-1" />
@@ -207,6 +214,7 @@ export function ProjectProgressDetailSheet({
                   <Button
                     type="button"
                     size="sm"
+                    disabled={!isStructureEditable}
                     onClick={() => {
                       setStageDialogMode("create")
                       setEditingStage(null)
@@ -218,6 +226,17 @@ export function ProjectProgressDetailSheet({
                   </Button>
                 </div>
               </div>
+
+              {!isStructureEditable && (
+                <p className="text-[13px] text-muted-foreground">
+                  완료되었거나 취소된 프로젝트는 단계를 추가·수정·삭제할 수 없습니다.
+                </p>
+              )}
+              {isStructureEditable && !isProjectExecutable && (
+                <p className="text-[13px] text-muted-foreground">
+                  진행중 상태의 프로젝트에서만 단계를 시작하거나 완료할 수 있습니다.
+                </p>
+              )}
 
               {stages.length === 0 ? (
                 <div className="rounded-lg border border-dashed py-10 text-center">
@@ -276,7 +295,7 @@ export function ProjectProgressDetailSheet({
                                     size="sm"
                                     variant="outline"
                                     className="h-7 text-[12px] px-2"
-                                    disabled={busy}
+                                    disabled={busy || !isProjectExecutable}
                                     onClick={() => handleStart(stage.id)}
                                   >
                                     시작
@@ -286,13 +305,13 @@ export function ProjectProgressDetailSheet({
                                   <Button
                                     size="sm"
                                     className="h-7 text-[12px] px-2"
-                                    disabled={busy}
+                                    disabled={busy || !isProjectExecutable}
                                     onClick={() => handleComplete(stage.id)}
                                   >
                                     완료
                                   </Button>
                                 )}
-                                {stage.status !== "COMPLETED" && (
+                                {stage.status !== "COMPLETED" && isStructureEditable && (
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button variant="ghost" size="icon" className="h-7 w-7">

@@ -19,6 +19,12 @@ import { getRoutingsForItem } from "@/lib/actions/work-order.actions"
 const MENU_NAME = "프로젝트 진행현황"
 const SEQ_STEP = 10
 
+// §2: 완료/취소된 프로젝트는 단계 구조(추가/수정/삭제/라우팅import)를 바꿀 수 없다.
+// 단계 실행(시작/완료)은 프로젝트가 IN_PROGRESS일 때만 허용한다. 이 파일은
+// ProjectStage 상태변경으로 ProjectOrder.status를 절대 자동 변경하지 않는다는
+// 기존 원칙을 그대로 유지한다 — 여기서 하는 일은 읽기 전용 게이트 확인뿐이다.
+const STRUCTURE_BLOCKED_ORDER_STATUSES = ["COMPLETED", "CANCELLED"]
+
 function revalidateProjectStagePaths() {
   revalidatePath("/app/mes/project-progress")
   revalidatePath("/app/mes/project-orders")
@@ -27,10 +33,23 @@ function revalidateProjectStagePaths() {
 async function assertProjectOrderOwned(tenantId: string, projectOrderId: string) {
   const projectOrder = await prisma.projectOrder.findFirst({
     where: { id: projectOrderId, tenantId },
-    select: { id: true, itemId: true },
+    select: { id: true, itemId: true, status: true },
   })
   if (!projectOrder) throw new Error("프로젝트 오더를 찾을 수 없습니다.")
   return projectOrder
+}
+
+function assertProjectOrderStructureEditable(status: string) {
+  if (STRUCTURE_BLOCKED_ORDER_STATUSES.includes(status)) {
+    throw new Error("완료되었거나 취소된 프로젝트는 단계를 변경할 수 없습니다.")
+  }
+}
+
+// §3: 서버 공통 날짜 검증 helper — createProjectStage/updateProjectStage 양쪽에서 사용.
+function assertStageDateOrder(plannedStartDate: Date | null, dueDate: Date | null) {
+  if (plannedStartDate && dueDate && plannedStartDate.getTime() > dueDate.getTime()) {
+    throw new Error("계획 시작일은 계획 완료일보다 늦을 수 없습니다.")
+  }
 }
 
 // ─── 조회 ───────────────────────────────────────────────────────────────────
@@ -192,7 +211,9 @@ export async function createProjectStage(
     const name = input.name.trim()
     if (!name) throw new Error("단계명을 입력해 주세요.")
 
-    await assertProjectOrderOwned(tenantId, input.projectOrderId)
+    const projectOrder = await assertProjectOrderOwned(tenantId, input.projectOrderId)
+    assertProjectOrderStructureEditable(projectOrder.status)
+    assertStageDateOrder(input.plannedStartDate ?? null, input.dueDate ?? null)
 
     const created = await prisma.$transaction(async (tx) => {
       // 동시 추가 시 seq 충돌(같은 max+10 계산) 방지를 위해 ProjectOrder 행을 잠근다.
@@ -267,8 +288,20 @@ export async function updateProjectStage(
       throw new Error("진행중인 단계는 일정/비고만 수정할 수 있습니다.")
     }
 
+    const projectOrder = await prisma.projectOrder.findFirst({
+      where: { id: current.projectOrderId, tenantId },
+      select: { status: true },
+    })
+    if (!projectOrder) throw new Error("프로젝트 오더를 찾을 수 없습니다.")
+    assertProjectOrderStructureEditable(projectOrder.status)
+
     const name = input.name?.trim()
     if (input.name !== undefined && !name) throw new Error("단계명을 입력해 주세요.")
+
+    const nextPlannedStartDate =
+      input.plannedStartDate !== undefined ? input.plannedStartDate : current.plannedStartDate
+    const nextDueDate = input.dueDate !== undefined ? input.dueDate : current.dueDate
+    assertStageDateOrder(nextPlannedStartDate, nextDueDate)
 
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.projectStage.updateMany({
@@ -328,6 +361,13 @@ export async function deleteProjectStage(id: string): Promise<{ ok: boolean; err
     if (!current) throw new Error("프로젝트 단계를 찾을 수 없습니다.")
     if (current.status !== "PENDING") throw new Error("대기 상태인 단계만 삭제할 수 있습니다.")
 
+    const projectOrder = await prisma.projectOrder.findFirst({
+      where: { id: current.projectOrderId, tenantId },
+      select: { status: true },
+    })
+    if (!projectOrder) throw new Error("프로젝트 오더를 찾을 수 없습니다.")
+    assertProjectOrderStructureEditable(projectOrder.status)
+
     await prisma.$transaction(async (tx) => {
       const deleted = await tx.projectStage.deleteMany({
         where: { id: current.id, tenantId, status: "PENDING" },
@@ -374,6 +414,14 @@ export async function startProjectStage(id: string): Promise<{ ok: boolean; erro
 
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "ProjectOrder" WHERE id = ${current.projectOrderId} FOR UPDATE`
+
+      const projectOrder = await tx.projectOrder.findUniqueOrThrow({
+        where: { id: current.projectOrderId },
+        select: { status: true },
+      })
+      if (projectOrder.status !== "IN_PROGRESS") {
+        throw new Error("진행중 상태의 프로젝트에서만 단계를 시작할 수 있습니다.")
+      }
 
       const fresh = await tx.projectStage.findUniqueOrThrow({ where: { id: current.id } })
       if (fresh.status !== "PENDING") throw new Error("대기 상태인 단계만 시작할 수 있습니다.")
@@ -436,6 +484,14 @@ export async function completeProjectStage(id: string): Promise<{ ok: boolean; e
     if (current.status !== "IN_PROGRESS") throw new Error("진행중인 단계만 완료할 수 있습니다.")
 
     await prisma.$transaction(async (tx) => {
+      const projectOrder = await tx.projectOrder.findFirst({
+        where: { id: current.projectOrderId, tenantId },
+        select: { status: true },
+      })
+      if (!projectOrder || projectOrder.status !== "IN_PROGRESS") {
+        throw new Error("진행중 상태의 프로젝트에서만 단계를 완료할 수 있습니다.")
+      }
+
       const claimed = await tx.projectStage.updateMany({
         where: { id: current.id, tenantId, status: "IN_PROGRESS" },
         data: { status: "COMPLETED", completedAt: new Date() },
@@ -480,6 +536,7 @@ export async function importProjectStagesFromRouting(
     const tenantId = await getTenantId()
 
     const projectOrder = await assertProjectOrderOwned(tenantId, projectOrderId)
+    assertProjectOrderStructureEditable(projectOrder.status)
     if (!projectOrder.itemId) throw new Error("프로젝트 오더에 품목이 지정되어 있지 않습니다.")
 
     await validateRoutingForItem({ tenantId, itemId: projectOrder.itemId, routingId })
