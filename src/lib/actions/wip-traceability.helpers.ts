@@ -56,6 +56,13 @@ export async function transitionWipUnitOnStart(
     return
   }
 
+  // 재작업/보류관리(wip-hold.actions.ts) 방어: ON_HOLD는 REUSABLE_WIP_STATUSES에 포함되어
+  // findActiveWipUnitForWorkOrder가 여전히 찾아내므로, 여기서 막지 않으면 보류 중인 WIP이
+  // POP 작업시작으로 그대로 IN_PROCESS 전환되어 보류가 무력화된다. 최소 범위 방어로 여기서만 차단한다.
+  if (wipUnit.status === WipUnitStatus.ON_HOLD) {
+    throw new Error("보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 작업을 시작해 주세요.")
+  }
+
   // 멱등 처리: 이미 같은 공정에서 IN_PROCESS면 추가 기록 없음
   if (
     wipUnit.status === WipUnitStatus.IN_PROCESS &&

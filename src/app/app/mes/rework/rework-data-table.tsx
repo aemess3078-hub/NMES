@@ -105,7 +105,7 @@ export function ReworkDataTable({ data }: ReworkDataTableProps) {
         ) : (
           <div>
             <Badge className="text-[13px] bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-100">
-              보류
+              종결불가
             </Badge>
             <div className="mt-1 max-w-48 text-[13px] text-muted-foreground">
               {row.original.blockedReason}
