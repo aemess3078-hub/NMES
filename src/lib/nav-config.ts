@@ -85,6 +85,8 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-purchase-orders', parentId: 'nav-material', label: '자재발주', icon: 'ShoppingCart', href: '/app/mes/purchase-orders', displayOrder: 1, children: [] },
           { id: 'nav-material-receipt', parentId: 'nav-material', label: '자재입고', icon: 'PackagePlus', href: '/app/mes/material-receipt', displayOrder: 2, children: [] },
           { id: 'nav-material-issue', parentId: 'nav-material', label: '자재출고', icon: 'FileInput', href: '/app/mes/material-issue', displayOrder: 3, children: [] },
+          // 청운커팅 사업계획서 정본 '자재관리 > 반품관리' (PR #50)
+          { id: 'nav-material-return', parentId: 'nav-material', label: '반품관리', icon: 'Undo2', href: '/app/mes/material-return', displayOrder: 3.4, children: [] },
           // Gap Analysis Rev.2 계층 정렬: 사업계획서 자재관리 산하로 이동(기존 재고관리 아래 있던 항목). route/id 불변.
           { id: 'nav-inventory', parentId: 'nav-material', label: '재고현황', icon: 'Package', href: '/app/mes/inventory', displayOrder: 3.5, children: [] },
           // 기존 NMES 공통기능 — 재고현황(정본)과 별개로 유지. 두 화면의 기능 중복 정리는 후속 업무분석 대상.

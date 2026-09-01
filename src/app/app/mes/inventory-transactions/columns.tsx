@@ -14,6 +14,8 @@ const txTypeLabels: Record<TransactionType, string> = {
   ADJUST: "조정",
   RETURN: "반품",
   SCRAP: "폐기",
+  // 공급사 반품(outbound, -재고) — 기존 RETURN(inbound, +재고)과 구분해 명확히 표시한다.
+  SUPPLIER_RETURN: "공급사 반품",
 }
 
 const txTypeBadgeClass: Record<TransactionType, string> = {
@@ -23,6 +25,7 @@ const txTypeBadgeClass: Record<TransactionType, string> = {
   ADJUST: "border-blue-200 bg-blue-100 text-blue-800 hover:bg-blue-100",
   RETURN: "border-purple-200 bg-purple-100 text-purple-800 hover:bg-purple-100",
   SCRAP: "border-gray-200 bg-gray-100 text-gray-800 hover:bg-gray-100",
+  SUPPLIER_RETURN: "border-orange-200 bg-orange-100 text-orange-800 hover:bg-orange-100",
 }
 
 function formatDateTime(date: Date | string): string {
@@ -116,7 +119,7 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
         const txType = row.original.txType
         const qty = row.getValue("qty") as number
         const isPositive = txType === "RECEIPT" || txType === "RETURN"
-        const isNegative = txType === "ISSUE" || txType === "SCRAP"
+        const isNegative = txType === "ISSUE" || txType === "SCRAP" || txType === "SUPPLIER_RETURN"
         return (
           <span
             className={`block text-right text-[14px] font-semibold tabular-nums ${

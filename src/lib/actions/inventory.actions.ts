@@ -586,6 +586,9 @@ async function generateTxNo(tenantId: string, txType: TransactionType): Promise<
     ADJUST: "ADJ",
     RETURN: "RTN",
     SCRAP: "SCR",
+    // material-return.actions.ts의 completeMaterialReturn()이 SRT- prefix로 직접
+    // 채번하므로 이 경로로는 호출되지 않는다 — TransactionType 전수 매핑 유지 목적.
+    SUPPLIER_RETURN: "SRT",
   }[txType] ?? "TXN"
 
   const today = new Date()

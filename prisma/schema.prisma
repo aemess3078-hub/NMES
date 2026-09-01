@@ -162,6 +162,10 @@ enum TransactionType {
   ADJUST
   RETURN
   SCRAP
+  // 공급사 반품 전용(정상 입고되어 재고화된 자재를 공급사로 반품). 재고 방향은
+  // outbound(-)다. 기존 RETURN(inbound, +재고)과는 의미가 반대이므로 별도 enum으로
+  // 분리한다 — RETURN은 하위호환을 위해 절대 변경/재사용하지 않는다.
+  SUPPLIER_RETURN
 }
 
 enum WipUnitStatus {
@@ -433,6 +437,7 @@ model Tenant {
   itemGroups                    ItemGroup[]
   workOrderOperationAssignments WorkOrderOperationAssignment[]
   supportRequests               SupportRequest[]
+  materialReturns                MaterialReturn[]
 }
 
 model Profile {
@@ -467,6 +472,8 @@ model Profile {
   projectOrdersOwned    ProjectOrder[]          @relation("ProjectOrderOwner")
   projectIssuesAssigned ProjectIssue[]          @relation("ProjectIssueAssignee")
   projectIssuesCreated  ProjectIssue[]          @relation("ProjectIssueCreator")
+  materialReturnsCreated   MaterialReturn[]     @relation("MaterialReturnCreator")
+  materialReturnsCompleted MaterialReturn[]     @relation("MaterialReturnCompleter")
 }
 
 model Site {
@@ -498,6 +505,7 @@ model Site {
   projectOrders         ProjectOrder[]            @relation("SiteProjectOrders")
   equipmentRepairs      EquipmentRepairRequest[]
   equipmentDailyChecks  EquipmentDailyCheck[]
+  materialReturns       MaterialReturn[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -606,6 +614,7 @@ model BusinessPartner {
   outsourcedWipUnits      WipUnit[]       @relation("WipUnitOutsourcingPartner")
   wipMovementsFromPartner WipMovement[]   @relation("WipMovementFromPartner")
   wipMovementsToPartner   WipMovement[]   @relation("WipMovementToPartner")
+  materialReturns         MaterialReturn[] @relation("SupplierMaterialReturns")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -703,6 +712,7 @@ model Item {
   itemCosts               ItemCost[]             @relation("ItemCosts")
   engineeringChanges      EngineeringChange[]    @relation("ItemECNs")
   materialLotConsumptions WorkOrderMaterialLot[] @relation("MaterialLotItem")
+  materialReturnItems     MaterialReturnItem[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -886,6 +896,7 @@ model Warehouse {
   wipMovementsFrom      WipMovement[]          @relation("WipMovementFromWarehouse")
   wipMovementsTo        WipMovement[]          @relation("WipMovementToWarehouse")
   defaultForItems       Item[]                 @relation("ItemDefaultWarehouse")
+  materialReturnItems   MaterialReturnItem[]
 
   @@unique([siteId, code])
   @@index([tenantId])
@@ -1186,6 +1197,7 @@ model Lot {
   parentGenealogyLinks  LotGenealogy[]         @relation("ParentLot")
   childGenealogyLinks   LotGenealogy[]         @relation("ChildLot")
   shipmentItems         ShipmentItem[]         @relation("LotShipmentItems")
+  materialReturnItems   MaterialReturnItem[]
 
   @@unique([tenantId, lotNo])
   @@index([tenantId])
@@ -1270,6 +1282,7 @@ model InventoryTransaction {
   fromLocation          Warehouse?             @relation("TxFromWarehouse", fields: [fromLocationId], references: [id])
   toLocation            Warehouse?             @relation("TxToWarehouse", fields: [toLocationId], references: [id])
   workOrderMaterialLots WorkOrderMaterialLot[] @relation("MaterialLotInventoryTx")
+  materialReturnItem    MaterialReturnItem?
 
   @@unique([tenantId, txNo])
   @@index([tenantId])
@@ -2040,6 +2053,7 @@ model PurchaseOrder {
   supplier BusinessPartner     @relation("SupplierPurchaseOrders", fields: [supplierId], references: [id])
   items    PurchaseOrderItem[]
   lotNumberReservations LotNumberReservation[]
+  materialReturns MaterialReturn[]
 
   @@unique([tenantId, orderNo])
   @@index([tenantId])
@@ -2061,6 +2075,7 @@ model PurchaseOrderItem {
   item                 Item                  @relation("ItemPurchaseOrderItems", fields: [itemId], references: [id])
   receivingInspections ReceivingInspection[]
   lotNumberReservations LotNumberReservation[]
+  materialReturnItems  MaterialReturnItem[]
 
   @@unique([purchaseOrderId, itemId])
   @@index([purchaseOrderId])
@@ -2082,6 +2097,88 @@ model ReceivingInspection {
   inspector         Profile?          @relation("ReceivingInspector", fields: [inspectorId], references: [id])
 
   @@index([purchaseOrderItemId])
+}
+
+// ─── 청운커팅 사업계획서 "자재관리 > 반품관리" (PR #50) ────────────────────────
+//
+// 정상 입고되어 회사 재고가 된 자재를 공급사에 반품하는 업무만 다룬다. 입고검사
+// 불합격 수량의 공급사 반송(ReceivingInspection.rejectedQty 처리)은 별개 워크플로
+// 이며 이번 PR의 범위가 아니다 — 이 모델은 이미 InventoryBalance에 반영된
+// 가용재고를 outbound(-)로 차감하는 케이스만 다룬다.
+//
+// MaterialReturnStatus는 DRAFT/COMPLETED/CANCELLED 3개만 사용한다. 별도의
+// 전자결재/승인 워크플로(CONFIRMED 등 중간 상태)는 만들지 않는다 — COMPLETED
+// 전환 자체가 재고차감을 트리거하는 단일 승인 지점이다(권한: MANAGER 이상).
+enum MaterialReturnStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+}
+
+model MaterialReturn {
+  id              String               @id @default(cuid())
+  tenantId        String
+  // 반품 건 전체를 하나의 사업장으로 고정한다 — 품목별 warehouse/LOT 재고 조회와
+  // PO 연계 검증이 모두 이 siteId 기준으로 스코프된다(§4). 한 반품 건에 여러
+  // 사업장의 재고가 섞이는 것을 막기 위한 필수 필드다.
+  siteId          String
+  supplierId      String
+  purchaseOrderId String?
+  returnNo        String // 반품번호, 예: SR-2026-001
+  status          MaterialReturnStatus @default(DRAFT)
+  reason          String?
+  note            String?
+  createdById     String
+  // COMPLETED 전환 시각/주체만 기록한다 — confirmedById/confirmedAt은 만들지 않는다(중간
+  // 승인 단계가 없으므로). CANCELLED는 DRAFT에서만 가능한 단순 종료이므로 별도의
+  // cancelledById/cancelledAt 컬럼 없이 AuditLog(actorId/actedAt)로 충분히 추적된다.
+  completedById   String?
+  completedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id])
+  site          Site                 @relation(fields: [siteId], references: [id])
+  supplier      BusinessPartner      @relation("SupplierMaterialReturns", fields: [supplierId], references: [id])
+  purchaseOrder PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id])
+  createdBy     Profile              @relation("MaterialReturnCreator", fields: [createdById], references: [id])
+  completedBy   Profile?             @relation("MaterialReturnCompleter", fields: [completedById], references: [id])
+  items         MaterialReturnItem[]
+
+  @@unique([tenantId, returnNo])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([siteId])
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+}
+
+model MaterialReturnItem {
+  id                  String  @id @default(cuid())
+  materialReturnId    String
+  itemId              String
+  purchaseOrderItemId String?
+  // LOT 관리 품목은 기존 LOT 선택만 허용한다(신규 LOT 생성 금지) — 비LOT 품목은 null.
+  lotId               String?
+  warehouseId         String
+  returnQty           Decimal @db.Decimal(18, 6)
+  note                String?
+  // COMPLETED 전환 시 생성되는 SUPPLIER_RETURN InventoryTransaction 추적용. DRAFT
+  // 동안은 null이며, 완료 후에는 수정/삭제/취소가 전면 금지되므로 재사용되지 않는다.
+  inventoryTransactionId String? @unique
+
+  materialReturn       MaterialReturn        @relation(fields: [materialReturnId], references: [id], onDelete: Cascade)
+  item                 Item                  @relation(fields: [itemId], references: [id])
+  purchaseOrderItem    PurchaseOrderItem?    @relation(fields: [purchaseOrderItemId], references: [id])
+  lot                  Lot?                  @relation(fields: [lotId], references: [id])
+  warehouse            Warehouse             @relation(fields: [warehouseId], references: [id])
+  inventoryTransaction InventoryTransaction? @relation(fields: [inventoryTransactionId], references: [id])
+
+  @@index([materialReturnId])
+  @@index([itemId])
+  @@index([purchaseOrderItemId])
+  @@index([lotId])
+  @@index([warehouseId])
 }
 
 model ItemPrice {
