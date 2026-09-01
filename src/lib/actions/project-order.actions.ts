@@ -130,9 +130,9 @@ export type ProjectOrderSalesOrderOption = {
 
 // 연결 수주 선택지 — CANCELLED 수주는 애초에 연결 대상에서 제외한다(§2). siteId는
 // 선택 시 ProjectOrder.siteId를 자동 동기화하는 데 쓰고(§10), customer는 검색
-// Combobox 표시("[SO-2026-001] 거래처명")·검색(§5)에 쓴다. items는 §4와 동일하게
-// 완제품/반제품만 내려준다 — SalesOrder 원본 데이터 자체는 건드리지 않고 이
-// 조회 결과에서만 걸러낸다.
+// Combobox 표시("[SO-2026-001] 거래처명")·검색(§5)에 쓴다. items는 일반 품목 조회
+// (getProjectOrderItems)·assertReferencesValid와 동일하게 ACTIVE 완제품/반제품만
+// 내려준다 — SalesOrder 원본 데이터 자체는 건드리지 않고 이 조회 결과에서만 걸러낸다.
 export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrderOption[]> {
   const tenantId = await getTenantId()
   const orders = await prisma.salesOrder.findMany({
@@ -145,7 +145,7 @@ export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrd
       siteId: true,
       deliveryDate: true,
       items: {
-        where: { item: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] } } },
+        where: { item: { status: "ACTIVE", itemType: { in: ["FINISHED", "SEMI_FINISHED"] } } },
         select: { item: { select: { id: true, code: true, name: true, itemType: true } } },
         orderBy: { item: { code: "asc" } },
       },
