@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,7 @@ import {
 import { MoreHorizontal } from "lucide-react"
 import { formatDDay } from "@/lib/date/kst"
 import { computeStageSummary, resolveProjectDelayStatus, isStageDelayed } from "@/lib/project-stage-progress"
+import { resolveProjectIssueDelayStatus } from "@/lib/project-issue-calculations"
 import {
   getProjectStageDetail,
   startProjectStage,
@@ -29,9 +31,16 @@ import {
   type ProjectStageDetailHeader,
   type ProjectStageRow,
 } from "@/lib/actions/project-stage.actions"
+import { getProjectIssuesByProjectOrder, type ProjectIssueRow } from "@/lib/actions/project-issue.actions"
 import { PROJECT_STATUS_CONFIG, PRIORITY_CONFIG, DELAY_CONFIG } from "./columns"
 import { StageFormDialog } from "./stage-form-dialog"
 import { ImportRoutingDialog } from "./import-routing-dialog"
+import {
+  ISSUE_SEVERITY_CONFIG,
+  ISSUE_STATUS_CONFIG,
+} from "@/app/app/mes/project-issues/columns"
+import { ProjectIssueDetailSheet } from "@/app/app/mes/project-issues/issue-detail-sheet"
+import { IssueFormDialog } from "@/app/app/mes/project-issues/issue-form-dialog"
 
 interface ProjectProgressDetailSheetProps {
   open: boolean
@@ -60,6 +69,7 @@ export function ProjectProgressDetailSheet({
   const [isLoading, setIsLoading] = useState(false)
   const [header, setHeader] = useState<ProjectStageDetailHeader | null>(null)
   const [stages, setStages] = useState<ProjectStageRow[]>([])
+  const [issues, setIssues] = useState<ProjectIssueRow[]>([])
 
   const [stageDialogOpen, setStageDialogOpen] = useState(false)
   const [stageDialogMode, setStageDialogMode] = useState<"create" | "edit">("create")
@@ -67,13 +77,18 @@ export function ProjectProgressDetailSheet({
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
+  const [issueCreateOpen, setIssueCreateOpen] = useState(false)
+  const [issueDetailOpen, setIssueDetailOpen] = useState(false)
+  const [issueDetailId, setIssueDetailId] = useState<string | null>(null)
+
   const refetch = useCallback(() => {
     if (!projectOrderId) return
     setIsLoading(true)
-    getProjectStageDetail(projectOrderId)
-      .then(({ projectOrder, stages }) => {
+    Promise.all([getProjectStageDetail(projectOrderId), getProjectIssuesByProjectOrder(projectOrderId)])
+      .then(([{ projectOrder, stages }, issues]) => {
         setHeader(projectOrder)
         setStages(stages)
+        setIssues(issues)
       })
       .catch((e) => alert(e instanceof Error ? e.message : "정보를 불러오지 못했습니다."))
       .finally(() => setIsLoading(false))
@@ -85,6 +100,7 @@ export function ProjectProgressDetailSheet({
     } else if (!open) {
       setHeader(null)
       setStages([])
+      setIssues([])
     }
   }, [open, projectOrderId, refetch])
 
@@ -142,6 +158,8 @@ export function ProjectProgressDetailSheet({
   const { completedCount, totalCount, percent } = computeStageSummary(stages)
   const delay = header ? resolveProjectDelayStatus(header.dueDate, header.status) : "NORMAL"
   const delayCfg = DELAY_CONFIG[delay]
+  // §21: 진행률 계산에는 이슈를 포함하지 않는다 — 탭 배지 표시 전용 카운트.
+  const unresolvedIssueCount = issues.filter((i) => i.status !== "RESOLVED").length
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -197,9 +215,16 @@ export function ProjectProgressDetailSheet({
               </div>
             </SheetHeader>
 
-            <div className="pt-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[15px] font-semibold">단계 관리</h3>
+            <Tabs defaultValue="stages" className="pt-6">
+              <TabsList>
+                <TabsTrigger value="stages">단계 관리</TabsTrigger>
+                <TabsTrigger value="issues">
+                  이슈{unresolvedIssueCount > 0 ? ` (${unresolvedIssueCount})` : ""}
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="stages" className="space-y-3 mt-4">
+              <div className="flex items-center justify-end">
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -348,7 +373,94 @@ export function ProjectProgressDetailSheet({
                   </table>
                 </div>
               )}
-            </div>
+              </TabsContent>
+
+              <TabsContent value="issues" className="space-y-3 mt-4">
+                <div className="flex items-center justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!isStructureEditable}
+                    onClick={() => setIssueCreateOpen(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    이슈 등록
+                  </Button>
+                </div>
+
+                {!isStructureEditable && (
+                  <p className="text-[13px] text-muted-foreground">
+                    완료되었거나 취소된 프로젝트는 이슈를 등록·수정할 수 없습니다.
+                  </p>
+                )}
+
+                {issues.length === 0 ? (
+                  <div className="rounded-lg border border-dashed py-10 text-center">
+                    <p className="text-[14px] text-muted-foreground">등록된 이슈가 없습니다.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border overflow-hidden">
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="bg-muted/50 border-b">
+                          <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">이슈번호</th>
+                          <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">제목</th>
+                          <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">중요도</th>
+                          <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">상태</th>
+                          <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">담당자</th>
+                          <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">목표일</th>
+                          <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">D-Day</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {issues.map((issue) => (
+                          <tr
+                            key={issue.id}
+                            className="border-b last:border-b-0 hover:bg-muted/20 cursor-pointer"
+                            onClick={() => {
+                              setIssueDetailId(issue.id)
+                              setIssueDetailOpen(true)
+                            }}
+                          >
+                            <td className="px-3 py-2.5 font-mono text-primary">{issue.code}</td>
+                            <td className="px-3 py-2.5 font-medium">{issue.title}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              <Badge variant={ISSUE_SEVERITY_CONFIG[issue.severity].variant} className="text-[12px]">
+                                {ISSUE_SEVERITY_CONFIG[issue.severity].label}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <Badge variant={ISSUE_STATUS_CONFIG[issue.status].variant} className="text-[12px]">
+                                {ISSUE_STATUS_CONFIG[issue.status].label}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2.5 text-center text-muted-foreground">{issue.assignee?.name ?? "미지정"}</td>
+                            <td className="px-3 py-2.5 text-center text-muted-foreground">{fmtDate(issue.dueDate)}</td>
+                            <td className="px-3 py-2.5 text-center tabular-nums">
+                              {(() => {
+                                if (!issue.dueDate) return <span className="text-muted-foreground">—</span>
+                                const issueDelay = resolveProjectIssueDelayStatus(issue.dueDate, issue.status)
+                                const colorClass =
+                                  issueDelay === "DELAYED"
+                                    ? "text-red-600"
+                                    : issueDelay === "DUE_SOON"
+                                    ? "text-amber-600"
+                                    : "text-muted-foreground"
+                                return (
+                                  <span className={colorClass}>
+                                    {issue.status === "RESOLVED" ? "완료" : formatDDay(new Date(issue.dueDate))}
+                                  </span>
+                                )
+                              })()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
 
             <StageFormDialog
               open={stageDialogOpen}
@@ -365,6 +477,25 @@ export function ProjectProgressDetailSheet({
               projectOrderId={projectOrderId}
               hasExistingStages={stages.length > 0}
               onSuccess={refetch}
+            />
+
+            <IssueFormDialog
+              open={issueCreateOpen}
+              onOpenChange={setIssueCreateOpen}
+              mode="create"
+              fixedProjectOrderId={projectOrderId}
+              fixedProjectLabel={`${header.code} · ${header.name}`}
+              onSuccess={() => {
+                setIssueCreateOpen(false)
+                refetch()
+              }}
+            />
+
+            <ProjectIssueDetailSheet
+              open={issueDetailOpen}
+              onOpenChange={setIssueDetailOpen}
+              issueId={issueDetailId}
+              onChanged={refetch}
             />
           </>
         ) : (

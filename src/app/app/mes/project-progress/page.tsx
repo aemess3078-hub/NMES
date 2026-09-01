@@ -1,10 +1,15 @@
 export const dynamic = "force-dynamic"
 
 import { getProjectProgressList } from "@/lib/actions/project-stage.actions"
+import { getOpenProjectIssueCounts } from "@/lib/actions/project-issue.actions"
 import { ProjectProgressDataTable } from "./project-progress-data-table"
 
 export default async function ProjectProgressPage() {
-  const projects = await getProjectProgressList()
+  const [projectsRaw, openIssueCounts] = await Promise.all([
+    getProjectProgressList(),
+    getOpenProjectIssueCounts(),
+  ])
+  const projects = projectsRaw.map((p) => ({ ...p, openIssueCount: openIssueCounts[p.id] ?? 0 }))
 
   return (
     <div className="p-6">

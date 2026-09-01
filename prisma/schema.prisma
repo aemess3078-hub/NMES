@@ -421,6 +421,7 @@ model Tenant {
   quotations                    Quotation[]                    @relation("TenantQuotations")
   projectOrders                 ProjectOrder[]                 @relation("TenantProjectOrders")
   projectStages                 ProjectStage[]
+  projectIssues                 ProjectIssue[]                 @relation("TenantProjectIssues")
   itemCosts                     ItemCost[]                     @relation("TenantItemCosts")
   engineeringChanges            EngineeringChange[]            @relation("TenantECNs")
   signupRequests                SignupRequest[]
@@ -463,7 +464,9 @@ model Profile {
   loginHistories       LoginHistory[]
   supportAuthored      SupportRequest[]         @relation("SupportAuthor")
   supportHandled       SupportRequest[]         @relation("SupportHandler")
-  projectOrdersOwned   ProjectOrder[]           @relation("ProjectOrderOwner")
+  projectOrdersOwned    ProjectOrder[]          @relation("ProjectOrderOwner")
+  projectIssuesAssigned ProjectIssue[]          @relation("ProjectIssueAssignee")
+  projectIssuesCreated  ProjectIssue[]          @relation("ProjectIssueCreator")
 }
 
 model Site {
@@ -2226,6 +2229,7 @@ model ProjectOrder {
   salesOrder SalesOrder?     @relation("SalesOrderProjectOrders", fields: [salesOrderId], references: [id])
   owner      Profile         @relation("ProjectOrderOwner", fields: [ownerId], references: [id])
   stages     ProjectStage[]
+  issues     ProjectIssue[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2275,6 +2279,66 @@ model ProjectStage {
   @@index([tenantId])
   @@index([projectOrderId])
   @@index([sourceRoutingOperationId])
+}
+
+// ─── Phase 2d-8d: 프로젝트관리 — 이슈 관리(ProjectIssue) ────────────────────────
+//
+// 프로젝트관리 > 이슈 관리: ProjectOrder 하위에서 발생하는 문제/리스크를
+// 등록→담당자지정→조치진행→해결 흐름으로 추적한다. 품질검사의 불량 원인분석/
+// 시정조치/재발방지와는 완전히 분리된 별개 도메인이다(품질 불량은 DefectRecord/
+// QualityInspection 쪽 책임) — DefectSeverity 등 품질 enum을 재사용하지 않는다.
+// 이번 PR에서는 ProjectStage와 직접 FK를 연결하지 않는다 — Issue는 ProjectOrder
+// 단위로만 관리한다(향후 특정 단계 연결 요구가 생기면 확장). 지연여부는 DB에
+// 저장하지 않고 화면/서비스에서 매번 계산한다(src/lib/project-issue-calculations.ts).
+
+enum ProjectIssueType {
+  ISSUE
+  RISK
+}
+
+enum ProjectIssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProjectIssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model ProjectIssue {
+  id             String               @id @default(cuid())
+  tenantId       String
+  projectOrderId String
+  code           String // 이슈번호, 예: ISS-2026-001
+  type           ProjectIssueType     @default(ISSUE)
+  severity       ProjectIssueSeverity @default(MEDIUM)
+  status         ProjectIssueStatus   @default(OPEN)
+  title          String
+  description    String?
+  assigneeId     String?
+  occurredAt     DateTime
+  dueDate        DateTime?
+  resolution     String?
+  resolvedAt     DateTime?
+  createdById    String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  tenant       Tenant       @relation("TenantProjectIssues", fields: [tenantId], references: [id])
+  projectOrder ProjectOrder @relation(fields: [projectOrderId], references: [id])
+  assignee     Profile?     @relation("ProjectIssueAssignee", fields: [assigneeId], references: [id])
+  createdBy    Profile      @relation("ProjectIssueCreator", fields: [createdById], references: [id])
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([projectOrderId])
+  @@index([assigneeId])
 }
 
 // ─── Phase 2d-9: 원가관리 ─────────────────────────────────────────────────────

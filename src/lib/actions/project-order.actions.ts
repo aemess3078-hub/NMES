@@ -14,7 +14,11 @@ import {
 // ─── 청운커팅 사업계획서 "영업관리 > 프로젝트 오더" ────────────────────────────────
 //
 // 수주(SalesOrder)와 생산실행 사이를 잇는 프로젝트 단위 업무 Header.
-// 프로젝트 진행률/단계관리/이슈관리/대금관리는 이 파일의 책임이 아니다(PR #48+).
+// 프로젝트 진행률/단계관리/이슈관리/대금관리는 이 파일의 책임이 아니다(PR #48+,
+// 이슈 CRUD/상태전이는 project-issue.actions.ts). 다만 COMPLETED 전환 시 미완료
+// ProjectStage/미해결 ProjectIssue 정합성 검증만은 이 파일의 updateProjectOrder가
+// 계속 담당한다(PR #48 §16, PR #49 §13) — ProjectOrder.status를 쓰는 유일한
+// 파일이라는 원칙을 유지하기 위함이다.
 // 모든 조회/등록/수정/삭제 액션은 클라이언트가 넘긴 tenantId를 신뢰하지 않고
 // getTenantId()로 세션에서 직접 구한다. 채번 함수는 client tenantId를 받는
 // 공개 Server Action으로 만들지 않고 파일 내부 helper로만 둔다(§3).
@@ -437,6 +441,12 @@ export async function updateProjectOrder(
       // 잠근 뒤 확인해, 단계 추가/시작과의 race를 막는다. 반대 방향(ProjectStage
       // 완료가 ProjectOrder.status를 자동 COMPLETED로 바꾸는 것)은 여전히 하지
       // 않는다 — 기존 원칙 그대로.
+      //
+      // PR #49 ProjectIssue 도입에 따른 보완(§13/§24): 같은 이유로 미해결
+      // ProjectIssue(status !== RESOLVED)가 있으면 COMPLETED 전환을 차단한다.
+      // createProjectIssue도 같은 ProjectOrder 행을 FOR UPDATE로 잠그므로 신규
+      // 이슈 생성과 이 검증이 서로 직렬화된다. 반대 방향(Issue 해결이
+      // ProjectOrder.status를 자동 COMPLETED로 바꾸는 것)은 하지 않는다.
       if (isCompletingOrder) {
         await tx.$queryRaw`SELECT id FROM "ProjectOrder" WHERE id = ${current.id} FOR UPDATE`
 
@@ -446,6 +456,14 @@ export async function updateProjectOrder(
         })
         if (incompleteStage) {
           throw new Error("미완료 프로젝트 단계가 있어 프로젝트를 완료할 수 없습니다.")
+        }
+
+        const unresolvedIssue = await tx.projectIssue.findFirst({
+          where: { projectOrderId: current.id, tenantId, status: { not: "RESOLVED" } },
+          select: { id: true },
+        })
+        if (unresolvedIssue) {
+          throw new Error("미해결 프로젝트 이슈가 있어 프로젝트를 완료할 수 없습니다.")
         }
       }
 
@@ -520,10 +538,9 @@ export async function updateProjectOrder(
 // ─── 삭제 ───────────────────────────────────────────────────────────────────
 //
 // 기존 SalesOrder/Quotation과 동일하게 하드 삭제이되 DRAFT 상태에서만 허용한다(§11).
-// 향후 ProjectStage/ProjectIssue/ProductionPlan/WorkOrder가 이 엔티티를 참조할
-// 예정이므로, DRAFT 상태 가드 자체가 "아직 후속 참조가 생기기 전에만 삭제 가능"이라는
-// 안전장치 역할을 한다 — 별도 isDeleted 플래그나 참조 카운트 조회는 이번 PR에서
-// 만들지 않는다.
+// ProjectStage(PR #48)/ProjectIssue(PR #49)가 이 엔티티를 참조하므로, 참조가 있으면
+// 아래에서 명시적으로 막는다. 향후 ProductionPlan/WorkOrder가 참조를 추가하면 같은
+// 패턴으로 확장한다 — 별도 isDeleted 플래그는 이번에도 만들지 않는다.
 
 export async function deleteProjectOrder(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -547,6 +564,14 @@ export async function deleteProjectOrder(id: string): Promise<{ ok: boolean; err
       const stageCount = await tx.projectStage.count({ where: { projectOrderId: current.id, tenantId } })
       if (stageCount > 0) {
         throw new Error("프로젝트 단계가 등록되어 있어 삭제할 수 없습니다.")
+      }
+
+      // PR #49에서 ProjectIssue → ProjectOrder FK가 추가됨에 따라 동일한 이유로
+      // 먼저 명시적으로 확인한다. DRAFT 상태에서도 이슈 등록 자체는 허용되므로
+      // (§14 — 등록 차단은 COMPLETED/CANCELLED만) 이 체크가 실제로 걸릴 수 있다.
+      const issueCount = await tx.projectIssue.count({ where: { projectOrderId: current.id, tenantId } })
+      if (issueCount > 0) {
+        throw new Error("프로젝트 이슈가 등록되어 있어 삭제할 수 없습니다.")
       }
 
       const deleted = await tx.projectOrder.deleteMany({

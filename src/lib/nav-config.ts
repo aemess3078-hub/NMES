@@ -147,6 +147,8 @@ export const MES_NAV: NavItem[] = [
         displayOrder: 80,
         children: [
           { id: 'nav-project-progress', parentId: 'nav-project-management', label: '프로젝트 진행현황', icon: 'GanttChart', href: '/app/mes/project-progress', displayOrder: 1, children: [] },
+          // 청운커팅 사업계획서 정본 '프로젝트관리 > 이슈 관리' (PR #49)
+          { id: 'nav-project-issues', parentId: 'nav-project-management', label: '이슈 관리', icon: 'CircleAlert', href: '/app/mes/project-issues', displayOrder: 2, children: [] },
         ],
       },
     ],
