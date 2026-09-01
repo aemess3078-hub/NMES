@@ -60,6 +60,7 @@ export function ProjectOrderDetailSheet({
         </SheetHeader>
 
         <div className="pt-6 grid grid-cols-2 gap-y-5 gap-x-4">
+          <Field label="사업장" value={`[${projectOrder.site.code}] ${projectOrder.site.name}`} />
           <Field label="거래처" value={projectOrder.customer.name} />
           <Field label="담당자" value={projectOrder.owner.name} />
           <Field

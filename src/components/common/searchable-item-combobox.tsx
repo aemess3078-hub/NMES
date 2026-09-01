@@ -24,6 +24,9 @@ interface SearchableItemComboboxProps {
   placeholder?: string
   searchPlaceholder?: string
   triggerClassName?: string
+  /** true면 목록 맨 위에 선택 해제용 행을 고정 노출한다(onSelect("")를 호출). */
+  allowClear?: boolean
+  clearLabel?: string
 }
 
 const EMPTY_DISABLED_ITEM_IDS = new Set<string>()
@@ -48,6 +51,8 @@ export function SearchableItemCombobox({
   placeholder = "품목 선택",
   searchPlaceholder = "품목코드, 품목명 또는 유형 검색",
   triggerClassName,
+  allowClear = false,
+  clearLabel = "선택 안 함",
 }: SearchableItemComboboxProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -86,6 +91,13 @@ export function SearchableItemCombobox({
   const chooseItem = (itemId: string) => {
     if (disabledItemIds.has(itemId)) return
     onSelect(itemId)
+    setOpen(false)
+    setSearch("")
+    setActiveIndex(0)
+  }
+
+  const clearSelection = () => {
+    onSelect("")
     setOpen(false)
     setSearch("")
     setActiveIndex(0)
@@ -149,6 +161,16 @@ export function SearchableItemCombobox({
             />
           </div>
           <div role="listbox" className="max-h-[300px] overflow-y-auto p-1">
+            {allowClear && (
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-[14px] text-muted-foreground outline-none hover:bg-accent hover:text-accent-foreground"
+              >
+                <Check className={cn("h-4 w-4 shrink-0", value === "" ? "opacity-100" : "opacity-0")} />
+                {clearLabel}
+              </button>
+            )}
             {filteredItems.length === 0 && (
               <p className="py-5 text-center text-[13px] text-muted-foreground">
                 검색 결과가 없습니다.

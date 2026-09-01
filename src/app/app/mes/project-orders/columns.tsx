@@ -20,6 +20,7 @@ export type ProjectOrderRow = {
   code: string
   name: string
   siteId: string
+  site: { id: string; code: string; name: string }
   priority: ProjectOrderPriority
   status: ProjectOrderStatus
   plannedStartDate: Date | string | null

@@ -16,6 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { FormSheet } from "@/components/common/form-sheet/form-sheet"
+import { SearchableItemCombobox, type SearchableItemOption } from "@/components/common/searchable-item-combobox"
+import { SearchableSalesOrderCombobox } from "./searchable-sales-order-combobox"
 import { projectOrderFormSchema, ProjectOrderFormValues } from "./project-order-form-schema"
 import { createProjectOrder, updateProjectOrder } from "@/lib/actions/project-order.actions"
 import {
@@ -27,13 +29,15 @@ import type { ProjectOrderRow } from "./columns"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type SiteOption = { id: string; code: string; name: string }
 type CustomerOption = { id: string; code: string; name: string }
-type ItemOption = { id: string; code: string; name: string }
+type ItemOption = SearchableItemOption
 type UserOption = { id: string; name: string }
 type SalesOrderOption = {
   id: string
   orderNo: string
   customerId: string
+  customer: { id: string; code: string; name: string }
   siteId: string
   deliveryDate: Date | string
   items: ItemOption[]
@@ -42,6 +46,7 @@ type SalesOrderOption = {
 interface ProjectOrderFormSheetProps {
   mode: "create" | "edit"
   projectOrder?: ProjectOrderRow | null
+  sites: SiteOption[]
   customers: CustomerOption[]
   items: ItemOption[]
   users: UserOption[]
@@ -67,10 +72,9 @@ const PRIORITY_OPTIONS: { label: string; value: ProjectOrderPriority }[] = [
   { label: "높음", value: "HIGH" },
 ]
 
-const NONE_VALUE = "__none__"
-
 const DEFAULT_VALUES: ProjectOrderFormValues = {
   name: "",
+  siteId: "",
   customerId: "",
   ownerId: "",
   status: "DRAFT",
@@ -87,6 +91,7 @@ const DEFAULT_VALUES: ProjectOrderFormValues = {
 export function ProjectOrderFormSheet({
   mode,
   projectOrder,
+  sites,
   customers,
   items,
   users,
@@ -112,15 +117,13 @@ export function ProjectOrderFormSheet({
       : PROJECT_ORDER_STATUS_TRANSITIONS[projectOrder?.status ?? "DRAFT"]
   const statusOptions = STATUS_OPTIONS.filter((opt) => allowedStatusValues.includes(opt.value))
 
-  // ─── 연결 수주 선택지: 사업장 일치 + 거래처 고정 / 품목 목록 제한 (§2, siteId 정합성) ──
-  // edit 모드에서는 현재 ProjectOrder.siteId와 다른 사업장의 수주는 애초에 선택지에
-  // 보여주지 않는다(서버도 동일하게 최종 검증한다). create는 수주 선택 자체가
-  // ProjectOrder의 siteId를 결정하므로 전체 목록을 보여준다.
+  // ─── 연결 수주 선택지 (§6/§10) ────────────────────────────────────────────────
+  // 이제 수주를 선택하면 siteId가 그 수주의 siteId로 자동 동기화되므로(연결 중에는
+  // 사업장 필드가 잠긴다), 더 이상 "현재 ProjectOrder.siteId와 같은 사업장의 수주만"
+  // 으로 목록을 미리 좁힐 필요가 없다 — 어떤 수주를 골라도 사업장이 함께 따라온다.
+  // 취소된 수주는 getProjectOrderSalesOrders가 이미 제외했다.
 
-  const availableSalesOrders =
-    mode === "edit" && projectOrder
-      ? salesOrders.filter((so) => so.siteId === projectOrder.siteId)
-      : salesOrders
+  const availableSalesOrders = salesOrders
 
   const selectedSalesOrderId = form.watch("salesOrderId")
   const selectedSalesOrder = availableSalesOrders.find((s) => s.id === selectedSalesOrderId)
@@ -141,6 +144,7 @@ export function ProjectOrderFormSheet({
     if (mode === "edit" && projectOrder && open) {
       form.reset({
         name: projectOrder.name,
+        siteId: projectOrder.siteId,
         customerId: projectOrder.customer.id,
         ownerId: projectOrder.owner.id,
         status: projectOrder.status,
@@ -158,21 +162,24 @@ export function ProjectOrderFormSheet({
     }
   }, [mode, projectOrder, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── 연결 수주 선택 시 거래처 고정 + 납기일 제안 + 품목 목록 제한 (§2, §12) ──────
+  // ─── 연결 수주 선택 시 거래처/사업장 고정 + 납기일 제안 + 품목 목록 제한 (§7/§10/§12) ──
   // 거래처는 연결 중에는 임의 변경 불가하도록 수주 거래처로 고정한다(서버도 동일하게
-  // 검증한다). 품목은 연결된 수주의 품목 목록으로 제한하므로, 기존 선택이 새 목록에
-  // 없으면 초기화한다. 납기일은 비어 있을 때만 제안하고 이후에는 사용자가 자유롭게
-  // 조정할 수 있다 — 자동 동기화가 아니라 최초 제안일 뿐이다.
+  // 검증한다). 사업장도 마찬가지로 수주의 siteId로 자동 설정되고 필드가 잠긴다(§10).
+  // 품목은 연결된 수주의 품목 목록으로 제한하므로, 기존 선택이 새 목록에 없으면
+  // 초기화한다. 납기일은 비어 있을 때만 제안하고 이후에는 사용자가 자유롭게 조정할
+  // 수 있다 — 자동 동기화가 아니라 최초 제안일 뿐이다. 연결 해제 시에는 거래처/
+  // 사업장 필드를 다시 활성화하되 마지막 값은 그대로 유지한다(사용자가 이후 자유롭게
+  // 바꿀 수 있다).
 
   function handleSalesOrderChange(salesOrderId: string) {
-    const nextId = salesOrderId === NONE_VALUE ? "" : salesOrderId
-    form.setValue("salesOrderId", nextId)
+    form.setValue("salesOrderId", salesOrderId)
 
-    if (!nextId) return
-    const so = availableSalesOrders.find((s) => s.id === nextId)
+    if (!salesOrderId) return
+    const so = availableSalesOrders.find((s) => s.id === salesOrderId)
     if (!so) return
 
     form.setValue("customerId", so.customerId)
+    form.setValue("siteId", so.siteId)
     if (!form.getValues("dueDate")) {
       form.setValue("dueDate", new Date(so.deliveryDate).toISOString().split("T")[0])
     }
@@ -189,6 +196,7 @@ export function ProjectOrderFormSheet({
     try {
       const payload = {
         name: values.name,
+        siteId: values.siteId,
         customerId: values.customerId,
         ownerId: values.ownerId,
         status: values.status,
@@ -246,6 +254,39 @@ export function ProjectOrderFormSheet({
               <FormItem>
                 <FormLabel>프로젝트명</FormLabel>
                 <Input placeholder="프로젝트명을 입력하세요" {...field} />
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* 사업장 (§9/§10) — 연결 수주가 있으면 그 수주의 사업장으로 고정된다 */}
+          <FormField
+            control={form.control}
+            name="siteId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>사업장</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value || undefined}
+                  disabled={isSalesOrderLinked}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="사업장 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sites.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        [{s.code}] {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {isSalesOrderLinked && (
+                  <p className="text-[12px] text-muted-foreground">
+                    연결된 수주의 사업장으로 고정됩니다. 변경하려면 연결 수주를 먼저 해제하세요.
+                  </p>
+                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -358,60 +399,41 @@ export function ProjectOrderFormSheet({
             )}
           />
 
-          {/* 연결 수주 */}
+          {/* 연결 수주 (§5/§17: 검색 가능한 Combobox) */}
           <FormField
             control={form.control}
             name="salesOrderId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>연결 수주 (선택)</FormLabel>
-                <Select
-                  onValueChange={handleSalesOrderChange}
-                  value={field.value || NONE_VALUE}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="연결할 수주 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>연결 안 함</SelectItem>
-                    {availableSalesOrders.map((so) => (
-                      <SelectItem key={so.id} value={so.id}>
-                        {so.orderNo}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSalesOrderCombobox
+                  salesOrders={availableSalesOrders}
+                  value={field.value || ""}
+                  onSelect={handleSalesOrderChange}
+                />
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {/* 품목/모델 */}
+          {/* 품목/모델 (§6/§17: 검색 가능한 Combobox, 완제품/반제품만) */}
           <FormField
             control={form.control}
             name="itemId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>품목/모델 (선택)</FormLabel>
-                <Select
-                  onValueChange={(v) => field.onChange(v === NONE_VALUE ? "" : v)}
-                  value={field.value || NONE_VALUE}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="품목 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>선택 안 함</SelectItem>
-                    {itemOptions.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        [{item.code}] {item.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableItemCombobox
+                  items={itemOptions}
+                  value={field.value || ""}
+                  onSelect={(itemId) => field.onChange(itemId)}
+                  allowClear
+                  placeholder="품목 선택"
+                  searchPlaceholder="품목코드 또는 품목명 검색"
+                />
                 {isSalesOrderLinked && (
                   <p className="text-[12px] text-muted-foreground">
-                    연결된 수주에 포함된 품목만 선택할 수 있습니다.
+                    연결된 수주에 포함된 완제품/반제품만 선택할 수 있습니다.
                   </p>
                 )}
                 <FormMessage />
