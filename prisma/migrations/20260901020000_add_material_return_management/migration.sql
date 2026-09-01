@@ -1,15 +1,14 @@
--- AlterEnum
--- 공급사 반품 전용(outbound, -재고). 기존 RETURN(inbound, +재고)은 하위호환을 위해
--- 절대 변경/재사용하지 않는다.
-ALTER TYPE "TransactionType" ADD VALUE 'SUPPLIER_RETURN';
-
 -- CreateEnum
 CREATE TYPE "MaterialReturnStatus" AS ENUM ('DRAFT', 'COMPLETED', 'CANCELLED');
+
+-- AlterEnum
+ALTER TYPE "TransactionType" ADD VALUE 'SUPPLIER_RETURN';
 
 -- CreateTable
 CREATE TABLE "MaterialReturn" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
+    "siteId" TEXT NOT NULL,
     "supplierId" TEXT NOT NULL,
     "purchaseOrderId" TEXT,
     "returnNo" TEXT NOT NULL,
@@ -47,6 +46,9 @@ CREATE INDEX "MaterialReturn_tenantId_idx" ON "MaterialReturn"("tenantId");
 CREATE INDEX "MaterialReturn_tenantId_status_idx" ON "MaterialReturn"("tenantId", "status");
 
 -- CreateIndex
+CREATE INDEX "MaterialReturn_siteId_idx" ON "MaterialReturn"("siteId");
+
+-- CreateIndex
 CREATE INDEX "MaterialReturn_supplierId_idx" ON "MaterialReturn"("supplierId");
 
 -- CreateIndex
@@ -75,6 +77,9 @@ CREATE INDEX "MaterialReturnItem_warehouseId_idx" ON "MaterialReturnItem"("wareh
 
 -- AddForeignKey
 ALTER TABLE "MaterialReturn" ADD CONSTRAINT "MaterialReturn_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MaterialReturn" ADD CONSTRAINT "MaterialReturn_siteId_fkey" FOREIGN KEY ("siteId") REFERENCES "Site"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "MaterialReturn" ADD CONSTRAINT "MaterialReturn_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "BusinessPartner"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

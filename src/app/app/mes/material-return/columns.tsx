@@ -33,6 +33,12 @@ export function getColumns(onViewDetail: (row: MaterialReturnRow) => void): Colu
       ),
     },
     {
+      id: "siteName",
+      header: "사업장",
+      accessorFn: (row) => row.site.name,
+      cell: ({ row }) => <span className="text-[13px] text-muted-foreground">{row.original.site.name}</span>,
+    },
+    {
       id: "supplierName",
       header: "공급사",
       accessorFn: (row) => row.supplier.name,

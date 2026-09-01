@@ -505,6 +505,7 @@ model Site {
   projectOrders         ProjectOrder[]            @relation("SiteProjectOrders")
   equipmentRepairs      EquipmentRepairRequest[]
   equipmentDailyChecks  EquipmentDailyCheck[]
+  materialReturns       MaterialReturn[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2117,6 +2118,10 @@ enum MaterialReturnStatus {
 model MaterialReturn {
   id              String               @id @default(cuid())
   tenantId        String
+  // 반품 건 전체를 하나의 사업장으로 고정한다 — 품목별 warehouse/LOT 재고 조회와
+  // PO 연계 검증이 모두 이 siteId 기준으로 스코프된다(§4). 한 반품 건에 여러
+  // 사업장의 재고가 섞이는 것을 막기 위한 필수 필드다.
+  siteId          String
   supplierId      String
   purchaseOrderId String?
   returnNo        String // 반품번호, 예: SR-2026-001
@@ -2133,6 +2138,7 @@ model MaterialReturn {
   updatedAt       DateTime             @updatedAt
 
   tenant        Tenant               @relation(fields: [tenantId], references: [id])
+  site          Site                 @relation(fields: [siteId], references: [id])
   supplier      BusinessPartner      @relation("SupplierMaterialReturns", fields: [supplierId], references: [id])
   purchaseOrder PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id])
   createdBy     Profile              @relation("MaterialReturnCreator", fields: [createdById], references: [id])
@@ -2142,6 +2148,7 @@ model MaterialReturn {
   @@unique([tenantId, returnNo])
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([siteId])
   @@index([supplierId])
   @@index([purchaseOrderId])
 }

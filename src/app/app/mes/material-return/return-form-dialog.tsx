@@ -23,6 +23,7 @@ import { Trash2, Plus } from "lucide-react"
 import {
   createMaterialReturn,
   updateMaterialReturn,
+  getMaterialReturnSites,
   getMaterialReturnSuppliers,
   getMaterialReturnPurchaseOrders,
   getMaterialReturnPoItems,
@@ -41,6 +42,7 @@ interface ReturnFormDialogProps {
   onSuccess: () => void
 }
 
+type SiteOption = { id: string; code: string; name: string }
 type SupplierOption = { id: string; code: string; name: string }
 type PurchaseOrderOption = { id: string; orderNo: string }
 type ItemOption = { id: string; code: string; name: string; uom: string; isLotTracked: boolean }
@@ -70,11 +72,16 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
   const [isPending, setIsPending] = useState(false)
   const [isLoadingOptions, setIsLoadingOptions] = useState(false)
 
+  const [siteOptions, setSiteOptions] = useState<SiteOption[]>([])
   const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([])
   const [poOptions, setPoOptions] = useState<PurchaseOrderOption[]>([])
   const [poItemOptions, setPoItemOptions] = useState<MaterialReturnPoItemOption[]>([])
   const [directItemOptions, setDirectItemOptions] = useState<ItemOption[]>([])
 
+  // §3/§5: 반품 건 전체를 하나의 사업장으로 고정한다. 등록 시 필수 선택하고,
+  // 수정에서는 기존 MaterialReturn.siteId를 그대로 쓰며 변경할 수 없다(읽기 전용
+  // 표시만 한다) — 한 반품 건에 여러 사업장의 재고가 섞이지 않게 하기 위함이다.
+  const [siteId, setSiteId] = useState("")
   const [supplierId, setSupplierId] = useState("")
   const [purchaseOrderId, setPurchaseOrderId] = useState("")
   const [reason, setReason] = useState("")
@@ -90,22 +97,26 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
   useEffect(() => {
     if (!open) return
     setIsLoadingOptions(true)
-    getMaterialReturnSuppliers()
-      .then(setSupplierOptions)
-      .catch((e) => alert(e instanceof Error ? e.message : "공급사 목록을 불러오지 못했습니다."))
+    Promise.all([getMaterialReturnSites(), getMaterialReturnSuppliers()])
+      .then(([sites, suppliers]) => {
+        setSiteOptions(sites)
+        setSupplierOptions(suppliers)
+      })
+      .catch((e) => alert(e instanceof Error ? e.message : "옵션을 불러오지 못했습니다."))
       .finally(() => setIsLoadingOptions(false))
   }, [open])
 
   useEffect(() => {
     if (!open) return
     if (mode === "edit" && materialReturn) {
+      setSiteId(materialReturn.site.id)
       setSupplierId(materialReturn.supplier.id)
       setPurchaseOrderId(materialReturn.purchaseOrder?.id ?? "")
       setReason(materialReturn.reason ?? "")
       setNote(materialReturn.note ?? "")
       Promise.all(
         materialReturn.items.map(async (it) => {
-          const stock = await getMaterialReturnItemStock(it.item.id).catch(() => [])
+          const stock = await getMaterialReturnItemStock(it.item.id, materialReturn.site.id).catch(() => [])
           const line: LineItem = {
             key: nextKey(),
             purchaseOrderItemId: it.purchaseOrderItem?.id ?? null,
@@ -124,6 +135,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
         })
       ).then(setItems)
     } else {
+      setSiteId("")
       setSupplierId("")
       setPurchaseOrderId("")
       setReason("")
@@ -135,14 +147,14 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
   }, [open, mode, materialReturn])
 
   useEffect(() => {
-    if (!open || !supplierId) {
+    if (!open || !supplierId || !siteId) {
       setPoOptions([])
       return
     }
-    getMaterialReturnPurchaseOrders(supplierId)
+    getMaterialReturnPurchaseOrders(supplierId, siteId)
       .then(setPoOptions)
       .catch(() => setPoOptions([]))
-  }, [open, supplierId])
+  }, [open, supplierId, siteId])
 
   useEffect(() => {
     if (!open || !purchaseOrderId) {
@@ -165,8 +177,8 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
 
   const addFromPoItem = async () => {
     const poItem = poItemOptions.find((p) => p.id === addPoItemId)
-    if (!poItem) return
-    const stock = await getMaterialReturnItemStock(poItem.itemId).catch(() => [])
+    if (!poItem || !siteId) return
+    const stock = await getMaterialReturnItemStock(poItem.itemId, siteId).catch(() => [])
     setItems((prev) => [
       ...prev,
       {
@@ -189,8 +201,8 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
 
   const addDirectItem = async () => {
     const item = directItemOptions.find((i) => i.id === addDirectItemId)
-    if (!item) return
-    const stock = await getMaterialReturnItemStock(item.id).catch(() => [])
+    if (!item || !siteId) return
+    const stock = await getMaterialReturnItemStock(item.id, siteId).catch(() => [])
     setItems((prev) => [
       ...prev,
       {
@@ -228,6 +240,10 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
   }
 
   const handleSubmit = async () => {
+    if (!siteId) {
+      alert("사업장을 선택하세요.")
+      return
+    }
     if (!supplierId) {
       alert("공급사를 선택하세요.")
       return
@@ -249,6 +265,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
     }
 
     const payload = {
+      siteId,
       supplierId,
       purchaseOrderId: purchaseOrderId || null,
       reason: reason.trim() || null,
@@ -289,6 +306,33 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
+              <Label className="text-[14px]">사업장 <span className="text-red-500">*</span></Label>
+              {mode === "edit" ? (
+                <p className="text-[14px] font-medium rounded-md border px-3 py-2 bg-muted/30">
+                  {materialReturn?.site.name ?? "—"}
+                </p>
+              ) : (
+                <Select
+                  value={siteId}
+                  onValueChange={(v) => {
+                    setSiteId(v)
+                    setPurchaseOrderId("")
+                    setItems([])
+                  }}
+                  disabled={isLoadingOptions}
+                >
+                  <SelectTrigger className="text-[14px]">
+                    <SelectValue placeholder="사업장을 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {siteOptions.map((s) => (
+                      <SelectItem key={s.id} value={s.id} className="text-[14px]">[{s.code}] {s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-[14px]">공급사 <span className="text-red-500">*</span></Label>
               <Select
                 value={supplierId}
@@ -297,10 +341,10 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
                   setPurchaseOrderId("")
                   setItems([])
                 }}
-                disabled={isLoadingOptions}
+                disabled={isLoadingOptions || mode === "create" && !siteId}
               >
                 <SelectTrigger className="text-[14px]">
-                  <SelectValue placeholder="공급사를 선택하세요" />
+                  <SelectValue placeholder={mode === "create" && !siteId ? "사업장을 먼저 선택하세요" : "공급사를 선택하세요"} />
                 </SelectTrigger>
                 <SelectContent>
                   {supplierOptions.map((s) => (
@@ -309,27 +353,28 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-[14px]">발주 (선택)</Label>
-              <Select
-                value={purchaseOrderId || "__NONE__"}
-                onValueChange={(v) => {
-                  setPurchaseOrderId(v === "__NONE__" ? "" : v)
-                  setItems([])
-                }}
-                disabled={!supplierId}
-              >
-                <SelectTrigger className="text-[14px]">
-                  <SelectValue placeholder="발주 미연결" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__NONE__" className="text-[14px]">발주 미연결</SelectItem>
-                  {poOptions.map((po) => (
-                    <SelectItem key={po.id} value={po.id} className="text-[14px]">{po.orderNo}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[14px]">발주 (선택)</Label>
+            <Select
+              value={purchaseOrderId || "__NONE__"}
+              onValueChange={(v) => {
+                setPurchaseOrderId(v === "__NONE__" ? "" : v)
+                setItems([])
+              }}
+              disabled={!supplierId || !siteId}
+            >
+              <SelectTrigger className="text-[14px]">
+                <SelectValue placeholder="발주 미연결" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__NONE__" className="text-[14px]">발주 미연결</SelectItem>
+                {poOptions.map((po) => (
+                  <SelectItem key={po.id} value={po.id} className="text-[14px]">{po.orderNo}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-1.5">
@@ -360,9 +405,9 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
               </div>
             ) : (
               <div className="flex gap-2">
-                <Select value={addDirectItemId} onValueChange={setAddDirectItemId}>
+                <Select value={addDirectItemId} onValueChange={setAddDirectItemId} disabled={!siteId}>
                   <SelectTrigger className="text-[14px] flex-1">
-                    <SelectValue placeholder="품목 추가" />
+                    <SelectValue placeholder={siteId ? "품목 추가" : "사업장을 먼저 선택하세요"} />
                   </SelectTrigger>
                   <SelectContent>
                     {directItemOptions.map((i) => (
@@ -370,7 +415,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
                     ))}
                   </SelectContent>
                 </Select>
-                <Button type="button" size="sm" variant="outline" onClick={addDirectItem} disabled={!addDirectItemId} className="gap-1">
+                <Button type="button" size="sm" variant="outline" onClick={addDirectItem} disabled={!addDirectItemId || !siteId} className="gap-1">
                   <Plus className="h-3.5 w-3.5" />추가
                 </Button>
               </div>

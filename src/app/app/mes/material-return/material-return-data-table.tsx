@@ -37,6 +37,14 @@ export function MaterialReturnDataTable({ data }: MaterialReturnDataTableProps) 
       .map((name) => ({ label: name, value: name }))
   }, [data])
 
+  const siteOptions = useMemo(() => {
+    const names = new Set<string>()
+    data.forEach((row) => names.add(row.site.name))
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, "ko"))
+      .map((name) => ({ label: name, value: name }))
+  }, [data])
+
   const filterableColumns = [
     {
       id: "status" as keyof MaterialReturnRow,
@@ -46,6 +54,11 @@ export function MaterialReturnDataTable({ data }: MaterialReturnDataTableProps) 
         { label: "반품완료", value: "COMPLETED" },
         { label: "취소됨", value: "CANCELLED" },
       ],
+    },
+    {
+      id: "siteName" as keyof MaterialReturnRow,
+      title: "사업장",
+      options: siteOptions,
     },
     {
       id: "supplierName" as keyof MaterialReturnRow,

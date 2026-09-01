@@ -16,6 +16,17 @@ import { MATERIAL_RETURN_STATUS_TRANSITIONS } from "@/lib/material-return-status
 // read-only 원장으로만 참조하고 절대 수정하지 않는다.
 // 모든 조회/등록/수정/삭제/상태변경 액션은 클라이언트가 넘긴 tenantId를 신뢰하지
 // 않고 getTenantId()로 세션에서 직접 구한다.
+//
+// 코드리뷰 반영(BLOCKER 3건):
+//  1) InventoryBalance 차감은 read-then-absolute-write가 아니라 DB WHERE 가드 +
+//     decrement 연산자를 쓴 원자적 updateMany로 처리한다 — 서로 다른 MaterialReturn
+//     두 건이 같은 balance를 동시에 완료해도 lost update가 생기지 않는다.
+//  2) PO 합격입고수량 상한 검증은 completeMaterialReturn 트랜잭션 안에서 해당
+//     purchaseOrderItemId들을 정렬된 순서로 FOR UPDATE 잠근 뒤 수행한다 — 서로
+//     다른 MaterialReturn이 같은 PurchaseOrderItem을 동시에 완료해도 둘 다 상한
+//     검증을 통과할 수 없다.
+//  3) MaterialReturn.siteId를 필수로 추가해 반품 건 전체를 한 사업장으로 고정한다.
+//     품목의 warehouse, 연결된 PO/PO품목 모두 이 siteId 기준으로 검증한다.
 
 const MENU_NAME = "반품관리"
 const CODE_GENERATION_MAX_ATTEMPTS = 3
@@ -54,6 +65,7 @@ export type MaterialReturnRow = {
   id: string
   returnNo: string
   status: "DRAFT" | "COMPLETED" | "CANCELLED"
+  site: { id: string; code: string; name: string }
   supplier: { id: string; name: string }
   purchaseOrder: { id: string; orderNo: string } | null
   reason: string | null
@@ -72,6 +84,7 @@ const RETURN_LIST_SELECT = {
   reason: true,
   createdAt: true,
   completedAt: true,
+  site: { select: { id: true, code: true, name: true } },
   supplier: { select: { id: true, name: true } },
   purchaseOrder: { select: { id: true, orderNo: true } },
   createdBy: { select: { id: true, name: true } },
@@ -90,6 +103,7 @@ export async function getMaterialReturnList(): Promise<MaterialReturnRow[]> {
     id: r.id,
     returnNo: r.returnNo,
     status: r.status,
+    site: r.site,
     supplier: r.supplier,
     purchaseOrder: r.purchaseOrder,
     reason: r.reason,
@@ -145,6 +159,7 @@ export async function getMaterialReturnDetail(id: string): Promise<MaterialRetur
     id: r.id,
     returnNo: r.returnNo,
     status: r.status,
+    site: r.site,
     supplier: r.supplier,
     purchaseOrder: r.purchaseOrder,
     reason: r.reason,
@@ -170,6 +185,16 @@ export async function getMaterialReturnDetail(id: string): Promise<MaterialRetur
   }
 }
 
+// 등록 Dialog: 사업장 선택지 — 반품 건 전체를 한 사업장으로 고정하기 위해 최우선으로 선택한다.
+export async function getMaterialReturnSites() {
+  const tenantId = await getTenantId()
+  return prisma.site.findMany({
+    where: { tenantId },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: "asc" },
+  })
+}
+
 // 등록 Dialog: 공급사 선택지 (SUPPLIER/BOTH)
 export async function getMaterialReturnSuppliers() {
   const tenantId = await getTenantId()
@@ -181,11 +206,11 @@ export async function getMaterialReturnSuppliers() {
   return partners
 }
 
-// 등록 Dialog: 선택된 공급사의 발주 목록 (선택 사항 — PO 연결 없이도 반품 가능)
-export async function getMaterialReturnPurchaseOrders(supplierId: string) {
+// 등록 Dialog: 선택된 사업장·공급사의 발주 목록 (선택 사항 — PO 연결 없이도 반품 가능)
+export async function getMaterialReturnPurchaseOrders(supplierId: string, siteId: string) {
   const tenantId = await getTenantId()
   const orders = await prisma.purchaseOrder.findMany({
-    where: { tenantId, supplierId },
+    where: { tenantId, supplierId, siteId },
     select: { id: true, orderNo: true, orderDate: true },
     orderBy: { orderDate: "desc" },
   })
@@ -250,7 +275,7 @@ export async function getMaterialReturnItemOptions() {
   })
 }
 
-// 등록 Dialog: 특정 품목의 창고별(LOT관리 품목은 LOT별) 가용재고
+// 등록 Dialog: 특정 사업장·품목의 창고별(LOT관리 품목은 LOT별) 가용재고
 export type MaterialReturnStockOption = {
   warehouseId: string
   warehouseCode: string
@@ -260,10 +285,10 @@ export type MaterialReturnStockOption = {
   qtyAvailable: number
 }
 
-export async function getMaterialReturnItemStock(itemId: string): Promise<MaterialReturnStockOption[]> {
+export async function getMaterialReturnItemStock(itemId: string, siteId: string): Promise<MaterialReturnStockOption[]> {
   const tenantId = await getTenantId()
   const balances = await prisma.inventoryBalance.findMany({
-    where: { tenantId, itemId, qtyAvailable: { gt: 0 } },
+    where: { tenantId, itemId, siteId, qtyAvailable: { gt: 0 } },
     select: {
       qtyAvailable: true,
       warehouse: { select: { id: true, code: true, name: true } },
@@ -281,7 +306,7 @@ export async function getMaterialReturnItemStock(itemId: string): Promise<Materi
   }))
 }
 
-// ─── 입력 검증 (등록/수정/완료 공용) ──────────────────────────────────────────
+// ─── 입력 검증 (등록/수정 공용) ────────────────────────────────────────────────
 
 export type MaterialReturnItemInput = {
   itemId: string
@@ -293,6 +318,7 @@ export type MaterialReturnItemInput = {
 }
 
 export type MaterialReturnHeaderInput = {
+  siteId: string
   supplierId: string
   purchaseOrderId?: string | null
   reason?: string | null
@@ -308,10 +334,21 @@ type ValidatedItem = MaterialReturnItemInput & {
 // §8: returnQty <= qtyAvailable(항상) AND (purchaseOrderItemId 연결 시) 누적 완료
 // 반품수량 + 금회 반품수량 <= 실제 합격입고수량. LOT 품목은 기존 LOT만 허용(신규
 // LOT 생성 금지) + tenant/item 일치 검증. 비LOT 품목은 lotId를 받지 않는다.
+//
+// §3/§4 (코드리뷰 BLOCKER): 반품 건 전체가 하나의 siteId로 고정된다. 품목의
+// warehouse는 tenantId+siteId가 모두 일치해야 하고, 연결된 PO/PO품목은 tenant·
+// site·supplier가 모두 일치해야 한다. purchaseOrderItemId 검증은 header의
+// purchaseOrderId가 null이어도 항상 수행한다 — purchaseOrderItem.findMany의
+// where 절에 `purchaseOrder: { tenantId, siteId, supplierId }`를 걸어두면, 다른
+// 사업장/공급사의 PO품목 id를 조작해서 보내도 poItemMap에서 조회되지 않아
+// "선택한 발주품목이 올바르지 않습니다"로 자연스럽게 차단된다.
 async function validateMaterialReturnInput(
   tenantId: string,
   input: MaterialReturnHeaderInput
 ): Promise<ValidatedItem[]> {
+  const site = await prisma.site.findFirst({ where: { id: input.siteId, tenantId }, select: { id: true } })
+  if (!site) throw new Error("사업장을 찾을 수 없습니다.")
+
   const supplier = await prisma.businessPartner.findFirst({
     where: { id: input.supplierId, tenantId, partnerType: { in: ["SUPPLIER", "BOTH"] } },
     select: { id: true },
@@ -320,10 +357,10 @@ async function validateMaterialReturnInput(
 
   if (input.purchaseOrderId) {
     const po = await prisma.purchaseOrder.findFirst({
-      where: { id: input.purchaseOrderId, tenantId, supplierId: input.supplierId },
+      where: { id: input.purchaseOrderId, tenantId, siteId: input.siteId, supplierId: input.supplierId },
       select: { id: true },
     })
-    if (!po) throw new Error("선택한 발주는 해당 공급사의 발주가 아닙니다.")
+    if (!po) throw new Error("선택한 발주는 해당 사업장/공급사의 발주가 아닙니다.")
   }
 
   if (input.items.length === 0) throw new Error("반품 품목을 1건 이상 입력하세요.")
@@ -337,7 +374,7 @@ async function validateMaterialReturnInput(
 
   const warehouseIds = Array.from(new Set(input.items.map((i) => i.warehouseId)))
   const warehouses = await prisma.warehouse.findMany({
-    where: { id: { in: warehouseIds }, tenantId },
+    where: { id: { in: warehouseIds }, tenantId, siteId: input.siteId },
     select: { id: true },
   })
   const warehouseIdSet = new Set(warehouses.map((w) => w.id))
@@ -345,7 +382,10 @@ async function validateMaterialReturnInput(
   const poItemIds = Array.from(new Set(input.items.map((i) => i.purchaseOrderItemId).filter((v): v is string => !!v)))
   const poItems = poItemIds.length
     ? await prisma.purchaseOrderItem.findMany({
-        where: { id: { in: poItemIds }, purchaseOrder: { tenantId } },
+        where: {
+          id: { in: poItemIds },
+          purchaseOrder: { tenantId, siteId: input.siteId, supplierId: input.supplierId },
+        },
         select: {
           id: true,
           itemId: true,
@@ -364,7 +404,7 @@ async function validateMaterialReturnInput(
   const lotMap = new Map(lots.map((l) => [l.id, l]))
 
   const balances = await prisma.inventoryBalance.findMany({
-    where: { tenantId, itemId: { in: itemIds }, warehouseId: { in: warehouseIds } },
+    where: { tenantId, siteId: input.siteId, itemId: { in: itemIds }, warehouseId: { in: warehouseIds } },
     select: { itemId: true, warehouseId: true, lotId: true, qtyAvailable: true },
   })
   const balanceKey = (itemId: string, warehouseId: string, lotId: string | null) => `${itemId}::${warehouseId}::${lotId ?? ""}`
@@ -385,7 +425,7 @@ async function validateMaterialReturnInput(
     const item = itemMap.get(it.itemId)
     if (!item) throw new Error("품목을 찾을 수 없습니다.")
 
-    if (!warehouseIdSet.has(it.warehouseId)) throw new Error(`창고를 찾을 수 없습니다: ${item.code}`)
+    if (!warehouseIdSet.has(it.warehouseId)) throw new Error(`창고를 찾을 수 없습니다(다른 사업장의 창고일 수 있습니다): ${item.code}`)
 
     if (item.isLotTracked) {
       if (!it.lotId) throw new Error(`LOT 관리 품목(${item.code})은 반품 시 LOT를 지정해야 합니다.`)
@@ -405,7 +445,7 @@ async function validateMaterialReturnInput(
     if (it.purchaseOrderItemId) {
       const poItem = poItemMap.get(it.purchaseOrderItemId)
       if (!poItem || poItem.itemId !== it.itemId) {
-        throw new Error(`선택한 발주품목이 올바르지 않습니다: ${item.code}`)
+        throw new Error(`선택한 발주품목이 올바르지 않습니다(다른 사업장/공급사의 발주품목일 수 있습니다): ${item.code}`)
       }
       if (input.purchaseOrderId && poItem.purchaseOrderId !== input.purchaseOrderId) {
         throw new Error(`선택한 발주품목이 선택한 발주에 속하지 않습니다: ${item.code}`)
@@ -445,6 +485,7 @@ export async function createMaterialReturn(
           const materialReturn = await tx.materialReturn.create({
             data: {
               tenantId,
+              siteId: input.siteId,
               supplierId: input.supplierId,
               purchaseOrderId: input.purchaseOrderId || null,
               returnNo,
@@ -475,6 +516,7 @@ export async function createMaterialReturn(
               afterData: {
                 returnNo: materialReturn.returnNo,
                 status: materialReturn.status,
+                siteId: materialReturn.siteId,
                 supplierId: materialReturn.supplierId,
                 purchaseOrderId: materialReturn.purchaseOrderId,
                 items: input.items,
@@ -503,6 +545,10 @@ export async function createMaterialReturn(
 }
 
 // ─── 수정 (DRAFT만) ───────────────────────────────────────────────────────────
+//
+// siteId는 등록 이후 변경할 수 없다 — 한 반품 건에 여러 사업장의 재고가 섞이는
+// 것을 막기 위해서다(§5). 클라이언트가 다른 siteId를 보내더라도 서버는 항상
+// current.siteId로 덮어써 검증/저장한다.
 
 export async function updateMaterialReturn(
   id: string,
@@ -519,16 +565,17 @@ export async function updateMaterialReturn(
     if (!current) throw new Error("반품 건을 찾을 수 없습니다.")
     if (current.status !== "DRAFT") throw new Error("임시저장 상태의 반품만 수정할 수 있습니다.")
 
-    await validateMaterialReturnInput(tenantId, input)
+    const normalizedInput: MaterialReturnHeaderInput = { ...input, siteId: current.siteId }
+    await validateMaterialReturnInput(tenantId, normalizedInput)
 
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.materialReturn.updateMany({
         where: { id: current.id, tenantId, status: "DRAFT" },
         data: {
-          supplierId: input.supplierId,
-          purchaseOrderId: input.purchaseOrderId || null,
-          reason: input.reason?.trim() || null,
-          note: input.note?.trim() || null,
+          supplierId: normalizedInput.supplierId,
+          purchaseOrderId: normalizedInput.purchaseOrderId || null,
+          reason: normalizedInput.reason?.trim() || null,
+          note: normalizedInput.note?.trim() || null,
         },
       })
       if (claimed.count !== 1) {
@@ -537,7 +584,7 @@ export async function updateMaterialReturn(
 
       await tx.materialReturnItem.deleteMany({ where: { materialReturnId: current.id } })
       await tx.materialReturnItem.createMany({
-        data: input.items.map((it) => ({
+        data: normalizedInput.items.map((it) => ({
           materialReturnId: current.id,
           itemId: it.itemId,
           purchaseOrderItemId: it.purchaseOrderItemId || null,
@@ -557,14 +604,16 @@ export async function updateMaterialReturn(
           entityId: current.id,
           action: "UPDATE",
           beforeData: {
+            siteId: current.siteId,
             supplierId: current.supplierId,
             purchaseOrderId: current.purchaseOrderId,
             items: current.items.map((i) => ({ itemId: i.itemId, warehouseId: i.warehouseId, lotId: i.lotId, returnQty: Number(i.returnQty) })),
           },
           afterData: {
-            supplierId: input.supplierId,
-            purchaseOrderId: input.purchaseOrderId || null,
-            items: input.items,
+            siteId: current.siteId,
+            supplierId: normalizedInput.supplierId,
+            purchaseOrderId: normalizedInput.purchaseOrderId || null,
+            items: normalizedInput.items,
           },
           menuName: MENU_NAME,
         },
@@ -665,10 +714,19 @@ export async function cancelMaterialReturn(id: string): Promise<{ ok: boolean; e
 //
 // §6: 반품완료 및 실제 재고차감은 MANAGER 이상만 수행할 수 있다. §5: COMPLETED
 // 전환 시에만 InventoryBalance를 실제로 차감하고 InventoryTransaction(SUPPLIER_RETURN)을
-// 생성한다. §8의 가용재고/PO 합격입고수량 검증을 트랜잭션 내에서 재확인해 DRAFT
-// 저장 이후 벌어진 재고 변동/동시 반품완료 경쟁을 막는다. 완료 이후에는 수정·삭제·
-// 취소를 전면 금지한다(상태전이표에도 COMPLETED는 terminal로 반영).
-
+// 생성한다. 완료 이후에는 수정·삭제·취소를 전면 금지한다(상태전이표에도 COMPLETED는
+// terminal로 반영).
+//
+// 동시성 보장(코드리뷰 BLOCKER 1·2 반영):
+//  - InventoryBalance 차감은 원자적 updateMany(WHERE qty >= X + decrement)로 처리한다.
+//    같은 balance를 동시에 완료하는 두 트랜잭션은 Postgres가 행 단위로 UPDATE를
+//    직렬화하므로 lost update가 생기지 않고, 둘 중 하나는 반드시 count=0으로
+//    재고부족 처리된다.
+//  - PO 합격입고수량 상한 검증 전에 이 반품이 참조하는 purchaseOrderItemId들을
+//    정렬된 순서로 SELECT ... FOR UPDATE 잠근다. 같은 PO품목을 동시에 완료하려는
+//    두 번째 트랜잭션은 첫 번째가 커밋할 때까지 이 SELECT에서 대기하고, 대기가
+//    풀린 뒤에는 첫 번째가 반영한 완료 반품수량을 보고 상한을 재검증하므로 둘 다
+//    통과하는 경우가 없다.
 export async function completeMaterialReturn(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const actor = await requireRole("MANAGER")
@@ -688,13 +746,24 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
     if (current.status !== "DRAFT") throw new Error("임시저장 상태의 반품만 완료 처리할 수 있습니다.")
     if (current.items.length === 0) throw new Error("반품 품목이 없습니다.")
 
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-    let txSeqBase = 0
+    // §7: 거래번호 날짜는 UTC가 아니라 KST 달력일로 채번한다 — 자정 전후 UTC 전날로
+    // 찍히는 문제를 막는다.
+    const todayKst = toKstDateKey(new Date()).replace(/-/g, "")
+
+    // 같은 (item, warehouse, lot) balance를 여러 줄이 참조하거나, 서로 다른
+    // MaterialReturn이 겹치는 balance/PO품목 집합을 반대 순서로 잠그면 교착
+    // 가능성이 생긴다 — 처리 순서를 자연키로 정렬해 결정적으로 만든다.
+    const orderedItems = [...current.items].sort((a, b) => {
+      const keyA = `${a.itemId}::${a.warehouseId}::${a.lotId ?? ""}`
+      const keyB = `${b.itemId}::${b.warehouseId}::${b.lotId ?? ""}`
+      return keyA.localeCompare(keyB)
+    })
+
     let lastError: unknown = null
 
     for (let attempt = 0; attempt < TXN_GENERATION_MAX_ATTEMPTS; attempt++) {
-      txSeqBase = await prisma.inventoryTransaction.count({
-        where: { tenantId, txNo: { startsWith: `SRT-${today}` } },
+      const txSeqBase = await prisma.inventoryTransaction.count({
+        where: { tenantId, txNo: { startsWith: `SRT-${todayKst}` } },
       })
       try {
         await prisma.$transaction(async (tx) => {
@@ -704,6 +773,14 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
           })
           if (claimed.count !== 1) {
             throw new Error("다른 요청에 의해 상태가 이미 변경되었습니다. 새로고침 후 다시 시도해 주세요.")
+          }
+
+          // ── PO품목 행 잠금 (동시 반품완료 직렬화) ────────────────────────────
+          const poItemIds = Array.from(
+            new Set(current.items.map((i) => i.purchaseOrderItemId).filter((v): v is string => !!v))
+          ).sort()
+          if (poItemIds.length > 0) {
+            await tx.$queryRaw`SELECT id FROM "PurchaseOrderItem" WHERE id IN (${Prisma.join(poItemIds)}) ORDER BY id FOR UPDATE`
           }
 
           const completedItemsLog: Array<{
@@ -722,22 +799,11 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
           // 않으면 방금 COMPLETED로 바뀐 자신의 줄이 "기완료반품"에 다시 잡혀 이중계산된다.
           const completedThisRunByPoItem = new Map<string, number>()
 
-          for (let i = 0; i < current.items.length; i++) {
-            const line = current.items[i]
+          for (let i = 0; i < orderedItems.length; i++) {
+            const line = orderedItems[i]
             const returnQty = Number(line.returnQty)
 
-            // ── 가용재고 재검증 (트랜잭션 내) ────────────────────────────────
-            const balance = await tx.inventoryBalance.findFirst({
-              where: { tenantId, itemId: line.itemId, warehouseId: line.warehouseId, lotId: line.lotId },
-            })
-            const qtyAvailable = balance ? Number(balance.qtyAvailable) : 0
-            if (!balance || qtyAvailable < returnQty) {
-              throw new Error(
-                `가용재고 부족: ${line.item.code} — 가용재고 ${qtyAvailable}, 반품 요청 ${returnQty}`
-              )
-            }
-
-            // ── PO 합격입고수량 재검증 (트랜잭션 내) ─────────────────────────
+            // ── PO 합격입고수량 재검증 (잠금 이후) ───────────────────────────
             if (line.purchaseOrderItemId) {
               const poItem = await tx.purchaseOrderItem.findUnique({
                 where: { id: line.purchaseOrderItemId },
@@ -761,7 +827,36 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
               completedThisRunByPoItem.set(line.purchaseOrderItemId, alreadyReturned + returnQty)
             }
 
-            const txNo = `SRT-${today}-${String(txSeqBase + i + 1).padStart(4, "0")}`
+            // ── InventoryBalance 원자적 차감 ─────────────────────────────────
+            // read-then-absolute-write 대신 DB WHERE 가드 + decrement 연산자로
+            // lost update를 방지한다. qtyOnHand/qtyAvailable을 동일 수량만큼
+            // decrement하면 qtyHold와의 기존 관계(qtyOnHand - qtyAvailable = qtyHold)가
+            // 자동으로 보존되므로 qtyHold를 직접 읽거나 쓸 필요가 없다.
+            const decremented = await tx.inventoryBalance.updateMany({
+              where: {
+                tenantId,
+                itemId: line.itemId,
+                warehouseId: line.warehouseId,
+                lotId: line.lotId,
+                qtyOnHand: { gte: returnQty },
+                qtyAvailable: { gte: returnQty },
+              },
+              data: {
+                qtyOnHand: { decrement: returnQty },
+                qtyAvailable: { decrement: returnQty },
+              },
+            })
+            if (decremented.count !== 1) {
+              const staleBalance = await tx.inventoryBalance.findFirst({
+                where: { tenantId, itemId: line.itemId, warehouseId: line.warehouseId, lotId: line.lotId },
+                select: { qtyAvailable: true },
+              })
+              throw new Error(
+                `가용재고 부족(동시 반품 처리로 재고가 변경되었을 수 있습니다): ${line.item.code} — 가용재고 ${staleBalance ? Number(staleBalance.qtyAvailable) : 0}, 반품 요청 ${returnQty}`
+              )
+            }
+
+            const txNo = `SRT-${todayKst}-${String(txSeqBase + i + 1).padStart(4, "0")}`
             const inventoryTx = await tx.inventoryTransaction.create({
               data: {
                 tenantId,
@@ -775,18 +870,6 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
                 refId: current.id,
                 note: `공급사 반품 (${current.returnNo})`,
                 txAt: new Date(),
-              },
-            })
-
-            const newQtyOnHand = Number(balance.qtyOnHand) - returnQty
-            if (newQtyOnHand < 0) {
-              throw new Error(`재고 부족: ${line.item.code} — 현재 재고 ${Number(balance.qtyOnHand)}, 반품 요청 ${returnQty}`)
-            }
-            await tx.inventoryBalance.update({
-              where: { id: balance.id },
-              data: {
-                qtyOnHand: newQtyOnHand,
-                qtyAvailable: Math.max(0, newQtyOnHand - Number(balance.qtyHold)),
               },
             })
 

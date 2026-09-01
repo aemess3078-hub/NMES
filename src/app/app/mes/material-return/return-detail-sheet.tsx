@@ -139,6 +139,10 @@ export function MaterialReturnDetailSheet({ open, onOpenChange, returnId, onChan
                     <p className="text-[14px] font-medium font-mono">{materialReturn.purchaseOrder?.orderNo ?? "—"}</p>
                   </div>
                   <div className="space-y-0.5">
+                    <p className="text-[12px] text-muted-foreground uppercase tracking-wide">사업장</p>
+                    <p className="text-[14px] font-medium">{materialReturn.site.name}</p>
+                  </div>
+                  <div className="space-y-0.5">
                     <p className="text-[12px] text-muted-foreground uppercase tracking-wide">반품사유</p>
                     <p className="text-[14px] font-medium">{materialReturn.reason ?? "—"}</p>
                   </div>
