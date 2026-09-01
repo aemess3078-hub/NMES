@@ -25,6 +25,9 @@ export type ProjectProgressRow = {
   customer: { id: string; name: string }
   owner: { id: string; name: string }
   stages: (StageForProgress & { dueDate: Date | string | null })[]
+  // §21: 진행현황 목록에는 이슈 컬럼을 최소한(미해결 건수)만 추가한다 — 진행률
+  // 계산에는 포함하지 않는다(여전히 ProjectStage 완료 개수 기준).
+  openIssueCount: number
 }
 
 export const PROJECT_STATUS_CONFIG: Record<
@@ -181,6 +184,18 @@ export function getColumns(onViewDetail: (row: ProjectProgressRow) => void): Col
         const delay = resolveProjectDelayStatus(row.original.dueDate, row.original.status)
         const cfg = DELAY_CONFIG[delay]
         return <Badge variant={cfg.variant} className="text-[12px]">{cfg.label}</Badge>
+      },
+    },
+    {
+      accessorKey: "openIssueCount",
+      header: "이슈",
+      cell: ({ row }) => {
+        const count = row.original.openIssueCount
+        return count > 0 ? (
+          <Badge variant="destructive" className="text-[12px]">미해결 {count}</Badge>
+        ) : (
+          <span className="text-[13px] text-muted-foreground">—</span>
+        )
       },
     },
     {
