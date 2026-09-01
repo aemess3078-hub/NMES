@@ -67,6 +67,7 @@ export function InventoryTransactionDataTable({
         { label: "조정", value: "ADJUST" },
         { label: "반품", value: "RETURN" },
         { label: "폐기", value: "SCRAP" },
+        { label: "공급사 반품", value: "SUPPLIER_RETURN" },
       ],
     },
   ]
