@@ -817,14 +817,18 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
               })
               const acceptedQty = poItem?.receivingInspections.reduce((s, r) => s + Number(r.acceptedQty), 0) ?? 0
               const otherCompletedReturned = poItem?.materialReturnItems.reduce((s, ri) => s + Number(ri.returnQty), 0) ?? 0
-              const alreadyProcessedThisRun = completedThisRunByPoItem.get(line.purchaseOrderItemId) ?? 0
-              const alreadyReturned = otherCompletedReturned + alreadyProcessedThisRun
-              if (alreadyReturned + returnQty > acceptedQty) {
+              // completedThisRunByPoItem에는 "이번 완료 처리(current MaterialReturn) 중
+              // 처리한 수량"만 저장한다 — otherCompletedReturned(과거 완료반품)는 매
+              // 줄마다 DB에서 다시 조회되는 고정값이므로 Map에 함께 누적하면 같은
+              // PO품목을 여러 줄로 나눈 두 번째 줄부터 이중으로 반복 가산된다.
+              const processedThisRun = completedThisRunByPoItem.get(line.purchaseOrderItemId) ?? 0
+              const totalBeforeThisLine = otherCompletedReturned + processedThisRun
+              if (totalBeforeThisLine + returnQty > acceptedQty) {
                 throw new Error(
-                  `PO 합격입고수량 초과: ${line.item.code} — 합격입고 ${acceptedQty}, 기완료반품 ${alreadyReturned}, 이번요청 ${returnQty}`
+                  `PO 합격입고수량 초과: ${line.item.code} — 합격입고 ${acceptedQty}, 기완료반품 ${totalBeforeThisLine}, 이번요청 ${returnQty}`
                 )
               }
-              completedThisRunByPoItem.set(line.purchaseOrderItemId, alreadyReturned + returnQty)
+              completedThisRunByPoItem.set(line.purchaseOrderItemId, processedThisRun + returnQty)
             }
 
             // ── InventoryBalance 원자적 차감 ─────────────────────────────────
