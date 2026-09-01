@@ -6,10 +6,7 @@ import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { getErrorMessage } from "@/lib/utils"
 import { toKstDateKey } from "@/lib/date/kst"
-import {
-  PROJECT_ISSUE_STATUS_TRANSITIONS,
-  PROJECT_ISSUE_BLOCKED_ORDER_STATUSES,
-} from "@/lib/project-issue-status"
+import { PROJECT_ISSUE_BLOCKED_ORDER_STATUSES } from "@/lib/project-issue-status"
 
 // ─── 청운커팅 사업계획서 "프로젝트관리 > 이슈 관리" ───────────────────────────────
 //
@@ -597,10 +594,10 @@ export async function resolveProjectIssue(
 
     const current = await prisma.projectIssue.findFirst({ where: { id, tenantId } })
     if (!current) throw new Error("프로젝트 이슈를 찾을 수 없습니다.")
+    // 정본 흐름은 OPEN → IN_PROGRESS → RESOLVED뿐이다 — OPEN에서 바로 해결 완료할
+    // 수 없다(§1). 상태전이표에도 반영되어 있지만, 여기서도 명시적으로 검증한다.
     if (current.status === "RESOLVED") throw new Error("이미 해결완료된 이슈입니다.")
-    if (!PROJECT_ISSUE_STATUS_TRANSITIONS[current.status].includes("RESOLVED")) {
-      throw new Error("허용되지 않는 상태전이입니다.")
-    }
+    if (current.status !== "IN_PROGRESS") throw new Error("조치중인 이슈만 해결 완료할 수 있습니다.")
 
     await prisma.$transaction(async (tx) => {
       const projectOrder = await tx.projectOrder.findFirst({

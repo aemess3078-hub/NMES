@@ -9,8 +9,11 @@ import { ProjectIssueStatus } from "@prisma/client"
 // 상태변경은 임의 status Select가 아니라 startProjectIssue()/resolveProjectIssue()
 // 전용 액션으로만 이루어진다(project-order-status.ts의 자유 Select 패턴과 다름).
 
+// 정본 업무 흐름은 OPEN → IN_PROGRESS → RESOLVED뿐이다 — OPEN → RESOLVED 직접
+// 전이는 허용하지 않는다(UI도 OPEN에서는 "조치 시작"만, IN_PROGRESS에서만
+// "해결 완료"를 제공하므로 서버도 동일하게 강제한다).
 export const PROJECT_ISSUE_STATUS_TRANSITIONS: Record<ProjectIssueStatus, ProjectIssueStatus[]> = {
-  OPEN:        ["OPEN", "IN_PROGRESS", "RESOLVED"],
+  OPEN:        ["OPEN", "IN_PROGRESS"],
   IN_PROGRESS: ["IN_PROGRESS", "RESOLVED"],
   RESOLVED:    ["RESOLVED"],
 }
