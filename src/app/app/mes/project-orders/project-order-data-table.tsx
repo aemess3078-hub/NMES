@@ -11,14 +11,17 @@ import { ProjectOrderFormSheet } from "./project-order-form-sheet"
 import { ProjectOrderDetailSheet } from "./project-order-detail-sheet"
 import { deleteProjectOrder } from "@/lib/actions/project-order.actions"
 import { useUserRole } from "@/lib/contexts/user-role-context"
+import type { SearchableItemOption } from "@/components/common/searchable-item-combobox"
 
+type SiteOption = { id: string; code: string; name: string }
 type CustomerOption = { id: string; code: string; name: string }
-type ItemOption = { id: string; code: string; name: string }
+type ItemOption = SearchableItemOption
 type UserOption = { id: string; name: string }
 type SalesOrderOption = {
   id: string
   orderNo: string
   customerId: string
+  customer: { id: string; code: string; name: string }
   siteId: string
   deliveryDate: Date | string
   items: ItemOption[]
@@ -26,6 +29,7 @@ type SalesOrderOption = {
 
 interface ProjectOrderDataTableProps {
   data: ProjectOrderRow[]
+  sites: SiteOption[]
   customers: CustomerOption[]
   items: ItemOption[]
   users: UserOption[]
@@ -34,6 +38,7 @@ interface ProjectOrderDataTableProps {
 
 export function ProjectOrderDataTable({
   data,
+  sites,
   customers,
   items,
   users,
@@ -135,6 +140,7 @@ export function ProjectOrderDataTable({
         onOpenChange={setFormOpen}
         mode={formMode}
         projectOrder={editingOrder}
+        sites={sites}
         customers={customers}
         items={items}
         users={users}

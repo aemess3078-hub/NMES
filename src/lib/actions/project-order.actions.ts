@@ -38,6 +38,7 @@ export type ProjectOrderRow = {
   code: string
   name: string
   siteId: string
+  site: { id: string; code: string; name: string }
   priority: ProjectOrderPriority
   status: ProjectOrderStatus
   plannedStartDate: Date | null
@@ -60,6 +61,7 @@ export async function getProjectOrders(): Promise<ProjectOrderRow[]> {
       code: true,
       name: true,
       siteId: true,
+      site: { select: { id: true, code: true, name: true } },
       priority: true,
       status: true,
       plannedStartDate: true,
@@ -85,10 +87,23 @@ export async function getProjectOrderCustomers() {
   })
 }
 
+// §4: 프로젝트 오더에서 선택 가능한 품목은 완제품/반제품만 허용한다 — 원자재/소모품은
+// 생산실행 대상이 아니라 프로젝트 산출물이 아니므로 제외한다. itemType은
+// SearchableItemCombobox가 뱃지 표시에 쓰므로 select에 포함한다.
 export async function getProjectOrderItems() {
   const tenantId = await getTenantId()
   return prisma.item.findMany({
-    where: { tenantId, status: "ACTIVE" },
+    where: { tenantId, status: "ACTIVE", itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
+    select: { id: true, code: true, name: true, itemType: true },
+    orderBy: { name: "asc" },
+  })
+}
+
+// 등록/수정 Form의 사업장 선택지 — tenant 범위로만 스코프한다(§9).
+export async function getProjectOrderSites() {
+  const tenantId = await getTenantId()
+  return prisma.site.findMany({
+    where: { tenantId },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
@@ -107,15 +122,17 @@ export type ProjectOrderSalesOrderOption = {
   id: string
   orderNo: string
   customerId: string
+  customer: { id: string; code: string; name: string }
   siteId: string
   deliveryDate: Date
-  items: { id: string; code: string; name: string }[]
+  items: { id: string; code: string; name: string; itemType: string }[]
 }
 
-// 연결 수주 선택지 — CANCELLED 수주는 애초에 연결 대상에서 제외한다(§2).
-// siteId도 함께 내려준다 — 수정 모드에서는 현재 ProjectOrder.siteId와 같은
-// 수주만 고르게 해서 연결 시점에 사업장 불일치가 아예 발생하지 않도록 한다
-// (최종 검증은 여전히 updateProjectOrder 서버에서 한다).
+// 연결 수주 선택지 — CANCELLED 수주는 애초에 연결 대상에서 제외한다(§2). siteId는
+// 선택 시 ProjectOrder.siteId를 자동 동기화하는 데 쓰고(§10), customer는 검색
+// Combobox 표시("[SO-2026-001] 거래처명")·검색(§5)에 쓴다. items는 일반 품목 조회
+// (getProjectOrderItems)·assertReferencesValid와 동일하게 ACTIVE 완제품/반제품만
+// 내려준다 — SalesOrder 원본 데이터 자체는 건드리지 않고 이 조회 결과에서만 걸러낸다.
 export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrderOption[]> {
   const tenantId = await getTenantId()
   const orders = await prisma.salesOrder.findMany({
@@ -124,10 +141,12 @@ export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrd
       id: true,
       orderNo: true,
       customerId: true,
+      customer: { select: { id: true, code: true, name: true } },
       siteId: true,
       deliveryDate: true,
       items: {
-        select: { item: { select: { id: true, code: true, name: true } } },
+        where: { item: { status: "ACTIVE", itemType: { in: ["FINISHED", "SEMI_FINISHED"] } } },
+        select: { item: { select: { id: true, code: true, name: true, itemType: true } } },
         orderBy: { item: { code: "asc" } },
       },
     },
@@ -137,6 +156,7 @@ export async function getProjectOrderSalesOrders(): Promise<ProjectOrderSalesOrd
     id: o.id,
     orderNo: o.orderNo,
     customerId: o.customerId,
+    customer: o.customer,
     siteId: o.siteId,
     deliveryDate: o.deliveryDate,
     items: o.items.map((i) => i.item),
@@ -164,18 +184,24 @@ async function generateProjectOrderNo(tenantId: string): Promise<string> {
   return `${prefix}${String(seq).padStart(3, "0")}`
 }
 
-// ─── 참조값 검증 (§6) ───────────────────────────────────────────────────────
+// ─── 참조값 검증 (§3/§4/§6/§11) ─────────────────────────────────────────────
 //
 // client select 목록만 믿지 않고, UI 필터와 동일한 조건(거래처 partnerType,
-// 담당자 isActive, 품목 status)을 서버에서도 매번 다시 확인한다.
-// salesOrderId가 있으면 tenant/취소여부/거래처 일치/품목 포함여부까지 검증한다
-// (siteId는 여기서 다루지 않는다 — 생성 시에만 resolveCreateSiteId로 별도 결정).
+// 담당자 isActive+tenant 일치, 품목 status+itemType, 사업장 tenant 일치)을
+// 서버에서도 매번 다시 확인한다. siteId는 이제 항상 필수로 함께 검증한다 —
+// 연결 수주가 있으면 SalesOrder.siteId와 반드시 일치해야 한다(§11/§12).
 
 async function assertReferencesValid(
   tenantId: string,
-  input: { customerId: string; ownerId: string; itemId?: string | null; salesOrderId?: string | null }
+  input: {
+    customerId: string
+    ownerId: string
+    siteId: string
+    itemId?: string | null
+    salesOrderId?: string | null
+  }
 ): Promise<void> {
-  const [customer, owner] = await Promise.all([
+  const [customer, owner, site] = await Promise.all([
     prisma.businessPartner.findFirst({
       where: { id: input.customerId, tenantId, partnerType: { in: ["CUSTOMER", "BOTH"] } },
       select: { id: true },
@@ -184,16 +210,21 @@ async function assertReferencesValid(
       where: { profileId: input.ownerId, tenantId, isActive: true },
       select: { profileId: true },
     }),
+    prisma.site.findFirst({
+      where: { id: input.siteId, tenantId },
+      select: { id: true },
+    }),
   ])
   if (!customer) throw new Error("거래처를 찾을 수 없습니다.")
   if (!owner) throw new Error("담당자를 찾을 수 없습니다. 활성 상태인 담당자만 지정할 수 있습니다.")
+  if (!site) throw new Error("사업장을 찾을 수 없습니다.")
 
   if (input.itemId) {
     const item = await prisma.item.findFirst({
-      where: { id: input.itemId, tenantId, status: "ACTIVE" },
+      where: { id: input.itemId, tenantId, status: "ACTIVE", itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
       select: { id: true },
     })
-    if (!item) throw new Error("품목을 찾을 수 없습니다.")
+    if (!item) throw new Error("품목을 찾을 수 없습니다. 완제품 또는 반제품만 선택할 수 있습니다.")
   }
 
   if (input.salesOrderId) {
@@ -202,6 +233,7 @@ async function assertReferencesValid(
       select: {
         status: true,
         customerId: true,
+        siteId: true,
         items: { select: { itemId: true } },
       },
     })
@@ -209,6 +241,9 @@ async function assertReferencesValid(
     if (salesOrder.status === "CANCELLED") throw new Error("취소된 수주는 연결할 수 없습니다.")
     if (salesOrder.customerId !== input.customerId) {
       throw new Error("연결한 수주의 거래처와 일치하지 않습니다.")
+    }
+    if (salesOrder.siteId !== input.siteId) {
+      throw new Error("연결한 수주와 사업장이 일치하지 않습니다.")
     }
     if (input.itemId && !salesOrder.items.some((i) => i.itemId === input.itemId)) {
       throw new Error("선택한 품목이 연결된 수주의 품목 목록에 없습니다.")
@@ -222,48 +257,18 @@ function assertDateOrder(plannedStartDate: Date | null, dueDate: Date | null) {
   }
 }
 
-// ─── siteId 결정 (생성 시에만, §1) ──────────────────────────────────────────
-//
-// 절대 tenant의 Site를 findFirst로 임의 선택하지 않는다. 우선순위:
-// 1) 연결 수주가 있으면 그 SalesOrder.siteId
-// 2) 없으면 현재 로그인 사용자의 TenantUser.siteId(있는 경우)
-// 3) 그것도 없고 tenant의 Site가 정확히 1개면 그 site
-// 4) 그래도 결정 불가하면(다중 사업장 + 신호 없음) 임의 선택 대신 명확한 오류를
-//    반환한다 — 기존 NMES의 모든 등록 화면(수주/구매/입고 등)이 사업장 선택
-//    UI 없이 sites[0]을 암묵적으로 쓰는 것과 달리, 여기서는 그 임의성을
-//    없애는 것이 이번 보완의 목적이므로 새 UI를 추가하는 대신 안전하게 막는다.
-
-async function resolveCreateSiteId(
-  tenantId: string,
-  actorProfileId: string,
-  salesOrderId?: string | null
-): Promise<string> {
-  if (salesOrderId) {
-    const salesOrder = await prisma.salesOrder.findFirst({
-      where: { id: salesOrderId, tenantId },
-      select: { siteId: true },
-    })
-    if (salesOrder) return salesOrder.siteId
-  }
-
-  const tenantUser = await prisma.tenantUser.findFirst({
-    where: { profileId: actorProfileId, tenantId, isActive: true },
-    select: { siteId: true },
-  })
-  if (tenantUser?.siteId) return tenantUser.siteId
-
-  const sites = await prisma.site.findMany({ where: { tenantId }, select: { id: true }, take: 2 })
-  if (sites.length === 1) return sites[0].id
-
-  throw new Error(
-    "사업장을 결정할 수 없습니다. 연결할 수주를 먼저 선택하거나, 계정에 사업장을 설정한 뒤 다시 시도해 주세요."
-  )
-}
-
 // ─── 등록 ───────────────────────────────────────────────────────────────────
+//
+// §9: 과거에는 siteId를 수주/로그인 사용자/tenant 단일 Site 중 하나로 자동
+// 추정했고(resolveCreateSiteId), 다중 사업장 tenant에서 수주 미선택 + 사용자
+// siteId 미지정이면 사용자가 고칠 방법이 없는 채로 "사업장을 결정할 수
+// 없습니다" 오류가 발생했다. 이제 siteId는 Form의 필수 입력 필드이므로 그
+// 추정 로직 자체를 제거했다 — client가 보낸 siteId는 assertReferencesValid가
+// tenant 소속 여부(및 연결 수주가 있으면 그 siteId와 일치하는지)를 검증한다.
 
 export type CreateProjectOrderInput = {
   name: string
+  siteId: string
   customerId: string
   ownerId: string
   status: ProjectOrderStatus
@@ -292,7 +297,7 @@ export async function createProjectOrder(
     await assertReferencesValid(tenantId, input)
     assertDateOrder(input.plannedStartDate ?? null, input.dueDate ?? null)
 
-    const siteId = await resolveCreateSiteId(tenantId, actor.id, input.salesOrderId)
+    const siteId = input.siteId
 
     let lastError: unknown = null
     for (let attempt = 0; attempt < CODE_GENERATION_MAX_ATTEMPTS; attempt++) {
@@ -328,6 +333,7 @@ export async function createProjectOrder(
               afterData: {
                 code: created.code,
                 name: created.name,
+                siteId: created.siteId,
                 customerId: created.customerId,
                 status: created.status,
                 priority: created.priority,
@@ -360,6 +366,7 @@ export async function createProjectOrder(
 export type UpdateProjectOrderInput = {
   id: string
   name?: string
+  siteId?: string
   customerId?: string
   ownerId?: string
   status?: ProjectOrderStatus
@@ -383,27 +390,26 @@ export async function updateProjectOrder(
 
     const effectiveSalesOrderId =
       input.salesOrderId !== undefined ? input.salesOrderId : current.salesOrderId
+    // §12: 수주 미연결이면 siteId를 자유롭게 바꿀 수 있고, 수주 연결 중이면
+    // (새로 연결하는 경우 포함) siteId는 그 SalesOrder.siteId와 반드시 일치해야
+    // 한다 — 이 일치 검증은 assertReferencesValid가 salesOrderId와 siteId를
+    // 함께 받아 한 번에 수행한다(§11).
+    const effectiveSiteId = input.siteId !== undefined ? input.siteId : current.siteId
 
-    if (input.customerId || input.ownerId || input.itemId !== undefined || input.salesOrderId !== undefined) {
+    if (
+      input.customerId ||
+      input.ownerId ||
+      input.itemId !== undefined ||
+      input.salesOrderId !== undefined ||
+      input.siteId !== undefined
+    ) {
       await assertReferencesValid(tenantId, {
         customerId: input.customerId ?? current.customerId,
         ownerId: input.ownerId ?? current.ownerId,
         itemId: input.itemId !== undefined ? input.itemId : current.itemId,
         salesOrderId: effectiveSalesOrderId,
+        siteId: effectiveSiteId,
       })
-    }
-
-    // ProjectOrder 생성 이후 siteId는 자동 변경하지 않는다 — 연결(변경)하려는
-    // 수주가 현재 ProjectOrder.siteId와 다른 사업장이면 차단한다. 존재/tenant
-    // 검증은 위 assertReferencesValid가 이미 했으므로 여기서는 siteId만 본다.
-    if (effectiveSalesOrderId) {
-      const linkedSalesOrder = await prisma.salesOrder.findFirst({
-        where: { id: effectiveSalesOrderId, tenantId },
-        select: { siteId: true },
-      })
-      if (linkedSalesOrder && linkedSalesOrder.siteId !== current.siteId) {
-        throw new Error("다른 사업장의 수주는 연결할 수 없습니다.")
-      }
     }
 
     const nextPlannedStartDate =
@@ -469,6 +475,7 @@ export async function updateProjectOrder(
 
       const updateData: Prisma.ProjectOrderUpdateManyMutationInput = {
         ...(name !== undefined && { name }),
+        ...(input.siteId !== undefined && { siteId: input.siteId }),
         ...(input.customerId !== undefined && { customerId: input.customerId }),
         ...(input.ownerId !== undefined && { ownerId: input.ownerId }),
         ...(input.priority !== undefined && { priority: input.priority }),
@@ -503,6 +510,7 @@ export async function updateProjectOrder(
           action: "UPDATE",
           beforeData: {
             name: current.name,
+            siteId: current.siteId,
             customerId: current.customerId,
             ownerId: current.ownerId,
             status: current.status,
@@ -514,6 +522,7 @@ export async function updateProjectOrder(
           },
           afterData: {
             name: updated.name,
+            siteId: updated.siteId,
             customerId: updated.customerId,
             ownerId: updated.ownerId,
             status: updated.status,

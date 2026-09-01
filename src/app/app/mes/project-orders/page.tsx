@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import {
   getProjectOrders,
+  getProjectOrderSites,
   getProjectOrderCustomers,
   getProjectOrderItems,
   getProjectOrderAssignableUsers,
@@ -10,8 +11,9 @@ import {
 import { ProjectOrderDataTable } from "./project-order-data-table"
 
 export default async function ProjectOrdersPage() {
-  const [projectOrders, customers, items, users, salesOrders] = await Promise.all([
+  const [projectOrders, sites, customers, items, users, salesOrders] = await Promise.all([
     getProjectOrders(),
+    getProjectOrderSites(),
     getProjectOrderCustomers(),
     getProjectOrderItems(),
     getProjectOrderAssignableUsers(),
@@ -28,6 +30,7 @@ export default async function ProjectOrdersPage() {
       </div>
       <ProjectOrderDataTable
         data={projectOrders}
+        sites={sites}
         customers={customers}
         items={items}
         users={users}
