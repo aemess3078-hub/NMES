@@ -87,6 +87,7 @@ function InspectionSpecExpandedPanel({ spec }: { spec: InspectionSpecRow }) {
                   <TableHead className="w-24 text-[12px]">입력유형</TableHead>
                   <TableHead className="w-24 text-right text-[12px]">하한값</TableHead>
                   <TableHead className="w-24 text-right text-[12px]">상한값</TableHead>
+                  <TableHead className="w-16 text-[12px]">단위</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -111,6 +112,9 @@ function InspectionSpecExpandedPanel({ spec }: { spec: InspectionSpecRow }) {
                       </TableCell>
                       <TableCell className="text-right text-[13px] font-mono text-muted-foreground">
                         {item.upperLimit != null ? String(item.upperLimit) : "—"}
+                      </TableCell>
+                      <TableCell className="text-[13px] text-muted-foreground">
+                        {item.unit ?? "—"}
                       </TableCell>
                     </TableRow>
                   ))}

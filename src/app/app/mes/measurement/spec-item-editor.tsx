@@ -33,6 +33,7 @@ interface ItemEditorRow {
   inputType: string
   lowerLimit: string
   upperLimit: string
+  unit: string
 }
 
 interface SpecItemEditorProps {
@@ -51,6 +52,7 @@ export function SpecItemEditor({ spec }: SpecItemEditorProps) {
       inputType: item.inputType,
       lowerLimit: item.lowerLimit != null ? String(Number(item.lowerLimit)) : "",
       upperLimit: item.upperLimit != null ? String(Number(item.upperLimit)) : "",
+      unit: item.unit ?? "",
     }))
   )
   const [saving, setSaving] = useState(false)
@@ -65,6 +67,7 @@ export function SpecItemEditor({ spec }: SpecItemEditorProps) {
         inputType: "NUMERIC",
         lowerLimit: "",
         upperLimit: "",
+        unit: "",
       },
     ])
   }
@@ -98,6 +101,7 @@ export function SpecItemEditor({ spec }: SpecItemEditorProps) {
           inputType: row.inputType as any,
           lowerLimit: row.lowerLimit !== "" ? parseFloat(row.lowerLimit) : null,
           upperLimit: row.upperLimit !== "" ? parseFloat(row.upperLimit) : null,
+          unit: row.unit.trim() !== "" ? row.unit.trim() : null,
         }))
       )
       router.refresh()
@@ -150,6 +154,7 @@ export function SpecItemEditor({ spec }: SpecItemEditorProps) {
                 <TableHead className="w-28 text-[13px]">입력유형</TableHead>
                 <TableHead className="w-24 text-[13px]">하한값</TableHead>
                 <TableHead className="w-24 text-[13px]">상한값</TableHead>
+                <TableHead className="w-16 text-[13px]">단위</TableHead>
                 <TableHead className="w-10 text-[13px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -207,6 +212,14 @@ export function SpecItemEditor({ spec }: SpecItemEditorProps) {
                       value={row.upperLimit}
                       onChange={(e) => updateRow(index, "upperLimit", e.target.value)}
                       disabled={row.inputType !== "NUMERIC"}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      className="h-7 text-[13px]"
+                      placeholder="mm"
+                      value={row.unit}
+                      onChange={(e) => updateRow(index, "unit", e.target.value)}
                     />
                   </TableCell>
                   <TableCell>

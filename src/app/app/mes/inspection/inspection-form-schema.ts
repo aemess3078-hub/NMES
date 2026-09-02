@@ -26,6 +26,16 @@ export const defectRecordSchema = z.object({
   disposition: z.enum(["SCRAP", "REWORK", "ACCEPT", "USE_AS_IS"]).nullable().optional(),
 })
 
+// 검사항목 1개 × sampleNo 1개 = 측정값 1행. 값이 전부 비어 있으면
+// 서버(quality.actions.ts validateMeasurements)에서 조용히 제외된다.
+export const measurementSchema = z.object({
+  inspectionItemId: z.string().min(1),
+  sampleNo: z.number().int().min(1),
+  numericValue: z.number().nullable().optional(),
+  textValue: z.string().nullable().optional(),
+  booleanValue: z.boolean().nullable().optional(),
+})
+
 export const inspectionFormSchema = z.object({
   workOrderOperationId: z.string().min(1, "작업지시 공정을 선택하세요"),
   inspectionSpecId: z.string().min(1, "검사기준이 없습니다. 해당 공정의 활성 검사기준을 먼저 등록하세요."),
@@ -33,8 +43,10 @@ export const inspectionFormSchema = z.object({
   result: z.enum(["PASS", "FAIL", "CONDITIONAL"]).nullable().optional(),
   inspectedQty: z.number().positive("검사수량은 양수여야 합니다"),
   inspectedAt: z.string().min(1, "검사일시를 입력하세요"),
+  measurements: z.array(measurementSchema),
   defectRecords: z.array(defectRecordSchema),
 })
 
 export type DefectRecordFormValues = z.infer<typeof defectRecordSchema>
+export type MeasurementFormValues = z.infer<typeof measurementSchema>
 export type InspectionFormValues = z.infer<typeof inspectionFormSchema>

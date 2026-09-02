@@ -77,6 +77,7 @@ interface ItemEditorRow {
   inputType: string
   lowerLimit: string
   upperLimit: string
+  unit: string
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -139,6 +140,7 @@ export function InspectionSpecFormSheet({
             inputType: item.inputType,
             lowerLimit: item.lowerLimit != null ? String(item.lowerLimit) : "",
             upperLimit: item.upperLimit != null ? String(item.upperLimit) : "",
+            unit: item.unit ?? "",
           }))
         )
       } else {
@@ -153,7 +155,7 @@ export function InspectionSpecFormSheet({
       itemRows.length > 0 ? Math.max(...itemRows.map((r) => r.seq)) + 10 : 10
     setItemRows((prev) => [
       ...prev,
-      { seq: nextSeq, name: "", inputType: "NUMERIC", lowerLimit: "", upperLimit: "" },
+      { seq: nextSeq, name: "", inputType: "NUMERIC", lowerLimit: "", upperLimit: "", unit: "" },
     ])
   }
 
@@ -185,6 +187,7 @@ export function InspectionSpecFormSheet({
       inputType: row.inputType as "NUMERIC" | "TEXT" | "BOOLEAN" | "SELECT",
       lowerLimit: row.lowerLimit !== "" ? parseFloat(row.lowerLimit) : null,
       upperLimit: row.upperLimit !== "" ? parseFloat(row.upperLimit) : null,
+      unit: row.unit.trim() !== "" ? row.unit.trim() : null,
     }))
 
     setIsLoading(true)
@@ -316,6 +319,7 @@ export function InspectionSpecFormSheet({
                         <TableHead className="w-28 text-[13px]">입력유형</TableHead>
                         <TableHead className="w-24 text-[13px]">하한값</TableHead>
                         <TableHead className="w-24 text-[13px]">상한값</TableHead>
+                        <TableHead className="w-16 text-[13px]">단위</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
@@ -399,6 +403,14 @@ export function InspectionSpecFormSheet({
                                 )
                               }
                               disabled={row.inputType !== "NUMERIC"}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-7 text-[13px]"
+                              placeholder="mm"
+                              value={row.unit}
+                              onChange={(e) => updateItemRow(index, "unit", e.target.value)}
                             />
                           </TableCell>
                           <TableCell>

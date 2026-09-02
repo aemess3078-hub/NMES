@@ -6,6 +6,7 @@ import {
   InspectionInputType,
   InspectionResult,
   InspectionStage,
+  InspectionJudgement,
   DefectCategory,
   DefectSeverity,
   DefectDisposition,
@@ -13,6 +14,9 @@ import {
 import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { checkDefectCodeReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
+import { validateMeasurements, type CreateMeasurementInput } from "./inspection-measurement.helpers"
+
+export type { CreateMeasurementInput }
 
 export type DefectCodeRow = {
   id: string
@@ -44,6 +48,24 @@ export type InspectionItemRow = {
   inputType: InspectionInputType
   lowerLimit: number | null
   upperLimit: number | null
+  unit: string | null
+}
+
+export type InspectionMeasurementRow = {
+  id: string
+  qualityInspectionId: string
+  inspectionItemId: string
+  sampleNo: number
+  numericValue: number | null
+  textValue: string | null
+  booleanValue: boolean | null
+  lowerLimitSnapshot: number | null
+  upperLimitSnapshot: number | null
+  itemNameSnapshot: string
+  inputTypeSnapshot: InspectionInputType
+  unitSnapshot: string | null
+  judgement: InspectionJudgement | null
+  measuredAt: string
 }
 
 export type QualityInspectionWithDetails = {
@@ -71,6 +93,7 @@ export type QualityInspectionWithDetails = {
   inspectionSpec: { id: string; version: string; item: { name: string } }
   inspector: { id: string; name: string }
   defectRecords: DefectRecordRow[]
+  measurements: InspectionMeasurementRow[]
 }
 
 export type DefectRecordRow = {
@@ -112,6 +135,7 @@ export type UpsertInspectionItemInput = {
   inputType: InspectionInputType
   lowerLimit?: number | null
   upperLimit?: number | null
+  unit?: string | null
 }
 
 export type CreateQualityInspectionInput = {
@@ -121,6 +145,7 @@ export type CreateQualityInspectionInput = {
   result: InspectionResult | null
   inspectedQty: number
   inspectedAt: string
+  measurements: CreateMeasurementInput[]
   defectRecords: {
     defectCodeId: string
     qty: number
@@ -152,7 +177,31 @@ function serializeInspectionSpec(spec: NonNullable<InspectionSpecRecord>): Inspe
       inputType: item.inputType,
       lowerLimit: item.lowerLimit == null ? null : Number(item.lowerLimit),
       upperLimit: item.upperLimit == null ? null : Number(item.upperLimit),
+      unit: item.unit,
     })),
+  }
+}
+
+function serializeMeasurement(
+  measurement: QualityInspectionRecord["measurements"][number]
+): InspectionMeasurementRow {
+  return {
+    id: measurement.id,
+    qualityInspectionId: measurement.qualityInspectionId,
+    inspectionItemId: measurement.inspectionItemId,
+    sampleNo: measurement.sampleNo,
+    numericValue: measurement.numericValue == null ? null : Number(measurement.numericValue),
+    textValue: measurement.textValue,
+    booleanValue: measurement.booleanValue,
+    lowerLimitSnapshot:
+      measurement.lowerLimitSnapshot == null ? null : Number(measurement.lowerLimitSnapshot),
+    upperLimitSnapshot:
+      measurement.upperLimitSnapshot == null ? null : Number(measurement.upperLimitSnapshot),
+    itemNameSnapshot: measurement.itemNameSnapshot,
+    inputTypeSnapshot: measurement.inputTypeSnapshot,
+    unitSnapshot: measurement.unitSnapshot,
+    judgement: measurement.judgement,
+    measuredAt: measurement.measuredAt.toISOString(),
   }
 }
 
@@ -194,6 +243,10 @@ function serializeQualityInspection(inspection: QualityInspectionRecord): Qualit
       disposition: record.disposition,
       defectCode: record.defectCode,
     })),
+    measurements: inspection.measurements
+      .slice()
+      .sort((a, b) => a.inspectionItemId.localeCompare(b.inspectionItemId) || a.sampleNo - b.sampleNo)
+      .map(serializeMeasurement),
   }
 }
 
@@ -248,6 +301,7 @@ async function getQualityInspectionRecords(tenantId: string) {
           },
         },
       },
+      measurements: true,
     },
     orderBy: { inspectedAt: "desc" },
   })
@@ -451,11 +505,26 @@ export async function deleteInspectionSpec(id: string) {
   revalidatePath("/app/mes/master/inspection-standards")
 }
 
+/**
+ * upsertInspectionItems는 항목 전체를 deleteMany + createMany로 교체한다(부분 수정 미지원).
+ * 측정 이력(InspectionMeasurement)이 하나라도 있는 스펙은 이 교체 자체를 막는다 —
+ * 그렇지 않으면 과거 측정값이 스냅샷을 갖고 있어도 판정 기준이 되는 항목 자체가
+ * 사라져 표시/추적이 불가능해진다. 항목을 바꿔야 하면 새 버전을 생성해야 한다.
+ */
 export async function upsertInspectionItems(
   inspectionSpecId: string,
   items: UpsertInspectionItemInput[]
 ) {
   await requireRole("OPERATOR")
+  const measuredCount = await prisma.inspectionMeasurement.count({
+    where: { inspectionItem: { inspectionSpecId } },
+  })
+  if (measuredCount > 0) {
+    throw new Error(
+      "이 검사표준은 이미 측정 이력이 있어 검사항목을 수정할 수 없습니다. 새 버전을 생성해 주세요."
+    )
+  }
+
   await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId } })
 
   if (items.length > 0) {
@@ -467,6 +536,7 @@ export async function upsertInspectionItems(
         inputType: item.inputType,
         lowerLimit: item.lowerLimit ?? null,
         upperLimit: item.upperLimit ?? null,
+        unit: item.unit ?? null,
       })),
     })
   }
@@ -477,6 +547,14 @@ export async function upsertInspectionItems(
 
 export async function deleteInspectionItem(id: string) {
   await requireRole("OPERATOR")
+  const measuredCount = await prisma.inspectionMeasurement.count({
+    where: { inspectionItemId: id },
+  })
+  if (measuredCount > 0) {
+    throw new Error(
+      "이 검사항목은 이미 측정 이력이 있어 삭제할 수 없습니다. 새 버전을 생성해 주세요."
+    )
+  }
   await prisma.inspectionItem.delete({ where: { id } })
   revalidatePath("/app/mes/measurement")
   revalidatePath("/app/mes/master/inspection-standards")
@@ -509,7 +587,12 @@ export async function createQualityInspection(
         tenantId,
         status: "ACTIVE",
       },
-      select: { routingOperationId: true },
+      select: {
+        routingOperationId: true,
+        inspectionItems: {
+          select: { id: true, name: true, inputType: true, lowerLimit: true, upperLimit: true, unit: true },
+        },
+      },
     }),
     prisma.profile.findFirst({
       where: {
@@ -537,28 +620,54 @@ export async function createQualityInspection(
     }
   }
 
-  const inspection = await prisma.qualityInspection.create({
-    data: {
-      workOrderOperationId: data.workOrderOperationId,
-      inspectionSpecId: data.inspectionSpecId,
-      inspectorId: data.inspectorId,
-      result: data.result,
-      inspectedQty: data.inspectedQty,
-      inspectedAt: new Date(data.inspectedAt),
-    },
-  })
+  const validatedMeasurements = validateMeasurements(data.measurements ?? [], spec.inspectionItems)
 
-  if (data.defectRecords.length > 0) {
-    await prisma.defectRecord.createMany({
-      data: data.defectRecords.map((record) => ({
-        qualityInspectionId: inspection.id,
-        defectCodeId: record.defectCodeId,
-        qty: record.qty,
-        severity: record.severity,
-        disposition: record.disposition ?? null,
-      })),
+  await prisma.$transaction(async (tx) => {
+    const inspection = await tx.qualityInspection.create({
+      data: {
+        workOrderOperationId: data.workOrderOperationId,
+        inspectionSpecId: data.inspectionSpecId,
+        inspectorId: data.inspectorId,
+        result: data.result,
+        inspectedQty: data.inspectedQty,
+        inspectedAt: new Date(data.inspectedAt),
+      },
     })
-  }
+
+    if (validatedMeasurements.length > 0) {
+      await tx.inspectionMeasurement.createMany({
+        data: validatedMeasurements.map((m) => ({
+          tenantId,
+          qualityInspectionId: inspection.id,
+          inspectionItemId: m.inspectionItemId,
+          sampleNo: m.sampleNo,
+          numericValue: m.numericValue,
+          textValue: m.textValue,
+          booleanValue: m.booleanValue,
+          lowerLimitSnapshot: m.lowerLimitSnapshot,
+          upperLimitSnapshot: m.upperLimitSnapshot,
+          itemNameSnapshot: m.itemNameSnapshot,
+          inputTypeSnapshot: m.inputTypeSnapshot,
+          unitSnapshot: m.unitSnapshot,
+          judgement: m.judgement,
+        })),
+      })
+    }
+
+    if (data.defectRecords.length > 0) {
+      await tx.defectRecord.createMany({
+        data: data.defectRecords.map((record) => ({
+          qualityInspectionId: inspection.id,
+          defectCodeId: record.defectCodeId,
+          qty: record.qty,
+          severity: record.severity,
+          disposition: record.disposition ?? null,
+        })),
+      })
+    }
+
+    return inspection
+  })
 
   revalidateQualityViews()
 }
@@ -575,6 +684,7 @@ export async function updateInspectionResult(id: string, result: InspectionResul
 export async function deleteQualityInspection(id: string) {
   await requireRole("OPERATOR")
   await prisma.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
+  await prisma.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
   await prisma.qualityInspection.delete({ where: { id } })
   revalidateQualityViews()
 }

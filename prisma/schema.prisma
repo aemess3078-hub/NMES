@@ -279,6 +279,11 @@ enum InspectionSpecStatus {
   INACTIVE
 }
 
+enum InspectionJudgement {
+  PASS
+  FAIL
+}
+
 enum AuditActorType {
   USER
   SYSTEM
@@ -440,6 +445,7 @@ model Tenant {
   materialReturns                MaterialReturn[]
   projectOrderPrices             ProjectOrderPrice[]
   projectOrderPriceRevisions     ProjectOrderPriceRevision[]
+  inspectionMeasurements         InspectionMeasurement[]
 }
 
 model Profile {
@@ -991,8 +997,10 @@ model InspectionItem {
   inputType        InspectionInputType @default(NUMERIC)
   lowerLimit       Decimal?            @db.Decimal(18, 6)
   upperLimit       Decimal?            @db.Decimal(18, 6)
+  unit             String?
 
-  inspectionSpec InspectionSpec @relation(fields: [inspectionSpecId], references: [id])
+  inspectionSpec InspectionSpec           @relation(fields: [inspectionSpecId], references: [id])
+  measurements   InspectionMeasurement[]
 
   @@unique([inspectionSpecId, seq])
   @@index([inspectionSpecId])
@@ -1557,12 +1565,63 @@ model QualityInspection {
   inspector          Profile            @relation(fields: [inspectorId], references: [id])
 
   defectRecords DefectRecord[]
+  measurements  InspectionMeasurement[]
 
   @@index([workOrderOperationId])
   @@index([inspectionSpecId])
   @@index([inspectorId])
   @@index([workOrderOperationId, inspectedAt])
   @@index([inspectorId, inspectedAt])
+}
+
+// ─── 청운커팅 사업계획서 "품질검사 > SPC 통계분석" 선행 PR(#53) ──────────────────
+//
+// SPC 계산/Profile/차트는 후속 PR(#54)에서 다룬다. 이번 PR은 그 전제조건인
+// "검사항목별 실제 측정값 정본"만 구축한다 — QualityInspection은 검사 이벤트(건)
+// 전체 판정만 갖고, InspectionItem은 규격(LSL/USL) 템플릿만 가질 뿐 실측값을
+// 저장할 곳이 없었다(사업계획서 감사 결과 확인). 이 모델이 그 간극을 메운다.
+//
+// lowerLimitSnapshot/upperLimitSnapshot/itemNameSnapshot/inputTypeSnapshot/
+// unitSnapshot: InspectionItem을 그대로 참조하지 않고 값을 복제해 두는 이유는
+// upsertInspectionItems()가 항목을 deleteMany+createMany로 통째로 교체하는
+// 기존 동작 때문이다(버전 개념과 무관하게 id/lowerLimit/upperLimit이 언제든
+// 재생성될 수 있음). 과거 측정값의 판정 기준이 나중에 규격이 바뀌었다는 이유로
+// 흔들리는 것을 막기 위해 측정 시점 값을 서버가 직접 스냅샷한다(quality.actions.ts
+// createQualityInspection 참조). 이 스냅샷 때문에라도 사용 이력이 있는 항목은
+// upsertInspectionItems/deleteInspectionItem에서 수정·삭제를 막는다(DB FK도
+// RESTRICT로 동일 목적을 이중 보장).
+model InspectionMeasurement {
+  id                  String               @id @default(cuid())
+  tenantId            String
+  qualityInspectionId String
+  inspectionItemId    String
+  sampleNo            Int                  @default(1)
+
+  numericValue Decimal? @db.Decimal(18, 6)
+  textValue    String?
+  booleanValue Boolean?
+
+  lowerLimitSnapshot Decimal?             @db.Decimal(18, 6)
+  upperLimitSnapshot Decimal?             @db.Decimal(18, 6)
+  itemNameSnapshot   String
+  inputTypeSnapshot  InspectionInputType
+  unitSnapshot       String?
+
+  judgement InspectionJudgement?
+
+  measuredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  qualityInspection QualityInspection @relation(fields: [qualityInspectionId], references: [id])
+  inspectionItem    InspectionItem     @relation(fields: [inspectionItemId], references: [id])
+
+  @@unique([qualityInspectionId, inspectionItemId, sampleNo])
+  @@index([tenantId, measuredAt])
+  @@index([tenantId, inspectionItemId, measuredAt])
+  @@index([qualityInspectionId])
+  @@index([inspectionItemId])
 }
 
 model DefectRecord {

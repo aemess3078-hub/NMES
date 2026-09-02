@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { useForm, useFieldArray } from "react-hook-form"
+import { useForm, useFieldArray, useWatch, type Control } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation"
 import { Plus, Trash2, Info } from "lucide-react"
@@ -29,14 +29,6 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 
 import {
   inspectionFormSchema,
@@ -45,10 +37,12 @@ import {
   DEFECT_SEVERITY_OPTIONS,
   DEFECT_DISPOSITION_OPTIONS,
 } from "./inspection-form-schema"
+import { Badge } from "@/components/ui/badge"
 import {
   createQualityInspection,
   getInspectionSpecByOperation,
   InspectionSpecWithItems,
+  InspectionItemRow,
   WorkOrderOperationForInspection,
   DefectCodeRow,
 } from "@/lib/actions/quality.actions"
@@ -76,7 +70,140 @@ const DEFAULT_VALUES: InspectionFormValues = {
   result: null,
   inspectedQty: 1,
   inspectedAt: now(),
+  measurements: [],
   defectRecords: [],
+}
+
+const INPUT_TYPE_LABEL: Record<string, string> = {
+  NUMERIC: "수치",
+  TEXT: "텍스트",
+  BOOLEAN: "합불",
+  SELECT: "선택",
+}
+
+// ─── 측정값 입력 행 ──────────────────────────────────────────────────────────
+//
+// SELECT(선택) 유형은 InspectionItem에 옵션 목록을 저장하는 필드가 스키마에
+// 없어(사업계획서 감사 결과 확인) 자유 텍스트 입력으로 처리한다. 실제 select
+// 옵션 구조가 필요하면 별도 PR에서 스키마 확장이 선행되어야 한다.
+function MeasurementSampleRow({
+  control,
+  index,
+  sampleNo,
+  item,
+  canRemove,
+  onRemove,
+}: {
+  control: Control<InspectionFormValues>
+  index: number
+  sampleNo: number
+  item: InspectionItemRow
+  canRemove: boolean
+  onRemove: () => void
+}) {
+  const numericValue = useWatch({ control, name: `measurements.${index}.numericValue` })
+  const outOfSpec =
+    item.inputType === "NUMERIC" &&
+    typeof numericValue === "number" &&
+    ((item.lowerLimit != null && numericValue < item.lowerLimit) ||
+      (item.upperLimit != null && numericValue > item.upperLimit))
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[12px] text-muted-foreground w-10 shrink-0">#{sampleNo}</span>
+
+      {item.inputType === "NUMERIC" && (
+        <FormField
+          control={control}
+          name={`measurements.${index}.numericValue`}
+          render={({ field }) => (
+            <FormItem className="flex-1 space-y-0">
+              <FormControl>
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder="측정값"
+                  className={`text-[13px] h-8 ${outOfSpec ? "border-red-400 text-red-600 focus-visible:ring-red-400" : ""}`}
+                  value={field.value ?? ""}
+                  onChange={(e) =>
+                    field.onChange(e.target.value === "" ? null : parseFloat(e.target.value))
+                  }
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+      )}
+
+      {(item.inputType === "TEXT" || item.inputType === "SELECT") && (
+        <FormField
+          control={control}
+          name={`measurements.${index}.textValue`}
+          render={({ field }) => (
+            <FormItem className="flex-1 space-y-0">
+              <FormControl>
+                <Input
+                  placeholder={item.inputType === "SELECT" ? "값 입력 (옵션 정의 없음)" : "측정값"}
+                  className="text-[13px] h-8"
+                  value={field.value ?? ""}
+                  onChange={(e) => field.onChange(e.target.value === "" ? null : e.target.value)}
+                />
+              </FormControl>
+            </FormItem>
+          )}
+        />
+      )}
+
+      {item.inputType === "BOOLEAN" && (
+        <FormField
+          control={control}
+          name={`measurements.${index}.booleanValue`}
+          render={({ field }) => (
+            <FormItem className="flex-1 space-y-0">
+              <Select
+                value={field.value == null ? "__none__" : String(field.value)}
+                onValueChange={(v) => field.onChange(v === "__none__" ? null : v === "true")}
+              >
+                <FormControl>
+                  <SelectTrigger className="text-[13px] h-8">
+                    <SelectValue placeholder="선택" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="__none__" className="text-[13px] text-muted-foreground">
+                    미입력
+                  </SelectItem>
+                  <SelectItem value="true" className="text-[13px]">
+                    합격
+                  </SelectItem>
+                  <SelectItem value="false" className="text-[13px]">
+                    불합격
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </FormItem>
+          )}
+        />
+      )}
+
+      {outOfSpec && (
+        <Badge variant="destructive" className="text-[11px] shrink-0">
+          규격 이탈
+        </Badge>
+      )}
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
+        onClick={onRemove}
+        disabled={!canRemove}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -102,6 +229,13 @@ export function InspectionFormSheet({
   const { fields: defectFields, append: appendDefect, remove: removeDefect } =
     useFieldArray({ control: form.control, name: "defectRecords" })
 
+  const {
+    fields: measurementFields,
+    append: appendMeasurement,
+    remove: removeMeasurement,
+    replace: replaceMeasurements,
+  } = useFieldArray({ control: form.control, name: "measurements" })
+
   useEffect(() => {
     if (open) {
       form.reset({ ...DEFAULT_VALUES, inspectedAt: now() })
@@ -115,6 +249,7 @@ export function InspectionFormSheet({
       form.setValue("workOrderOperationId", operationId)
       form.setValue("inspectionSpecId", "")
       setResolvedSpec(null)
+      replaceMeasurements([])
 
       if (!operationId) return
 
@@ -130,6 +265,16 @@ export function InspectionFormSheet({
         if (spec) {
           form.setValue("inspectionSpecId", spec.id)
           setResolvedSpec(spec)
+          // 검사항목마다 sampleNo 1을 기본 입력행으로 준비한다(비워두면 서버에서 제외됨).
+          replaceMeasurements(
+            spec.inspectionItems.map((item) => ({
+              inspectionItemId: item.id,
+              sampleNo: 1,
+              numericValue: null,
+              textValue: null,
+              booleanValue: null,
+            }))
+          )
         } else {
           form.setValue("inspectionSpecId", "")
         }
@@ -137,8 +282,28 @@ export function InspectionFormSheet({
         setLoadingSpec(false)
       }
     },
-    [workOrderOperations, tenantId, form]
+    [workOrderOperations, tenantId, form, replaceMeasurements]
   )
+
+  function addSample(inspectionItemId: string) {
+    const existingSampleNos = measurementFields
+      .filter((f) => f.inspectionItemId === inspectionItemId)
+      .map((f) => f.sampleNo)
+    const nextSampleNo = existingSampleNos.length > 0 ? Math.max(...existingSampleNos) + 1 : 1
+    appendMeasurement({
+      inspectionItemId,
+      sampleNo: nextSampleNo,
+      numericValue: null,
+      textValue: null,
+      booleanValue: null,
+    })
+  }
+
+  function removeSample(inspectionItemId: string, index: number) {
+    const sameItemCount = measurementFields.filter((f) => f.inspectionItemId === inspectionItemId).length
+    if (sameItemCount <= 1) return // 항목당 최소 1행은 유지
+    removeMeasurement(index)
+  }
 
   async function onSubmit(values: InspectionFormValues) {
     setIsLoading(true)
@@ -151,6 +316,13 @@ export function InspectionFormSheet({
           result: values.result ?? null,
           inspectedQty: values.inspectedQty,
           inspectedAt: values.inspectedAt,
+          measurements: values.measurements.map((m) => ({
+            inspectionItemId: m.inspectionItemId,
+            sampleNo: m.sampleNo,
+            numericValue: m.numericValue ?? null,
+            textValue: m.textValue ?? null,
+            booleanValue: m.booleanValue ?? null,
+          })),
           defectRecords: values.defectRecords.map((dr) => ({
             defectCodeId: dr.defectCodeId,
             qty: dr.qty,
@@ -302,37 +474,69 @@ export function InspectionFormSheet({
             />
           </div>
 
-          {/* 검사항목 (읽기전용 미리보기) */}
+          {/* 검사항목별 측정값 입력 */}
           {resolvedSpec && resolvedSpec.inspectionItems.length > 0 && (
             <div className="pt-4 border-t space-y-3">
-              <p className="text-[15px] font-medium text-foreground">검사항목 목록</p>
-              <div className="border rounded-md overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="text-[13px] w-10">순서</TableHead>
-                      <TableHead className="text-[13px]">항목명</TableHead>
-                      <TableHead className="text-[13px] w-20">유형</TableHead>
-                      <TableHead className="text-[13px] w-20 text-right">하한</TableHead>
-                      <TableHead className="text-[13px] w-20 text-right">상한</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {resolvedSpec.inspectionItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="text-[13px] text-center">{item.seq}</TableCell>
-                        <TableCell className="text-[13px]">{item.name}</TableCell>
-                        <TableCell className="text-[12px] text-muted-foreground">{item.inputType}</TableCell>
-                        <TableCell className="text-[13px] text-right font-mono">
-                          {item.lowerLimit != null ? Number(item.lowerLimit) : "—"}
-                        </TableCell>
-                        <TableCell className="text-[13px] text-right font-mono">
-                          {item.upperLimit != null ? Number(item.upperLimit) : "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <p className="text-[15px] font-medium text-foreground">검사항목별 측정값</p>
+              <p className="text-[12px] text-muted-foreground">
+                값을 입력하지 않은 항목은 저장 시 제외됩니다. 규격 이탈 표시는 참고용이며, 최종 판정은 저장 시 서버가 확정합니다.
+              </p>
+              <div className="space-y-3">
+                {resolvedSpec.inspectionItems.map((item) => {
+                  const rows = measurementFields
+                    .map((field, index) => ({ field, index }))
+                    .filter(({ field }) => field.inspectionItemId === item.id)
+                    .sort((a, b) => a.field.sampleNo - b.field.sampleNo)
+
+                  return (
+                    <div key={item.id} className="border rounded-md p-3 space-y-2.5 bg-muted/10">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] font-medium text-foreground">
+                            {item.seq}. {item.name}
+                          </span>
+                          <Badge variant="outline" className="text-[11px] font-normal">
+                            {INPUT_TYPE_LABEL[item.inputType] ?? item.inputType}
+                          </Badge>
+                          {item.unit && (
+                            <span className="text-[12px] text-muted-foreground">({item.unit})</span>
+                          )}
+                        </div>
+                        {item.inputType === "NUMERIC" && (item.lowerLimit != null || item.upperLimit != null) && (
+                          <span className="text-[12px] text-muted-foreground font-mono">
+                            LSL {item.lowerLimit != null ? item.lowerLimit : "—"} / USL{" "}
+                            {item.upperLimit != null ? item.upperLimit : "—"}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        {rows.map(({ field, index }) => (
+                          <MeasurementSampleRow
+                            key={field.id}
+                            control={form.control}
+                            index={index}
+                            sampleNo={field.sampleNo}
+                            item={item}
+                            canRemove={rows.length > 1}
+                            onRemove={() => removeSample(item.id, index)}
+                          />
+                        ))}
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[12px]"
+                        onClick={() => addSample(item.id)}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        샘플 추가
+                      </Button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}
