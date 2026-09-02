@@ -284,6 +284,11 @@ enum InspectionJudgement {
   FAIL
 }
 
+// 이번 PR은 Individuals-Moving Range만 지원한다 — P chart/Xbar-R 등은 후속 범위.
+enum SpcControlChartType {
+  I_MR
+}
+
 enum AuditActorType {
   USER
   SYSTEM
@@ -446,6 +451,7 @@ model Tenant {
   projectOrderPrices             ProjectOrderPrice[]
   projectOrderPriceRevisions     ProjectOrderPriceRevision[]
   inspectionMeasurements         InspectionMeasurement[]
+  spcProfiles                    SpcProfile[]
 }
 
 model Profile {
@@ -486,6 +492,8 @@ model Profile {
   projectOrderPricesUpdated  ProjectOrderPrice[]         @relation("ProjectOrderPriceUpdater")
   projectOrderPricesDecided  ProjectOrderPrice[]         @relation("ProjectOrderPriceDecider")
   projectOrderPriceRevisions ProjectOrderPriceRevision[] @relation("ProjectOrderPriceRevisionChanger")
+  spcProfilesCreated         SpcProfile[]                @relation("SpcProfileCreator")
+  spcProfilesUpdated         SpcProfile[]                @relation("SpcProfileUpdater")
 }
 
 model Site {
@@ -1001,6 +1009,7 @@ model InspectionItem {
 
   inspectionSpec InspectionSpec           @relation(fields: [inspectionSpecId], references: [id])
   measurements   InspectionMeasurement[]
+  spcProfiles    SpcProfile[]
 
   @@unique([inspectionSpecId, seq])
   @@index([inspectionSpecId])
@@ -1621,6 +1630,37 @@ model InspectionMeasurement {
   @@index([tenantId, measuredAt])
   @@index([tenantId, inspectionItemId, measuredAt])
   @@index([qualityInspectionId])
+  @@index([inspectionItemId])
+}
+
+// ─── 청운커팅 사업계획서 "품질검사 > SPC 통계분석" (PR #54) ──────────────────
+//
+// SpcProfile은 "어떤 NUMERIC 검사항목을 SPC 관리도로 볼지"를 지정하는 메타데이터일
+// 뿐, 통계 결과 자체를 저장하지 않는다 — 관리도/Cp·Cpk/Histogram은 항상
+// InspectionMeasurement(numericValue/lowerLimitSnapshot/upperLimitSnapshot)를
+// 원본으로 매번 재계산한다(spc-calculations.ts 참조). 규격이 나중에 바뀌어도
+// 과거 계산 결과가 스냅샷과 다르게 흔들리지 않도록 하기 위함이며, PR #53에서
+// 세운 "판정 기준은 항상 measurement 시점 snapshot" 원칙과 동일하다.
+model SpcProfile {
+  id                String              @id @default(cuid())
+  tenantId          String
+  inspectionItemId  String
+  name              String
+  controlChartType  SpcControlChartType @default(I_MR)
+  isActive          Boolean             @default(true)
+  createdById       String
+  updatedById       String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id])
+  inspectionItem InspectionItem @relation(fields: [inspectionItemId], references: [id])
+  createdBy      Profile        @relation("SpcProfileCreator", fields: [createdById], references: [id])
+  updatedBy      Profile        @relation("SpcProfileUpdater", fields: [updatedById], references: [id])
+
+  @@unique([tenantId, inspectionItemId, name])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
   @@index([inspectionItemId])
 }
 

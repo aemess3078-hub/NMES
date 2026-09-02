@@ -119,6 +119,8 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-change-management', parentId: 'nav-quality', label: '변경관리', icon: 'GitPullRequest', href: '/app/mes/ecn', displayOrder: 4, children: [] },
           // Gap Analysis Rev.2: 기존 route(/app/mes/inspection)는 이미 동작 — nav 노출만 추가(업무로직 변경 없음)
           { id: 'nav-inspection', parentId: 'nav-quality', label: '공정검사', icon: 'ClipboardList', href: '/app/mes/inspection', displayOrder: 0.5, children: [] },
+          // PR #54: 사업계획서 "SPC 통계분석" — 기존 route(/app/mes/spc)의 placeholder를 실제 화면으로 교체
+          { id: 'nav-spc', parentId: 'nav-quality', label: 'SPC 통계분석', icon: 'TrendingUp', href: '/app/mes/spc', displayOrder: 5, children: [] },
         ],
       },
       // 7. 영업관리

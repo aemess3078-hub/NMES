@@ -17,6 +17,7 @@
     "db:seed": "ts-node --project tsconfig.json -e \"require('./prisma/seed.ts')\"",
     "migrate:user-credentials": "ts-node --project tsconfig.json scripts/migrate-user-credentials.ts",
     "test:measurement-validation": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-measurement-validation.ts",
+    "test:spc": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-spc-calculations.ts",
     "dev:set-pop-pin": "ts-node --project tsconfig.scripts.json scripts/set-pop-pin-dev.ts"
   },
   "dependencies": {
