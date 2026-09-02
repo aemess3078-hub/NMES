@@ -40,6 +40,32 @@ const DISPOSITION_LABELS: Record<string, string> = {
   USE_AS_IS: "현상유지",
 }
 
+const JUDGEMENT_CLASSES: Record<string, string> = {
+  PASS: "bg-emerald-100 text-emerald-800",
+  FAIL: "bg-red-100 text-red-800",
+}
+
+const JUDGEMENT_LABELS: Record<string, string> = {
+  PASS: "합격",
+  FAIL: "불합격",
+}
+
+function formatMeasurementValue(m: {
+  inputTypeSnapshot: string
+  numericValue: number | null
+  textValue: string | null
+  booleanValue: boolean | null
+}): string {
+  switch (m.inputTypeSnapshot) {
+    case "NUMERIC":
+      return m.numericValue != null ? String(m.numericValue) : "—"
+    case "BOOLEAN":
+      return m.booleanValue == null ? "—" : m.booleanValue ? "합격" : "불합격"
+    default:
+      return m.textValue ?? "—"
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface InspectionDetailDialogProps {
@@ -98,6 +124,69 @@ export function InspectionDetailDialog({
               <span className="text-[13px] text-muted-foreground">미판정</span>
             )}
           </div>
+        </div>
+
+        {/* 측정값 */}
+        <div className="border-t pt-4 space-y-3">
+          <p className="text-[15px] font-medium">
+            측정값
+            {inspection.measurements.length > 0 && (
+              <span className="ml-2 text-[13px] font-normal text-muted-foreground">
+                ({inspection.measurements.length}건)
+              </span>
+            )}
+          </p>
+
+          {inspection.measurements.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground py-2">등록된 측정값이 없습니다.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="text-[13px]">검사항목</TableHead>
+                  <TableHead className="text-[13px] w-16 text-center">sample</TableHead>
+                  <TableHead className="text-[13px] w-24 text-right">측정값</TableHead>
+                  <TableHead className="text-[13px] w-16">단위</TableHead>
+                  <TableHead className="text-[13px] w-20 text-right">LSL</TableHead>
+                  <TableHead className="text-[13px] w-20 text-right">USL</TableHead>
+                  <TableHead className="text-[13px] w-20">판정</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inspection.measurements.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="text-[13px]">{m.itemNameSnapshot}</TableCell>
+                    <TableCell className="text-[13px] text-center font-mono">{m.sampleNo}</TableCell>
+                    <TableCell className="text-[13px] text-right font-mono">
+                      {formatMeasurementValue(m)}
+                    </TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">
+                      {m.unitSnapshot ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-[13px] text-right font-mono text-muted-foreground">
+                      {m.lowerLimitSnapshot != null ? m.lowerLimitSnapshot : "—"}
+                    </TableCell>
+                    <TableCell className="text-[13px] text-right font-mono text-muted-foreground">
+                      {m.upperLimitSnapshot != null ? m.upperLimitSnapshot : "—"}
+                    </TableCell>
+                    <TableCell>
+                      {m.judgement ? (
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                            JUDGEMENT_CLASSES[m.judgement] ?? "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {JUDGEMENT_LABELS[m.judgement] ?? m.judgement}
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
 
         {/* 불량 기록 */}
