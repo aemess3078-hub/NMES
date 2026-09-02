@@ -438,6 +438,8 @@ model Tenant {
   workOrderOperationAssignments WorkOrderOperationAssignment[]
   supportRequests               SupportRequest[]
   materialReturns                MaterialReturn[]
+  projectOrderPrices             ProjectOrderPrice[]
+  projectOrderPriceRevisions     ProjectOrderPriceRevision[]
 }
 
 model Profile {
@@ -474,6 +476,10 @@ model Profile {
   projectIssuesCreated  ProjectIssue[]          @relation("ProjectIssueCreator")
   materialReturnsCreated   MaterialReturn[]     @relation("MaterialReturnCreator")
   materialReturnsCompleted MaterialReturn[]     @relation("MaterialReturnCompleter")
+  projectOrderPricesCreated  ProjectOrderPrice[]         @relation("ProjectOrderPriceCreator")
+  projectOrderPricesUpdated  ProjectOrderPrice[]         @relation("ProjectOrderPriceUpdater")
+  projectOrderPricesDecided  ProjectOrderPrice[]         @relation("ProjectOrderPriceDecider")
+  projectOrderPriceRevisions ProjectOrderPriceRevision[] @relation("ProjectOrderPriceRevisionChanger")
 }
 
 model Site {
@@ -713,6 +719,7 @@ model Item {
   engineeringChanges      EngineeringChange[]    @relation("ItemECNs")
   materialLotConsumptions WorkOrderMaterialLot[] @relation("MaterialLotItem")
   materialReturnItems     MaterialReturnItem[]
+  projectOrderPrices      ProjectOrderPrice[]    @relation("ItemProjectOrderPrices")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1944,6 +1951,7 @@ model SalesOrder {
   items         SalesOrderItem[]
   shipments     ShipmentOrder[]
   projectOrders ProjectOrder[]    @relation("SalesOrderProjectOrders")
+  projectOrderPrices ProjectOrderPrice[] @relation("SalesOrderProjectOrderPrices")
 
   @@unique([tenantId, orderNo])
   @@index([tenantId])
@@ -2255,6 +2263,7 @@ model Quotation {
   site     Site            @relation("SiteQuotations", fields: [siteId], references: [id])
   customer BusinessPartner @relation("CustomerQuotations", fields: [customerId], references: [id])
   items    QuotationItem[]
+  projectOrderPrices ProjectOrderPrice[]
 
   @@unique([tenantId, quotationNo])
   @@index([tenantId, status])
@@ -2327,6 +2336,7 @@ model ProjectOrder {
   owner      Profile         @relation("ProjectOrderOwner", fields: [ownerId], references: [id])
   stages     ProjectStage[]
   issues     ProjectIssue[]
+  price      ProjectOrderPrice?
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2436,6 +2446,120 @@ model ProjectIssue {
   @@index([tenantId, dueDate])
   @@index([projectOrderId])
   @@index([assigneeId])
+}
+
+// ─── 청운커팅 사업계획서 "영업관리 > 프로젝트 단가관리" (PR #52A) ────────────────
+//
+// ProjectOrder에 단가 필드를 직접 얹지 않고 별도 모델로 분리한다 — 견적단가/
+// 수주단가/최종결정단가를 "그 시점의 값 snapshot"으로 보존해야 하고(원본
+// Quotation/SalesOrder가 나중에 수정되어도 과거 분석 결과가 바뀌면 안 됨),
+// ProjectOrder는 이미 book-keeping 책임이 많아 가격 이력까지 얹으면 과밀해진다.
+//
+// ProjectOrder당 현재 단가관리 레코드는 1건뿐이다(@@unique([tenantId,
+// projectOrderId])) — 여러 품목/여러 라인 가격은 다루지 않는다(ProjectOrder
+// 자체가 단일 itemId만 갖는 현재 구조와 대칭).
+//
+// quotationId/salesOrderId는 "이 snapshot이 어느 문서에서 왔는지"를 가리키는
+// 참조일 뿐이고, 실제 비교/집계에 쓰이는 값은 항상 quotationUnitPrice/
+// orderUnitPrice/quantity/currency 컬럼의 snapshot이다 — 원본이 나중에 수정돼도
+// 이 값들은 그대로다. 단, 원본 "삭제"는 값 불변과 별개 문제다: quotationId/
+// salesOrderId FK는 onDelete Restrict이므로, ProjectOrderPrice가 참조하는 동안은
+// 원본 Quotation/SalesOrder를 삭제할 수 없다(source 추적성 보존 — FK가 null이
+// 되면 어느 문서에서 온 snapshot인지 알 수 없어지고 currency/불변성 정책 판단도
+// 깨진다). DRAFT 가격관리 레코드를 먼저 삭제하면 그 뒤로는 원본 삭제가 다시
+// 가능하고, DECIDED는 hard delete를 만들지 않으므로 연결된 source도 가격 이력과
+// 함께 영구 보존된다.
+enum ProjectPriceStatus {
+  DRAFT
+  DECIDED
+}
+
+model ProjectOrderPrice {
+  id             String             @id @default(cuid())
+  tenantId       String
+  // ProjectOrder 쪽 1:1 back-relation(price ProjectOrderPrice?)이 유효하려면
+  // Prisma가 이 필드에 @unique를 요구한다 — 아래 @@unique([tenantId,
+  // projectOrderId]) 복합 unique와 사실상 중복이지만, 후자는 기존 코드베이스의
+  // tenant-scoped unique 관례(예: @@unique([tenantId, code]))와 표기를 맞추기
+  // 위해 그대로 유지한다.
+  projectOrderId String             @unique
+
+  // 참조용 — 실제 비교 값은 아래 snapshot 컬럼을 쓴다(§ 상단 설명 참고).
+  quotationId  String?
+  salesOrderId String?
+
+  itemId   String
+  quantity Decimal @db.Decimal(18, 6)
+
+  quotationUnitPrice Decimal? @db.Decimal(18, 2)
+  orderUnitPrice     Decimal? @db.Decimal(18, 2)
+  finalUnitPrice     Decimal? @db.Decimal(18, 2)
+
+  currency String @default("KRW")
+  status   ProjectPriceStatus @default(DRAFT)
+
+  quotationDate DateTime?
+  orderDate     DateTime?
+
+  // DECIDED 전환 시각/주체 — 최초 결정 시점을 가리킨다. 이후 재결정 시에도 이
+  // 필드들은 "가장 최근 결정"으로 갱신되고, 결정이 바뀌어온 과정 자체는
+  // ProjectOrderPriceRevision이 별도로 보존한다.
+  decidedAt      DateTime?
+  decidedById    String?
+  decisionReason String?
+
+  createdById String
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id])
+  projectOrder ProjectOrder                @relation(fields: [projectOrderId], references: [id])
+  // quotationId/salesOrderId는 nullable이라 Prisma 기본 onDelete는 SetNull이지만,
+  // 그 기본값은 가격 원장의 source 추적성과 충돌한다 — 원본이 삭제돼 FK가 null이
+  // 되면 어떤 견적/수주에서 이 snapshot이 나왔는지 알 수 없게 되고, salesOrderId
+  // source-presence로 currency/불변성 정책을 판단하는 로직도 오동작한다. 그래서
+  // ProjectOrderPrice가 참조 중인 동안은 원본 Quotation/SalesOrder 삭제 자체를
+  // 막는다(Restrict) — DRAFT 가격을 먼저 지우면 그 뒤로는 기존 삭제 흐름 그대로 가능하다.
+  quotation    Quotation?                  @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  salesOrder   SalesOrder?                 @relation("SalesOrderProjectOrderPrices", fields: [salesOrderId], references: [id], onDelete: Restrict)
+  item         Item                        @relation("ItemProjectOrderPrices", fields: [itemId], references: [id])
+  decidedBy    Profile?                    @relation("ProjectOrderPriceDecider", fields: [decidedById], references: [id])
+  createdBy    Profile                     @relation("ProjectOrderPriceCreator", fields: [createdById], references: [id])
+  updatedBy    Profile?                    @relation("ProjectOrderPriceUpdater", fields: [updatedById], references: [id])
+  revisions    ProjectOrderPriceRevision[]
+
+  @@unique([tenantId, projectOrderId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, decidedAt])
+  @@index([quotationId])
+  @@index([salesOrderId])
+  @@index([itemId])
+}
+
+// finalUnitPrice가 바뀔 때마다(최초 DECIDED 전환 포함) 1건씩 쌓인다 — 사용자가
+// 볼 "가격 흐름 타임라인" 전용 데이터다. AuditLog(시스템 감사 추적)와 목적이
+// 다르므로 역할이 겹치지 않는다: 여기는 "가격이 어떻게 흘러왔는가"만 담고,
+// 누가 어떤 필드를 언제 바꿨는지의 전체 스냅샷은 AuditLog가 별도로 남긴다.
+// ProjectStage/ProjectIssue와 같은 이유로 tenantId를 직접 갖는다 — 상위
+// ProjectOrder 계열 레코드들의 기존 관례(직접 조회/tenant 격리 방어)를 따른다.
+model ProjectOrderPriceRevision {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  projectOrderPriceId    String
+  previousFinalUnitPrice Decimal? @db.Decimal(18, 2)
+  newFinalUnitPrice      Decimal  @db.Decimal(18, 2)
+  reason                 String?
+  changedById            String
+  changedAt              DateTime @default(now())
+
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
+  projectOrderPrice ProjectOrderPrice @relation(fields: [projectOrderPriceId], references: [id])
+  changedBy         Profile           @relation("ProjectOrderPriceRevisionChanger", fields: [changedById], references: [id])
+
+  @@index([tenantId])
+  @@index([projectOrderPriceId])
 }
 
 // ─── Phase 2d-9: 원가관리 ─────────────────────────────────────────────────────

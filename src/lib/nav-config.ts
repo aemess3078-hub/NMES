@@ -137,6 +137,9 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-delivery-status', parentId: 'nav-sales', label: '납품현황', icon: 'FileBarChart', href: '/app/mes/sales/delivery-status', displayOrder: 4, children: [] },
           // 청운커팅 사업계획서 정본 '영업관리 > 프로젝트 오더' (PR #47)
           { id: 'nav-project-orders', parentId: 'nav-sales', label: '프로젝트 오더', icon: 'FolderKanban', href: '/app/mes/project-orders', displayOrder: 5, children: [] },
+          // 고객 추가기능 '영업관리 > 프로젝트 단가관리' (PR #52A) — 사업계획서 canonical
+          // 메뉴 구조를 깨지 않도록 프로젝트 오더 바로 다음 자리에 추가한다.
+          { id: 'nav-project-prices', parentId: 'nav-sales', label: '프로젝트 단가관리', icon: 'Banknote', href: '/app/mes/project-prices', displayOrder: 6, children: [] },
         ],
       },
       // 8. 프로젝트관리 (청운커팅 사업계획서 정본 신규 상위 그룹, PR #48)

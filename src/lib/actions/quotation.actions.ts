@@ -189,6 +189,13 @@ export async function deleteQuotation(id: string) {
   if (current.status !== "DRAFT") {
     throw new Error("초안(DRAFT) 상태의 견적만 삭제할 수 있습니다")
   }
+  // PR #52A에서 ProjectOrderPrice.quotationId → Quotation FK가 ON DELETE RESTRICT로
+  // 추가된다. 아래 삭제는 이미 트랜잭션이라 partial delete 위험은 없지만, raw FK
+  // 오류 대신 사용자 친화적인 메시지로 막는다.
+  const priceRefCount = await prisma.projectOrderPrice.count({ where: { quotationId: id } })
+  if (priceRefCount > 0) {
+    throw new Error("프로젝트 단가정보에서 사용 중인 견적은 삭제할 수 없습니다.")
+  }
   await prisma.$transaction([
     prisma.quotationItem.deleteMany({ where: { quotationId: id } }),
     prisma.quotation.delete({ where: { id } }),

@@ -214,8 +214,19 @@ export async function deleteSalesOrder(id: string) {
   if (order.status !== "DRAFT") {
     throw new Error("DRAFT 상태인 수주만 삭제할 수 있습니다.")
   }
-  await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } })
-  await prisma.salesOrder.delete({ where: { id } })
+  // PR #52A에서 ProjectOrderPrice.salesOrderId → SalesOrder FK가 ON DELETE RESTRICT로
+  // 추가된다. 참조가 있으면 Header 삭제만 FK 오류로 실패해, 아이템은 이미 지워졌는데
+  // Header는 남는 partial delete가 될 수 있다. 그래서 (1) 사전에 참조를 확인해 사용자
+  // 친화적으로 차단하고, (2) 아이템/Header 삭제를 하나의 트랜잭션으로 묶어 향후 다른
+  // FK 제약으로 Header 삭제가 실패해도 아이템 삭제까지 함께 롤백되게 한다.
+  const priceRefCount = await prisma.projectOrderPrice.count({ where: { salesOrderId: id } })
+  if (priceRefCount > 0) {
+    throw new Error("프로젝트 단가정보에서 사용 중인 수주는 삭제할 수 없습니다.")
+  }
+  await prisma.$transaction([
+    prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } }),
+    prisma.salesOrder.delete({ where: { id } }),
+  ])
   revalidatePath("/app/mes/sales-orders")
 }
 
