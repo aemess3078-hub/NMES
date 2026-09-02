@@ -37,6 +37,42 @@ export type ValidatedMeasurement = {
   judgement: InspectionJudgement | null
 }
 
+// InspectionMeasurement.numericValue / InspectionItem.lowerLimit·upperLimit는
+// 전부 Decimal(18,6)이다. 서버가 판정에 쓰는 number 원값과 DB에 실제 저장될
+// Decimal(18,6) 값이 달라지면(부동소수점 반올림으로 뒤늦게 저장 정밀도가 달라짐)
+// "저장된 값 기준으로는 PASS인데 판정은 FAIL" 같은 모순이 생길 수 있어, 저장
+// 전에 정밀도를 벗어난 값을 조용히 반올림하지 않고 명시적으로 거부한다.
+const MEASUREMENT_DECIMAL_SCALE = 6
+const MEASUREMENT_MAX_INTEGER_DIGITS = 12 // Decimal(18,6) → 18자리 중 정수부 최대 12자리
+
+/**
+ * numericValue가 Decimal(18,6)에 그대로 저장 가능한 정밀도인지 문자열 기준으로
+ * 확인한다. pop.actions.ts의 toScaledQty()와 같은 "문자열 소수부 길이 비교" 방식을
+ * 따르되, 측정값은 음수(예: 온도)를 허용해야 하므로 부호를 별도로 처리한다.
+ * decimal.js/Prisma.Decimal 변환은 쓰지 않는다 — number.toString()이 이미 JS가
+ * 왕복 가능한 최단 10진 표현을 주므로 문자열 비교만으로 충분하다.
+ */
+function assertMeasurementPrecision(value: number, itemName: string): void {
+  const raw = value.toString()
+  const unsigned = raw.startsWith("-") ? raw.slice(1) : raw
+
+  if (!/^\d+(\.\d+)?$/.test(unsigned)) {
+    // 매우 크거나(>=1e21) 매우 작은(<1e-6) 값은 toString()이 지수표기가 되는데,
+    // 어느 쪽이든 Decimal(18,6) 범위를 명백히 벗어나므로 거부한다.
+    throw new Error(`'${itemName}' 항목의 측정값이 너무 크거나 작아 저장할 수 없습니다.`)
+  }
+
+  const [integerPart, decimalPart = ""] = unsigned.split(".")
+  if (decimalPart.length > MEASUREMENT_DECIMAL_SCALE) {
+    throw new Error(`'${itemName}' 항목의 측정값은 소수점 ${MEASUREMENT_DECIMAL_SCALE}자리까지 입력할 수 있습니다.`)
+  }
+  if (integerPart.length > MEASUREMENT_MAX_INTEGER_DIGITS) {
+    throw new Error(
+      `'${itemName}' 항목의 측정값이 너무 큽니다(정수부 최대 ${MEASUREMENT_MAX_INTEGER_DIGITS}자리).`
+    )
+  }
+}
+
 /**
  * NUMERIC 항목의 판정을 확정한다. 편측 규격을 지원한다 —
  * lowerLimit/upperLimit 중 없는 쪽은 그 방향의 이탈을 판단하지 않는다.
@@ -105,6 +141,7 @@ export function validateMeasurements(
         if (typeof m.numericValue !== "number" || !Number.isFinite(m.numericValue)) {
           throw new Error(`'${item.name}' 항목의 측정값은 유한한 숫자여야 합니다.`)
         }
+        assertMeasurementPrecision(m.numericValue, item.name)
         numericValue = m.numericValue
         judgement = computeNumericJudgement(numericValue, lowerLimit, upperLimit)
         break

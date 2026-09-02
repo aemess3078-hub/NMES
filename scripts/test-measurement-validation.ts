@@ -86,7 +86,15 @@ const oneSidedUpperItem: SpecItemForValidation = {
   upperLimit: 5,
   unit: "%",
 }
-const specItems = [numericItem, textItem, boolItem, oneSidedUpperItem]
+const preciseUslItem: SpecItemForValidation = {
+  id: "item-precise-usl",
+  name: "정밀도검사",
+  inputType: "NUMERIC",
+  lowerLimit: 1,
+  upperLimit: 1,
+  unit: "mm",
+}
+const specItems = [numericItem, textItem, boolItem, oneSidedUpperItem, preciseUslItem]
 
 // NUMERIC 정상
 {
@@ -116,6 +124,37 @@ const specItems = [numericItem, textItem, boolItem, oneSidedUpperItem]
     specItems
   )
   assertEqual(result[0].judgement, "FAIL", "NUMERIC USL 초과 — FAIL")
+}
+
+// P1: 소수점 6자리는 허용
+{
+  const result = validateMeasurements(
+    [{ inspectionItemId: "item-numeric", numericValue: 1.123456 }],
+    specItems
+  )
+  assertEqual(result.length, 1, "P1. 소수점 6자리(1.123456) 허용")
+  assertEqual(result[0].numericValue, 1.123456, "P1. 값 그대로 저장")
+}
+
+// P2: 소수점 7자리는 차단
+assertThrows(
+  () => validateMeasurements([{ inspectionItemId: "item-numeric", numericValue: 1.1234567 }], specItems),
+  "P2. 소수점 7자리(1.1234567) 차단"
+)
+
+// P3: USL=1.000000, 입력=1.0000004(소수점 7자리) → 저장 전 차단되어 판정/저장값 모순 방지
+assertThrows(
+  () => validateMeasurements([{ inspectionItemId: "item-precise-usl", numericValue: 1.0000004 }], specItems),
+  "P3. USL 경계 근접 + 정밀도 초과 값은 판정 이전에 차단"
+)
+
+// P4: LSL/USL 경계와 정확히 동일한 값(정밀도 이내) → PASS
+{
+  const result = validateMeasurements(
+    [{ inspectionItemId: "item-precise-usl", numericValue: 1 }],
+    specItems
+  )
+  assertEqual(result[0].judgement, "PASS", "P4. LSL=USL=1 경계와 정확히 동일한 값은 PASS")
 }
 
 // 편측 규격(USL only)

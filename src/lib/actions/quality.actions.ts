@@ -516,30 +516,33 @@ export async function upsertInspectionItems(
   items: UpsertInspectionItemInput[]
 ) {
   await requireRole("OPERATOR")
-  const measuredCount = await prisma.inspectionMeasurement.count({
-    where: { inspectionItem: { inspectionSpecId } },
-  })
-  if (measuredCount > 0) {
-    throw new Error(
-      "이 검사표준은 이미 측정 이력이 있어 검사항목을 수정할 수 없습니다. 새 버전을 생성해 주세요."
-    )
-  }
 
-  await prisma.inspectionItem.deleteMany({ where: { inspectionSpecId } })
-
-  if (items.length > 0) {
-    await prisma.inspectionItem.createMany({
-      data: items.map((item) => ({
-        inspectionSpecId,
-        seq: item.seq,
-        name: item.name,
-        inputType: item.inputType,
-        lowerLimit: item.lowerLimit ?? null,
-        upperLimit: item.upperLimit ?? null,
-        unit: item.unit ?? null,
-      })),
+  await prisma.$transaction(async (tx) => {
+    const measuredCount = await tx.inspectionMeasurement.count({
+      where: { inspectionItem: { inspectionSpecId } },
     })
-  }
+    if (measuredCount > 0) {
+      throw new Error(
+        "이 검사표준은 이미 측정 이력이 있어 검사항목을 수정할 수 없습니다. 새 버전을 생성해 주세요."
+      )
+    }
+
+    await tx.inspectionItem.deleteMany({ where: { inspectionSpecId } })
+
+    if (items.length > 0) {
+      await tx.inspectionItem.createMany({
+        data: items.map((item) => ({
+          inspectionSpecId,
+          seq: item.seq,
+          name: item.name,
+          inputType: item.inputType,
+          lowerLimit: item.lowerLimit ?? null,
+          upperLimit: item.upperLimit ?? null,
+          unit: item.unit ?? null,
+        })),
+      })
+    }
+  })
 
   revalidatePath("/app/mes/measurement")
   revalidatePath("/app/mes/master/inspection-standards")
