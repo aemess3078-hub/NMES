@@ -5,6 +5,7 @@ import {
   getSpcAnalysis,
   type SpcAnalysisFilter,
 } from "@/lib/actions/spc.actions"
+import { kstDefaultDateRange, isValidKstDateRange } from "@/lib/date/kst"
 import { SpcClient } from "./spc-client"
 
 export const dynamic = "force-dynamic"
@@ -20,23 +21,18 @@ interface SpcPageProps {
   }>
 }
 
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  return { from: fmt(from), to: fmt(to) }
-}
-
 export default async function SpcPage({ searchParams }: SpcPageProps) {
   const params = searchParams ? await searchParams : {}
-  const { from: defaultFrom, to: defaultTo } = defaultDateRange()
+  const { from: defaultFrom, to: defaultTo } = kstDefaultDateRange(30)
+
+  const rawFrom = params.from?.trim()
+  const rawTo = params.to?.trim()
+  const bothValid = !!rawFrom && !!rawTo && isValidKstDateRange(rawFrom, rawTo)
 
   const filter: SpcAnalysisFilter = {
     spcProfileId: params.profileId?.trim() || "",
-    from: params.from?.trim() || defaultFrom,
-    to: params.to?.trim() || defaultTo,
+    from: bothValid ? rawFrom! : defaultFrom,
+    to: bothValid ? rawTo! : defaultTo,
     siteId: params.siteId?.trim() || undefined,
     manufacturingNo: params.manufacturingNo?.trim() || undefined,
     equipmentId: params.equipmentId?.trim() || undefined,

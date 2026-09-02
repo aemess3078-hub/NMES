@@ -16,6 +16,13 @@ import {
   buildHistogram,
   calculateSpecViolation,
 } from "../src/lib/spc-calculations"
+import {
+  kstDateKeyToUtcStart,
+  kstDateKeyToUtcEnd,
+  isValidKstDateKey,
+  isValidKstDateRange,
+  kstDefaultDateRange,
+} from "../src/lib/date/kst"
 
 let passed = 0
 let failed = 0
@@ -228,6 +235,69 @@ assertTrue(calculateSpecViolation(20, 5, 15) === true, "T18. USL 초과는 viola
 // ─── T20: ordering에 따라 MR이 결정됨(내부에서 재정렬하지 않음) ─────────────
 assertEqual(movingRanges([1, 2, 3]), [1, 1], "T20. 정렬된 순서의 MR")
 assertEqual(movingRanges([3, 1, 2]), [2, 1], "T20. 다른 순서면 MR도 달라짐(내부 재정렬 없음)")
+
+// ─── D1~D6: KST 날짜 경계 helper (src/lib/date/kst.ts) ──────────────────────
+// PR #54 리뷰 BLOCKER: Vercel 서버가 UTC라 오프셋 없이 "YYYY-MM-DDT00:00:00.000"을
+// 파싱하면 KST 대비 9시간 어긋난다 — 반드시 +09:00 명시 변환을 거쳐야 한다.
+
+// D1: KST 달력일 시작 → UTC instant (2026-09-02 00:00 KST = 2026-09-01 15:00 UTC)
+assertEqual(
+  kstDateKeyToUtcStart("2026-09-02").toISOString(),
+  "2026-09-01T15:00:00.000Z",
+  "D1. KST 00:00:00.000 시작 경계 → UTC 변환"
+)
+
+// D2: KST 달력일 종료 → UTC instant (2026-09-02 23:59:59.999 KST = 2026-09-02 14:59:59.999 UTC)
+assertEqual(
+  kstDateKeyToUtcEnd("2026-09-02").toISOString(),
+  "2026-09-02T14:59:59.999Z",
+  "D2. KST 23:59:59.999 종료 경계 → UTC 변환"
+)
+
+// D3: process/Node의 local timezone과 무관하게 항상 동일한 결과여야 한다.
+// 문자열에 +09:00을 명시해 파싱하므로 process.env.TZ를 바꿔도 결과가 흔들리면 안 된다.
+{
+  const originalTz = process.env.TZ
+  const before = kstDateKeyToUtcStart("2026-09-02").getTime()
+  process.env.TZ = "America/Los_Angeles"
+  const afterLA = kstDateKeyToUtcStart("2026-09-02").getTime()
+  process.env.TZ = "UTC"
+  const afterUTC = kstDateKeyToUtcStart("2026-09-02").getTime()
+  process.env.TZ = originalTz
+  assertEqual(afterLA, before, "D3. TZ=America/Los_Angeles여도 동일 instant")
+  assertEqual(afterUTC, before, "D3. TZ=UTC여도 동일 instant")
+
+  // 자정 부근 경계값으로 KST 변환이 실제로 날짜를 넘기는지도 함께 확인한다
+  // (버그가 있었다면 이 경계에서 하루가 밀렸을 것).
+  const justBeforeMidnightKst = new Date("2026-09-02T14:30:00.000Z") // KST 23:30, 여전히 9/2
+  const justAfterMidnightKst = new Date("2026-09-02T15:30:00.000Z") // KST 00:30, 이미 9/3
+  assertEqual(justBeforeMidnightKst.getTime() < kstDateKeyToUtcEnd("2026-09-02").getTime(), true, "D3. KST 23:30은 9/2 종료 경계 이전")
+  assertEqual(justAfterMidnightKst.getTime() > kstDateKeyToUtcEnd("2026-09-02").getTime(), true, "D3. KST 00:30(익일)은 9/2 종료 경계 이후")
+}
+
+// D4: 잘못된 형식/존재하지 않는 날짜 차단
+assertEqual(isValidKstDateKey("2026-09-02"), true, "D4. 정상 날짜는 유효")
+assertEqual(isValidKstDateKey("2026-02-30"), false, "D4. 2월 30일처럼 실재하지 않는 날짜 차단")
+assertEqual(isValidKstDateKey("2026-13-01"), false, "D4. 13월처럼 잘못된 월 차단")
+assertEqual(isValidKstDateKey("2026/09/02"), false, "D4. 형식이 다르면 차단")
+assertEqual(isValidKstDateKey("not-a-date"), false, "D4. 날짜가 아닌 문자열 차단")
+
+// D5: from > to 차단
+assertEqual(isValidKstDateRange("2026-09-01", "2026-09-02"), true, "D5. from<=to는 허용")
+assertEqual(isValidKstDateRange("2026-09-02", "2026-09-02"), true, "D5. from===to는 허용")
+assertEqual(isValidKstDateRange("2026-09-02", "2026-09-01"), false, "D5. from>to는 차단")
+assertEqual(isValidKstDateRange("bad-date", "2026-09-02"), false, "D5. 형식이 잘못되면 range 자체가 무효")
+
+// D6: KST 기준 기본 조회기간(최근 N일) 계산
+{
+  // 2026-09-02 12:00 KST(=2026-09-02T03:00:00Z)에 조회 → 오늘 9/2, 30일 전 8/3
+  const result = kstDefaultDateRange(30, new Date("2026-09-02T03:00:00.000Z"))
+  assertEqual(result, { from: "2026-08-03", to: "2026-09-02" }, "D6. 30일 전 KST 달력일 계산")
+
+  // 2026-09-02T15:30:00Z는 이미 KST로 9/3 00:30 — 기준일(to)이 하루 밀리지 않고 정확히 9/3이어야 한다
+  const rollover = kstDefaultDateRange(30, new Date("2026-09-02T15:30:00.000Z"))
+  assertEqual(rollover.to, "2026-09-03", "D6. UTC 자정 이전이어도 KST로는 다음날이면 to가 넘어감")
+}
 
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

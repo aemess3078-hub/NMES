@@ -14,6 +14,12 @@ import {
   type ProcessCapabilityResult,
   type HistogramBin,
 } from "@/lib/spc-calculations"
+import {
+  kstDateKeyToUtcStart,
+  kstDateKeyToUtcEnd,
+  isValidKstDateRange,
+  kstDefaultDateRange,
+} from "@/lib/date/kst"
 
 // ─── SPC Profile CRUD ────────────────────────────────────────────────────────
 
@@ -356,13 +362,28 @@ function emptySpcAnalysis(): SpcAnalysisResult {
   }
 }
 
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  return { from: fmt(from), to: fmt(to) }
+/**
+ * 조회기간(KST 달력일)을 검증하고 UTC instant 경계로 변환한다.
+ * Vercel 서버는 UTC로 동작하므로 "YYYY-MM-DDT00:00:00.000"처럼 offset 없이
+ * 파싱하면 서버 타임존(UTC) 기준으로 해석돼 KST 대비 9시간 어긋난다 — 반드시
+ * kstDateKeyToUtcStart/End로 KST 00:00:00.000~23:59:59.999를 명시 변환한다.
+ * 형식이 잘못됐거나 from>to면(악의적 쿼리스트링 포함) 조용히 기본 30일 범위로
+ * 대체한다 — Prisma에 Invalid Date가 전달되어 페이지 렌더 중 500이 나는 것을 막는다.
+ */
+function resolveKstDateRange(from?: string, to?: string): { fromDate: Date; toDate: Date; from: string; to: string } {
+  const fallback = kstDefaultDateRange(30)
+  const fromKey = from?.trim()
+  const toKey = to?.trim()
+
+  const bothValid = !!fromKey && !!toKey && isValidKstDateRange(fromKey, toKey)
+  const resolved = bothValid ? { from: fromKey!, to: toKey! } : fallback
+
+  return {
+    from: resolved.from,
+    to: resolved.to,
+    fromDate: kstDateKeyToUtcStart(resolved.from),
+    toDate: kstDateKeyToUtcEnd(resolved.to),
+  }
 }
 
 export async function getSpcAnalysis(filter: SpcAnalysisFilter): Promise<SpcAnalysisResult> {
@@ -376,9 +397,7 @@ export async function getSpcAnalysis(filter: SpcAnalysisFilter): Promise<SpcAnal
   })
   if (!profile) return emptySpcAnalysis()
 
-  const { from: defaultFrom, to: defaultTo } = defaultDateRange()
-  const fromDate = new Date(`${filter.from?.trim() || defaultFrom}T00:00:00.000`)
-  const toDate = new Date(`${filter.to?.trim() || defaultTo}T23:59:59.999`)
+  const { fromDate, toDate } = resolveKstDateRange(filter.from, filter.to)
 
   const workOrderOperationWhere: Record<string, unknown> = {}
   if (filter.equipmentId) workOrderOperationWhere.equipmentId = filter.equipmentId

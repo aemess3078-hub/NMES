@@ -23,9 +23,40 @@ export function toKstDateKey(date: Date): string {
   return new Date(date.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10)
 }
 
-/** KST 달력일 문자열(YYYY-MM-DD) → 그 날짜 KST 00:00:00에 해당하는 UTC Date instant */
+/** KST 달력일 문자열(YYYY-MM-DD) → 그 날짜 KST 00:00:00.000에 해당하는 UTC Date instant */
 export function kstDateKeyToUtcStart(dateKey: string): Date {
   return new Date(`${dateKey}T00:00:00+09:00`)
+}
+
+/** KST 달력일 문자열(YYYY-MM-DD) → 그 날짜 KST 23:59:59.999에 해당하는 UTC Date instant */
+export function kstDateKeyToUtcEnd(dateKey: string): Date {
+  return new Date(kstDateKeyToUtcStart(dateKey).getTime() + ONE_DAY_MS - 1)
+}
+
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * "YYYY-MM-DD" 형식이면서 실제로 존재하는 날짜인지 검증한다(예: "2026-02-30" 차단).
+ * Date가 overflow를 자동 정규화해 버리므로, KST 달력일로 왕복 변환해 원본과
+ * 같은지 비교하는 방식으로 확인한다.
+ */
+export function isValidKstDateKey(value: string): boolean {
+  if (!DATE_KEY_PATTERN.test(value)) return false
+  const instant = kstDateKeyToUtcStart(value)
+  if (Number.isNaN(instant.getTime())) return false
+  return toKstDateKey(instant) === value
+}
+
+/** from~to가 각각 유효한 KST 달력일 형식이고 from<=to(달력일 오름차순)인지 검증한다. */
+export function isValidKstDateRange(from: string, to: string): boolean {
+  return isValidKstDateKey(from) && isValidKstDateKey(to) && from <= to
+}
+
+/** now(UTC instant) 기준 KST 달력일과, 그로부터 daysBack일 전 KST 달력일. 기본 조회기간 계산용. */
+export function kstDefaultDateRange(daysBack: number, now: Date = new Date()): { from: string; to: string } {
+  const toKey = toKstDateKey(now)
+  const fromInstant = new Date(kstDateKeyToUtcStart(toKey).getTime() - daysBack * ONE_DAY_MS)
+  return { from: toKstDateKey(fromInstant), to: toKey }
 }
 
 /** from~to(둘 다 KST 달력일, inclusive) 사이의 모든 날짜 키를 오름차순으로 생성한다. */

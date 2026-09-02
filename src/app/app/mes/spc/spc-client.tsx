@@ -182,7 +182,7 @@ export function SpcClient({
                 <SelectItem value={NONE_VALUE}>선택 안 함</SelectItem>
                 {activeProfiles.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.name} — [{p.itemCode}] {p.itemName} / {p.routingOperationName}
+                    {p.name} — [{p.itemCode}] {p.itemName} / {p.routingOperationName} / {p.inspectionItemName} / v{p.specVersion}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -331,6 +331,7 @@ export function SpcClient({
                 <TableHead>품목</TableHead>
                 <TableHead>공정</TableHead>
                 <TableHead>검사항목</TableHead>
+                <TableHead>검사표준 버전</TableHead>
                 <TableHead>단위</TableHead>
                 <TableHead>사용</TableHead>
                 <TableHead className="text-right">작업</TableHead>
@@ -339,7 +340,7 @@ export function SpcClient({
             <TableBody>
               {profiles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     등록된 SPC Profile이 없습니다.
                   </TableCell>
                 </TableRow>
@@ -350,6 +351,7 @@ export function SpcClient({
                     <TableCell>[{p.itemCode}] {p.itemName}</TableCell>
                     <TableCell>{p.routingOperationName}</TableCell>
                     <TableCell>{p.inspectionItemName}</TableCell>
+                    <TableCell>v{p.specVersion}</TableCell>
                     <TableCell>{p.unit ?? "—"}</TableCell>
                     <TableCell>
                       <Badge variant={p.isActive ? "default" : "secondary"}>
@@ -438,6 +440,30 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   )
 }
 
+// ─── I/MR 관리이탈(outOfControl) point 강조 dot ───────────────────────────────
+// Spec(LSL/USL) 이탈(judgement=FAIL)과는 별개 개념 — I/MR 차트에서는 오직
+// control limit(UCL/LCL) 초과 여부(outOfControl)만 기준으로 강조한다.
+
+type ControlDotDatum = { outOfControl?: boolean }
+type ControlDotProps = { cx?: number; cy?: number; payload?: ControlDotDatum }
+
+function makeControlDot(normalColor: string) {
+  return function ControlDot({ cx, cy, payload }: ControlDotProps) {
+    if (cx == null || cy == null) return null
+    const isOut = Boolean(payload?.outOfControl)
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={isOut ? 5 : 3}
+        fill={isOut ? "#dc2626" : normalColor}
+        stroke={isOut ? "#dc2626" : normalColor}
+        strokeWidth={isOut ? 2 : 1}
+      />
+    )
+  }
+}
+
 // ─── I chart ────────────────────────────────────────────────────────────────
 
 function IChart({ analysis }: { analysis: SpcAnalysisResult }) {
@@ -446,20 +472,34 @@ function IChart({ analysis }: { analysis: SpcAnalysisResult }) {
   }
   const { iChart } = analysis.imr
   const data = iChart.points.map((p) => ({ index: p.index + 1, value: p.value, outOfControl: p.outOfControl }))
+  const outOfControlCount = iChart.points.filter((p) => p.outOfControl).length
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="index" tick={{ fontSize: 12 }} />
-        <YAxis tick={{ fontSize: 12 }} domain={["auto", "auto"]} />
-        <Tooltip formatter={(v) => fmt(Number(v))} />
-        <ReferenceLine y={iChart.cl} stroke="#16a34a" strokeDasharray="4 2" label={{ value: "CL", fontSize: 11 }} />
-        <ReferenceLine y={iChart.ucl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "UCL", fontSize: 11 }} />
-        <ReferenceLine y={iChart.lcl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "LCL", fontSize: 11 }} />
-        <Line type="monotone" dataKey="value" stroke="#2563eb" dot={{ r: 3 }} isAnimationActive={false} />
-      </LineChart>
-    </ResponsiveContainer>
+    <div className="h-full flex flex-col">
+      {outOfControlCount > 0 && (
+        <div className="text-[13px] text-red-600 mb-1">관리한계 이탈 {outOfControlCount}건</div>
+      )}
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="index" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} domain={["auto", "auto"]} />
+            <Tooltip formatter={(v) => fmt(Number(v))} />
+            <ReferenceLine y={iChart.cl} stroke="#16a34a" strokeDasharray="4 2" label={{ value: "CL", fontSize: 11 }} />
+            <ReferenceLine y={iChart.ucl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "UCL", fontSize: 11 }} />
+            <ReferenceLine y={iChart.lcl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "LCL", fontSize: 11 }} />
+            <Line
+              type="linear"
+              dataKey="value"
+              stroke="#2563eb"
+              dot={makeControlDot("#2563eb")}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   )
 }
 
@@ -468,21 +508,35 @@ function MrChart({ analysis }: { analysis: SpcAnalysisResult }) {
     return <EmptyChartState message="관리도 계산에는 최소 2개 이상의 측정값이 필요합니다." />
   }
   const { mrChart } = analysis.imr
-  const data = mrChart.points.map((p) => ({ index: p.index + 1, value: p.value }))
+  const data = mrChart.points.map((p) => ({ index: p.index + 1, value: p.value, outOfControl: p.outOfControl }))
+  const outOfControlCount = mrChart.points.filter((p) => p.outOfControl).length
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="index" tick={{ fontSize: 12 }} />
-        <YAxis tick={{ fontSize: 12 }} domain={[0, "auto"]} />
-        <Tooltip formatter={(v) => fmt(Number(v))} />
-        <ReferenceLine y={mrChart.cl} stroke="#16a34a" strokeDasharray="4 2" label={{ value: "CL", fontSize: 11 }} />
-        <ReferenceLine y={mrChart.ucl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "UCL", fontSize: 11 }} />
-        <ReferenceLine y={mrChart.lcl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "LCL", fontSize: 11 }} />
-        <Line type="monotone" dataKey="value" stroke="#7c3aed" dot={{ r: 3 }} isAnimationActive={false} />
-      </LineChart>
-    </ResponsiveContainer>
+    <div className="h-full flex flex-col">
+      {outOfControlCount > 0 && (
+        <div className="text-[13px] text-red-600 mb-1">관리한계 이탈 {outOfControlCount}건</div>
+      )}
+      <div className="flex-1 min-h-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="index" tick={{ fontSize: 12 }} />
+            <YAxis tick={{ fontSize: 12 }} domain={[0, "auto"]} />
+            <Tooltip formatter={(v) => fmt(Number(v))} />
+            <ReferenceLine y={mrChart.cl} stroke="#16a34a" strokeDasharray="4 2" label={{ value: "CL", fontSize: 11 }} />
+            <ReferenceLine y={mrChart.ucl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "UCL", fontSize: 11 }} />
+            <ReferenceLine y={mrChart.lcl} stroke="#dc2626" strokeDasharray="4 2" label={{ value: "LCL", fontSize: 11 }} />
+            <Line
+              type="linear"
+              dataKey="value"
+              stroke="#7c3aed"
+              dot={makeControlDot("#7c3aed")}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   )
 }
 
