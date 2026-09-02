@@ -70,6 +70,7 @@ import {
   FolderKanban,
   CircleAlert,
   Undo2,
+  Banknote,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -141,6 +142,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FolderKanban,
   CircleAlert,
   Undo2,
+  Banknote,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
