@@ -621,6 +621,7 @@ export async function createQualityInspection(
   }
 
   const validatedMeasurements = validateMeasurements(data.measurements ?? [], spec.inspectionItems)
+  const inspectedAt = new Date(data.inspectedAt)
 
   await prisma.$transaction(async (tx) => {
     const inspection = await tx.qualityInspection.create({
@@ -630,7 +631,7 @@ export async function createQualityInspection(
         inspectorId: data.inspectorId,
         result: data.result,
         inspectedQty: data.inspectedQty,
-        inspectedAt: new Date(data.inspectedAt),
+        inspectedAt,
       },
     })
 
@@ -650,6 +651,9 @@ export async function createQualityInspection(
           inputTypeSnapshot: m.inputTypeSnapshot,
           unitSnapshot: m.unitSnapshot,
           judgement: m.judgement,
+          // SPC 기간 필터/I-MR 시계열이 부모 검사일시와 어긋나지 않도록,
+          // 이번 PR은 sample별 개별 측정시각을 받지 않으므로 부모 검사일시를 그대로 쓴다.
+          measuredAt: inspectedAt,
         })),
       })
     }
@@ -683,9 +687,11 @@ export async function updateInspectionResult(id: string, result: InspectionResul
 
 export async function deleteQualityInspection(id: string) {
   await requireRole("OPERATOR")
-  await prisma.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
-  await prisma.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
-  await prisma.qualityInspection.delete({ where: { id } })
+  await prisma.$transaction(async (tx) => {
+    await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
+    await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
+    await tx.qualityInspection.delete({ where: { id } })
+  })
   revalidateQualityViews()
 }
 

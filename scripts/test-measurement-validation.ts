@@ -220,5 +220,19 @@ assertThrows(
   "sampleNo 0 차단"
 )
 
+// M4/M5/M6: NUMERIC finite validation (NaN/Infinity/-Infinity 차단)
+assertThrows(
+  () => validateMeasurements([{ inspectionItemId: "item-numeric", numericValue: NaN }], specItems),
+  "M4. NUMERIC NaN 차단"
+)
+assertThrows(
+  () => validateMeasurements([{ inspectionItemId: "item-numeric", numericValue: Infinity }], specItems),
+  "M5. NUMERIC Infinity 차단"
+)
+assertThrows(
+  () => validateMeasurements([{ inspectionItemId: "item-numeric", numericValue: -Infinity }], specItems),
+  "M6. NUMERIC -Infinity 차단"
+)
+
 console.log(`\n${passed} passed, ${failed} failed`)
 if (failed > 0) process.exit(1)

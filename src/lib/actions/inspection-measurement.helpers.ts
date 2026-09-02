@@ -102,8 +102,8 @@ export function validateMeasurements(
         if (!hasNumeric) {
           throw new Error(`'${item.name}' 항목은 숫자 측정값만 입력할 수 있습니다.`)
         }
-        if (typeof m.numericValue !== "number" || Number.isNaN(m.numericValue)) {
-          throw new Error(`'${item.name}' 항목의 측정값은 숫자여야 합니다.`)
+        if (typeof m.numericValue !== "number" || !Number.isFinite(m.numericValue)) {
+          throw new Error(`'${item.name}' 항목의 측정값은 유한한 숫자여야 합니다.`)
         }
         numericValue = m.numericValue
         judgement = computeNumericJudgement(numericValue, lowerLimit, upperLimit)
