@@ -79,10 +79,10 @@ ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_tenantId_fkey"
 ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_projectOrderId_fkey" FOREIGN KEY ("projectOrderId") REFERENCES "ProjectOrder"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_quotationId_fkey" FOREIGN KEY ("quotationId") REFERENCES "Quotation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_quotationId_fkey" FOREIGN KEY ("quotationId") REFERENCES "Quotation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_salesOrderId_fkey" FOREIGN KEY ("salesOrderId") REFERENCES "SalesOrder"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_salesOrderId_fkey" FOREIGN KEY ("salesOrderId") REFERENCES "SalesOrder"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ProjectOrderPrice" ADD CONSTRAINT "ProjectOrderPrice_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

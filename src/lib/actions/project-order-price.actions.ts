@@ -737,8 +737,13 @@ export async function updateProjectOrderPrice(
     }
 
     await prisma.$transaction(async (tx) => {
+      const now = new Date()
+      // status만으로는 "DRAFT였다가 그대로 DRAFT로 남는" 동시 수정 두 건을 구분하지
+      // 못한다(둘 다 claim 조건을 통과해 버림) — current 조회 시점의 updatedAt을
+      // optimistic-lock 토큰으로 함께 요구해, 그 사이 다른 요청이 먼저 갱신했다면
+      // 이 updateMany가 0건을 갱신하도록 한다.
       const claimed = await tx.projectOrderPrice.updateMany({
-        where: { id: current.id, tenantId, status: "DRAFT" },
+        where: { id: current.id, tenantId, status: "DRAFT", updatedAt: current.updatedAt },
         data: {
           quotationId: nextQuotationId || null,
           quantity: nextQuantity,
@@ -748,6 +753,7 @@ export async function updateProjectOrderPrice(
           // orderUnitPrice/orderDate/salesOrderId는 의도적으로 여기 포함하지
           // 않는다 — CREATE 시점 snapshot을 그대로 보존한다(§3.F).
           updatedById: actor.id,
+          updatedAt: now,
         },
       })
       if (claimed.count !== 1) {
@@ -865,8 +871,13 @@ export async function setProjectOrderPriceFinal(
       const now = new Date()
       const previousFinalUnitPrice = current.finalUnitPrice != null ? Number(current.finalUnitPrice) : null
 
+      // status만 조건으로 두면 DECIDED→DECIDED 재결정(상태 자체는 안 바뀜)일 때
+      // 두 재결정 요청이 모두 claim에 성공해 Revision chain이 동일 previousFinalUnitPrice
+      // 에서 두 갈래로 갈라질 수 있다 — updatedAt을 optimistic-lock 토큰으로 함께
+      // 요구해, 최초 결정(DRAFT→DECIDED)과 재결정(DECIDED→DECIDED) 모두 동일하게
+      // "그 사이 다른 요청이 먼저 갱신했으면 0건" 방어를 받는다.
       const claimed = await tx.projectOrderPrice.updateMany({
-        where: { id: current.id, tenantId, status: current.status },
+        where: { id: current.id, tenantId, status: current.status, updatedAt: current.updatedAt },
         data: {
           finalUnitPrice: input.finalUnitPrice,
           status: "DECIDED",
@@ -874,6 +885,7 @@ export async function setProjectOrderPriceFinal(
           decidedById: actor.id,
           decisionReason: reason,
           updatedById: actor.id,
+          updatedAt: now,
         },
       })
       if (claimed.count !== 1) {
