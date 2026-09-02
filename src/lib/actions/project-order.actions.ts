@@ -583,6 +583,15 @@ export async function deleteProjectOrder(id: string): Promise<{ ok: boolean; err
         throw new Error("프로젝트 이슈가 등록되어 있어 삭제할 수 없습니다.")
       }
 
+      // PR #52A에서 ProjectOrderPrice → ProjectOrder FK가 추가됨에 따라 같은 패턴으로
+      // 확인한다. createProjectOrderPrice는 ProjectOrder 행을 잠그지 않으므로 이 체크가
+      // 등록 race까지 막지는 못하지만, 그 경우에도 FK(RESTRICT)가 삭제를 막는다 —
+      // 여기서는 정상 경로에서 raw FK 오류 대신 안내 메시지를 주는 것이 목적이다.
+      const priceCount = await tx.projectOrderPrice.count({ where: { projectOrderId: current.id, tenantId } })
+      if (priceCount > 0) {
+        throw new Error("프로젝트 단가정보가 등록되어 있어 삭제할 수 없습니다.")
+      }
+
       const deleted = await tx.projectOrder.deleteMany({
         where: { id: current.id, tenantId, status: { in: DELETABLE_STATUSES } },
       })
