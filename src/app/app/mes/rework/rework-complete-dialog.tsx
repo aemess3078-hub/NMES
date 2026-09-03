@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ReworkRow, completeRework } from "@/lib/actions/process-progress.actions"
+import { formatQuantity } from "@/lib/utils"
 
 interface ReworkCompleteDialogProps {
   open: boolean
@@ -46,7 +47,7 @@ export function ReworkCompleteDialog({
       return
     }
     if (Math.abs(merged + scrap - reworkItem.reworkQty) > 0.000001) {
-      alert(`복귀 수량과 폐기 수량의 합계는 재작업 수량(${reworkItem.reworkQty})과 같아야 합니다.`)
+      alert(`복귀 수량과 폐기 수량의 합계는 재작업 수량(${formatQuantity(reworkItem.reworkQty)})과 같아야 합니다.`)
       return
     }
 
@@ -98,13 +99,13 @@ export function ReworkCompleteDialog({
             <div className="rounded-md border p-3">
               <div className="text-[13px] text-muted-foreground mb-1">현재 완료 재공</div>
               <div className="text-[20px] font-semibold text-slate-700">
-                {reworkItem.parentWipUnit?.qty ?? "-"}
+                {reworkItem.parentWipUnit ? formatQuantity(reworkItem.parentWipUnit.qty) : "-"}
               </div>
             </div>
             <div className="rounded-md border p-3">
               <div className="text-[13px] text-muted-foreground mb-1">재작업 대상</div>
               <div className="text-[20px] font-semibold text-amber-700">
-                {reworkItem.reworkQty}
+                {formatQuantity(reworkItem.reworkQty)}
               </div>
             </div>
           </div>
@@ -144,7 +145,7 @@ export function ReworkCompleteDialog({
           <div className="rounded-md bg-muted/30 p-3 text-[13px] text-muted-foreground">
             입력 합계:{" "}
             <span className="font-medium text-foreground">
-              {(Number(mergedQty) || 0) + (Number(scrapQty) || 0)} / {reworkItem.reworkQty}개
+              {formatQuantity((Number(mergedQty) || 0) + (Number(scrapQty) || 0))} / {formatQuantity(reworkItem.reworkQty)}개
             </span>
           </div>
         </div>

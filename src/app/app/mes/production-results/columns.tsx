@@ -6,6 +6,7 @@ import { OperationStatus } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { ProductionResultWithDetails } from "@/lib/actions/production-result.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const operationStatusLabels: Record<OperationStatus, string> = {
   PENDING: "대기",
@@ -106,7 +107,7 @@ export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
         const qty = row.getValue("goodQty") as number
         return (
           <span className="text-[14px] font-semibold text-green-700 block text-right">
-            {qty.toLocaleString()}
+            {formatQuantity(qty)}
           </span>
         )
       },
@@ -125,7 +126,7 @@ export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
               qty > 0 ? "text-red-600" : "text-muted-foreground"
             }`}
           >
-            {qty.toLocaleString()}
+            {formatQuantity(qty)}
           </span>
         )
       },
@@ -144,7 +145,7 @@ export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
               qty > 0 ? "text-amber-600" : "text-muted-foreground"
             }`}
           >
-            {qty.toLocaleString()}
+            {formatQuantity(qty)}
           </span>
         )
       },

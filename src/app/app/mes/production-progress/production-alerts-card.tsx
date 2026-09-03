@@ -7,6 +7,7 @@ import type { ProductionProgressRow } from "@/lib/actions/production-progress.ty
 import { toKstDateKey } from "@/lib/date/kst"
 import { formatPercent } from "./production-progress-client"
 import { buildProductionAlerts, type ProductionAlert } from "./production-alerts"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 주요 생산 알림 카드(NewMES 전용) ────────────────────────────────────────────
 //
@@ -68,7 +69,7 @@ export function ProductionAlertsCard({ rows }: Props) {
           </p>
         </div>
         <span className="whitespace-nowrap text-[13px] text-muted-foreground">
-          전체 {alerts.length.toLocaleString()}건
+          전체 {formatQuantity(alerts.length)}건
         </span>
       </div>
 

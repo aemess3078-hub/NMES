@@ -4,6 +4,7 @@ import { ColumnDef } from "@tanstack/react-table"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import type { EquipmentOutputRow } from "@/lib/actions/equipment-output.actions"
 import { EQUIPMENT_TYPE_LABELS } from "@/app/app/mes/master/equipment/columns"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 유틸 ────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export const columns: ColumnDef<EquipmentOutputRow>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="실적건수" />,
     cell: ({ row }) => (
       <span className="text-[14px] tabular-nums text-muted-foreground">
-        {row.original.resultCount.toLocaleString()}건
+        {formatQuantity(row.original.resultCount)}건
       </span>
     ),
   },
@@ -79,7 +80,7 @@ export const columns: ColumnDef<EquipmentOutputRow>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="생산수량" />,
     cell: ({ row }) => (
       <span className="text-[14px] tabular-nums font-medium">
-        {row.original.totalQty.toLocaleString()}
+        {formatQuantity(row.original.totalQty)}
       </span>
     ),
   },
@@ -89,7 +90,7 @@ export const columns: ColumnDef<EquipmentOutputRow>[] = [
     header: ({ column }) => <DataTableColumnHeader column={column} title="양품수량" />,
     cell: ({ row }) => (
       <span className="text-[14px] tabular-nums text-emerald-700 font-medium">
-        {row.original.goodQty.toLocaleString()}
+        {formatQuantity(row.original.goodQty)}
       </span>
     ),
   },
@@ -101,7 +102,7 @@ export const columns: ColumnDef<EquipmentOutputRow>[] = [
       const v = row.original.defectQty
       return (
         <span className={`text-[14px] tabular-nums ${v > 0 ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
-          {v > 0 ? v.toLocaleString() : "—"}
+          {v > 0 ? formatQuantity(v) : "—"}
         </span>
       )
     },

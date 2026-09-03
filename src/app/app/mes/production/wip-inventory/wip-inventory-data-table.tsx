@@ -33,6 +33,7 @@ import {
   UNIT_TYPE_CONFIG,
   WIP_STATUS_CONFIG,
 } from "./columns"
+import { formatQuantity } from "@/lib/utils"
 
 interface WipInventoryDataTableProps {
   data: WipInventoryRow[]
@@ -211,7 +212,7 @@ export function WipInventoryDataTable({ data }: WipInventoryDataTableProps) {
 
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-muted-foreground">
-          총 {filteredData.length.toLocaleString()}개 재공품
+          총 {formatQuantity(filteredData.length)}개 재공품
         </p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
@@ -261,9 +262,9 @@ function ExpandedDetail({ row }: { row: WipInventoryRow }) {
       <DetailCard title="재공 계보">
         <DetailRow label="구분" value={unitConfig.label} />
         <DetailRow label="관리번호" value={row.id.slice(-12)} mono />
-        <DetailRow label="수량" value={`${row.qty.toLocaleString()} ${row.workOrder.item.uom}`} accent="sky" />
+        <DetailRow label="수량" value={`${formatQuantity(row.qty)} ${row.workOrder.item.uom}`} accent="sky" />
         {row.parentWipUnit ? (
-          <DetailRow label="원 재공품" value={`${row.parentWipUnit.qty.toLocaleString()} ${row.workOrder.item.uom}`} />
+          <DetailRow label="원 재공품" value={`${formatQuantity(row.parentWipUnit.qty)} ${row.workOrder.item.uom}`} />
         ) : null}
       </DetailCard>
 
@@ -276,8 +277,8 @@ function ExpandedDetail({ row }: { row: WipInventoryRow }) {
         </div>
         {row.sourceProductionResult ? (
           <>
-            <DetailRow label="불량 발생" value={row.sourceProductionResult.defectQty.toLocaleString()} />
-            <DetailRow label="재작업 발생" value={row.sourceProductionResult.reworkQty.toLocaleString()} />
+            <DetailRow label="불량 발생" value={formatQuantity(row.sourceProductionResult.defectQty)} />
+            <DetailRow label="재작업 발생" value={formatQuantity(row.sourceProductionResult.reworkQty)} />
           </>
         ) : (
           <p className="text-[13px] text-muted-foreground">완제품 입고 대상인 정상 재공품입니다.</p>
@@ -303,9 +304,9 @@ function ExpandedDetail({ row }: { row: WipInventoryRow }) {
         </div>
         {row.unitType === "ROOT" ? (
           <>
-            <DetailRow label="완료 재공" value={row.completedFinalRootQty.toLocaleString()} />
-            <DetailRow label="이미 입고" value={row.totalReceiptQty.toLocaleString()} />
-            <DetailRow label="입고 가능" value={row.availableReceiptQty.toLocaleString()} accent="emerald" />
+            <DetailRow label="완료 재공" value={formatQuantity(row.completedFinalRootQty)} />
+            <DetailRow label="이미 입고" value={formatQuantity(row.totalReceiptQty)} />
+            <DetailRow label="입고 가능" value={formatQuantity(row.availableReceiptQty)} accent="emerald" />
           </>
         ) : null}
         {row.latestMovement ? (

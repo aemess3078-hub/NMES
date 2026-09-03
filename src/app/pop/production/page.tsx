@@ -7,6 +7,7 @@ import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { getPopWorkerSession } from "@/lib/auth/pop-worker-session"
 import { getCurrentUser } from "@/lib/auth"
+import { formatQuantity } from "@/lib/utils"
 
 export default async function ProductionResultsPage() {
   const [workerSession, results] = await Promise.all([
@@ -33,21 +34,21 @@ export default async function ProductionResultsPage() {
             <div className="flex justify-center mb-2">
               <CheckCircle2 className="text-green-500" size={28} />
             </div>
-            <div className="text-3xl font-bold text-green-600">{totalGood.toLocaleString()}</div>
+            <div className="text-3xl font-bold text-green-600">{formatQuantity(totalGood)}</div>
             <div className="text-slate-500 mt-1 text-base">양품</div>
           </div>
           <div className="bg-white rounded-2xl p-5 border-2 border-slate-200 text-center">
             <div className="flex justify-center mb-2">
               <XCircle className="text-red-500" size={28} />
             </div>
-            <div className="text-3xl font-bold text-red-600">{totalDefect.toLocaleString()}</div>
+            <div className="text-3xl font-bold text-red-600">{formatQuantity(totalDefect)}</div>
             <div className="text-slate-500 mt-1 text-base">불량</div>
           </div>
           <div className="bg-white rounded-2xl p-5 border-2 border-slate-200 text-center">
             <div className="flex justify-center mb-2">
               <RefreshCw className="text-amber-500" size={28} />
             </div>
-            <div className="text-3xl font-bold text-amber-600">{totalRework.toLocaleString()}</div>
+            <div className="text-3xl font-bold text-amber-600">{formatQuantity(totalRework)}</div>
             <div className="text-slate-500 mt-1 text-base">재작업</div>
           </div>
         </div>
@@ -90,20 +91,20 @@ export default async function ProductionResultsPage() {
                   <div className="flex gap-6">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 size={16} className="text-green-500" />
-                      <span className="text-slate-700 font-semibold">{good.toLocaleString()}</span>
+                      <span className="text-slate-700 font-semibold">{formatQuantity(good)}</span>
                       <span className="text-slate-400 text-sm">양품</span>
                     </div>
                     {defect > 0 && (
                       <div className="flex items-center gap-2">
                         <XCircle size={16} className="text-red-500" />
-                        <span className="text-slate-700 font-semibold">{defect.toLocaleString()}</span>
+                        <span className="text-slate-700 font-semibold">{formatQuantity(defect)}</span>
                         <span className="text-slate-400 text-sm">불량</span>
                       </div>
                     )}
                     {rework > 0 && (
                       <div className="flex items-center gap-2">
                         <RefreshCw size={16} className="text-amber-500" />
-                        <span className="text-slate-700 font-semibold">{rework.toLocaleString()}</span>
+                        <span className="text-slate-700 font-semibold">{formatQuantity(rework)}</span>
                         <span className="text-slate-400 text-sm">재작업</span>
                       </div>
                     )}

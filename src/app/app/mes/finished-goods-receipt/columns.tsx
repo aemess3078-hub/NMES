@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { WorkOrderForReceipt } from "@/lib/actions/finished-goods.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const INSPECTION_CONFIG = {
   PASS: { label: "합격", className: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle2 },
@@ -52,9 +53,9 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
         return (
           <div>
             <div className="text-[14px]">
-              <span className="text-muted-foreground">{plannedQty.toLocaleString()}</span>
+              <span className="text-muted-foreground">{formatQuantity(plannedQty)}</span>
               <span className="text-muted-foreground mx-1">/</span>
-              <span className="font-medium">{receiptBasisQty.toLocaleString()}</span>
+              <span className="font-medium">{formatQuantity(receiptBasisQty)}</span>
               <span className="text-[13px] text-muted-foreground ml-1">{item.uom}</span>
             </div>
             <div className="text-[13px] text-muted-foreground">
@@ -81,7 +82,7 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
               <span className="text-[14px] text-green-700 font-medium">
-                {totalReceiptQty.toLocaleString()} {item.uom} 입고 완료
+                {formatQuantity(totalReceiptQty)} {item.uom} 입고 완료
               </span>
             </div>
           )
@@ -89,16 +90,16 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
         if (totalReceiptQty > 0) {
           return (
             <div className="text-[14px]">
-              <span className="text-muted-foreground">{totalReceiptQty.toLocaleString()}</span>
+              <span className="text-muted-foreground">{formatQuantity(totalReceiptQty)}</span>
               <span className="text-muted-foreground mx-1">/</span>
-              <span className="font-medium text-amber-700">{pendingQty.toLocaleString()} 대기</span>
+              <span className="font-medium text-amber-700">{formatQuantity(pendingQty)} 대기</span>
               <span className="text-[13px] text-muted-foreground ml-1">{item.uom}</span>
             </div>
           )
         }
         return (
           <span className="text-[14px] text-muted-foreground">
-            {receiptBasisQty > 0 ? `${receiptBasisQty.toLocaleString()} ${item.uom} 대기` : "-"}
+            {receiptBasisQty > 0 ? `${formatQuantity(receiptBasisQty)} ${item.uom} 대기` : "-"}
           </span>
         )
       },

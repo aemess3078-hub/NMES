@@ -9,6 +9,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
@@ -569,16 +570,12 @@ export function PlanFormSheet({
                               name={`items.${index}.plannedQty`}
                               render={({ field: f }) => (
                                 <FormItem>
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    step={1}
+                                  <QuantityInput
+                                    maxDecimals={6}
+                                    allowNegative={false}
                                     className="h-8 text-[13px] text-right"
-                                    value={f.value ?? ""}
-                                    onChange={(e) => {
-                                      const val = e.target.value
-                                      f.onChange(val === "" ? "" : parseFloat(val))
-                                    }}
+                                    value={f.value}
+                                    onChange={f.onChange}
                                   />
                                   <FormMessage className="text-[12px]" />
                                 </FormItem>

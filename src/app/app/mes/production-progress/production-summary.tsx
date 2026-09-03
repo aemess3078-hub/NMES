@@ -2,6 +2,7 @@
 
 import type { ProductionProgressRow, ProductionProgressSummary } from "@/lib/actions/production-progress.types"
 import { formatPercent } from "./production-progress-client"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 생산 요약(NewMES 전용) ─────────────────────────────────────────────────────
 //
@@ -61,11 +62,11 @@ export function ProductionSummary({ rows, summary }: Props) {
     <div className="rounded-lg border bg-card p-4">
       <h2 className="mb-4 text-[18px] font-semibold text-foreground">생산 요약</h2>
       <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3">
-        <SummaryItem label="진행중 작업지시" value={`${inProgressCount.toLocaleString()}건`} />
-        <SummaryItem label="완료 작업지시" value={`${completedCount.toLocaleString()}건`} />
-        <SummaryItem label="총 재공수량" value={totalWipQty.toLocaleString()} />
-        <SummaryItem label="주의·지연 작업지시" value={`${warningOrDelayedCount.toLocaleString()}건`} />
-        <SummaryItem label="완료예정 임박" value={`${upcomingDueCount.toLocaleString()}건`} />
+        <SummaryItem label="진행중 작업지시" value={`${formatQuantity(inProgressCount)}건`} />
+        <SummaryItem label="완료 작업지시" value={`${formatQuantity(completedCount)}건`} />
+        <SummaryItem label="총 재공수량" value={formatQuantity(totalWipQty)} />
+        <SummaryItem label="주의·지연 작업지시" value={`${formatQuantity(warningOrDelayedCount)}건`} />
+        <SummaryItem label="완료예정 임박" value={`${formatQuantity(upcomingDueCount)}건`} />
         <SummaryItem label="전체 생산 달성률" value={formatPercent(summary.overallProgressRate)} />
       </div>
     </div>

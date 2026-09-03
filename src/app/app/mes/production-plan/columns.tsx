@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { PlanWithDetails } from "@/lib/actions/production-plan.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const planTypeLabels: Record<PlanType, string> = {
   DAILY: "일간",
@@ -155,7 +156,7 @@ export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps):
       ),
       cell: ({ row }) => (
         <span className="text-[14px] text-right block">
-          {(row.getValue("totalPlannedQty") as number).toLocaleString()}
+          {formatQuantity(row.getValue("totalPlannedQty") as number)}
         </span>
       ),
     },

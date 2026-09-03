@@ -19,6 +19,7 @@ import type {
   EquipmentOutputFilter,
   PeriodType,
 } from "@/lib/actions/equipment-output.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 기간 유형 레이블 ─────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ function SummaryCard({
     : accent === "red"   ? "text-red-600"
     : "text-foreground"
 
-  const display = isDecimal ? value.toFixed(1) : value.toLocaleString()
+  const display = isDecimal ? value.toFixed(1) : formatQuantity(value)
 
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-3">

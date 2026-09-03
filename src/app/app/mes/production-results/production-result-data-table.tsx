@@ -10,6 +10,7 @@ import {
   ProductionResultWithDetails,
 } from "@/lib/actions/production-result.actions"
 import { getColumns } from "./columns"
+import { formatQuantity } from "@/lib/utils"
 
 interface ProductionResultDataTableProps {
   data: ProductionResultWithDetails[]
@@ -49,7 +50,7 @@ export function ProductionResultDataTable({
               <div>
                 <p className="text-[13px] text-muted-foreground">총 양품수량</p>
                 <p className="text-[24px] font-semibold text-green-700 mt-1 leading-none">
-                  {filteredSummary.totalGoodQty.toLocaleString()}
+                  {formatQuantity(filteredSummary.totalGoodQty)}
                 </p>
               </div>
               <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
@@ -69,7 +70,7 @@ export function ProductionResultDataTable({
                       : "text-muted-foreground"
                   }`}
                 >
-                  {filteredSummary.totalDefectQty.toLocaleString()}
+                  {formatQuantity(filteredSummary.totalDefectQty)}
                 </p>
               </div>
               <AlertCircle
@@ -95,7 +96,7 @@ export function ProductionResultDataTable({
                       : "text-muted-foreground"
                   }`}
                 >
-                  {filteredSummary.totalReworkQty.toLocaleString()}
+                  {formatQuantity(filteredSummary.totalReworkQty)}
                 </p>
               </div>
               <RefreshCw

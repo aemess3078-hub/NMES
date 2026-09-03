@@ -35,6 +35,7 @@ import {
   WorkOrderWithDetails,
 } from "@/lib/actions/work-order.actions"
 import { WorkOrderStatus } from "@prisma/client"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -414,7 +415,7 @@ export function WorkOrderFormSheet({
                       </SelectItem>
                       {productionPlanItems.map((planItem) => (
                         <SelectItem key={planItem.id} value={planItem.id}>
-                          [{planItem.plan.planNo}] {planItem.item.name} · {planItem.plannedQty.toLocaleString()} · {new Date(planItem.plan.endDate).toISOString().slice(0, 10)}
+                          [{planItem.plan.planNo}] {planItem.item.name} · {formatQuantity(planItem.plannedQty)} · {new Date(planItem.plan.endDate).toISOString().slice(0, 10)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -731,7 +732,7 @@ export function WorkOrderFormSheet({
                               {field.seq}. {operation.name}
                             </p>
                             <p className="text-[13px] text-muted-foreground">
-                              배정합계 {assignedTotal.toLocaleString()} / 계획수량 {plannedQty.toLocaleString()}
+                              배정합계 {formatQuantity(assignedTotal)} / 계획수량 {formatQuantity(plannedQty)}
                             </p>
                           </div>
                           <Button
@@ -875,8 +876,8 @@ export function WorkOrderFormSheet({
                         {operationAssignments.length > 0 && !isBalanced && (
                           <div className="border-t px-3 py-2 text-[13px] text-amber-700">
                             {difference > 0
-                              ? `배정수량이 ${difference.toLocaleString()} 부족합니다.`
-                              : `배정수량이 ${Math.abs(difference).toLocaleString()} 초과되었습니다.`}
+                              ? `배정수량이 ${formatQuantity(difference)} 부족합니다.`
+                              : `배정수량이 ${formatQuantity(Math.abs(difference))} 초과되었습니다.`}
                           </div>
                         )}
                       </div>
