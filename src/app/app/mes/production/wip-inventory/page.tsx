@@ -2,6 +2,7 @@ import { getTenantId } from "@/lib/auth"
 
 import { getWipInventoryRows } from "@/lib/actions/work-order.actions"
 import { WipInventoryDataTable } from "./wip-inventory-data-table"
+import { formatQuantity } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -39,16 +40,16 @@ export default async function WipInventoryPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-        <SummaryCard label="총 작업지시" value={totalOrders.toLocaleString()} suffix="건" />
-        <SummaryCard label="입고 대상 수량" value={rootQty.toLocaleString()} suffix="EA" />
-        <SummaryCard label="폐기 수량" value={scrappedQty.toLocaleString()} suffix="EA" accent="red" />
+        <SummaryCard label="총 작업지시" value={formatQuantity(totalOrders)} suffix="건" />
+        <SummaryCard label="입고 대상 수량" value={formatQuantity(rootQty)} suffix="EA" />
+        <SummaryCard label="폐기 수량" value={formatQuantity(scrappedQty)} suffix="EA" accent="red" />
         <SummaryCard
           label="미해결 재작업"
-          value={unresolvedReworkQty.toLocaleString()}
+          value={formatQuantity(unresolvedReworkQty)}
           suffix="EA"
           accent="amber"
         />
-        <SummaryCard label="입고 가능 수량" value={availableReceiptQty.toLocaleString()} suffix="EA" accent="green" />
+        <SummaryCard label="입고 가능 수량" value={formatQuantity(availableReceiptQty)} suffix="EA" accent="green" />
       </div>
 
       <WipInventoryDataTable data={rows} />

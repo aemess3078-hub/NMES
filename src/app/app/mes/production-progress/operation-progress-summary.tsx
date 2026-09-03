@@ -5,6 +5,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
 
 import type { ProductionProgressRow } from "@/lib/actions/production-progress.types"
 import { formatPercent } from "./production-progress-client"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 공정별 진행 현황(NewMES 전용) ───────────────────────────────────────────────
 //
@@ -101,7 +102,7 @@ function CustomTooltip({
   return (
     <div className="rounded-md border bg-card px-3 py-2 text-[13px] shadow-sm">
       <p className="font-medium text-foreground">{entry.operationName}</p>
-      <p className="text-muted-foreground">작업지시 {entry.workOrderCount.toLocaleString()}건</p>
+      <p className="text-muted-foreground">작업지시 {formatQuantity(entry.workOrderCount)}건</p>
       <p className="text-muted-foreground">비율 {formatPercent(entry.ratio)}</p>
     </div>
   )
@@ -156,7 +157,7 @@ export function OperationProgressSummary({ rows }: Props) {
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-[22px] font-semibold tabular-nums text-foreground">
-                {totalCount.toLocaleString()}
+                {formatQuantity(totalCount)}
               </span>
               <span className="text-[12px] text-muted-foreground">총 작업지시</span>
             </div>
@@ -186,10 +187,10 @@ export function OperationProgressSummary({ rows }: Props) {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                      {entry.workOrderCount.toLocaleString()}건
+                      {formatQuantity(entry.workOrderCount)}건
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                      {entry.wipQty.toLocaleString()}
+                      {formatQuantity(entry.wipQty)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-foreground">
                       {formatPercent(entry.ratio)}

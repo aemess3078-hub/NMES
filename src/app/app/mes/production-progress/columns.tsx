@@ -7,6 +7,7 @@ import { format } from "date-fns"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { Badge } from "@/components/ui/badge"
 import type { ProductionProgressRow } from "@/lib/actions/production-progress.types"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 생산진행 현황 DataTable 컬럼 정의 (NewMES 전용) ─────────────────────────────
 //
@@ -133,7 +134,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
       header: ({ column }) => <DataTableColumnHeader column={column} title="계획수량" />,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums text-foreground">
-          {row.original.plannedQty.toLocaleString()}
+          {formatQuantity(row.original.plannedQty)}
         </span>
       ),
     },
@@ -142,7 +143,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
       header: ({ column }) => <DataTableColumnHeader column={column} title="생산실적" />,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums text-foreground">
-          {row.original.productionOutputQty.toLocaleString()}
+          {formatQuantity(row.original.productionOutputQty)}
         </span>
       ),
     },
@@ -185,7 +186,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
       header: ({ column }) => <DataTableColumnHeader column={column} title="재공수량" />,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums text-foreground">
-          {row.original.wipQty.toLocaleString()}
+          {formatQuantity(row.original.wipQty)}
         </span>
       ),
     },

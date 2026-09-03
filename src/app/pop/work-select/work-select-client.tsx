@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { formatQuantity } from "@/lib/utils"
 
 type Operation = {
   id: string
@@ -97,7 +98,7 @@ export function WorkSelectClient({ workOrders }: Props) {
             </div>
 
             <div className="text-sm text-slate-500 mb-3">
-              계획 {Number(wo.plannedQty).toLocaleString()}개
+              계획 {formatQuantity(Number(wo.plannedQty))}개
             </div>
 
             {/* 진행률 바 */}

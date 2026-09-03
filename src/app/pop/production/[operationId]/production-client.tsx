@@ -7,6 +7,7 @@ import {
   submitProductionResult,
 } from "@/lib/actions/pop.actions"
 import { PopQuantityInput } from "../../components/pop-quantity-input"
+import { formatQuantity } from "@/lib/utils"
 
 type ProductionResult = {
   id: string
@@ -242,16 +243,16 @@ export function ProductionClient({ operation }: Props) {
           <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl bg-blue-50 p-4 text-center">
             <div>
               <p className="text-sm text-blue-700">배정수량</p>
-              <p className="mt-1 text-lg font-bold text-blue-900">{plannedQty.toLocaleString()}</p>
+              <p className="mt-1 text-lg font-bold text-blue-900">{formatQuantity(plannedQty)}</p>
             </div>
             <div>
               <p className="text-sm text-blue-700">완료수량</p>
-              <p className="mt-1 text-lg font-bold text-blue-900">{completedQty.toLocaleString()}</p>
+              <p className="mt-1 text-lg font-bold text-blue-900">{formatQuantity(completedQty)}</p>
             </div>
             <div>
               <p className="text-sm text-blue-700">잔여수량</p>
               <p className="mt-1 text-lg font-bold text-blue-900">
-                {effectiveRemaining.toLocaleString()}
+                {formatQuantity(effectiveRemaining)}
               </p>
             </div>
           </div>
@@ -275,8 +276,8 @@ export function ProductionClient({ operation }: Props) {
               <span className="mt-0.5 shrink-0">⚠</span>
               <span>
                 전공정 불량으로 투입 가능 수량이 감소했습니다.{" "}
-                <strong>잔여 투입 가능: {effectiveRemaining.toLocaleString()}개</strong>{" "}
-                (계획: {plannedQty.toLocaleString()}개)
+                <strong>잔여 투입 가능: {formatQuantity(effectiveRemaining)}개</strong>{" "}
+                (계획: {formatQuantity(plannedQty)}개)
               </span>
             </div>
           )}

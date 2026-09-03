@@ -51,6 +51,7 @@ import {
   inspectOutsourcedWipUnit,
 } from "@/lib/actions/outsourcing.actions"
 import { PurchaseOrderStatus } from "@prisma/client"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── WipUnit status display ───────────────────────────────────────────────────
 
@@ -385,7 +386,7 @@ function IssueWipDialog({
                         <p className="text-[12px] text-muted-foreground">{w.itemCode}</p>
                       </td>
                       <td className="px-3 py-2.5 text-right font-medium">
-                        {w.qty.toLocaleString("ko-KR")}
+                        {formatQuantity(w.qty)}
                       </td>
                       <td className="px-3 py-2.5 font-mono text-muted-foreground">{w.workOrderNo}</td>
                       <td className="px-3 py-2.5 text-center text-muted-foreground">
@@ -480,7 +481,7 @@ function ReceiveWipDialog({ open, onOpenChange, wipUnit }: ReceiveWipDialogProps
               <div>
                 <p className="text-[12px] text-muted-foreground mb-0.5">수량</p>
                 <p className="text-[14px] font-medium">
-                  {wipUnit.qty.toLocaleString("ko-KR")}
+                  {formatQuantity(wipUnit.qty)}
                 </p>
               </div>
               <div>
@@ -580,7 +581,7 @@ function InspectWipDialog({ open, onOpenChange, wipUnit }: InspectWipDialogProps
   function handleSubmit() {
     if (!wipUnit) return
     if (!isQtyMatch) {
-      setError(`합계(${totalInput})가 재공 수량(${wipQty})과 일치해야 합니다.`)
+      setError(`합계(${formatQuantity(totalInput)})가 재공 수량(${formatQuantity(wipQty)})과 일치해야 합니다.`)
       return
     }
     setError("")
@@ -623,7 +624,7 @@ function InspectWipDialog({ open, onOpenChange, wipUnit }: InspectWipDialogProps
               <div>
                 <p className="text-[12px] text-muted-foreground mb-0.5">입고검사대기 수량</p>
                 <p className="text-[14px] font-medium text-violet-700">
-                  {wipQty.toLocaleString("ko-KR")}
+                  {formatQuantity(wipQty)}
                 </p>
               </div>
               <div>
@@ -653,7 +654,7 @@ function InspectWipDialog({ open, onOpenChange, wipUnit }: InspectWipDialogProps
             disabled={isPending}
           >
             <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-            전량 합격 ({wipQty.toLocaleString("ko-KR")})
+            전량 합격 ({formatQuantity(wipQty)})
           </Button>
 
           {/* 수량 입력 */}
@@ -709,10 +710,10 @@ function InspectWipDialog({ open, onOpenChange, wipUnit }: InspectWipDialogProps
           }`}>
             <span>합계</span>
             <span className="font-medium tabular-nums">
-              {totalInput.toLocaleString("ko-KR")} / {wipQty.toLocaleString("ko-KR")}
+              {formatQuantity(totalInput)} / {formatQuantity(wipQty)}
               {totalInput > 0 && !isQtyMatch && (
                 <span className="ml-1">
-                  ({qtyDiff > 0 ? "+" : ""}{qtyDiff.toLocaleString("ko-KR")})
+                  ({qtyDiff > 0 ? "+" : ""}{formatQuantity(qtyDiff)})
                 </span>
               )}
             </span>
@@ -891,7 +892,7 @@ export function OutsourcingClient({ data }: Props) {
         header: "수량",
         cell: ({ row }) => (
           <span className="text-[14px] font-medium">
-            {row.original.totalQty.toLocaleString("ko-KR")}
+            {formatQuantity(row.original.totalQty)}
           </span>
         ),
       },
@@ -957,7 +958,7 @@ export function OutsourcingClient({ data }: Props) {
         header: "수량",
         cell: ({ row }) => (
           <span className="text-[14px] font-medium">
-            {row.original.qty.toLocaleString("ko-KR")}
+            {formatQuantity(row.original.qty)}
           </span>
         ),
       },
@@ -1052,7 +1053,7 @@ export function OutsourcingClient({ data }: Props) {
         header: "수량",
         cell: ({ row }) => (
           <span className="text-[14px] font-medium">
-            {row.original.qty.toLocaleString("ko-KR")}
+            {formatQuantity(row.original.qty)}
           </span>
         ),
       },

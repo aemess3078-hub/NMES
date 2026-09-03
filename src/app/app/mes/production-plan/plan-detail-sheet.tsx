@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { PlanWithDetails } from "@/lib/actions/production-plan.actions"
 import { PlanStatus, PlanType } from "@prisma/client"
 import { ShoppingCart } from "lucide-react"
+import { formatQuantity } from "@/lib/utils"
 
 interface PlanDetailSheetProps {
   open: boolean
@@ -209,10 +210,10 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">
-                            {Number(planItem.salesOrderItem!.qty).toLocaleString()}
+                            {formatQuantity(Number(planItem.salesOrderItem!.qty))}
                           </td>
                           <td className="px-3 py-2.5 text-right font-medium tabular-nums">
-                            {Number(planItem.plannedQty).toLocaleString()}
+                            {formatQuantity(Number(planItem.plannedQty))}
                           </td>
                           <td className="px-3 py-2.5 text-muted-foreground">
                             {planItem.salesOrderItem!.deliveryDate
@@ -282,7 +283,7 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
                           {itemTypeLabels[planItem.item.itemType] ?? planItem.item.itemType}
                         </td>
                         <td className="px-3 py-2.5 text-right font-medium tabular-nums">
-                          {Number(planItem.plannedQty).toLocaleString()}
+                          {formatQuantity(Number(planItem.plannedQty))}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground">
                           {planItem.bom?.version ?? (
@@ -315,9 +316,9 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
                         합계
                       </td>
                       <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                        {plan.items
-                          .reduce((sum, i) => sum + Number(i.plannedQty), 0)
-                          .toLocaleString()}
+                        {formatQuantity(
+                          plan.items.reduce((sum, i) => sum + Number(i.plannedQty), 0)
+                        )}
                       </td>
                       <td colSpan={3} />
                     </tr>

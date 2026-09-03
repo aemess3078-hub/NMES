@@ -18,13 +18,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Label } from "@/components/ui/label"
 import {
   WorkOrderForReceipt,
   WarehouseWithLocations,
   createFinishedGoodsReceiptAction,
 } from "@/lib/actions/finished-goods.actions"
+import { formatQuantity } from "@/lib/utils"
 import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
 
@@ -46,7 +47,7 @@ export function ReceiptDialog({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [warehouseId, setWarehouseId] = useState("")
-  const [receiptQty, setReceiptQty] = useState("")
+  const [receiptQty, setReceiptQty] = useState<number | undefined>(undefined)
   const [scanVerified, setScanVerified] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
 
@@ -67,17 +68,17 @@ export function ReceiptDialog({
   const handleOpen = (v: boolean) => {
     if (!v) {
       setWarehouseId("")
-      setReceiptQty("")
+      setReceiptQty(undefined)
       setScanVerified(false)
     } else {
-      setReceiptQty(String(workOrder.pendingQty))
+      setReceiptQty(workOrder.pendingQty)
     }
     onOpenChange(v)
   }
 
   const handleSubmit = () => {
-    const qty = Number(receiptQty)
-    if (isNaN(qty) || qty <= 0) {
+    const qty = receiptQty
+    if (qty === undefined || qty <= 0) {
       alert("입고 수량을 올바르게 입력하세요.")
       return
     }
@@ -154,18 +155,18 @@ export function ReceiptDialog({
               <div className="text-[13px] text-muted-foreground mb-0.5">
                 {workOrder.isWipTracked ? "완료 재공" : "최종공정 양품"}
               </div>
-              <div className="text-[16px] font-semibold">{workOrder.receiptBasisQty}</div>
+              <div className="text-[16px] font-semibold">{formatQuantity(workOrder.receiptBasisQty)}</div>
             </div>
             <div className="rounded-md border p-2">
               <div className="text-[13px] text-muted-foreground mb-0.5">기입고</div>
               <div className="text-[16px] font-semibold text-muted-foreground">
-                {workOrder.totalReceiptQty}
+                {formatQuantity(workOrder.totalReceiptQty)}
               </div>
             </div>
             <div className="rounded-md border border-green-200 bg-green-50 p-2">
               <div className="text-[13px] text-green-700 mb-0.5">입고 가능</div>
               <div className="text-[16px] font-semibold text-green-700">
-                {workOrder.pendingQty}
+                {formatQuantity(workOrder.pendingQty)}
               </div>
             </div>
           </div>
@@ -195,13 +196,11 @@ export function ReceiptDialog({
                 ({workOrder.item.uom})
               </span>
             </Label>
-            <Input
-              type="number"
-              min={0.001}
-              max={workOrder.pendingQty}
-              step={1}
+            <QuantityInput
+              maxDecimals={6}
+              allowNegative={false}
               value={receiptQty}
-              onChange={(e) => setReceiptQty(e.target.value)}
+              onChange={setReceiptQty}
               className="text-[14px]"
             />
           </div>
@@ -241,7 +240,7 @@ export function ReceiptDialog({
         items={[{
           itemCode: workOrder.item.code,
           itemName: workOrder.item.name,
-          quantity: Number(receiptQty) || workOrder.pendingQty,
+          quantity: receiptQty ?? workOrder.pendingQty,
           uom: workOrder.item.uom,
         }]}
       />

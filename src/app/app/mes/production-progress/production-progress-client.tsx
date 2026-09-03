@@ -27,6 +27,7 @@ import { ProductionSummary } from "./production-summary"
 import { OperationProgressSummary } from "./operation-progress-summary"
 import { DailyProductionTrendChart } from "./daily-production-trend-chart"
 import { ProductionAlertsCard } from "./production-alerts-card"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 생산진행 현황 화면(NewMES 전용) — 필터 / KPI / DataTable ────────────────────
 //
@@ -384,35 +385,35 @@ export function ProductionProgressClient({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <SummaryCard
           label="총 작업지시"
-          value={summary.totalWorkOrders.toLocaleString()}
+          value={formatQuantity(summary.totalWorkOrders)}
           suffix="건"
         />
         <SummaryCard
           label="계획수량"
-          value={summary.totalPlannedQty.toLocaleString()}
+          value={formatQuantity(summary.totalPlannedQty)}
           suffix="EA"
         />
         <SummaryCard
           label="생산실적"
-          value={summary.totalProductionOutputQty.toLocaleString()}
+          value={formatQuantity(summary.totalProductionOutputQty)}
           suffix="EA"
         />
         <ProgressGaugeCard label="전체 진행률" value={summary.overallProgressRate} />
         <SummaryCard
           label="정상"
-          value={summary.normalCount.toLocaleString()}
+          value={formatQuantity(summary.normalCount)}
           suffix="건"
           accent="green"
         />
         <SummaryCard
           label="주의"
-          value={summary.warningCount.toLocaleString()}
+          value={formatQuantity(summary.warningCount)}
           suffix="건"
           accent={summary.warningCount > 0 ? "amber" : undefined}
         />
         <SummaryCard
           label="지연"
-          value={summary.delayedCount.toLocaleString()}
+          value={formatQuantity(summary.delayedCount)}
           suffix="건"
           accent={summary.delayedCount > 0 ? "red" : undefined}
         />
@@ -423,7 +424,7 @@ export function ProductionProgressClient({
         <div className="flex items-center justify-between">
           <h2 className="text-[18px] font-semibold text-foreground">작업지시 진행 현황</h2>
           <span className="text-[13px] text-muted-foreground">
-            총 {data.rows.length.toLocaleString()}건
+            총 {formatQuantity(data.rows.length)}건
           </span>
         </div>
 

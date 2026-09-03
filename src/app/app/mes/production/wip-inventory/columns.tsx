@@ -5,6 +5,7 @@ import { ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import type { WipInventoryRow } from "@/lib/actions/work-order.actions"
+import { formatQuantity } from "@/lib/utils"
 
 export const WIP_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   WAITING: { label: "대기", className: "border-slate-200 bg-slate-50 text-slate-700" },
@@ -78,7 +79,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
             </Badge>
             {row.original.parentWipUnit ? (
               <p className="mt-1 text-[13px] text-muted-foreground">
-                원 재공품 {row.original.parentWipUnit.qty.toLocaleString()}
+                원 재공품 {formatQuantity(row.original.parentWipUnit.qty)}
               </p>
             ) : null}
           </div>
@@ -126,7 +127,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
       cell: ({ row }) => (
         <div className="text-right">
           <p className="text-[15px] font-semibold tabular-nums text-foreground">
-            {row.original.qty.toLocaleString()}
+            {formatQuantity(row.original.qty)}
           </p>
           <p className="text-[13px] text-muted-foreground">{row.original.workOrder.item.uom}</p>
         </div>
@@ -145,7 +146,7 @@ export function getColumns(): ColumnDef<WipInventoryRow>[] {
             </Badge>
             {row.original.receiptStatus === "AVAILABLE" ? (
               <p className="mt-1 text-[13px] font-medium tabular-nums text-emerald-700">
-                가능 {row.original.availableReceiptQty.toLocaleString()}
+                가능 {formatQuantity(row.original.availableReceiptQty)}
               </p>
             ) : null}
             {row.original.receiptBlockedReason ? (

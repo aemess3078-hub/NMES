@@ -17,6 +17,7 @@ import {
   getLotBackwardTrace,
   LotGenealogyNode,
 } from "@/lib/actions/lot.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ function LotTreeView({
               {statusCfg?.label ?? node.status}
             </span>
             <span className="text-[12px] text-slate-500">
-              재고: {Number(node.qty).toLocaleString()}
+              재고: {formatQuantity(Number(node.qty))}
             </span>
           </div>
         </div>

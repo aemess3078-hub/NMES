@@ -3,6 +3,7 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
 import type { DailyProductionTrendPoint } from "@/lib/actions/production-progress.types"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 일별 생산실적 추이(NewMES 전용) ─────────────────────────────────────────────
 //
@@ -22,10 +23,6 @@ function formatAxisDate(dateKey: string): string {
 
 function formatTooltipDate(dateKey: string): string {
   return dateKey.replaceAll("-", ".")
-}
-
-function formatQuantity(value: number): string {
-  return value.toLocaleString()
 }
 
 function CustomTooltip({
@@ -86,7 +83,7 @@ export function DailyProductionTrendChart({ data }: Props) {
                   width={64}
                   fontSize={12}
                   tick={{ fill: "hsl(var(--muted-foreground))" }}
-                  tickFormatter={(value: number) => value.toLocaleString()}
+                  tickFormatter={(value: number) => formatQuantity(value)}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Line
