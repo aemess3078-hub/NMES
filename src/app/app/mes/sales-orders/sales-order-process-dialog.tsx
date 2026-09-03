@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Loader2, PackageMinus, Factory, CheckCircle2, AlertTriangle, Info } from "lucide-react"
+import { formatQuantity } from "@/lib/utils"
 import {
   checkInventoryForSalesOrder,
   requestProductionFromSalesOrder,
@@ -226,17 +227,17 @@ export function SalesOrderProcessDialog({
                         )}
                       </div>
                     </div>
-                    <div className="py-2.5 px-3 text-[14px] text-right">{s.orderedQty.toLocaleString()}</div>
-                    <div className="py-2.5 px-3 text-[14px] text-right text-muted-foreground">{s.shippedQty.toLocaleString()}</div>
-                    <div className="py-2.5 px-3 text-[14px] text-right font-medium">{s.remainingQty.toLocaleString()}</div>
+                    <div className="py-2.5 px-3 text-[14px] text-right">{formatQuantity(s.orderedQty)}</div>
+                    <div className="py-2.5 px-3 text-[14px] text-right text-muted-foreground">{formatQuantity(s.shippedQty)}</div>
+                    <div className="py-2.5 px-3 text-[14px] text-right font-medium">{formatQuantity(s.remainingQty)}</div>
                     <div className={`py-2.5 px-3 text-[14px] text-right font-medium ${s.availableStock < s.remainingQty ? "text-amber-600" : "text-green-700"}`}>
-                      {s.availableStock.toLocaleString()}
+                      {formatQuantity(s.availableStock)}
                     </div>
                     <div className="py-2.5 px-3 text-[14px] text-right text-green-700 font-medium">
-                      {s.shippableQty > 0 ? s.shippableQty.toLocaleString() : "—"}
+                      {s.shippableQty > 0 ? formatQuantity(s.shippableQty) : "—"}
                     </div>
                     <div className={`py-2.5 px-3 text-[14px] text-right font-medium ${s.shortageQty > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                      {s.shortageQty > 0 ? s.shortageQty.toLocaleString() : "—"}
+                      {s.shortageQty > 0 ? formatQuantity(s.shortageQty) : "—"}
                     </div>
                   </div>
                 ))}
@@ -301,7 +302,7 @@ export function SalesOrderProcessDialog({
                             <div className="flex items-center justify-between">
                               <span className="text-[13px] font-medium">{item.itemName}</span>
                               <span className="text-[12px] text-muted-foreground">
-                                출하 수량: {item.shippableQty.toLocaleString()} {item.uom}
+                                출하 수량: {formatQuantity(item.shippableQty)} {item.uom}
                               </span>
                             </div>
 
@@ -321,7 +322,7 @@ export function SalesOrderProcessDialog({
                                       <SelectItem key={lot.lotId} value={lot.lotId} className="text-[13px]">
                                         <span className="font-mono">{lot.lotNo}</span>
                                         <span className="ml-2 text-muted-foreground">
-                                          · 가용 {lot.qtyAvailable.toLocaleString()} {item.uom}
+                                          · 가용 {formatQuantity(lot.qtyAvailable)} {item.uom}
                                           {lot.locationName ? ` · ${lot.locationName}` : ""}
                                         </span>
                                       </SelectItem>
@@ -330,7 +331,7 @@ export function SalesOrderProcessDialog({
                                 </Select>
                                 {selectedLot && (
                                   <span className={`text-[12px] whitespace-nowrap ${isInsufficient ? "text-red-600" : "text-green-700"}`}>
-                                    가용 {selectedLot.qtyAvailable.toLocaleString()}
+                                    가용 {formatQuantity(selectedLot.qtyAvailable)}
                                     {isInsufficient && " (부족)"}
                                   </span>
                                 )}

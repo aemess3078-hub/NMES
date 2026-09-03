@@ -11,6 +11,7 @@ import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { MoneyInput } from "@/components/ui/money-input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
@@ -317,7 +318,7 @@ export function SalesOrderFormSheet({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="KRW">KRW</SelectItem>
+                        <SelectItem value="KRW">원</SelectItem>
                         <SelectItem value="USD">USD</SelectItem>
                         <SelectItem value="EUR">EUR</SelectItem>
                         <SelectItem value="JPY">JPY</SelectItem>
@@ -444,17 +445,13 @@ export function SalesOrderFormSheet({
                     name={`items.${index}.qty`}
                     render={({ field: f }) => (
                       <FormItem className="min-w-0 pr-2">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={1}
-                          step={1}
+                        <QuantityInput
+                          maxDecimals={6}
+                          allowNegative={false}
                           className="h-8 text-right text-[14px] tabular-nums"
                           disabled={isItemEditDisabled}
-                          value={f.value ?? ""}
-                          onChange={(e) =>
-                            f.onChange(e.target.value === "" ? "" : parseFloat(e.target.value))
-                          }
+                          value={f.value}
+                          onChange={f.onChange}
                         />
                         <FormMessage className="text-[12px]" />
                       </FormItem>

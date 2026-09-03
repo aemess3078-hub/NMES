@@ -31,6 +31,7 @@ import {
 } from "@/lib/actions/shipment.actions"
 import { BarcodeScanInput, type ParsedBarcode } from "@/components/common/barcode/barcode-scan-input"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
+import { formatQuantity } from "@/lib/utils"
 
 type SalesOrderOption = {
   id: string
@@ -579,14 +580,14 @@ export function ShipmentFormSheet({
                           [{salesOrderItem?.item.code ?? ""}] {salesOrderItem?.item.name ?? ""}
                         </p>
                         <p className="text-[13px] text-muted-foreground">
-                          미출하: {remainingQty.toLocaleString()}
+                          미출하: {formatQuantity(remainingQty)}
                         </p>
                       </div>
                       <div className="flex items-start gap-3">
                         <div className="text-right text-[13px]">
-                          <p>선택 합계: <span className="font-medium">{selectedTotal.toLocaleString()}</span></p>
+                          <p>선택 합계: <span className="font-medium">{formatQuantity(selectedTotal)}</span></p>
                           <p className={afterShipmentQty < 0 ? "text-destructive" : "text-muted-foreground"}>
-                            출하 후 잔량: {afterShipmentQty.toLocaleString()}
+                            출하 후 잔량: {formatQuantity(afterShipmentQty)}
                           </p>
                         </div>
                         <Button
@@ -665,14 +666,14 @@ export function ShipmentFormSheet({
                                               value={lot.lotId}
                                               disabled={usedLotIds.has(lot.lotId)}
                                             >
-                                              {lot.lotNo} · 가용 {lot.qtyAvailable.toLocaleString()}
+                                              {lot.lotNo} · 가용 {formatQuantity(lot.qtyAvailable)}
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
                                       </Select>
                                       {selectedLot && (
                                         <p className="text-[12px] text-muted-foreground">
-                                          가용 {selectedLot.qtyAvailable.toLocaleString()} · {selectedLot.locationName ?? selectedLot.warehouseName}
+                                          가용 {formatQuantity(selectedLot.qtyAvailable)} · {selectedLot.locationName ?? selectedLot.warehouseName}
                                         </p>
                                       )}
                                       <FormMessage className="text-[12px]" />

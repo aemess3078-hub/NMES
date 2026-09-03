@@ -3,6 +3,7 @@ import { SalesOrderStatus } from "@prisma/client"
 
 import { getSalesOrderStatusRows } from "@/lib/actions/sales-order.actions"
 import { OrderStatusDataTable } from "./order-status-data-table"
+import { formatQuantity } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -57,12 +58,12 @@ export default async function SalesOrderStatusPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <SummaryCard label="총 수주 건수" value={totalOrders.toLocaleString()} suffix="건" />
-        <SummaryCard label="진행중 수주" value={inProgressOrders.toLocaleString()} suffix="건" />
-        <SummaryCard label="완료 수주" value={completedOrders.toLocaleString()} suffix="건" />
+        <SummaryCard label="총 수주 건수" value={formatQuantity(totalOrders)} suffix="건" />
+        <SummaryCard label="진행중 수주" value={formatQuantity(inProgressOrders)} suffix="건" />
+        <SummaryCard label="완료 수주" value={formatQuantity(completedOrders)} suffix="건" />
         <SummaryCard
           label="납기 임박/지연"
-          value={urgentOrOverdueOrders.toLocaleString()}
+          value={formatQuantity(urgentOrOverdueOrders)}
           suffix="건"
           accent
         />

@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { getSalesOrderFulfillmentStatus, FulfillmentRow } from "@/lib/actions/sales-order.actions"
+import { formatQuantity } from "@/lib/utils"
 
 interface Props {
   tenantId: string
@@ -20,7 +21,7 @@ function StatCard({ label, value, highlight }: { label: string; value: number; h
           highlight && value > 0 ? "text-red-600" : "text-foreground"
         }`}
       >
-        {value.toLocaleString()}
+        {formatQuantity(value)}
       </p>
     </div>
   )
@@ -143,10 +144,10 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-col items-end gap-0.5">
                         <span className="text-[14px] font-medium tabular-nums">
-                          {row.totalOrderedQty.toLocaleString()}
+                          {formatQuantity(row.totalOrderedQty)}
                         </span>
                         <span className="text-[12px] text-muted-foreground tabular-nums">
-                          확정 {row.confirmedQty.toLocaleString()} / 생산중 {row.inProductionQty.toLocaleString()}
+                          확정 {formatQuantity(row.confirmedQty)} / 생산중 {formatQuantity(row.inProductionQty)}
                         </span>
                       </div>
                     </td>
@@ -162,7 +163,7 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                             : "text-red-600"
                         }`}
                       >
-                        {row.finishedGoodsStock.toLocaleString()}
+                        {formatQuantity(row.finishedGoodsStock)}
                       </span>
                     </td>
 
@@ -170,7 +171,7 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                     <td className="px-4 py-3 text-right">
                       {row.fromSemiFinished > 0 ? (
                         <span className="text-[14px] tabular-nums text-blue-600 font-medium">
-                          {row.fromSemiFinished.toLocaleString()}
+                          {formatQuantity(row.fromSemiFinished)}
                         </span>
                       ) : (
                         <span className="text-[13px] text-muted-foreground">—</span>
@@ -181,7 +182,7 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                     <td className="px-4 py-3 text-right">
                       {row.fromRawMaterial > 0 ? (
                         <span className="text-[14px] tabular-nums text-blue-600 font-medium">
-                          {row.fromRawMaterial.toLocaleString()}
+                          {formatQuantity(row.fromRawMaterial)}
                         </span>
                       ) : (
                         <span className="text-[13px] text-muted-foreground">—</span>
@@ -195,7 +196,7 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                           row.shortageQty > 0 ? "text-amber-600" : "text-green-700"
                         }`}
                       >
-                        {row.totalFulfillable.toLocaleString()}
+                        {formatQuantity(row.totalFulfillable)}
                       </span>
                     </td>
 
@@ -203,7 +204,7 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                     <td className="px-4 py-3 text-right">
                       {row.shortageQty > 0 ? (
                         <span className="text-[14px] font-bold tabular-nums text-red-600">
-                          -{row.shortageQty.toLocaleString()}
+                          -{formatQuantity(row.shortageQty)}
                         </span>
                       ) : (
                         <span className="text-[13px] font-medium text-green-700">충분</span>
@@ -274,14 +275,14 @@ export function SalesOrderFulfillmentPanel({ tenantId }: Props) {
                                     </td>
                                     <td className="px-3 py-2 font-medium">{ms.itemName}</td>
                                     <td className="px-3 py-2 text-right tabular-nums">
-                                      {ms.neededQty.toLocaleString()} {ms.uom}
+                                      {formatQuantity(ms.neededQty)} {ms.uom}
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                                      {ms.availableQty.toLocaleString()} {ms.uom}
+                                      {formatQuantity(ms.availableQty)} {ms.uom}
                                     </td>
                                     <td className="px-3 py-2 text-right">
                                       <span className="font-bold tabular-nums text-red-600">
-                                        -{ms.shortageQty.toLocaleString()} {ms.uom}
+                                        -{formatQuantity(ms.shortageQty)} {ms.uom}
                                       </span>
                                     </td>
                                   </tr>
