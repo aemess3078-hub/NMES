@@ -38,7 +38,7 @@ export default async function WorkOrdersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            작업지시 / 제조번호 관리
+            작업지시
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
             작업지시 생성부터 제조번호 발행, 원자재 LOT 투입, 공정 진행 상태를 확인합니다.
