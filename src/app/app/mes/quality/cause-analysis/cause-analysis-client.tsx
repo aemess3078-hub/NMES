@@ -32,6 +32,7 @@ import {
   createDefectCauseAnalysis,
   updateDefectCauseAnalysis,
 } from "@/lib/actions/defect-cause-analysis.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const NONE_VALUE = "__ALL__"
 
@@ -236,7 +237,7 @@ export function CauseAnalysisClient({ initialFilter, rows, filterOptions }: Caus
                     <TableCell>{r.routingOperationName}</TableCell>
                     <TableCell>{r.manufacturingNo ?? "—"}</TableCell>
                     <TableCell>[{r.defectCode}] {r.defectCodeName}</TableCell>
-                    <TableCell>{r.qty}</TableCell>
+                    <TableCell>{formatQuantity(r.qty)}</TableCell>
                     <TableCell>{SEVERITY_LABEL[r.severity] ?? r.severity}</TableCell>
                     <TableCell>{r.disposition ? (DISPOSITION_LABEL[r.disposition] ?? r.disposition) : "—"}</TableCell>
                     <TableCell>
@@ -353,7 +354,7 @@ function CauseAnalysisFormSheet({
               <div><span className="text-muted-foreground">공정</span> {row.routingOperationName}</div>
               <div><span className="text-muted-foreground">제조번호</span> {row.manufacturingNo ?? "—"}</div>
               <div><span className="text-muted-foreground">불량코드</span> [{row.defectCode}] {row.defectCodeName}</div>
-              <div><span className="text-muted-foreground">수량</span> {row.qty}</div>
+              <div><span className="text-muted-foreground">수량</span> {formatQuantity(row.qty)}</div>
               <div><span className="text-muted-foreground">심각도</span> {SEVERITY_LABEL[row.severity] ?? row.severity}</div>
               <div><span className="text-muted-foreground">처분</span> {row.disposition ? (DISPOSITION_LABEL[row.disposition] ?? row.disposition) : "—"}</div>
             </div>

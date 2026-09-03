@@ -9,6 +9,7 @@ import { Plus, Trash2, Info } from "lucide-react"
 import { Form } from "@/components/ui/form"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -623,16 +624,12 @@ export function InspectionFormSheet({
                           <FormItem>
                             <FormLabel className="text-[13px]">수량</FormLabel>
                             <FormControl>
-                              <Input
-                                type="number"
-                                min={1}
-                                step={1}
+                              <QuantityInput
+                                maxDecimals={6}
+                                allowNegative={false}
                                 className="text-[13px]"
-                                {...f}
-                                value={f.value ?? ""}
-                                onChange={(e) =>
-                                  f.onChange(parseFloat(e.target.value) || 1)
-                                }
+                                value={f.value}
+                                onChange={(v) => f.onChange(v || 1)}
                               />
                             </FormControl>
                             <FormMessage />

@@ -6,6 +6,7 @@ import { Trash2, Eye } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { QualityInspectionWithDetails } from "@/lib/actions/quality.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 결과 배지 설정 ───────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ export function getInspectionColumns({
       header: () => <div className="text-right">검사수량</div>,
       cell: ({ row }) => (
         <div className="text-right font-mono text-[14px]">
-          {Number(row.original.inspectedQty).toLocaleString()}
+          {formatQuantity(Number(row.original.inspectedQty))}
         </div>
       ),
     },

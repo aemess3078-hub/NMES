@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table"
 import { QualityInspectionWithDetails } from "@/lib/actions/quality.actions"
 import { RESULT_CONFIG } from "./inspection-columns"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 불량 중요도 / 처리방법 레이블 ───────────────────────────────────────────
 
@@ -109,7 +110,7 @@ export function InspectionDetailDialog({
           />
           <InfoRow
             label="검사수량"
-            value={Number(inspection.inspectedQty).toLocaleString()}
+            value={formatQuantity(Number(inspection.inspectedQty))}
             mono
           />
           <div className="space-y-1">
@@ -221,7 +222,7 @@ export function InspectionDetailDialog({
                     </TableCell>
                     <TableCell className="text-[13px]">{dr.defectCode.name}</TableCell>
                     <TableCell className="text-right font-mono text-[13px]">
-                      {Number(dr.qty).toLocaleString()}
+                      {formatQuantity(Number(dr.qty))}
                     </TableCell>
                     <TableCell>
                       <span

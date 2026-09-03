@@ -7,6 +7,7 @@ import { z } from "zod"
 
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FormSheet } from "@/components/common/form-sheet"
 import {
@@ -170,7 +171,12 @@ export function InspectionStageFormSheet(props: Props) {
                 <FormItem>
                   <FormLabel>검사 수량 *</FormLabel>
                   <FormControl>
-                    <Input type="number" min={1} {...field} />
+                    <QuantityInput
+                      maxDecimals={6}
+                      allowNegative={false}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -286,7 +292,12 @@ export function InspectionStageFormSheet(props: Props) {
               <FormItem>
                 <FormLabel>검사 수량 *</FormLabel>
                 <FormControl>
-                  <Input type="number" min={1} {...field} />
+                  <QuantityInput
+                    maxDecimals={6}
+                    allowNegative={false}
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

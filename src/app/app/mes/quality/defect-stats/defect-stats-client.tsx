@@ -39,6 +39,7 @@ import type {
   DefectStatsFilterOptions,
   DefectStatsRow,
 } from "@/lib/actions/defect-stats.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ export function DefectStatsClient({ initialFilter, stats, options }: Props) {
           label="불량률"
           value={`${defectRatePct}%`}
           accent={stats.summary.defectRate >= 0.05 ? "red" : "amber"}
-          subText={`검사 ${stats.summary.inspectionCount.toLocaleString()}건`}
+          subText={`검사 ${formatQuantity(stats.summary.inspectionCount)}건`}
         />
       </div>
 
@@ -369,7 +370,7 @@ export function DefectStatsClient({ initialFilter, stats, options }: Props) {
           rows={stats.byType.slice(0, 10).map((t) => ({
             key: t.defectCodeId,
             label: `[${t.code}] ${t.name}`,
-            primary: t.qty.toLocaleString(),
+            primary: formatQuantity(t.qty),
             secondary: `${(t.percentage * 100).toFixed(1)}%`,
             bar: t.percentage,
           }))}
@@ -381,7 +382,7 @@ export function DefectStatsClient({ initialFilter, stats, options }: Props) {
             key: it.itemId,
             label: `[${it.code}] ${it.name}`,
             primary: `${(it.defectRate * 100).toFixed(2)}%`,
-            secondary: `검사 ${it.inspectedQty.toLocaleString()} / 불량 ${it.defectQty.toLocaleString()}`,
+            secondary: `검사 ${formatQuantity(it.inspectedQty)} / 불량 ${formatQuantity(it.defectQty)}`,
             bar: it.defectRate,
           }))}
         />
@@ -392,7 +393,7 @@ export function DefectStatsClient({ initialFilter, stats, options }: Props) {
             key: op.routingOperationId,
             label: `seq.${op.seq} · ${op.routingOperationName}`,
             primary: `${(op.defectRate * 100).toFixed(2)}%`,
-            secondary: `검사 ${op.inspectedQty.toLocaleString()} / 불량 ${op.defectQty.toLocaleString()}`,
+            secondary: `검사 ${formatQuantity(op.inspectedQty)} / 불량 ${formatQuantity(op.defectQty)}`,
             bar: op.defectRate,
           }))}
         />
@@ -406,7 +407,7 @@ export function DefectStatsClient({ initialFilter, stats, options }: Props) {
               검사 상세 목록
             </h2>
             <p className="text-[13px] text-muted-foreground mt-0.5">
-              총 {stats.rows.length.toLocaleString()}건
+              총 {formatQuantity(stats.rows.length)}건
               {stats.truncated && " (상위 500건만 표시)"}
             </p>
           </div>
@@ -445,7 +446,7 @@ function SummaryCard({
       <p
         className={`mt-1 text-[24px] font-semibold tabular-nums ${color}`}
       >
-        {typeof value === "number" ? value.toLocaleString() : value}
+        {typeof value === "number" ? formatQuantity(value) : value}
       </p>
       {subText && (
         <p className="text-[12px] text-muted-foreground mt-0.5">{subText}</p>
@@ -578,12 +579,12 @@ function DetailTable({ rows }: { rows: DefectStatsRow[] }) {
                   {STAGE_LABEL[r.stage] ?? r.stage}
                 </TableCell>
                 <TableCell className="text-right text-[13px] tabular-nums">
-                  {r.inspectedQty.toLocaleString()}
+                  {formatQuantity(r.inspectedQty)}
                 </TableCell>
                 <TableCell className="text-right text-[13px] tabular-nums">
                   {r.defectQty > 0 ? (
                     <span className="text-red-700 font-medium">
-                      {r.defectQty.toLocaleString()}
+                      {formatQuantity(r.defectQty)}
                     </span>
                   ) : (
                     <span className="text-muted-foreground">0</span>
