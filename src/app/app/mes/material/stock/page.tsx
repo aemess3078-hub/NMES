@@ -1,5 +1,6 @@
 import { getGroupedMaterialInventoryBalances } from "@/lib/actions/inventory.actions"
 import { MaterialStockDataTable } from "./material-stock-data-table"
+import { formatQuantity } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -32,15 +33,15 @@ export default async function MaterialStockPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-        <SummaryCard label="원자재 품목" value={totalItems.toLocaleString()} suffix="종" />
-        <SummaryCard label="재고 라인" value={totalLines.toLocaleString()} suffix="건" />
-        <SummaryCard label="관리 LOT" value={lotCount.toLocaleString()} suffix="개" />
-        <SummaryCard label="총 현재고" value={totalOnHand.toLocaleString()} />
-        <SummaryCard label="총 가용재고" value={totalAvailable.toLocaleString()} accent />
+        <SummaryCard label="원자재 품목" value={formatQuantity(totalItems)} suffix="종" />
+        <SummaryCard label="재고 라인" value={formatQuantity(totalLines)} suffix="건" />
+        <SummaryCard label="관리 LOT" value={formatQuantity(lotCount)} suffix="개" />
+        <SummaryCard label="총 현재고" value={formatQuantity(totalOnHand)} />
+        <SummaryCard label="총 가용재고" value={formatQuantity(totalAvailable)} accent />
         <SummaryCard
           label="LOT 미지정 데드재고"
-          value={unlottedOnHand.toLocaleString()}
-          suffix={`/ ${unlottedLines.toLocaleString()}건`}
+          value={formatQuantity(unlottedOnHand)}
+          suffix={`/ ${formatQuantity(unlottedLines)}건`}
           description="LOT 관리 품목 중 LOT 없이 남아 있어 출고/출하 대상에서 제외되는 재고"
           warn
         />

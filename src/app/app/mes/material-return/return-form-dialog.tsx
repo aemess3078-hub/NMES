@@ -11,7 +11,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Textarea } from "@/components/ui/textarea"
+import { formatQuantity } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -57,7 +59,7 @@ type LineItem = {
   isLotTracked: boolean
   warehouseId: string
   lotId: string | null
-  returnQty: string
+  returnQty: number | undefined
   stockOptions: MaterialReturnStockOption[]
   maxReturnable: number | null
 }
@@ -127,7 +129,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
             isLotTracked: it.item.isLotTracked,
             warehouseId: it.warehouse.id,
             lotId: it.lot?.id ?? null,
-            returnQty: String(it.returnQty),
+            returnQty: Number(it.returnQty),
             stockOptions: stock,
             maxReturnable: null,
           }
@@ -191,7 +193,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
         isLotTracked: poItem.isLotTracked,
         warehouseId: "",
         lotId: null,
-        returnQty: "",
+        returnQty: undefined,
         stockOptions: stock,
         maxReturnable: poItem.returnableQty,
       },
@@ -215,7 +217,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
         isLotTracked: item.isLotTracked,
         warehouseId: "",
         lotId: null,
-        returnQty: "",
+        returnQty: undefined,
         stockOptions: stock,
         maxReturnable: null,
       },
@@ -257,8 +259,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
         alert(`${it.itemName}: ${it.isLotTracked ? "LOT" : "창고"}을 선택하세요.`)
         return
       }
-      const qty = Number(it.returnQty)
-      if (!Number.isFinite(qty) || qty <= 0) {
+      if (it.returnQty === undefined || it.returnQty <= 0) {
         alert(`${it.itemName}: 반품수량을 올바르게 입력하세요.`)
         return
       }
@@ -275,7 +276,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
         purchaseOrderItemId: it.purchaseOrderItemId,
         lotId: it.lotId,
         warehouseId: it.warehouseId,
-        returnQty: Number(it.returnQty),
+        returnQty: it.returnQty as number,
       })),
     }
 
@@ -394,7 +395,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
                   <SelectContent>
                     {poItemOptions.map((p) => (
                       <SelectItem key={p.id} value={p.id} className="text-[14px]" disabled={p.returnableQty <= 0}>
-                        [{p.itemCode}] {p.itemName} (반품가능 {p.returnableQty} {p.uom})
+                        [{p.itemCode}] {p.itemName} (반품가능 {formatQuantity(p.returnableQty)} {p.uom})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -465,7 +466,7 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
                                   value={it.isLotTracked ? `${s.warehouseId}::${s.lotId ?? ""}` : s.warehouseId}
                                   className="text-[13px]"
                                 >
-                                  {s.warehouseName}{s.lotNo ? ` / ${s.lotNo}` : ""} (가용 {s.qtyAvailable} {it.uom})
+                                  {s.warehouseName}{s.lotNo ? ` / ${s.lotNo}` : ""} (가용 {formatQuantity(s.qtyAvailable)} {it.uom})
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -473,14 +474,13 @@ export function ReturnFormDialog({ open, onOpenChange, mode, materialReturn, onS
                         </div>
                         <div className="space-y-1">
                           <Label className="text-[12px] text-muted-foreground">
-                            반품수량{cap !== null && <span> (최대 {cap})</span>}
+                            반품수량{cap !== null && <span> (최대 {formatQuantity(cap)})</span>}
                           </Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            step="any"
+                          <QuantityInput
+                            maxDecimals={6}
+                            allowNegative={false}
                             value={it.returnQty}
-                            onChange={(e) => updateItem(it.key, { returnQty: e.target.value })}
+                            onChange={(v) => updateItem(it.key, { returnQty: v })}
                             className="text-[13px] h-8"
                             placeholder="0"
                           />

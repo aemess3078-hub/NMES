@@ -9,6 +9,7 @@ import {
   type WarehouseStockOption,
   type WorkOrderForIssue,
 } from "@/lib/actions/material-issue.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const workOrderStatusConfig: Record<string, { label: string; className: string }> = {
   RELEASED: { label: "릴리즈", className: "border-blue-200 bg-blue-100 text-blue-800" },
@@ -98,7 +99,7 @@ export function MaterialIssueTable({
                   </div>
 
                   <div className="px-3 py-3 text-right">
-                    <span className="text-[14px]">{workOrder.plannedQty.toLocaleString()}</span>
+                    <span className="text-[14px]">{formatQuantity(workOrder.plannedQty)}</span>
                   </div>
 
                   <div className="px-3 py-3">
@@ -163,15 +164,15 @@ export function MaterialIssueTable({
                               </td>
                               <td className="px-2 py-1.5 text-muted-foreground">{material.item.spec ?? "-"}</td>
                               <td className="px-2 py-1.5 text-muted-foreground">{material.item.uom}</td>
-                              <td className="px-2 py-1.5 text-right">{material.requiredQty.toLocaleString()}</td>
+                              <td className="px-2 py-1.5 text-right">{formatQuantity(material.requiredQty)}</td>
                               <td className="px-2 py-1.5 text-right text-muted-foreground">
-                                {material.issuedQty.toLocaleString()}
+                                {formatQuantity(material.issuedQty)}
                               </td>
                               <td className={`px-2 py-1.5 text-right font-medium ${material.pendingQty > 0 ? "text-amber-600" : "text-green-600"}`}>
-                                {material.pendingQty.toLocaleString()}
+                                {formatQuantity(material.pendingQty)}
                               </td>
                               <td className={`px-2 py-1.5 text-right font-medium ${material.currentStock < material.pendingQty ? "text-red-600" : "text-slate-700"}`}>
-                                {material.currentStock.toLocaleString()}
+                                {formatQuantity(material.currentStock)}
                               </td>
                             </tr>
                           ))}

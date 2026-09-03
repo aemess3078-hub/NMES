@@ -27,6 +27,7 @@ import {
   type WarehouseStockOption,
   type WorkOrderForIssue,
 } from "@/lib/actions/material-issue.actions"
+import { formatQuantity } from "@/lib/utils"
 
 function isLotManaged(item: MaterialRequirement["item"]): boolean {
   return item.isLotTracked || item.itemType === "SEMI_FINISHED"
@@ -367,7 +368,7 @@ export function IssueFormDialog({
               </div>
             </div>
             <div className="mt-2 text-[13px] text-muted-foreground">
-              계획수량: {workOrder.plannedQty.toLocaleString()} | {workOrder.site.name}
+              계획수량: {formatQuantity(workOrder.plannedQty)} | {workOrder.site.name}
             </div>
           </div>
 
@@ -475,7 +476,7 @@ export function IssueFormDialog({
                                             })
                                             .map((lotStock) => (
                                               <SelectItem key={getLotSelectValue(lotStock)} value={getLotSelectValue(lotStock)} className="text-[13px]">
-                                                {lotStock.lotNo} / [{lotStock.warehouseCode}] / 가용 {lotStock.qtyAvailable.toLocaleString()} {lotStock.unit}
+                                                {lotStock.lotNo} / [{lotStock.warehouseCode}] / 가용 {formatQuantity(lotStock.qtyAvailable)} {lotStock.unit}
                                               </SelectItem>
                                             ))
                                         ) : (
@@ -487,7 +488,7 @@ export function IssueFormDialog({
                                     </Select>
                                     {rowLot && (
                                       <p className="mt-0.5 text-[11px] text-muted-foreground">
-                                        [{rowLot.warehouseCode}] {rowLot.warehouseName} · 가용 {rowLot.qtyAvailable.toLocaleString()}
+                                        [{rowLot.warehouseCode}] {rowLot.warehouseName} · 가용 {formatQuantity(rowLot.qtyAvailable)}
                                       </p>
                                     )}
                                   </div>
@@ -538,7 +539,7 @@ export function IssueFormDialog({
                             {/* 합계 표시 */}
                             {splitTotal > 0 && (
                               <p className={`text-[12px] font-medium ${isTotalMismatch ? "text-amber-700" : "text-emerald-700"}`}>
-                                합계: {splitTotal.toLocaleString()} / 필요 {material.pendingQty.toLocaleString()} {material.item.uom}
+                                합계: {formatQuantity(splitTotal)} / 필요 {formatQuantity(material.pendingQty)} {material.item.uom}
                                 {isTotalMismatch && " ⚠ 불일치"}
                               </p>
                             )}
@@ -554,7 +555,7 @@ export function IssueFormDialog({
 
                         {/* 필요수량 */}
                         <div className="px-3 py-2.5 text-right text-[14px]">
-                          {material.requiredQty.toLocaleString()}
+                          {formatQuantity(material.requiredQty)}
                         </div>
 
                         {/* 재고 (LOT별 — 분할 행에서 확인) */}
@@ -564,13 +565,13 @@ export function IssueFormDialog({
 
                         {/* 기출고 */}
                         <div className="px-3 py-2.5 text-right text-[14px] text-muted-foreground">
-                          {material.issuedQty.toLocaleString()}
+                          {formatQuantity(material.issuedQty)}
                         </div>
 
                         {/* 출고수량 (합계, 읽기 전용) */}
                         <div className="px-3 py-2.5 text-right">
                           <span className={`text-[14px] font-medium ${isAnyOverStock ? "text-red-600" : isTotalMismatch && splitTotal > 0 ? "text-amber-700" : ""}`}>
-                            {splitTotal > 0 ? splitTotal.toLocaleString() : "-"}
+                            {splitTotal > 0 ? formatQuantity(splitTotal) : "-"}
                           </span>
                           {splitTotal > 0 && <div className="text-[11px] text-muted-foreground">LOT별 합산</div>}
                         </div>
@@ -638,13 +639,13 @@ export function IssueFormDialog({
                       </div>
 
                       <div className="px-3 py-2.5 text-right text-[14px]">
-                        {material.requiredQty.toLocaleString()}
+                        {formatQuantity(material.requiredQty)}
                       </div>
                       <div className={`px-3 py-2.5 text-right text-[14px] font-medium ${stock < material.pendingQty ? "text-red-600" : "text-green-700"}`}>
-                        {stock.toLocaleString()}
+                        {formatQuantity(stock)}
                       </div>
                       <div className="px-3 py-2.5 text-right text-[14px] text-muted-foreground">
-                        {material.issuedQty.toLocaleString()}
+                        {formatQuantity(material.issuedQty)}
                       </div>
                       <div className="px-3 py-2.5">
                         <div className="relative">
@@ -682,7 +683,7 @@ export function IssueFormDialog({
               <div className="mt-2 grid gap-1 text-[13px] text-blue-900 md:grid-cols-2">
                 {selectedLotSummaries.map((summary, idx) => (
                   <div key={`${summary.itemName}-${summary.lotNo}-${idx}`}>
-                    {summary.itemName} / <span className="font-mono">{summary.lotNo}</span> / {summary.warehouseName} / {summary.qty.toLocaleString()} {summary.unit}
+                    {summary.itemName} / <span className="font-mono">{summary.lotNo}</span> / {summary.warehouseName} / {formatQuantity(summary.qty)} {summary.unit}
                   </div>
                 ))}
               </div>

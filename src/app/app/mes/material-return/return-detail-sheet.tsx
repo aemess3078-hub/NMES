@@ -22,6 +22,7 @@ import {
 } from "@/lib/actions/material-return.actions"
 import { RETURN_STATUS_CONFIG } from "./columns"
 import { ReturnFormDialog } from "./return-form-dialog"
+import { formatQuantity } from "@/lib/utils"
 
 interface MaterialReturnDetailSheetProps {
   open: boolean
@@ -161,13 +162,13 @@ export function MaterialReturnDetailSheet({ open, onOpenChange, returnId, onChan
 
               <div className="pt-6 space-y-5">
                 <div className="space-y-1.5">
-                  <p className="text-[13px] font-semibold text-muted-foreground">반품 품목 ({materialReturn.items.length}건 · 총 {materialReturn.totalReturnQty.toLocaleString()})</p>
+                  <p className="text-[13px] font-semibold text-muted-foreground">반품 품목 ({materialReturn.items.length}건 · 총 {formatQuantity(materialReturn.totalReturnQty)})</p>
                   <div className="rounded-lg border divide-y">
                     {materialReturn.items.map((it) => (
                       <div key={it.id} className="p-3 space-y-1">
                         <div className="flex items-center justify-between">
                           <p className="text-[14px] font-medium">[{it.item.code}] {it.item.name}</p>
-                          <p className="text-[14px] font-semibold tabular-nums text-red-600">-{it.returnQty.toLocaleString()} {it.item.uom}</p>
+                          <p className="text-[14px] font-semibold tabular-nums text-red-600">-{formatQuantity(it.returnQty)} {it.item.uom}</p>
                         </div>
                         <div className="flex flex-wrap gap-x-4 text-[12px] text-muted-foreground">
                           <span>창고: {it.warehouse.name}</span>
