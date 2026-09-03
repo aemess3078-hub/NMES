@@ -298,7 +298,6 @@ export function WorkOrderDataTable({
           { id: "itemName" as keyof WorkOrderWithDetails, title: "품목명" },
         ]}
         filterableColumns={filterableColumns}
-        defaultSorting={[{ id: "workOrderInfo", desc: true }]}
         renderExpandedRow={(workOrder) => (
           <WorkOrderExpandedRow workOrder={workOrder} />
         )}

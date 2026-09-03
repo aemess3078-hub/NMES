@@ -152,11 +152,23 @@ export function getColumns({ onEdit, onDelete, onRelease, canMutate }: GetColumn
       // 검색(searchableColumns)은 이 accessorFn이 반환하는 결합 문자열을 그대로 사용한다.
       id: "workOrderInfo",
       accessorFn: (row) => `${row.orderNo} ${row.manufacturingNo ?? ""}`.trim(),
-      // 병합으로 orderNo/manufacturingNo 개별 정렬은 사라지므로, 기존 기본 정렬 기준이었던
-      // 지시일자(createdAt) 최신순을 그대로 정렬 기준으로 사용한다(공용 DataTable 미수정 제약상
-      // 별도 hidden 컬럼을 만들 수 없어 sortingFn으로 대체).
-      sortingFn: (rowA, rowB) =>
-        new Date(rowA.original.createdAt).getTime() - new Date(rowB.original.createdAt).getTime(),
+      // 헤더에 보이는 값(orderNo, 동률이면 manufacturingNo) 그대로 정렬한다.
+      // "WO-2026-10"이 "WO-2026-2"보다 앞에 오는 lexical 정렬 오류를 막기 위해
+      // numeric:true natural compare를 사용한다.
+      sortingFn: (rowA, rowB) => {
+        const orderCompare = rowA.original.orderNo.localeCompare(
+          rowB.original.orderNo,
+          undefined,
+          { numeric: true, sensitivity: "base" }
+        )
+        if (orderCompare !== 0) return orderCompare
+
+        return (rowA.original.manufacturingNo ?? "").localeCompare(
+          rowB.original.manufacturingNo ?? "",
+          undefined,
+          { numeric: true, sensitivity: "base" }
+        )
+      },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="작업지시 / 제조번호" />
       ),
@@ -373,7 +385,7 @@ export function getColumns({ onEdit, onDelete, onRelease, canMutate }: GetColumn
                 onClick={(e) => { e.stopPropagation(); onRelease(row.original) }}
               >
                 <Send className="h-3.5 w-3.5" />
-                릴리즈
+                지시
               </Button>
             )}
             {canMutate && (
