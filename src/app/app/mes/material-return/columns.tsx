@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ExternalLink } from "lucide-react"
 import type { MaterialReturnRow } from "@/lib/actions/material-return.actions"
+import { formatQuantity } from "@/lib/utils"
 
 export type { MaterialReturnRow }
 
@@ -74,7 +75,7 @@ export function getColumns(onViewDetail: (row: MaterialReturnRow) => void): Colu
       accessorFn: (row) => row.totalReturnQty,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] font-semibold tabular-nums text-red-600">
-          -{row.original.totalReturnQty.toLocaleString()}
+          -{formatQuantity(row.original.totalReturnQty)}
         </span>
       ),
     },

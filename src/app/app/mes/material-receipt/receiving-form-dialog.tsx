@@ -30,6 +30,7 @@ import {
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { MaterialReceiptOrderRow } from "./material-receipt-data-table"
 import { BarcodePrintDialog } from "@/components/common/barcode/barcode-print-dialog"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -248,7 +249,7 @@ export function ReceivingFormDialog({
       if (received > ins.pendingQty) {
         alert(
           `[${ins.itemCode}] ${ins.itemName}\n` +
-          `입고수량(${received.toLocaleString()})이 잔여수량(${ins.pendingQty.toLocaleString()} ${ins.uom})을 초과합니다.`
+          `입고수량(${formatQuantity(received)})이 잔여수량(${formatQuantity(ins.pendingQty)} ${ins.uom})을 초과합니다.`
         )
         return
       }
@@ -383,14 +384,14 @@ export function ReceivingFormDialog({
                   </div>
                   <div className="flex gap-4 mt-1">
                     <span className="text-[13px] text-muted-foreground">
-                      발주 <span className="font-medium text-foreground">{ins.orderedQty.toLocaleString()}</span> {ins.uom}
+                      발주 <span className="font-medium text-foreground">{formatQuantity(ins.orderedQty)}</span> {ins.uom}
                     </span>
                     <span className="text-[13px] text-muted-foreground">
-                      기입고 <span className="font-medium text-foreground">{ins.receivedQty.toLocaleString()}</span> {ins.uom}
+                      기입고 <span className="font-medium text-foreground">{formatQuantity(ins.receivedQty)}</span> {ins.uom}
                     </span>
                     <span className="text-[13px] text-muted-foreground">
                       잔여 <span className={`font-medium ${ins.pendingQty > 0 ? "text-amber-600" : "text-green-600"}`}>
-                        {ins.pendingQty.toLocaleString()}
+                        {formatQuantity(ins.pendingQty)}
                       </span> {ins.uom}
                     </span>
                   </div>
@@ -537,7 +538,7 @@ export function ReceivingFormDialog({
                   <Label className="text-[13px]">
                     금회 입고수량
                     <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                      (최대 {ins.pendingQty.toLocaleString()} {ins.uom})
+                      (최대 {formatQuantity(ins.pendingQty)} {ins.uom})
                     </span>
                   </Label>
                   <Input
@@ -566,7 +567,7 @@ export function ReceivingFormDialog({
                   />
                   {(parseFloat(ins.thisReceivedQty) || 0) > ins.pendingQty && (
                     <p className="text-[12px] text-red-600">
-                      잔여수량 {ins.pendingQty.toLocaleString()} {ins.uom} 초과
+                      잔여수량 {formatQuantity(ins.pendingQty)} {ins.uom} 초과
                     </p>
                   )}
                 </div>

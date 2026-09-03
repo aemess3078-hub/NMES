@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PackageCheck, ChevronDown, ChevronRight } from "lucide-react"
 import { ReceivingFormDialog } from "./receiving-form-dialog"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -195,10 +196,10 @@ export function MaterialReceiptDataTable({
                             <tr key={oi.id} className="hover:bg-muted/20">
                               <td className="py-1.5 px-2 font-mono text-muted-foreground">{oi.item.code}</td>
                               <td className="py-1.5 px-2">{oi.item.name}</td>
-                              <td className="py-1.5 px-2 text-right">{orderedQty.toLocaleString()}</td>
-                              <td className="py-1.5 px-2 text-right text-muted-foreground">{receivedQty.toLocaleString()}</td>
+                              <td className="py-1.5 px-2 text-right">{formatQuantity(orderedQty)}</td>
+                              <td className="py-1.5 px-2 text-right text-muted-foreground">{formatQuantity(receivedQty)}</td>
                               <td className={`py-1.5 px-2 text-right font-medium ${remainingQty > 0 ? "text-amber-600" : "text-green-600"}`}>
-                                {remainingQty.toLocaleString()}
+                                {formatQuantity(remainingQty)}
                               </td>
                               <td className="py-1.5 px-2 text-muted-foreground">{oi.item.uom}</td>
                             </tr>

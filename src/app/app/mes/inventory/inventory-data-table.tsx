@@ -8,6 +8,7 @@ import type { GroupedInventoryStock } from "@/lib/actions/inventory.actions"
 import { Input } from "@/components/ui/input"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 import { StockAdjustmentDialog } from "./stock-adjustment-dialog"
+import { formatQuantity } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -55,7 +56,7 @@ function InventoryDetailContent({ item }: { item: GroupedInventoryStock }) {
             {unlottedRows.map((b) => (
               <p key={b.balanceId} className="mt-1 font-mono text-[12px] text-amber-700">
                 [{b.warehouseCode}] {b.warehouseName} — 현재고{" "}
-                {b.qtyOnHand.toLocaleString()} {item.uom}
+                {formatQuantity(b.qtyOnHand)} {item.uom}
               </p>
             ))}
           </div>
@@ -114,17 +115,17 @@ function InventoryDetailContent({ item }: { item: GroupedInventoryStock }) {
                     <div className="text-[12px] text-muted-foreground">{b.siteName}</div>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums font-semibold">
-                    {b.qtyOnHand.toLocaleString()}
+                    {formatQuantity(b.qtyOnHand)}
                   </td>
                   <td
                     className={`px-3 py-2 text-right tabular-nums font-semibold ${
                       b.qtyAvailable <= 0 ? "text-red-600" : "text-emerald-700"
                     }`}
                   >
-                    {b.qtyAvailable.toLocaleString()}
+                    {formatQuantity(b.qtyAvailable)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {b.qtyHold > 0 ? b.qtyHold.toLocaleString() : "-"}
+                    {b.qtyHold > 0 ? formatQuantity(b.qtyHold) : "-"}
                   </td>
                   {canAdjust && (
                     <td className="px-3 py-2 text-right">

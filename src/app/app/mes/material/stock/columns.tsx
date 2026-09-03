@@ -5,6 +5,7 @@ import { Tag, AlertTriangle } from "lucide-react"
 
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { type GroupedMaterialStock } from "@/lib/actions/inventory.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const itemTypeLabels: Record<string, string> = {
   RAW_MATERIAL: "원자재",
@@ -63,7 +64,7 @@ export function getGroupedColumns(): ColumnDef<GroupedMaterialStock>[] {
       ),
       cell: ({ row }) => (
         <span className="block text-right text-[14px] font-semibold tabular-nums">
-          {row.original.totalQtyOnHand.toLocaleString()}
+          {formatQuantity(row.original.totalQtyOnHand)}
         </span>
       ),
     },
@@ -77,7 +78,7 @@ export function getGroupedColumns(): ColumnDef<GroupedMaterialStock>[] {
         const qty = row.original.totalQtyAvailable
         return (
           <span className={`block text-right text-[14px] font-semibold tabular-nums ${qty <= 0 ? "text-red-600" : "text-emerald-700"}`}>
-            {qty.toLocaleString()}
+            {formatQuantity(qty)}
           </span>
         )
       },
@@ -90,7 +91,7 @@ export function getGroupedColumns(): ColumnDef<GroupedMaterialStock>[] {
       ),
       cell: ({ row }) => (
         <span className="block text-right text-[14px] text-muted-foreground tabular-nums">
-          {row.original.totalQtyHold.toLocaleString()}
+          {formatQuantity(row.original.totalQtyHold)}
         </span>
       ),
     },
