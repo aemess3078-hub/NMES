@@ -121,6 +121,8 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-inspection', parentId: 'nav-quality', label: '공정검사', icon: 'ClipboardList', href: '/app/mes/inspection', displayOrder: 0.5, children: [] },
           // PR #54: 사업계획서 "SPC 통계분석" — 기존 route(/app/mes/spc)의 placeholder를 실제 화면으로 교체
           { id: 'nav-spc', parentId: 'nav-quality', label: 'SPC 통계분석', icon: 'TrendingUp', href: '/app/mes/spc', displayOrder: 5, children: [] },
+          // PR #55: 사업계획서 "원인분석" — DefectRecord 1건당 원인분석 등록/관리
+          { id: 'nav-cause-analysis', parentId: 'nav-quality', label: '원인분석', icon: 'Search', href: '/app/mes/quality/cause-analysis', displayOrder: 6, children: [] },
         ],
       },
       // 7. 영업관리

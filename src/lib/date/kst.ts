@@ -59,6 +59,31 @@ export function kstDefaultDateRange(daysBack: number, now: Date = new Date()): {
   return { from: toKstDateKey(fromInstant), to: toKey }
 }
 
+/**
+ * 조회기간(KST 달력일 문자열 from/to)을 검증하고 UTC instant 경계로 변환하는
+ * 공용 헬퍼. 형식이 잘못됐거나 from>to면(쿼리스트링 조작 포함) 조용히 기본
+ * daysBack일 범위로 대체한다 — 절대 throw하지 않는다(호출부가 서버 컴포넌트
+ * 렌더 중일 수 있어, 여기서 예외가 나면 페이지 전체가 500이 된다).
+ */
+export function resolveKstDateRangeFilter(
+  daysBack: number,
+  from?: string,
+  to?: string,
+  now: Date = new Date()
+): { from: string; to: string; fromDate: Date; toDate: Date } {
+  const fallback = kstDefaultDateRange(daysBack, now)
+  const fromKey = from?.trim()
+  const toKey = to?.trim()
+  const bothValid = !!fromKey && !!toKey && isValidKstDateRange(fromKey, toKey)
+  const resolved = bothValid ? { from: fromKey!, to: toKey! } : fallback
+  return {
+    from: resolved.from,
+    to: resolved.to,
+    fromDate: kstDateKeyToUtcStart(resolved.from),
+    toDate: kstDateKeyToUtcEnd(resolved.to),
+  }
+}
+
 /** from~to(둘 다 KST 달력일, inclusive) 사이의 모든 날짜 키를 오름차순으로 생성한다. */
 export function buildKstDateKeyRange(fromKey: string, toKey: string): string[] {
   const keys: string[] = []

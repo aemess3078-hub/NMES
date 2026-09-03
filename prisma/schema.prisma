@@ -452,6 +452,7 @@ model Tenant {
   projectOrderPriceRevisions     ProjectOrderPriceRevision[]
   inspectionMeasurements         InspectionMeasurement[]
   spcProfiles                    SpcProfile[]
+  defectCauseAnalyses            DefectCauseAnalysis[]
 }
 
 model Profile {
@@ -494,6 +495,8 @@ model Profile {
   projectOrderPriceRevisions ProjectOrderPriceRevision[] @relation("ProjectOrderPriceRevisionChanger")
   spcProfilesCreated         SpcProfile[]                @relation("SpcProfileCreator")
   spcProfilesUpdated         SpcProfile[]                @relation("SpcProfileUpdater")
+  defectCauseAnalysesCreated DefectCauseAnalysis[]       @relation("DefectCauseAnalysisCreator")
+  defectCauseAnalysesUpdated DefectCauseAnalysis[]       @relation("DefectCauseAnalysisUpdater")
 }
 
 model Site {
@@ -1674,9 +1677,40 @@ model DefectRecord {
 
   qualityInspection QualityInspection @relation(fields: [qualityInspectionId], references: [id])
   defectCode        DefectCode        @relation(fields: [defectCodeId], references: [id])
+  causeAnalysis     DefectCauseAnalysis?
 
   @@index([qualityInspectionId])
   @@index([defectCodeId])
+}
+
+// ─── 청운커팅 사업계획서 "품질검사 > 원인분석" (PR #55) ──────────────────────
+//
+// DefectRecord 1건당 최대 1건의 원인분석만 존재한다(1:0..1, @unique(defectRecordId)).
+// QualityInspection 단위나 별도 QualityIssue 상위 사건으로 앵커링하지 않는다 —
+// 한 검사에 서로 다른 defectCode가 여러 건 섞여도(§ DefectRecord 주석 참조) 근본
+// 원인은 불량 건마다 다를 수 있어, 가장 구체적인 단위인 DefectRecord에 붙인다.
+// 통계 결과나 조치/재발방지 이력을 이 모델에 얹지 않는다 — "기록"은 이 row를
+// 직접 update하고 AuditLog(entityType="DefectCauseAnalysis")로 변경 이력만 남긴다
+// (SpcProfile과 동일 패턴, 별도 revision 테이블 없음).
+model DefectCauseAnalysis {
+  id             String   @id @default(cuid())
+  tenantId       String
+  defectRecordId String   @unique
+
+  rootCause      String
+  analysisDetail String?
+
+  createdById String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  defectRecord DefectRecord @relation(fields: [defectRecordId], references: [id])
+  createdBy    Profile      @relation("DefectCauseAnalysisCreator", fields: [createdById], references: [id])
+  updatedBy    Profile      @relation("DefectCauseAnalysisUpdater", fields: [updatedById], references: [id])
+
+  @@index([tenantId])
 }
 
 model LotGenealogy {
