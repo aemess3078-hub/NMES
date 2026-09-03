@@ -13,10 +13,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Textarea } from "@/components/ui/textarea"
 import { adjustInventoryStock } from "@/lib/actions/inventory.actions"
+import { formatQuantity } from "@/lib/utils"
 
 export type StockAdjustmentTarget = {
   balanceId: string
@@ -34,23 +35,18 @@ export type StockAdjustmentTarget = {
   qtyOnHand: number
 }
 
-function formatQty(value: number) {
-  return value.toLocaleString(undefined, { maximumFractionDigits: 6 })
-}
-
 export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarget }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [physicalQty, setPhysicalQty] = useState(String(target.qtyOnHand))
+  const [physicalQty, setPhysicalQty] = useState<number | undefined>(target.qtyOnHand)
   const [reason, setReason] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const parsedPhysicalQty = Number(physicalQty)
-  const isValidPhysicalQty = Number.isFinite(parsedPhysicalQty) && parsedPhysicalQty >= 0
+  const isValidPhysicalQty = physicalQty !== undefined && Number.isFinite(physicalQty) && physicalQty >= 0
   const diffQty = isValidPhysicalQty
-    ? Number((parsedPhysicalQty - target.qtyOnHand).toFixed(6))
+    ? Number((physicalQty - target.qtyOnHand).toFixed(6))
     : 0
   const canSubmit = isValidPhysicalQty && diffQty !== 0 && reason.trim().length > 0 && !isPending
 
@@ -64,7 +60,7 @@ export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarge
     setError(null)
     setSuccess(null)
     if (nextOpen) {
-      setPhysicalQty(String(target.qtyOnHand))
+      setPhysicalQty(target.qtyOnHand)
       setReason("")
     }
   }
@@ -73,7 +69,7 @@ export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarge
     setError(null)
     setSuccess(null)
 
-    if (!isValidPhysicalQty) {
+    if (!isValidPhysicalQty || physicalQty === undefined) {
       setError("실사수량은 0 이상 숫자여야 합니다.")
       return
     }
@@ -86,13 +82,15 @@ export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarge
       return
     }
 
+    const confirmedPhysicalQty = physicalQty
+
     startTransition(async () => {
       const result = await adjustInventoryStock({
         siteId: target.siteId,
         warehouseId: target.warehouseId,
         itemId: target.itemId,
         lotId: target.lotId,
-        physicalQty: parsedPhysicalQty,
+        physicalQty: confirmedPhysicalQty,
         reason,
       })
 
@@ -101,7 +99,7 @@ export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarge
         return
       }
 
-      setSuccess(`ADJUST ${result.diffQty && result.diffQty > 0 ? "+" : ""}${formatQty(result.diffQty ?? 0)} 저장 완료 (${result.txNo})`)
+      setSuccess(`ADJUST ${result.diffQty && result.diffQty > 0 ? "+" : ""}${formatQuantity(result.diffQty ?? 0)} 저장 완료 (${result.txNo})`)
       router.refresh()
       window.setTimeout(() => resetForm(false), 700)
     })
@@ -141,27 +139,26 @@ export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarge
             <div>
               <Label className="text-[13px]">현재 시스템수량</Label>
               <div className="mt-1 rounded-md border bg-muted/20 px-3 py-2 text-right font-semibold tabular-nums">
-                {formatQty(target.qtyOnHand)} {target.uom}
+                {formatQuantity(target.qtyOnHand)} {target.uom}
               </div>
             </div>
             <div>
               <Label htmlFor={`physical-${target.balanceId ?? target.itemId}`} className="text-[13px]">
                 실사수량
               </Label>
-              <Input
+              <QuantityInput
                 id={`physical-${target.balanceId ?? target.itemId}`}
-                type="number"
-                min="0"
-                step="0.000001"
                 value={physicalQty}
-                onChange={(event) => setPhysicalQty(event.target.value)}
+                onChange={setPhysicalQty}
+                maxDecimals={6}
+                allowNegative={false}
                 className="mt-1 text-right tabular-nums"
               />
             </div>
             <div>
               <Label className="text-[13px]">차이수량</Label>
               <div className={`mt-1 rounded-md border bg-muted/20 px-3 py-2 text-right font-semibold tabular-nums ${diffClassName}`}>
-                {isValidPhysicalQty ? `${diffQty > 0 ? "+" : ""}${formatQty(diffQty)}` : "-"} {target.uom}
+                {isValidPhysicalQty ? `${diffQty > 0 ? "+" : ""}${formatQuantity(diffQty)}` : "-"} {target.uom}
               </div>
             </div>
           </div>
