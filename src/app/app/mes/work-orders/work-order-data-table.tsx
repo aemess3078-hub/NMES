@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { Send } from "lucide-react"
-import { getColumns } from "./columns"
+import { getColumns, formatKstDateTime } from "./columns"
+import { formatQty } from "./format-qty"
 import { WorkOrderFormSheet } from "./work-order-form-sheet"
 import {
   deleteWorkOrder,
@@ -80,7 +81,18 @@ function OperationStatusBadge({ status }: { status: string }) {
 
 function WorkOrderExpandedRow({ workOrder }: { workOrder: WorkOrderWithDetails }) {
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[1.1fr_1fr]">
+    <div className="space-y-4 p-4">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border bg-white px-4 py-2.5 text-[13px]">
+        <span>
+          <span className="text-muted-foreground">사업장 </span>
+          <span className="font-medium text-foreground">{workOrder.site.name}</span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">지시일자 </span>
+          <span className="font-mono font-medium text-foreground">{formatKstDateTime(workOrder.createdAt)}</span>
+        </span>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
       <section className="rounded-md border bg-white">
         <div className="border-b px-4 py-3">
           <h3 className="text-[15px] font-semibold text-foreground">공정 진행 요약</h3>
@@ -117,10 +129,10 @@ function WorkOrderExpandedRow({ workOrder }: { workOrder: WorkOrderWithDetails }
                       <OperationStatusBadge status={operation.status} />
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {operation.plannedQty.toLocaleString()}
+                      {formatQty(operation.plannedQty)}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {operation.completedQty.toLocaleString()}
+                      {formatQty(operation.completedQty)}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-[13px] text-muted-foreground">
                       {getOperationDateTime(operation)}
@@ -165,7 +177,7 @@ function WorkOrderExpandedRow({ workOrder }: { workOrder: WorkOrderWithDetails }
                       {lot.materialLotNo}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {lot.qty.toLocaleString()}
+                      {formatQty(lot.qty)}
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground">
                       {lot.unit ?? lot.materialItem.uom ?? "-"}
@@ -180,6 +192,7 @@ function WorkOrderExpandedRow({ workOrder }: { workOrder: WorkOrderWithDetails }
           </div>
         )}
       </section>
+      </div>
     </div>
   )
 }
@@ -239,12 +252,12 @@ export function WorkOrderDataTable({
     }
   }
 
-  const allColumns = getColumns({
+  const columns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
     onRelease: handleRelease,
+    canMutate,
   })
-  const columns = canMutate ? allColumns : allColumns.filter((c) => c.id !== "actions")
 
   const filterableColumns = [
     {
@@ -281,12 +294,10 @@ export function WorkOrderDataTable({
         columns={columns}
         data={data}
         searchableColumns={[
-          { id: "orderNo" as keyof WorkOrderWithDetails, title: "작업지시번호" },
-          { id: "manufacturingNo" as keyof WorkOrderWithDetails, title: "제조번호" },
+          { id: "workOrderInfo" as keyof WorkOrderWithDetails, title: "작업지시/제조번호" },
           { id: "itemName" as keyof WorkOrderWithDetails, title: "품목명" },
         ]}
         filterableColumns={filterableColumns}
-        defaultSorting={[{ id: "createdAt", desc: true }]}
         renderExpandedRow={(workOrder) => (
           <WorkOrderExpandedRow workOrder={workOrder} />
         )}
