@@ -9,7 +9,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { SalesOrderRow } from "./columns"
+import { formatAmountWithCurrency } from "./format-amount"
 import { SalesOrderStatus } from "@prisma/client"
+import { formatQuantity } from "@/lib/utils"
 
 interface SalesOrderDetailSheetProps {
   open: boolean
@@ -74,7 +76,7 @@ export function SalesOrderDetailSheet({
               <div className="space-y-0.5">
                 <p className="text-[12px] text-muted-foreground uppercase tracking-wide">총금액</p>
                 <p className="text-[14px] font-semibold">
-                  {Number(salesOrder.totalAmount).toLocaleString()} {salesOrder.currency}
+                  {formatAmountWithCurrency(salesOrder.totalAmount, salesOrder.currency)}
                 </p>
               </div>
             )}
@@ -147,7 +149,7 @@ export function SalesOrderDetailSheet({
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         <span className="text-[14px] font-medium tabular-nums">
-                          {orderedQty.toLocaleString()}
+                          {formatQuantity(orderedQty)}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-right">
@@ -156,7 +158,7 @@ export function SalesOrderDetailSheet({
                             shippedQty > 0 ? "text-green-700 font-medium" : "text-muted-foreground"
                           }`}
                         >
-                          {shippedQty > 0 ? shippedQty.toLocaleString() : "—"}
+                          {shippedQty > 0 ? formatQuantity(shippedQty) : "—"}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-right">
@@ -165,13 +167,13 @@ export function SalesOrderDetailSheet({
                             remainingQty > 0 ? "text-amber-600" : "text-muted-foreground"
                           }`}
                         >
-                          {remainingQty.toLocaleString()}
+                          {formatQuantity(remainingQty)}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {item.unitPrice ? (
                           <span className="text-[13px] tabular-nums">
-                            {Number(item.unitPrice).toLocaleString()}
+                            {formatQuantity(item.unitPrice, { maxDecimals: 2 })}
                           </span>
                         ) : (
                           <span className="text-[13px] text-muted-foreground">—</span>
@@ -209,10 +211,7 @@ export function SalesOrderDetailSheet({
               <div className="bg-muted/50 rounded-lg px-4 py-3 text-right">
                 <p className="text-[13px] text-muted-foreground mb-0.5">총 금액</p>
                 <p className="text-[18px] font-semibold tabular-nums">
-                  {Number(salesOrder.totalAmount).toLocaleString()}{" "}
-                  <span className="text-[14px] font-normal text-muted-foreground">
-                    {salesOrder.currency}
-                  </span>
+                  {formatAmountWithCurrency(salesOrder.totalAmount, salesOrder.currency)}
                 </p>
               </div>
             </div>

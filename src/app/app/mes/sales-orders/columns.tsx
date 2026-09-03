@@ -13,6 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { formatQuantity } from "@/lib/utils"
+import { formatAmountWithCurrency } from "./format-amount"
 
 export type SalesOrderRow = {
   id: string
@@ -114,7 +116,7 @@ export function getColumns(
       header: "총수량",
       cell: ({ row }) => {
         const total = row.original.items.reduce((s, i) => s + Number(i.qty), 0)
-        return <span className="text-[13px]">{total.toLocaleString()}</span>
+        return <span className="text-[13px]">{formatQuantity(total)}</span>
       },
     },
     {
@@ -125,7 +127,7 @@ export function getColumns(
         if (!amount) return <span className="text-[13px] text-muted-foreground">—</span>
         return (
           <span className="text-[13px] font-medium">
-            {Number(amount).toLocaleString()} {row.original.currency}
+            {formatAmountWithCurrency(amount, row.original.currency)}
           </span>
         )
       },

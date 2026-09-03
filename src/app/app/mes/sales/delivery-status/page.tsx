@@ -3,6 +3,7 @@ import { ShipmentStatus } from "@prisma/client"
 
 import { getDeliveryStatusRows } from "@/lib/actions/shipment.actions"
 import { DeliveryStatusDataTable } from "./delivery-status-data-table"
+import { formatQuantity } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -53,12 +54,12 @@ export default async function DeliveryStatusPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <SummaryCard label="총 출하 건수" value={totalDeliveries.toLocaleString()} suffix="건" />
-        <SummaryCard label="진행중 건수" value={inProgressDeliveries.toLocaleString()} suffix="건" />
-        <SummaryCard label="완료 건수" value={completedDeliveries.toLocaleString()} suffix="건" />
+        <SummaryCard label="총 출하 건수" value={formatQuantity(totalDeliveries)} suffix="건" />
+        <SummaryCard label="진행중 건수" value={formatQuantity(inProgressDeliveries)} suffix="건" />
+        <SummaryCard label="완료 건수" value={formatQuantity(completedDeliveries)} suffix="건" />
         <SummaryCard
           label="납기 임박/지연"
-          value={urgentOrOverdueDeliveries.toLocaleString()}
+          value={formatQuantity(urgentOrOverdueDeliveries)}
           suffix="건"
           accent
         />

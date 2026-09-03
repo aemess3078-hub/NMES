@@ -7,6 +7,7 @@ import { format } from "date-fns"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { Badge } from "@/components/ui/badge"
 import type { SalesOrderStatusRow } from "@/lib/actions/sales-order.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const STATUS_CONFIG: Record<
   SalesOrderStatus,
@@ -150,7 +151,7 @@ export function getColumns(): ColumnDef<SalesOrderStatusRow>[] {
               {firstItem.name}
               {extraCount > 0 ? (
                 <span className="ml-1 text-[13px] text-muted-foreground">
-                  외 {extraCount.toLocaleString()}건
+                  외 {formatQuantity(extraCount)}건
                 </span>
               ) : null}
             </p>
@@ -195,7 +196,7 @@ export function getColumns(): ColumnDef<SalesOrderStatusRow>[] {
               remainingQty > 0 ? "text-amber-700" : "text-emerald-700"
             }`}
           >
-            {remainingQty.toLocaleString()}
+            {formatQuantity(remainingQty)}
           </span>
         )
       },
@@ -206,7 +207,7 @@ export function getColumns(): ColumnDef<SalesOrderStatusRow>[] {
 function QuantityCell({ value }: { value: number }) {
   return (
     <span className="block text-right text-[14px] tabular-nums">
-      {value.toLocaleString()}
+      {formatQuantity(value)}
     </span>
   )
 }

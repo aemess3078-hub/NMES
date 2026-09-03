@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { formatQuantity } from "@/lib/utils"
 
 export type ShipmentRow = {
   id: string
@@ -133,7 +134,7 @@ export function getColumns(
       header: "총수량",
       cell: ({ row }) => {
         const total = row.original.items.reduce((sum, item) => sum + Number(item.qty), 0)
-        return <span className="text-[13px]">{total.toLocaleString()}</span>
+        return <span className="text-[13px]">{formatQuantity(total)}</span>
       },
     },
     {

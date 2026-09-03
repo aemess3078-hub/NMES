@@ -7,6 +7,7 @@ import { format } from "date-fns"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { Badge } from "@/components/ui/badge"
 import type { DeliveryStatusRow } from "@/lib/actions/shipment.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const STATUS_CONFIG: Record<
   ShipmentStatus,
@@ -169,7 +170,7 @@ export function getColumns(): ColumnDef<DeliveryStatusRow>[] {
               {firstItem.name}
               {extraCount > 0 ? (
                 <span className="ml-1 text-[13px] text-muted-foreground">
-                  외 {extraCount.toLocaleString()}건
+                  외 {formatQuantity(extraCount)}건
                 </span>
               ) : null}
             </p>
@@ -216,7 +217,7 @@ export function getColumns(): ColumnDef<DeliveryStatusRow>[] {
                 summary.remainingQty > 0 ? "text-amber-700" : "text-emerald-700"
               }`}
             >
-              {summary.remainingQty.toLocaleString()}
+              {formatQuantity(summary.remainingQty)}
             </span>
             {hasDataIssue ? (
               <Badge variant="outline" className="border-red-200 bg-red-50 text-[12px] text-red-700">
@@ -241,7 +242,7 @@ export function getColumns(): ColumnDef<DeliveryStatusRow>[] {
 function QuantityCell({ value }: { value: number }) {
   return (
     <span className="block text-right text-[14px] tabular-nums">
-      {value.toLocaleString()}
+      {formatQuantity(value)}
     </span>
   )
 }
