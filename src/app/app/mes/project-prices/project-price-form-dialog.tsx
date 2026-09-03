@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import {
   Select,
   SelectContent,
@@ -19,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { SearchableProjectOrderCombobox } from "./searchable-project-order-combobox"
+import { formatAmountWithCurrency } from "@/lib/utils"
 import {
   createProjectOrderPrice,
   updateProjectOrderPrice,
@@ -62,8 +64,8 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
 
   const [projectOrderId, setProjectOrderId] = useState("")
   const [quotationId, setQuotationId] = useState("")
-  const [quantity, setQuantity] = useState("")
-  const [manualQuotationUnitPrice, setManualQuotationUnitPrice] = useState("")
+  const [quantity, setQuantity] = useState<number | undefined>(undefined)
+  const [manualQuotationUnitPrice, setManualQuotationUnitPrice] = useState<number | undefined>(undefined)
   const [manualQuotationDate, setManualQuotationDate] = useState("")
   const [currency, setCurrency] = useState("KRW")
 
@@ -89,8 +91,8 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
     if (mode === "edit" && price) {
       setProjectOrderId(price.projectOrder.id)
       setQuotationId(price.quotation?.id ?? "")
-      setQuantity(String(price.quantity))
-      setManualQuotationUnitPrice(!price.quotation && price.quotationUnitPrice != null ? String(price.quotationUnitPrice) : "")
+      setQuantity(Number(price.quantity))
+      setManualQuotationUnitPrice(!price.quotation && price.quotationUnitPrice != null ? Number(price.quotationUnitPrice) : undefined)
       setManualQuotationDate(!price.quotation && price.quotationDate ? fmtDate(price.quotationDate) : "")
       setCurrency(price.currency)
       setOrderSuggestion(
@@ -104,8 +106,8 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
     } else {
       setProjectOrderId("")
       setQuotationId("")
-      setQuantity("")
-      setManualQuotationUnitPrice("")
+      setQuantity(undefined)
+      setManualQuotationUnitPrice(undefined)
       setManualQuotationDate("")
       setCurrency("KRW")
       setQuotationOptions([])
@@ -118,9 +120,9 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
   const handleProjectOrderChange = async (nextId: string) => {
     setProjectOrderId(nextId)
     setQuotationId("")
-    setManualQuotationUnitPrice("")
+    setManualQuotationUnitPrice(undefined)
     setManualQuotationDate("")
-    setQuantity("")
+    setQuantity(undefined)
     setOrderSuggestion(null)
     if (!nextId) {
       setQuotationOptions([])
@@ -132,7 +134,7 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
       if (suggestion.salesOrderSuggestion) {
         const so = suggestion.salesOrderSuggestion
         setOrderSuggestion({ orderNo: so.orderNo, currency: so.currency, orderDate: so.orderDate, unitPrice: so.unitPrice })
-        setQuantity(so.qty > 0 ? String(so.qty) : "")
+        setQuantity(so.qty > 0 ? so.qty : undefined)
         setCurrency(so.currency)
       }
     } catch (e) {
@@ -157,11 +159,11 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
       alert("프로젝트를 선택하세요.")
       return
     }
-    const qty = Number(quantity)
-    if (!Number.isFinite(qty) || qty <= 0) {
+    if (quantity === undefined || quantity <= 0) {
       alert("수량을 올바르게 입력하세요.")
       return
     }
+    const qty = quantity
 
     // 견적/수주 중 하나라도 연결돼 있으면 서버가 currency를 항상 그 source로
     // override하므로(생성 시 자동 결정, 수정 시 기존 값 고정) 그 상태에서는
@@ -169,7 +171,7 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
     // 때만 의미가 있다 — 생성 시엔 fallback 값(currency)으로, 수정 시엔
     // manualCurrency로 명시 변경을 허용한다(서버가 이 값을 다른 상황에서는
     // 무시하므로 항상 보내도 안전하다).
-    const resolvedManualQuotationUnitPrice = !quotationId && manualQuotationUnitPrice ? Number(manualQuotationUnitPrice) : null
+    const resolvedManualQuotationUnitPrice = !quotationId && manualQuotationUnitPrice !== undefined ? manualQuotationUnitPrice : null
     const resolvedManualQuotationDate = !quotationId && manualQuotationDate ? new Date(manualQuotationDate) : null
 
     setIsPending(true)
@@ -238,7 +240,7 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
                 <SelectItem value={NONE_VALUE} className="text-[14px]">연결 안 함 (직접 입력)</SelectItem>
                 {quotationOptions.map((q) => (
                   <SelectItem key={q.id} value={q.id} className="text-[14px]">
-                    [{q.quotationNo}] {q.unitPrice.toLocaleString()} {q.currency}
+                    [{q.quotationNo}] {formatAmountWithCurrency(q.unitPrice, q.currency, { maxDecimals: 2 })}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -248,7 +250,14 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-[14px]">수량 <span className="text-red-500">*</span></Label>
-              <Input type="number" min={0} step="any" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="text-[14px]" placeholder="0" />
+              <QuantityInput
+                maxDecimals={6}
+                allowNegative={false}
+                value={quantity}
+                onChange={setQuantity}
+                className="text-[14px]"
+                placeholder="0"
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-[14px]">통화 {!currencyLockedBySource && <span className="text-red-500">*</span>}</Label>
@@ -267,10 +276,19 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
               <Label className="text-[12px] text-muted-foreground">견적단가</Label>
               {quotationId ? (
                 <p className="text-[14px] font-medium rounded-md border px-3 py-2 bg-muted/30 tabular-nums">
-                  {selectedQuotation ? `${selectedQuotation.unitPrice.toLocaleString()} ${selectedQuotation.currency}` : "—"}
+                  {selectedQuotation
+                    ? formatAmountWithCurrency(selectedQuotation.unitPrice, selectedQuotation.currency, { maxDecimals: 2 })
+                    : "—"}
                 </p>
               ) : (
-                <Input type="number" min={0} step="any" value={manualQuotationUnitPrice} onChange={(e) => setManualQuotationUnitPrice(e.target.value)} className="text-[14px]" placeholder="0 (직접 입력, 선택)" />
+                <QuantityInput
+                  maxDecimals={2}
+                  allowNegative={false}
+                  value={manualQuotationUnitPrice}
+                  onChange={setManualQuotationUnitPrice}
+                  className="text-[14px]"
+                  placeholder="0 (직접 입력, 선택)"
+                />
               )}
             </div>
             <div className="space-y-1.5">
@@ -289,7 +307,7 @@ export function ProjectPriceFormDialog({ open, onOpenChange, mode, price, onSucc
             <Label className="text-[12px] text-muted-foreground">수주단가 / 수주일 (연결된 수주가 있을 때만 자동 반영, 직접 입력 불가)</Label>
             <p className="text-[14px] font-medium rounded-md border px-3 py-2 bg-muted/30 tabular-nums">
               {orderSuggestion
-                ? `[${orderSuggestion.orderNo}] ${orderSuggestion.unitPrice != null ? `${orderSuggestion.unitPrice.toLocaleString()} ${orderSuggestion.currency}` : "단가 미등록"} · ${fmtDate(orderSuggestion.orderDate)}`
+                ? `[${orderSuggestion.orderNo}] ${orderSuggestion.unitPrice != null ? formatAmountWithCurrency(orderSuggestion.unitPrice, orderSuggestion.currency, { maxDecimals: 2 }) : "단가 미등록"} · ${fmtDate(orderSuggestion.orderDate)}`
                 : "연결된 수주 없음"}
             </p>
           </div>

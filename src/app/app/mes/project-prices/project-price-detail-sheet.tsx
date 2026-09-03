@@ -22,6 +22,7 @@ import {
 import { PRICE_STATUS_CONFIG } from "./columns"
 import { ProjectPriceFormDialog } from "./project-price-form-dialog"
 import { DecidePriceDialog } from "./decide-price-dialog"
+import { formatAmountWithCurrency, formatQuantity } from "@/lib/utils"
 
 interface ProjectPriceDetailSheetProps {
   open: boolean
@@ -40,7 +41,9 @@ function fmtDateTime(d: Date | string | null): string {
 
 function fmtAmount(amount: number | null, currency: string): string {
   if (amount == null) return "—"
-  return `${Math.round(amount).toLocaleString()} ${currency}`
+  // 기존 표시 정책 유지: 금액(수량 x 단가)은 소수 없이 반올림해 보여준다.
+  // formatQuantity는 절사만 하고 반올림하지 않으므로, 반올림은 여기서 먼저 한다.
+  return formatAmountWithCurrency(Math.round(amount), currency, { maxDecimals: 0 })
 }
 
 function fmtRate(rate: number | null): string {
@@ -150,7 +153,7 @@ export function ProjectPriceDetailSheet({ open, onOpenChange, priceId, onChanged
                   </div>
                   <div className="space-y-0.5">
                     <p className="text-[12px] text-muted-foreground uppercase tracking-wide">수량 / 통화</p>
-                    <p className="text-[14px] font-medium">{price.quantity.toLocaleString()} {price.item.uom} · {price.currency}</p>
+                    <p className="text-[14px] font-medium">{formatQuantity(price.quantity)} {price.item.uom} · {price.currency}</p>
                   </div>
                   <div className="space-y-0.5">
                     <p className="text-[12px] text-muted-foreground uppercase tracking-wide">최종결정일</p>
@@ -167,21 +170,27 @@ export function ProjectPriceDetailSheet({ open, onOpenChange, priceId, onChanged
                       <div>
                         <p className="text-muted-foreground">견적단가 / 견적금액</p>
                         <p className="font-medium tabular-nums">
-                          {price.quotationUnitPrice != null ? price.quotationUnitPrice.toLocaleString() : "—"} {price.currency}
+                          {price.quotationUnitPrice != null
+                            ? formatAmountWithCurrency(price.quotationUnitPrice, price.currency, { maxDecimals: 2 })
+                            : "—"}
                         </p>
                         <p className="text-muted-foreground tabular-nums">{fmtAmount(amounts?.quotationAmount ?? null, price.currency)}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">수주단가 / 수주금액</p>
                         <p className="font-medium tabular-nums">
-                          {price.orderUnitPrice != null ? price.orderUnitPrice.toLocaleString() : "—"} {price.currency}
+                          {price.orderUnitPrice != null
+                            ? formatAmountWithCurrency(price.orderUnitPrice, price.currency, { maxDecimals: 2 })
+                            : "—"}
                         </p>
                         <p className="text-muted-foreground tabular-nums">{fmtAmount(amounts?.orderAmount ?? null, price.currency)}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">최종결정단가 / 금액</p>
                         <p className="font-semibold tabular-nums">
-                          {price.finalUnitPrice != null ? price.finalUnitPrice.toLocaleString() : "—"} {price.currency}
+                          {price.finalUnitPrice != null
+                            ? formatAmountWithCurrency(price.finalUnitPrice, price.currency, { maxDecimals: 2 })
+                            : "—"}
                         </p>
                         <p className="text-muted-foreground tabular-nums">{fmtAmount(amounts?.finalAmount ?? null, price.currency)}</p>
                       </div>
@@ -225,8 +234,10 @@ export function ProjectPriceDetailSheet({ open, onOpenChange, priceId, onChanged
                           <div className="flex items-center justify-between">
                             <p className="text-[13px] text-muted-foreground">{fmtDateTime(rev.changedAt)} · {rev.changedBy.name}</p>
                             <p className="text-[14px] font-semibold tabular-nums">
-                              {rev.previousFinalUnitPrice != null ? `${rev.previousFinalUnitPrice.toLocaleString()} → ` : ""}
-                              {rev.newFinalUnitPrice.toLocaleString()} {price.currency}
+                              {rev.previousFinalUnitPrice != null
+                                ? `${formatQuantity(rev.previousFinalUnitPrice, { maxDecimals: 2 })} → `
+                                : ""}
+                              {formatAmountWithCurrency(rev.newFinalUnitPrice, price.currency, { maxDecimals: 2 })}
                             </p>
                           </div>
                           {rev.reason && <p className="text-[13px] text-muted-foreground">사유: {rev.reason}</p>}
