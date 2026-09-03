@@ -149,6 +149,34 @@ export function formatCurrency(
   return options.display === 'plain' ? formatted : `${formatted}원`;
 }
 
+export interface FormatAmountWithCurrencyOptions {
+  /** 통화가 KRW가 아닐 때 표시할 최대 소수 자릿수(기본 2 — 대부분의 통화 subunit 관례). */
+  maxDecimals?: number;
+}
+
+/**
+ * 통화 코드를 함께 받아 표시하는 금액 포맷터. currency가 정확히 "KRW"일 때만
+ * formatCurrency()로 "원" 접미사를 붙이고, 그 외 통화(USD/EUR/JPY 등 자유
+ * 입력 포함)는 코드를 그대로 유지한 채 formatQuantity()로 표시한다 —
+ * 모든 금액에 무조건 "원"을 붙이면 외화 금액이 잘못 표기되기 때문이다.
+ * DB에 저장된 currency 값은 어디에서도 변경하지 않는다.
+ *
+ * sales-orders/format-amount.ts와 정책이 동일하다(다른 모듈에서도 같은 요구가
+ * 생겨 여기 lib 레벨로 옮겼다) — 이미 merge된 그 파일은 그대로 두고 중복을
+ * 감수했다. 화면마다 값의 통화가 KRW 고정이 아니라 실제로 여러 통화를 받는
+ * 경우에만 이 함수를 쓴다.
+ */
+export function formatAmountWithCurrency(
+  amount: number | string | null | undefined,
+  currency: string,
+  options: FormatAmountWithCurrencyOptions = {}
+): string {
+  if (currency === 'KRW') return formatCurrency(amount);
+  const formatted = formatQuantity(amount, { maxDecimals: options.maxDecimals ?? 2 });
+  if (formatted === '-') return '-';
+  return `${formatted} ${currency}`;
+}
+
 /**
  * "1,234.56" 같은 콤마 포함 표시 문자열을 raw number로 되돌린다(입력 파싱 /
  * UI<->서버 storage boundary 용). 빈 문자열이나 숫자가 아닌 값은 예외를

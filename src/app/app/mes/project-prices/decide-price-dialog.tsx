@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Textarea } from "@/components/ui/textarea"
 import { setProjectOrderPriceFinal } from "@/lib/actions/project-order-price.actions"
 
@@ -32,13 +32,13 @@ export function DecidePriceDialog({
   currentFinalUnitPrice,
   onSuccess,
 }: DecidePriceDialogProps) {
-  const [finalUnitPrice, setFinalUnitPrice] = useState("")
+  const [finalUnitPrice, setFinalUnitPrice] = useState<number | undefined>(undefined)
   const [decisionReason, setDecisionReason] = useState("")
   const [isPending, setIsPending] = useState(false)
 
   useEffect(() => {
     if (open) {
-      setFinalUnitPrice(currentFinalUnitPrice != null ? String(currentFinalUnitPrice) : "")
+      setFinalUnitPrice(currentFinalUnitPrice ?? undefined)
       setDecisionReason("")
     }
   }, [open, currentFinalUnitPrice])
@@ -47,11 +47,11 @@ export function DecidePriceDialog({
 
   const handleSubmit = async () => {
     if (!priceId) return
-    const price = Number(finalUnitPrice)
-    if (!Number.isFinite(price) || price < 0) {
+    if (finalUnitPrice === undefined || finalUnitPrice < 0) {
       alert("최종결정단가를 올바르게 입력하세요.")
       return
     }
+    const price = finalUnitPrice
     if (isRedecision && !decisionReason.trim()) {
       alert("재결정 시 결정사유를 입력해야 합니다.")
       return
@@ -82,12 +82,11 @@ export function DecidePriceDialog({
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label className="text-[14px]">최종결정단가 <span className="text-red-500">*</span></Label>
-            <Input
-              type="number"
-              min={0}
-              step="any"
+            <QuantityInput
+              maxDecimals={2}
+              allowNegative={false}
               value={finalUnitPrice}
-              onChange={(e) => setFinalUnitPrice(e.target.value)}
+              onChange={setFinalUnitPrice}
               className="text-[14px]"
               placeholder="0"
               autoFocus

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ExternalLink } from "lucide-react"
 import type { ProjectOrderPriceRow } from "@/lib/actions/project-order-price.actions"
+import { formatAmountWithCurrency, formatQuantity } from "@/lib/utils"
 
 export type { ProjectOrderPriceRow }
 
@@ -19,7 +20,7 @@ export const PRICE_STATUS_CONFIG: Record<
 
 function fmtPrice(price: number | null, currency: string): string {
   if (price == null) return "—"
-  return `${price.toLocaleString()} ${currency}`
+  return formatAmountWithCurrency(price, currency, { maxDecimals: 2 })
 }
 
 export function getColumns(onViewDetail: (row: ProjectOrderPriceRow) => void): ColumnDef<ProjectOrderPriceRow>[] {
@@ -57,7 +58,7 @@ export function getColumns(onViewDetail: (row: ProjectOrderPriceRow) => void): C
       accessorFn: (row) => row.quantity,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums">
-          {row.original.quantity.toLocaleString()} {row.original.item.uom}
+          {formatQuantity(row.original.quantity)} {row.original.item.uom}
         </span>
       ),
     },

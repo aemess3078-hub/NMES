@@ -10,7 +10,7 @@
  * 실행:
  *   npx ts-node --compiler-options '{"module":"commonjs"}' --project tsconfig.json scripts/test-number-format.ts
  */
-import { formatQuantity, formatCurrency, parseFormattedNumber } from "../src/lib/utils"
+import { formatQuantity, formatCurrency, formatAmountWithCurrency, parseFormattedNumber } from "../src/lib/utils"
 import {
   sanitizeTypedValue,
   formatLiveDisplay,
@@ -67,6 +67,14 @@ assertEqual(formatCurrency(1250000), "1,250,000원", "C1. 기본 suffix")
 assertEqual(formatCurrency(1000000, { display: "plain" }), "1,000,000", "C2. plain은 접미사 없음")
 assertEqual(formatCurrency(null), "-", "C3. null -> -")
 assertEqual(formatCurrency(1234.99), "1,234원", "C4. KRW는 정수 표시 — 소수부는 반올림 없이 절사(1234.99 -> 1,234원, 1,235원 아님)")
+
+// ─── formatAmountWithCurrency (sales/project 등 다통화 화면 공용) ───────────
+assertEqual(formatAmountWithCurrency(1250000, "KRW"), "1,250,000원", "A1. KRW -> 원 접미사")
+assertEqual(formatAmountWithCurrency(1250.5, "USD"), "1,250.5 USD", "A2. 외화는 코드 유지, 원 접미사 없음")
+assertEqual(formatAmountWithCurrency(1250.567, "USD", { maxDecimals: 2 }), "1,250.56 USD", "A3. maxDecimals 옵션 전달 시 그 자리까지만(반올림 없이 절사)")
+assertEqual(formatAmountWithCurrency(null, "KRW"), "-", "A4. null(KRW) -> -")
+assertEqual(formatAmountWithCurrency(null, "USD"), "-", "A5. null(외화) -> -")
+assertEqual(formatAmountWithCurrency("20260001", "KRW"), "20,260,001원", "A6. identifier 판별은 하지 않음(호출부 책임) — 참고용")
 
 // ─── parseFormattedNumber ───────────────────────────────────────────────────
 assertEqual(parseFormattedNumber("1,234,567"), 1234567, "P1. 콤마 제거 후 정수 파싱")
