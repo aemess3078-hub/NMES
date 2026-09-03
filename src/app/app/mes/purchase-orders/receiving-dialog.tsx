@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge"
 import { createReceivingInspection, getWarehousesForSite } from "@/lib/actions/receiving.actions"
 import { ReceivingInspectionResult } from "@prisma/client"
 import type { PurchaseOrderRow } from "./columns"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ export function ReceivingDialog({
                     )}
                   </div>
                   <p className="text-[13px] text-muted-foreground mt-0.5">
-                    발주 {ins.orderedQty.toLocaleString()} / 기입고 {ins.receivedQty.toLocaleString()} / 미입고 {ins.pendingQty.toLocaleString()}
+                    발주 {formatQuantity(ins.orderedQty)} / 기입고 {formatQuantity(ins.receivedQty)} / 미입고 {formatQuantity(ins.pendingQty)}
                   </p>
                 </div>
               </div>
