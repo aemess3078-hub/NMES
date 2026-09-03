@@ -691,8 +691,12 @@ export async function updateInspectionResult(id: string, result: InspectionResul
 export async function deleteQualityInspection(id: string) {
   await requireRole("OPERATOR")
   await prisma.$transaction(async (tx) => {
-    await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
+    // PR #55: DefectCauseAnalysis.defectRecordId -> DefectRecord는 RESTRICT라
+    // DefectRecord보다 먼저 지워야 한다(원인분석 자체를 삭제하는 기능이 아니라,
+    // 검사 전체 삭제 시 남는 자식 row를 정리하는 referential integrity 용도).
+    await tx.defectCauseAnalysis.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
     await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
+    await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
     await tx.qualityInspection.delete({ where: { id } })
   })
   revalidateQualityViews()
