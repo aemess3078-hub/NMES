@@ -53,7 +53,7 @@ export type DefectCauseAnalysisRow = {
   analysisStatus: "ANALYZED" | "UNANALYZED"
   rootCause: string | null
   analysisDetail: string | null
-  analyzedByName: string | null
+  updatedByName: string | null
   updatedAt: string | null
 }
 
@@ -109,7 +109,7 @@ export function serializeDefectCauseAnalysisRow(record: DefectRecordLike): Defec
     analysisStatus: analysis ? "ANALYZED" : "UNANALYZED",
     rootCause: analysis?.rootCause ?? null,
     analysisDetail: analysis?.analysisDetail ?? null,
-    analyzedByName: analysis?.updatedBy.name ?? null,
+    updatedByName: analysis?.updatedBy.name ?? null,
     updatedAt: analysis?.updatedAt.toISOString() ?? null,
   }
 }

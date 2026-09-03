@@ -213,7 +213,7 @@ export function CauseAnalysisClient({ initialFilter, rows, filterOptions }: Caus
                 <TableHead>처분</TableHead>
                 <TableHead>분석여부</TableHead>
                 <TableHead>근본원인</TableHead>
-                <TableHead>분석자</TableHead>
+                <TableHead>최종수정자</TableHead>
                 <TableHead>최종수정일</TableHead>
                 <TableHead className="text-right">작업</TableHead>
               </TableRow>
@@ -247,7 +247,7 @@ export function CauseAnalysisClient({ initialFilter, rows, filterOptions }: Caus
                       )}
                     </TableCell>
                     <TableCell className="max-w-[240px] truncate">{r.rootCause ?? "—"}</TableCell>
-                    <TableCell>{r.analyzedByName ?? "—"}</TableCell>
+                    <TableCell>{r.updatedByName ?? "—"}</TableCell>
                     <TableCell className="whitespace-nowrap">{r.updatedAt ? fmtDateTime(r.updatedAt) : "—"}</TableCell>
                     <TableCell className="text-right">
                       <Button

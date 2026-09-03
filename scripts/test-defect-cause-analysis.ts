@@ -198,20 +198,52 @@ assertEqual(buildAnalysisStatusWhere("UNANALYZED"), { causeAnalysis: null }, "C1
       row.analysisId === null &&
       row.rootCause === null &&
       row.analysisDetail === null &&
-      row.analyzedByName === null &&
+      row.updatedByName === null &&
       row.updatedAt === null,
     "C14. causeAnalysis가 없어도 예외 없이 UNANALYZED로 정상 직렬화"
   )
 }
 
-// ─── C15: deleteQualityInspection 삭제 순서 (source-check) ──────────────────
+// ─── C15~C17: deleteQualityInspection tenant 검증 + 삭제 순서 (source-check) ─
 {
   const fnStart = qualityActionsSource.indexOf("export async function deleteQualityInspection")
-  const fnBody = qualityActionsSource.slice(fnStart, fnStart + 800)
+  const nextFnStart = qualityActionsSource.indexOf("\nexport async function", fnStart + 1)
+  const fnBody = qualityActionsSource.slice(fnStart, nextFnStart > 0 ? nextFnStart : fnStart + 1600)
+
+  const idxGetTenantId = fnBody.indexOf("getTenantId()")
+  const idxOwnershipCheck = fnBody.indexOf("tx.qualityInspection.findFirst(")
+  const idxThrow = fnBody.indexOf('throw new Error("검사 기록을 찾을 수 없습니다.")')
   const idxCauseAnalysis = fnBody.indexOf("defectCauseAnalysis.deleteMany")
-  const idxDefectRecord = fnBody.indexOf("defectRecord.deleteMany")
   const idxMeasurement = fnBody.indexOf("inspectionMeasurement.deleteMany")
+  const idxDefectRecord = fnBody.indexOf("defectRecord.deleteMany")
   const idxInspectionDelete = fnBody.indexOf("qualityInspection.delete(")
+
+  const ownershipWherePattern = /where:\s*\{\s*id,\s*workOrderOperation:\s*\{\s*workOrder:\s*\{\s*tenantId\s*\}\s*\}\s*\}/
+  const hasOwnershipWhere = ownershipWherePattern.test(fnBody)
+
+  // C16: 정상 케이스 — tenant 소속 확인(getTenantId + {id, workOrderOperation.workOrder.tenantId}
+  // 조회)이 실제 삭제들보다 먼저 실행되고, 통과하면 그 뒤로 삭제가 이어지는 구조인지 확인.
+  assertTrue(
+    idxGetTenantId >= 0 &&
+      idxOwnershipCheck >= 0 &&
+      hasOwnershipWhere &&
+      idxCauseAnalysis >= 0 &&
+      idxOwnershipCheck < idxCauseAnalysis,
+    "C16. tenant 소속 확인(getTenantId + {id, workOrderOperation.workOrder.tenantId} 조회)이 삭제들보다 먼저 실행되고, 통과 시 실제 삭제로 이어짐"
+  )
+
+  // C17: cross-tenant 차단 — 소유권 조회 결과가 없으면(다른 tenant의 id) 어떤 delete보다도 먼저 throw한다.
+  assertTrue(
+    idxThrow >= 0 &&
+      idxThrow > idxOwnershipCheck &&
+      idxThrow < idxCauseAnalysis &&
+      idxThrow < idxMeasurement &&
+      idxThrow < idxDefectRecord &&
+      idxThrow < idxInspectionDelete,
+    'C17. 소유권 조회 실패 시 "검사 기록을 찾을 수 없습니다." throw가 모든 delete보다 먼저 실행되어(같은 트랜잭션 내) 다른 tenant의 삭제를 원천 차단'
+  )
+
+  // C15: defectCauseAnalysis → (measurement/defectRecord) → qualityInspection 순으로 삭제(RESTRICT FK 위반 없이)
   assertTrue(
     idxCauseAnalysis >= 0 && idxCauseAnalysis < idxDefectRecord && idxDefectRecord < idxInspectionDelete && idxMeasurement < idxInspectionDelete,
     "C15. deleteQualityInspection이 defectCauseAnalysis → (measurement/defectRecord) → qualityInspection 순으로 삭제(RESTRICT FK 위반 없이)"
