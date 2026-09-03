@@ -12,6 +12,7 @@ import { DataTable } from "@/components/common/data-table"
 import { ColumnDef } from "@tanstack/react-table"
 import { InspectionStageRow } from "@/lib/actions/inspection-stages.actions"
 import { InspectionStageFormSheet } from "./inspection-stage-form-sheet"
+import { formatQuantity } from "@/lib/utils"
 
 const STAGE_CONFIG = {
   FIRST: { label: "초물검사", className: "bg-blue-100 text-blue-700" },
@@ -82,7 +83,7 @@ export function InspectionStageTable({ data, workOrders }: Props) {
       accessorKey: "inspectedQty",
       header: "검사수량",
       cell: ({ row }) => (
-        <span className="text-[14px] tabular-nums">{Number(row.original.inspectedQty).toLocaleString()}</span>
+        <span className="text-[14px] tabular-nums">{formatQuantity(Number(row.original.inspectedQty))}</span>
       ),
     },
     {
