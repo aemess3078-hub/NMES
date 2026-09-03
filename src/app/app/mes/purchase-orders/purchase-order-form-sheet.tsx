@@ -10,7 +10,9 @@ import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { MoneyInput } from "@/components/ui/money-input"
+import { QuantityInput } from "@/components/ui/quantity-input"
 import { Textarea } from "@/components/ui/textarea"
+import { formatQuantity } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -321,7 +323,7 @@ export function PurchaseOrderFormSheet({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="KRW">KRW</SelectItem>
+                        <SelectItem value="KRW">원</SelectItem>
                         <SelectItem value="USD">USD</SelectItem>
                         <SelectItem value="EUR">EUR</SelectItem>
                         <SelectItem value="JPY">JPY</SelectItem>
@@ -453,16 +455,13 @@ export function PurchaseOrderFormSheet({
                         name={`items.${index}.qty`}
                         render={({ field: f }) => (
                           <FormItem className="pr-1">
-                            <Input
-                              type="number"
-                              min={1}
-                              step={1}
+                            <QuantityInput
+                              maxDecimals={6}
+                              allowNegative={false}
                               className="h-8 text-[13px] text-right"
                               disabled={isItemEditDisabled}
-                              value={f.value ?? ""}
-                              onChange={(e) =>
-                                f.onChange(e.target.value === "" ? "" : parseFloat(e.target.value))
-                              }
+                              value={f.value}
+                              onChange={f.onChange}
                             />
                             <FormMessage className="text-[12px]" />
                           </FormItem>
@@ -490,7 +489,7 @@ export function PurchaseOrderFormSheet({
                       {/* 현재고 */}
                       <div className="flex items-center justify-end pr-1">
                         <span className="text-[12px] text-muted-foreground h-8 flex items-center">
-                          {stock ? stock.qtyOnHand.toLocaleString() : "—"}
+                          {stock ? formatQuantity(stock.qtyOnHand) : "—"}
                         </span>
                       </div>
 

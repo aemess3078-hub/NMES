@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { formatAmountWithCurrency } from "@/lib/utils"
 
 export type PurchaseOrderRow = {
   id: string
@@ -112,7 +113,7 @@ export function getColumns(
         if (!amount) return <span className="text-[13px] text-muted-foreground">—</span>
         return (
           <span className="text-[13px] font-medium">
-            {Number(amount).toLocaleString()} {row.original.currency}
+            {formatAmountWithCurrency(amount, row.original.currency)}
           </span>
         )
       },
