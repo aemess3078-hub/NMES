@@ -485,6 +485,7 @@ model Tenant {
   defectCorrectiveActions       DefectCorrectiveAction[]
   defectRecurrencePreventions   DefectRecurrencePrevention[]
   equipmentUsageHistories       EquipmentUsageHistory[]
+  attachments                   Attachment[]
 }
 
 model Profile {
@@ -538,6 +539,7 @@ model Profile {
   defectRecurrencePreventionsUpdated  DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionUpdater")
   equipmentUsageHistoriesAsOperator   EquipmentUsageHistory[]      @relation("EquipmentUsageOperator")
   equipmentUsageHistoriesCreated      EquipmentUsageHistory[]      @relation("EquipmentUsageCreator")
+  attachmentsUploaded                 Attachment[]
 }
 
 model Site {
@@ -1167,6 +1169,51 @@ model DocumentLink {
   @@unique([documentId, targetType, targetId])
   @@index([documentId])
   @@index([targetType, targetId])
+}
+
+// ─── 청운커팅 사업계획서 "첨부파일관리" ──────────────────────────────────────
+//
+// 여러 업무 엔티티(조치관리/재발방지관리, 향후 품목/수주/작업지시/설비/공구/
+// 프로젝트 등으로 확대 예정)에 파일을 첨부하는 공통 구조다. 기존 Document/
+// DocumentLink(work-standards 전용 문서 코드 마스터 — fileUrl은 수동 입력 링크일
+// 뿐이고 fileSize/mimeType/업로더/업로드일시 등 실제 업로드 메타데이터가 없음)와는
+// 근본적으로 목적이 달라 재사용하지 않고 신규로 만든다. 다만 하나의 모델이 여러
+// 업무 엔티티에 연결되는 구조 자체는 DocumentLink(targetType/targetId 문자열 기반
+// polymorphic 연결)와 동일한 패턴을 그대로 따른다 — Prisma FK 참조무결성을
+// entityId에 대해서는 강제하지 못하는 대가를 감수하는 대신, 대상 엔티티 종류가
+// 계속 늘어날 예정이라 매번 스키마 마이그레이션 없이 확장 가능해야 하기 때문이다.
+// entityType은 Prisma enum이 아닌 문자열로 두고(DocumentLink.targetType과 동일
+// 이유), 허용값은 애플리케이션 레벨 allow-list로 관리한다(attachment.helpers.ts의
+// ATTACHMENT_ENTITY_TYPES). 서버의 모든 mutating/조회 action은 entityId가 가리키는
+// 실제 레코드가 현재 tenant 소속인지 반드시 재검증한다(추측성 신뢰 금지).
+//
+// 실제 파일 바이너리는 DB에 저장하지 않는다 — Supabase Storage 비공개(private)
+// 버킷에 저장하고, DB에는 metadata + storagePath만 저장한다. storagePath를 그대로
+// 브라우저에 노출하지 않고, 다운로드 시 서버에서 tenant 소유권을 확인한 뒤 짧은
+// 유효시간의 signed URL을 발급한다(attachment.actions.ts 참조). 삭제는 제공하되
+// (사업계획서 CRUD 요구사항), 복잡한 버전관리/승인/전자서명은 이번 PR 범위 밖이다.
+model Attachment {
+  id         String @id @default(cuid())
+  tenantId   String
+  entityType String
+  entityId   String
+
+  fileName    String
+  storagePath String
+  mimeType    String
+  fileSize    Int
+  description String?
+
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant  @relation(fields: [tenantId], references: [id])
+  uploadedBy Profile @relation(fields: [uploadedById], references: [id])
+
+  @@unique([storagePath])
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([uploadedById])
 }
 
 model WorkOrder {

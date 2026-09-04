@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { formatQuantity } from "@/lib/utils"
+import { AttachmentSection } from "@/components/common/attachments/attachment-section"
 import {
   updateDefectCorrectiveAction,
   startDefectCorrectiveAction,
@@ -254,6 +255,9 @@ export function CorrectiveActionDetailSheet({
               </div>
             )}
           </div>
+
+          {/* 첨부파일 — 조치관리 데이터/상태전이 로직과 완전히 독립된 부가기능(§ STEP 19) */}
+          <AttachmentSection entityType="DEFECT_CORRECTIVE_ACTION" entityId={actionId!} />
 
           <div className="text-[12px] text-muted-foreground">
             등록: {row.createdByName} · 최종수정: {row.updatedByName} ({fmtDateTime(row.updatedAt)})
