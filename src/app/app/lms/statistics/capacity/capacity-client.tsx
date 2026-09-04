@@ -21,6 +21,7 @@ import type {
   CapacityRow,
   EquipmentOption,
 } from "@/lib/actions/equipment-statistics.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const ALL_EQUIPMENT = "__all__"
 
@@ -41,7 +42,7 @@ const columns: ColumnDef<CapacityRow>[] = [
     accessorKey: "totalGoodQty",
     header: "생산량",
     cell: ({ row }) => (
-      <span className="text-[14px]">{row.original.totalGoodQty.toLocaleString()}</span>
+      <span className="text-[14px]">{formatQuantity(row.original.totalGoodQty)}</span>
     ),
   },
   {

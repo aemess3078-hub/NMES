@@ -6,6 +6,7 @@ import { Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EdgeGatewayRow } from "@/lib/actions/equipment-integration.actions"
 import { GatewayStatus } from "@prisma/client"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 상태 설정 ────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export function getGatewayColumns({
       header: "연결 설비",
       cell: ({ row }) => (
         <span className="text-[14px] tabular-nums">
-          {row.original._count.connections}건
+          {formatQuantity(row.original._count.connections)}건
         </span>
       ),
     },

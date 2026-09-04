@@ -27,6 +27,7 @@ import {
   CopyTagConflictMode,
   CopyEquipmentTagResult,
 } from "@/lib/actions/equipment-integration.actions"
+import { formatQuantity } from "@/lib/utils"
 
 type ConnectionOption = {
   id: string
@@ -180,7 +181,7 @@ export function CopyTagsDialog({
               <SelectContent>
                 {equipmentOptions.map((equipment) => (
                   <SelectItem key={equipment.id} value={equipment.id}>
-                    {equipment.name} ({equipment.code}) · 태그 {equipment.tagCount}개
+                    {equipment.name} ({equipment.code}) · 태그 {formatQuantity(equipment.tagCount)}개
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -215,7 +216,7 @@ export function CopyTagsDialog({
                           {equipment.name}
                         </span>
                         <span className="block text-[13px] text-muted-foreground">
-                          {equipment.code} · 기존 태그 {equipment.tagCount}개
+                          {equipment.code} · 기존 태그 {formatQuantity(equipment.tagCount)}개
                         </span>
                       </span>
                     </label>

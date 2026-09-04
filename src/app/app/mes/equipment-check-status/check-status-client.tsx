@@ -10,6 +10,7 @@ import type {
   DailyCheckStatusData,
   DailyCheckStatusRow,
 } from "@/lib/actions/equipment-management.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const RESULT_CONFIG = {
   PASS: {
@@ -168,7 +169,7 @@ export function CheckStatusClient({ data, equipments, filter }: Props) {
             <p className="text-[13px] text-muted-foreground">전체</p>
           </div>
           <p className="text-[22px] font-semibold tabular-nums text-foreground">
-            {summary.total.toLocaleString()}
+            {formatQuantity(summary.total)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card px-4 py-3">
@@ -177,7 +178,7 @@ export function CheckStatusClient({ data, equipments, filter }: Props) {
             <p className="text-[13px] text-muted-foreground">이상없음</p>
           </div>
           <p className="text-[22px] font-semibold tabular-nums text-emerald-700">
-            {summary.passCount.toLocaleString()}
+            {formatQuantity(summary.passCount)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card px-4 py-3">
@@ -186,7 +187,7 @@ export function CheckStatusClient({ data, equipments, filter }: Props) {
             <p className="text-[13px] text-muted-foreground">이상있음</p>
           </div>
           <p className="text-[22px] font-semibold tabular-nums text-red-700">
-            {summary.failCount.toLocaleString()}
+            {formatQuantity(summary.failCount)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-card px-4 py-3">
@@ -195,7 +196,7 @@ export function CheckStatusClient({ data, equipments, filter }: Props) {
             <p className="text-[13px] text-muted-foreground">해당없음</p>
           </div>
           <p className="text-[22px] font-semibold tabular-nums text-slate-700">
-            {summary.naCount.toLocaleString()}
+            {formatQuantity(summary.naCount)}
           </p>
         </div>
       </div>
