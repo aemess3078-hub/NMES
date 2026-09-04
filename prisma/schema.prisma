@@ -486,6 +486,9 @@ model Tenant {
   defectRecurrencePreventions   DefectRecurrencePrevention[]
   equipmentUsageHistories       EquipmentUsageHistory[]
   attachments                   Attachment[]
+  backupGroups                  BackupGroup[]
+  backupGroupItems              BackupGroupItem[]
+  hiddenBackups                 HiddenBackup[]
 }
 
 model Profile {
@@ -540,6 +543,9 @@ model Profile {
   equipmentUsageHistoriesAsOperator   EquipmentUsageHistory[]      @relation("EquipmentUsageOperator")
   equipmentUsageHistoriesCreated      EquipmentUsageHistory[]      @relation("EquipmentUsageCreator")
   attachmentsUploaded                 Attachment[]
+  backupGroupsCreated                 BackupGroup[]                @relation("BackupGroupCreator")
+  backupGroupsUpdated                 BackupGroup[]                @relation("BackupGroupUpdater")
+  hiddenBackupsHidden                 HiddenBackup[]               @relation("HiddenBackupHider")
 }
 
 model Site {
@@ -1214,6 +1220,79 @@ model Attachment {
   @@index([tenantId])
   @@index([entityType, entityId])
   @@index([uploadedById])
+}
+
+// ─── 청운커팅 사업계획서 "기준정보관리 > 백업관리" ──────────────────────────
+//
+// 이 기능은 NMES가 DB 백업을 직접 생성/수정/삭제하는 기능이 아니다 — 실제 DB
+// 백업은 계속 Supabase가 자동으로 관리한다(Supabase Management API
+// GET /v1/projects/{ref}/database/backups로 조회만 함, src/lib/supabase-management/
+// backups.ts 참조). NMES는 그 백업 목록을 (1) 사용자가 그룹(폴더)으로 묶어
+// 조회하고, (2) 특정 백업을 화면에서만 숨기는 "관리/분류 UI" 역할만 한다.
+// Supabase backup 원본에 대한 mutation(생성/삭제/restore/PITR)은 이 코드베이스
+// 어디에도 구현하지 않는다.
+//
+// 그룹-백업 관계는 M:N이다(같은 Supabase backup이 여러 그룹에 동시에 포함될 수
+// 있음, § STEP 9). externalBackupId는 Supabase API 응답의 안정적인 식별자를
+// 그대로 문자열로 보존한다(실제 응답에 id 필드가 있으면 그 값을, 없으면
+// inserted_at을 사용 — backup.helpers.ts의 normalizeExternalBackupId 참조).
+// Supabase 프로젝트가 tenant마다 별도가 아니라 하나이므로 백업 목록 자체는
+// 모든 tenant에 동일하게 보이지만, 그룹/숨김 metadata는 tenant별로 분리한다
+// (§ STEP 25).
+model BackupGroup {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+
+  createdById String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id])
+  createdBy Profile           @relation("BackupGroupCreator", fields: [createdById], references: [id])
+  updatedBy Profile           @relation("BackupGroupUpdater", fields: [updatedById], references: [id])
+  items     BackupGroupItem[]
+
+  @@index([tenantId])
+}
+
+// 그룹 삭제 시 이 관계 row들만 함께 정리한다(onDelete: Cascade) — Supabase backup
+// 원본이나 다른 그룹에 속한 동일 backup의 멤버십에는 영향 없음.
+model BackupGroupItem {
+  id               String @id @default(cuid())
+  tenantId         String
+  groupId          String
+  externalBackupId String
+
+  backupAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  group  BackupGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, externalBackupId])
+  @@index([tenantId])
+  @@index([externalBackupId])
+}
+
+// 특정 backup을 NMES 화면에서만 제외하는 용도 — Supabase backup 원본에는 어떤
+// 영향도 주지 않는다. 그룹 소속 여부와 무관하게 독립적으로 존재한다(§ STEP 15).
+model HiddenBackup {
+  id               String @id @default(cuid())
+  tenantId         String
+  externalBackupId String
+
+  hiddenById String
+  hiddenAt   DateTime @default(now())
+
+  tenant   Tenant  @relation(fields: [tenantId], references: [id])
+  hiddenBy Profile @relation("HiddenBackupHider", fields: [hiddenById], references: [id])
+
+  @@unique([tenantId, externalBackupId])
+  @@index([tenantId])
+  @@index([externalBackupId])
 }
 
 model WorkOrder {

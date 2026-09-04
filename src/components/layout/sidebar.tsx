@@ -73,6 +73,7 @@ import {
   Undo2,
   Banknote,
   Paperclip,
+  Archive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -147,6 +148,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Undo2,
   Banknote,
   Paperclip,
+  Archive,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {

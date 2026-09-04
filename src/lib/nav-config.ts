@@ -44,6 +44,10 @@ export const MES_NAV: NavItem[] = [
           // 첨부파일을 한 화면에서 조회한다. 업로드/삭제는 각 업무 상세 화면(AttachmentSection)에서
           // 진행하며, 이 화면은 전체 조회 전용이다.
           { id: 'nav-attachments', parentId: 'nav-master', label: '첨부파일관리', icon: 'Paperclip', href: '/app/mes/attachments', displayOrder: 16, children: [] },
+          // 사업계획서 "백업관리" — Supabase 자동 DB 백업 목록을 조회하고 그룹(폴더)으로
+          // 분류/숨김 처리하는 관리 UI다. 백업 자체의 생성/삭제/restore는 하지 않는다
+          // (실제 백업은 계속 Supabase가 전담).
+          { id: 'nav-backups', parentId: 'nav-master', label: '백업관리', icon: 'Archive', href: '/app/mes/backups', displayOrder: 17, children: [] },
         ],
       },
       // 2. 생산관리
