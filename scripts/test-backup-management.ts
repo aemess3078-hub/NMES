@@ -219,9 +219,13 @@ const managementSource = fs.readFileSync("src/lib/supabase-management/backups.ts
 // (금지 사실을 설명하는 주석 자체에는 "restore"/"PITR" 같은 단어가 당연히 등장하므로,
 // 주석을 제거한 코드 본문만 검사해야 오탐이 없다.)
 function stripComments(src: string): string {
+  // Windows(core.autocrlf)에서 체크아웃하면 줄 끝에 \r이 남는데, `.*$`는 `.`가
+  // 줄바꿈 문자(\r 포함)를 매칭하지 않아 그 \r 때문에 `$`(문자열 끝)에 도달하지
+  // 못해 매치 자체가 실패한다(주석이 전혀 안 지워짐) — `$` 앵커 대신 [^\r\n]*로
+  // "다음 줄바꿈 문자 전까지"를 매칭해 CRLF/LF 어느 쪽이든 안전하게 동작시킨다.
   return src
     .split("\n")
-    .map((line) => line.replace(/\/\/.*$/, ""))
+    .map((line) => line.replace(/\/\/[^\r\n]*/, ""))
     .join("\n")
 }
 {
