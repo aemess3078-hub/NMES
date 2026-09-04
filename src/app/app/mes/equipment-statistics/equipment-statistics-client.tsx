@@ -34,13 +34,14 @@ import type {
   WorkTimeStats,
   AvailabilityStats,
 } from "@/lib/actions/equipment-statistics.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
 const productionColumns: ColumnDef<ProductionStats["rows"][number]>[] = [
   { accessorKey: "date", header: "날짜", cell: ({ row }) => <span className="font-mono text-[13px]">{row.original.date}</span> },
-  { accessorKey: "goodQty", header: "양품 수량", cell: ({ row }) => <span className="text-[14px]">{row.original.goodQty.toLocaleString()}</span> },
-  { accessorKey: "defectQty", header: "불량 수량", cell: ({ row }) => <span className="text-[14px] text-red-600">{row.original.defectQty.toLocaleString()}</span> },
+  { accessorKey: "goodQty", header: "양품 수량", cell: ({ row }) => <span className="text-[14px]">{formatQuantity(row.original.goodQty)}</span> },
+  { accessorKey: "defectQty", header: "불량 수량", cell: ({ row }) => <span className="text-[14px] text-red-600">{formatQuantity(row.original.defectQty)}</span> },
 ]
 
 const errorColumns: ColumnDef<ErrorStats["rows"][number]>[] = [
@@ -49,13 +50,13 @@ const errorColumns: ColumnDef<ErrorStats["rows"][number]>[] = [
   {
     accessorKey: "alarmCount", header: "알람",
     cell: ({ row }) => (
-      <Badge className="bg-red-100 text-red-700 border-0 text-[12px]">{row.original.alarmCount}</Badge>
+      <Badge className="bg-red-100 text-red-700 border-0 text-[12px]">{formatQuantity(row.original.alarmCount)}</Badge>
     ),
   },
   {
     accessorKey: "warningCount", header: "경고",
     cell: ({ row }) => (
-      <Badge className="bg-amber-100 text-amber-700 border-0 text-[12px]">{row.original.warningCount}</Badge>
+      <Badge className="bg-amber-100 text-amber-700 border-0 text-[12px]">{formatQuantity(row.original.warningCount)}</Badge>
     ),
   },
 ]
@@ -71,7 +72,7 @@ const downtimeColumns: ColumnDef<DowntimeStats["rows"][number]>[] = [
 const workTimeColumns: ColumnDef<WorkTimeStats["rows"][number]>[] = [
   { accessorKey: "date", header: "날짜", cell: ({ row }) => <span className="font-mono text-[13px]">{row.original.date}</span> },
   { accessorKey: "hours", header: "작업시간 (h)", cell: ({ row }) => <span className="text-[14px]">{row.original.hours.toLocaleString()}</span> },
-  { accessorKey: "goodQty", header: "양품 수량", cell: ({ row }) => <span className="text-[14px]">{row.original.goodQty.toLocaleString()}</span> },
+  { accessorKey: "goodQty", header: "양품 수량", cell: ({ row }) => <span className="text-[14px]">{formatQuantity(row.original.goodQty)}</span> },
 ]
 
 const availabilityColumns: ColumnDef<AvailabilityStats["rows"][number]>[] = [
@@ -252,7 +253,7 @@ export function EquipmentStatisticsClient({ data, equipmentOptions }: Props) {
           icon={<BarChart2 className="h-5 w-5 text-blue-600" />}
           iconBg="bg-blue-50"
           label="총 생산량"
-          value={production.totalGoodQty.toLocaleString()}
+          value={formatQuantity(production.totalGoodQty)}
           sub={`불량률 ${defectRateStr}`}
         />
         <SummaryCard
@@ -260,28 +261,28 @@ export function EquipmentStatisticsClient({ data, equipmentOptions }: Props) {
           iconBg="bg-green-50"
           label="평균 가동률"
           value={avgAvailability}
-          sub={`설비 ${availability.equipmentCount}대`}
+          sub={`설비 ${formatQuantity(availability.equipmentCount)}대`}
         />
         <SummaryCard
           icon={<AlertTriangle className="h-5 w-5 text-red-500" />}
           iconBg="bg-red-50"
           label="에러 발생"
-          value={errors.total}
-          sub={`알람 ${errors.alarmCount} / 경고 ${errors.warningCount}`}
+          value={formatQuantity(errors.total)}
+          sub={`알람 ${formatQuantity(errors.alarmCount)} / 경고 ${formatQuantity(errors.warningCount)}`}
         />
         <SummaryCard
           icon={<Clock className="h-5 w-5 text-amber-600" />}
           iconBg="bg-amber-50"
           label="비가동 시간"
           value={downtimeHrs}
-          sub={`${downtime.eventCount}건`}
+          sub={`${formatQuantity(downtime.eventCount)}건`}
         />
         <SummaryCard
           icon={<Timer className="h-5 w-5 text-violet-600" />}
           iconBg="bg-violet-50"
           label="작업 시간"
           value={workTimeStr}
-          sub={workTime.resultCount > 0 ? `${workTime.resultCount}건` : undefined}
+          sub={workTime.resultCount > 0 ? `${formatQuantity(workTime.resultCount)}건` : undefined}
         />
         <SummaryCard
           icon={<Zap className="h-5 w-5 text-slate-400" />}

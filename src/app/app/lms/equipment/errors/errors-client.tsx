@@ -33,6 +33,7 @@ import type {
   ErrorEventAppliedFilter,
   EquipmentOption,
 } from "@/lib/actions/equipment-statistics.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 유틸리티 ─────────────────────────────────────────────────────────────────
 
@@ -260,7 +261,7 @@ export function ErrorsClient({
             <div className="min-w-0">
               <p className="text-[13px] text-muted-foreground">전체 에러</p>
               <p className="text-[22px] font-semibold leading-tight">
-                {summary.total}
+                {formatQuantity(summary.total)}
                 <span className="text-[14px] font-normal text-muted-foreground ml-1">
                   건
                 </span>
@@ -277,7 +278,7 @@ export function ErrorsClient({
             <div className="min-w-0">
               <p className="text-[13px] text-muted-foreground">알람</p>
               <p className="text-[22px] font-semibold leading-tight text-red-700">
-                {summary.alarmCount}
+                {formatQuantity(summary.alarmCount)}
                 <span className="text-[14px] font-normal text-muted-foreground ml-1">
                   건
                 </span>
@@ -294,7 +295,7 @@ export function ErrorsClient({
             <div className="min-w-0">
               <p className="text-[13px] text-muted-foreground">경고</p>
               <p className="text-[22px] font-semibold leading-tight text-amber-700">
-                {summary.warningCount}
+                {formatQuantity(summary.warningCount)}
                 <span className="text-[14px] font-normal text-muted-foreground ml-1">
                   건
                 </span>
@@ -325,7 +326,7 @@ export function ErrorsClient({
                     : "text-slate-500"
                 }`}
               >
-                {summary.activeCount}
+                {formatQuantity(summary.activeCount)}
                 <span className="text-[14px] font-normal text-muted-foreground ml-1">
                   건
                 </span>

@@ -14,6 +14,7 @@ import {
   updateProblemType,
 } from "@/lib/actions/equipment-management.actions"
 import { ProblemTypeFormSheet } from "./problem-type-form-sheet"
+import { formatQuantity } from "@/lib/utils"
 
 interface Props {
   data: ProblemTypeRow[]
@@ -73,7 +74,7 @@ export function ProblemTypeTable({ data }: Props) {
       header: "사용건수",
       cell: ({ row }) => (
         <Badge variant="secondary" className="text-[12px]">
-          {row.original._count.repairRequests}건
+          {formatQuantity(row.original._count.repairRequests)}건
         </Badge>
       ),
     },

@@ -5,6 +5,7 @@ import {
 import { CapacityClient } from "./capacity-client"
 import { Card, CardContent } from "@/components/ui/card"
 import { AlertTriangle, Cpu, Gauge, TrendingUp } from "lucide-react"
+import { formatQuantity } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -49,7 +50,7 @@ export default async function CapacityPage({ searchParams }: Props) {
             <div>
               <p className="text-[13px] text-muted-foreground">분석 설비</p>
               <p className="text-[22px] font-semibold leading-tight">
-                {data.totalEquipmentCount}
+                {formatQuantity(data.totalEquipmentCount)}
                 <span className="text-[14px] font-normal text-muted-foreground ml-1">대</span>
               </p>
             </div>
@@ -92,7 +93,7 @@ export default async function CapacityPage({ searchParams }: Props) {
             <div>
               <p className="text-[13px] text-muted-foreground">병목 설비</p>
               <p className={`text-[22px] font-semibold leading-tight ${data.bottleneckCount > 0 ? "text-red-600" : "text-slate-500"}`}>
-                {data.bottleneckCount}
+                {formatQuantity(data.bottleneckCount)}
                 <span className="text-[14px] font-normal text-muted-foreground ml-1">대</span>
               </p>
             </div>
