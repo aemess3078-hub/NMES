@@ -27,6 +27,7 @@ import {
   getSalesOrdersForSite,
   getWorkOrdersForSite,
 } from "@/lib/actions/inventory.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -316,7 +317,7 @@ export function TransactionFormSheet({
                           <div className="flex items-center justify-between gap-4 w-full">
                             <span>[{item.code}] {item.name} ({ITEM_TYPE_LABELS[item.itemType] ?? item.itemType} / {item.uom})</span>
                             {item.qtyOnHand !== undefined && (
-                              <span className="text-muted-foreground text-[12px] shrink-0">재고 {item.qtyOnHand.toLocaleString()}</span>
+                              <span className="text-muted-foreground text-[12px] shrink-0">재고 {formatQuantity(item.qtyOnHand)}</span>
                             )}
                           </div>
                         </SelectItem>

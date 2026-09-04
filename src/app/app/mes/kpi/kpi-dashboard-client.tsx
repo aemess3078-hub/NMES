@@ -12,6 +12,7 @@ import type {
   UphKpi,
   EquipmentAvailabilityKpi,
 } from "@/lib/actions/kpi.actions"
+import { formatQuantity } from "@/lib/utils"
 
 type KpiId =
   | "manufacturingLeadTime"
@@ -108,19 +109,19 @@ function DefectRateDetail({ data }: { data: DefectRateKpi }) {
         <div className="rounded-md border border-border bg-muted/20 py-3">
           <p className="text-[13px] text-muted-foreground">검사 건수</p>
           <p className="text-[20px] font-semibold tabular-nums text-foreground mt-1">
-            {data.inspectionCount.toLocaleString()}
+            {formatQuantity(data.inspectionCount)}
           </p>
         </div>
         <div className="rounded-md border border-border bg-muted/20 py-3">
           <p className="text-[13px] text-muted-foreground">검사 수량</p>
           <p className="text-[20px] font-semibold tabular-nums text-foreground mt-1">
-            {data.inspectedQty.toLocaleString()}
+            {formatQuantity(data.inspectedQty)}
           </p>
         </div>
         <div className="rounded-md border border-border bg-muted/20 py-3">
           <p className="text-[13px] text-muted-foreground">불량 수량</p>
           <p className="text-[20px] font-semibold tabular-nums text-foreground mt-1">
-            {data.defectQty.toLocaleString()}
+            {formatQuantity(data.defectQty)}
           </p>
         </div>
       </div>
@@ -128,7 +129,7 @@ function DefectRateDetail({ data }: { data: DefectRateKpi }) {
         <p className="text-[14px] font-medium text-foreground mb-2">불량 유형 TOP 5</p>
         <SimpleTable
           headers={["불량 유형", "수량", "비율"]}
-          rows={data.topDefects.map((d) => [d.name, d.qty.toLocaleString(), `${d.pct}%`])}
+          rows={data.topDefects.map((d) => [d.name, formatQuantity(d.qty), `${d.pct}%`])}
           emptyMessage="불량 데이터 없음"
         />
       </div>
@@ -142,7 +143,7 @@ function LaborEffortDetail({ data }: { data: LaborEffortKpi }) {
       <p className="text-[14px] font-medium text-foreground">일별 작업공수</p>
       <SimpleTable
         headers={["날짜", "작업시간(h)", "양품수"]}
-        rows={data.rows.map((r) => [r.date, r.hours, r.goodQty.toLocaleString()])}
+        rows={data.rows.map((r) => [r.date, r.hours, formatQuantity(r.goodQty)])}
         emptyMessage="조회 기간 내 작업 실적 없음"
       />
     </div>
@@ -177,7 +178,7 @@ function UphDetail({ data }: { data: UphKpi }) {
           r.date,
           r.itemCode,
           r.itemName,
-          r.goodQty.toLocaleString(),
+          formatQuantity(r.goodQty),
           r.hours,
           r.uph != null ? r.uph : "—",
         ])}
@@ -272,7 +273,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
           ? `${data.manufacturingLeadTime.avgDays}일`
           : null,
       subtitle: "평균 리드타임",
-      meta: `완료 ${data.manufacturingLeadTime.orderCount}건`,
+      meta: `완료 ${formatQuantity(data.manufacturingLeadTime.orderCount)}건`,
     },
     {
       id: "defectRate",
@@ -282,7 +283,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
           ? `${(data.defectRate.defectRate * 100).toFixed(2)}%`
           : null,
       subtitle: "불량률 (검사 기준)",
-      meta: `검사 ${data.defectRate.inspectionCount}건`,
+      meta: `검사 ${formatQuantity(data.defectRate.inspectionCount)}건`,
     },
     {
       id: "laborEffort",
@@ -292,7 +293,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
           ? `${data.laborEffort.totalHours}h`
           : null,
       subtitle: "총 작업시간",
-      meta: `실적 ${data.laborEffort.resultCount}건`,
+      meta: `실적 ${formatQuantity(data.laborEffort.resultCount)}건`,
     },
     {
       id: "deliveryLeadTime",
@@ -302,7 +303,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
           ? `${data.deliveryLeadTime.avgDays}일`
           : null,
       subtitle: "평균 납품 리드타임",
-      meta: `납품 ${data.deliveryLeadTime.count}건`,
+      meta: `납품 ${formatQuantity(data.deliveryLeadTime.count)}건`,
     },
     {
       id: "powerUsage",
@@ -318,7 +319,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
       label: "UPH",
       value: data.uph.avgUph != null ? String(data.uph.avgUph) : null,
       subtitle: "시간당 생산량",
-      meta: `양품 ${data.uph.totalGoodQty.toLocaleString()}개 · ${data.uph.totalHours}h`,
+      meta: `양품 ${formatQuantity(data.uph.totalGoodQty)}개 · ${data.uph.totalHours}h`,
     },
     {
       id: "equipmentAvailability",
@@ -328,7 +329,7 @@ export function KpiDashboardClient({ data, filterOptions }: Props) {
           ? `${(data.equipmentAvailability.avgRate * 100).toFixed(1)}%`
           : null,
       subtitle: "평균 가동률",
-      meta: `설비 ${data.equipmentAvailability.equipmentCount}대`,
+      meta: `설비 ${formatQuantity(data.equipmentAvailability.equipmentCount)}대`,
     },
   ]
 

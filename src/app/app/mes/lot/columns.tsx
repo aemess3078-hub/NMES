@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { LotWithDetails } from "@/lib/actions/lot.actions"
+import { formatQuantity } from "@/lib/utils"
 
 // ─── 상태 레이블 ─────────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ export function getColumns({ onStatusChange }: ColumnActions): ColumnDef<LotWith
       header: () => <div className="text-right">재고수량</div>,
       cell: ({ row }) => (
         <div className="text-right font-mono text-[14px]">
-          {Number(row.original.qty).toLocaleString()}
+          {formatQuantity(Number(row.original.qty))}
         </div>
       ),
     },

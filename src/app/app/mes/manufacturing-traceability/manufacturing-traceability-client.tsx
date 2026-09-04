@@ -22,6 +22,7 @@ import {
   type ManufacturingTraceability,
   type TraceabilityLotGenealogyNode,
 } from "@/lib/actions/manufacturing-traceability.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const WORK_ORDER_STATUS: Record<string, { label: string; className: string }> = {
   DRAFT: { label: "초안", className: "bg-slate-100 text-slate-700" },
@@ -89,7 +90,7 @@ function formatDateTime(value: Date | string | null | undefined): string {
 }
 
 function formatNumber(value: number | null | undefined): string {
-  return Number(value ?? 0).toLocaleString()
+  return formatQuantity(value ?? 0)
 }
 
 function displayProcessName(processName: string): string {

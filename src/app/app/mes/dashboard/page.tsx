@@ -14,6 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import Link from "next/link"
+import { formatQuantity } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -150,7 +151,7 @@ export default async function DashboardPage() {
               </div>
               <p className="text-[14px] text-muted-foreground">진행 작업지시</p>
             </div>
-            <p className="text-[32px] font-bold">{kpis.activeWorkOrders}</p>
+            <p className="text-[32px] font-bold">{formatQuantity(kpis.activeWorkOrders)}</p>
             <p className="text-[13px] text-muted-foreground mt-1">건 진행 중</p>
           </CardContent>
         </Card>
@@ -163,7 +164,7 @@ export default async function DashboardPage() {
               </div>
               <p className="text-[14px] text-muted-foreground">오늘 양품 생산</p>
             </div>
-            <p className="text-[32px] font-bold text-green-700">{kpis.todayGoodQty.toLocaleString()}</p>
+            <p className="text-[32px] font-bold text-green-700">{formatQuantity(kpis.todayGoodQty)}</p>
             <p className="text-[13px] text-muted-foreground mt-1">ea</p>
           </CardContent>
         </Card>
@@ -207,7 +208,7 @@ export default async function DashboardPage() {
               </div>
               <p className="text-[14px] text-muted-foreground">오늘 불량 수량</p>
             </div>
-            <p className="text-[28px] font-bold text-red-600">{kpis.todayDefectQty.toLocaleString()}</p>
+            <p className="text-[28px] font-bold text-red-600">{formatQuantity(kpis.todayDefectQty)}</p>
             <p className="text-[13px] text-muted-foreground mt-1">ea</p>
           </CardContent>
         </Card>
@@ -220,7 +221,7 @@ export default async function DashboardPage() {
               </div>
               <p className="text-[14px] text-muted-foreground">오늘 검사 건수</p>
             </div>
-            <p className="text-[28px] font-bold">{inspectionsToday}</p>
+            <p className="text-[28px] font-bold">{formatQuantity(inspectionsToday)}</p>
             <p className="text-[13px] text-muted-foreground mt-1">건 검사 완료</p>
           </CardContent>
         </Card>
@@ -233,7 +234,7 @@ export default async function DashboardPage() {
               </div>
               <p className="text-[14px] text-muted-foreground">수리 대기</p>
             </div>
-            <p className="text-[28px] font-bold text-yellow-700">{kpis.openRepairs}</p>
+            <p className="text-[28px] font-bold text-yellow-700">{formatQuantity(kpis.openRepairs)}</p>
             <p className="text-[13px] text-muted-foreground mt-1">건 미완료</p>
           </CardContent>
         </Card>
