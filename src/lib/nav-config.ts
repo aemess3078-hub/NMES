@@ -126,6 +126,9 @@ export const MES_NAV: NavItem[] = [
           // 사업계획서 "조치관리" — DefectRecord 1건당 여러 건의 시정조치(담당자/기한/진행상태) 등록·관리.
           // 재발방지관리(효과성 검증/CAPA 종료판정)는 별도 메뉴/PR로 분리한다.
           { id: 'nav-corrective-action', parentId: 'nav-quality', label: '조치관리', icon: 'Wrench', href: '/app/mes/quality/corrective-action', displayOrder: 7, children: [] },
+          // 사업계획서 "재발방지관리" — 불량→원인분석→조치관리 흐름의 마지막 단계.
+          // 대책 수행과 효과성 검증(EFFECTIVE/INEFFECTIVE)을 구분해 CAPA 종료를 관리한다.
+          { id: 'nav-recurrence-prevention', parentId: 'nav-quality', label: '재발방지관리', icon: 'ShieldAlert', href: '/app/mes/quality/recurrence-prevention', displayOrder: 8, children: [] },
         ],
       },
       // 7. 영업관리

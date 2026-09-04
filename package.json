@@ -20,6 +20,7 @@
     "test:spc": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-spc-calculations.ts",
     "test:cause-analysis": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-defect-cause-analysis.ts",
     "test:corrective-action": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-corrective-action.ts",
+    "test:recurrence-prevention": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-recurrence-prevention.ts",
     "test:number-format": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-number-format.ts",
     "dev:set-pop-pin": "ts-node --project tsconfig.scripts.json scripts/set-pop-pin-dev.ts"
   },

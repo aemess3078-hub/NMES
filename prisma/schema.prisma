@@ -239,6 +239,23 @@ enum CorrectiveActionStatus {
   COMPLETED
 }
 
+// 청운커팅 사업계획서 "품질검사 > 재발방지관리" — "대책 수행"과 "효과성 검증"을
+// 구분해야 하므로 조치관리(3단계)보다 한 단계 많다. 효과성 검증 전에는
+// COMPLETED가 될 수 없다(VERIFYING을 반드시 거친다).
+enum RecurrencePreventionStatus {
+  OPEN
+  IN_PROGRESS
+  VERIFYING
+  COMPLETED
+}
+
+// 효과성 검증 결과. INEFFECTIVE면 COMPLETED로 전이하지 않고 IN_PROGRESS로
+// 되돌려 추가 대책을 수행하게 한다(§ DefectRecurrencePrevention 주석 참조).
+enum VerificationResult {
+  EFFECTIVE
+  INEFFECTIVE
+}
+
 enum DocType {
   SOP
   DRAWING
@@ -462,6 +479,7 @@ model Tenant {
   spcProfiles                   SpcProfile[]
   defectCauseAnalyses           DefectCauseAnalysis[]
   defectCorrectiveActions       DefectCorrectiveAction[]
+  defectRecurrencePreventions   DefectRecurrencePrevention[]
 }
 
 model Profile {
@@ -476,39 +494,43 @@ model Profile {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  tenantUsers                     TenantUser[]
-  qualityInspections              QualityInspection[]
-  auditLogs                       AuditLog[]
-  approvalRequests                ApprovalRequest[]           @relation("Requester")
-  approvals                       ApprovalRequest[]           @relation("Approver")
-  receivingInspections            ReceivingInspection[]       @relation("ReceivingInspector")
-  ecnRequested                    EngineeringChange[]         @relation("ECNRequester")
-  ecnApproved                     EngineeringChange[]         @relation("ECNApprover")
-  signupsApproved                 SignupRequest[]             @relation("SignupApprover")
-  signupsRejected                 SignupRequest[]             @relation("SignupRejector")
-  repairRequested                 EquipmentRepairRequest[]    @relation("RepairRequester")
-  repairAssigned                  EquipmentRepairRequest[]    @relation("RepairAssignee")
-  dailyChecks                     EquipmentDailyCheck[]       @relation("DailyCheckChecker")
-  userCredential                  UserCredential?
-  loginHistories                  LoginHistory[]
-  supportAuthored                 SupportRequest[]            @relation("SupportAuthor")
-  supportHandled                  SupportRequest[]            @relation("SupportHandler")
-  projectOrdersOwned              ProjectOrder[]              @relation("ProjectOrderOwner")
-  projectIssuesAssigned           ProjectIssue[]              @relation("ProjectIssueAssignee")
-  projectIssuesCreated            ProjectIssue[]              @relation("ProjectIssueCreator")
-  materialReturnsCreated          MaterialReturn[]            @relation("MaterialReturnCreator")
-  materialReturnsCompleted        MaterialReturn[]            @relation("MaterialReturnCompleter")
-  projectOrderPricesCreated       ProjectOrderPrice[]         @relation("ProjectOrderPriceCreator")
-  projectOrderPricesUpdated       ProjectOrderPrice[]         @relation("ProjectOrderPriceUpdater")
-  projectOrderPricesDecided       ProjectOrderPrice[]         @relation("ProjectOrderPriceDecider")
-  projectOrderPriceRevisions      ProjectOrderPriceRevision[] @relation("ProjectOrderPriceRevisionChanger")
-  spcProfilesCreated              SpcProfile[]                @relation("SpcProfileCreator")
-  spcProfilesUpdated              SpcProfile[]                @relation("SpcProfileUpdater")
-  defectCauseAnalysesCreated      DefectCauseAnalysis[]       @relation("DefectCauseAnalysisCreator")
-  defectCauseAnalysesUpdated      DefectCauseAnalysis[]       @relation("DefectCauseAnalysisUpdater")
-  defectCorrectiveActionsAssigned DefectCorrectiveAction[]    @relation("DefectCorrectiveActionAssignee")
-  defectCorrectiveActionsCreated  DefectCorrectiveAction[]    @relation("DefectCorrectiveActionCreator")
-  defectCorrectiveActionsUpdated  DefectCorrectiveAction[]    @relation("DefectCorrectiveActionUpdater")
+  tenantUsers                         TenantUser[]
+  qualityInspections                  QualityInspection[]
+  auditLogs                           AuditLog[]
+  approvalRequests                    ApprovalRequest[]            @relation("Requester")
+  approvals                           ApprovalRequest[]            @relation("Approver")
+  receivingInspections                ReceivingInspection[]        @relation("ReceivingInspector")
+  ecnRequested                        EngineeringChange[]          @relation("ECNRequester")
+  ecnApproved                         EngineeringChange[]          @relation("ECNApprover")
+  signupsApproved                     SignupRequest[]              @relation("SignupApprover")
+  signupsRejected                     SignupRequest[]              @relation("SignupRejector")
+  repairRequested                     EquipmentRepairRequest[]     @relation("RepairRequester")
+  repairAssigned                      EquipmentRepairRequest[]     @relation("RepairAssignee")
+  dailyChecks                         EquipmentDailyCheck[]        @relation("DailyCheckChecker")
+  userCredential                      UserCredential?
+  loginHistories                      LoginHistory[]
+  supportAuthored                     SupportRequest[]             @relation("SupportAuthor")
+  supportHandled                      SupportRequest[]             @relation("SupportHandler")
+  projectOrdersOwned                  ProjectOrder[]               @relation("ProjectOrderOwner")
+  projectIssuesAssigned               ProjectIssue[]               @relation("ProjectIssueAssignee")
+  projectIssuesCreated                ProjectIssue[]               @relation("ProjectIssueCreator")
+  materialReturnsCreated              MaterialReturn[]             @relation("MaterialReturnCreator")
+  materialReturnsCompleted            MaterialReturn[]             @relation("MaterialReturnCompleter")
+  projectOrderPricesCreated           ProjectOrderPrice[]          @relation("ProjectOrderPriceCreator")
+  projectOrderPricesUpdated           ProjectOrderPrice[]          @relation("ProjectOrderPriceUpdater")
+  projectOrderPricesDecided           ProjectOrderPrice[]          @relation("ProjectOrderPriceDecider")
+  projectOrderPriceRevisions          ProjectOrderPriceRevision[]  @relation("ProjectOrderPriceRevisionChanger")
+  spcProfilesCreated                  SpcProfile[]                 @relation("SpcProfileCreator")
+  spcProfilesUpdated                  SpcProfile[]                 @relation("SpcProfileUpdater")
+  defectCauseAnalysesCreated          DefectCauseAnalysis[]        @relation("DefectCauseAnalysisCreator")
+  defectCauseAnalysesUpdated          DefectCauseAnalysis[]        @relation("DefectCauseAnalysisUpdater")
+  defectCorrectiveActionsAssigned     DefectCorrectiveAction[]     @relation("DefectCorrectiveActionAssignee")
+  defectCorrectiveActionsCreated      DefectCorrectiveAction[]     @relation("DefectCorrectiveActionCreator")
+  defectCorrectiveActionsUpdated      DefectCorrectiveAction[]     @relation("DefectCorrectiveActionUpdater")
+  defectRecurrencePreventionsAssigned DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionAssignee")
+  defectRecurrencePreventionsVerified DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionVerifier")
+  defectRecurrencePreventionsCreated  DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionCreator")
+  defectRecurrencePreventionsUpdated  DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionUpdater")
 }
 
 model Site {
@@ -1687,10 +1709,11 @@ model DefectRecord {
   severity            DefectSeverity     @default(MAJOR)
   disposition         DefectDisposition?
 
-  qualityInspection QualityInspection        @relation(fields: [qualityInspectionId], references: [id])
-  defectCode        DefectCode               @relation(fields: [defectCodeId], references: [id])
-  causeAnalysis     DefectCauseAnalysis?
-  correctiveActions DefectCorrectiveAction[]
+  qualityInspection     QualityInspection            @relation(fields: [qualityInspectionId], references: [id])
+  defectCode            DefectCode                   @relation(fields: [defectCodeId], references: [id])
+  causeAnalysis         DefectCauseAnalysis?
+  correctiveActions     DefectCorrectiveAction[]
+  recurrencePreventions DefectRecurrencePrevention[]
 
   @@index([qualityInspectionId])
   @@index([defectCodeId])
@@ -1765,6 +1788,72 @@ model DefectCorrectiveAction {
   assignee     Profile?     @relation("DefectCorrectiveActionAssignee", fields: [assigneeId], references: [id])
   createdBy    Profile      @relation("DefectCorrectiveActionCreator", fields: [createdById], references: [id])
   updatedBy    Profile      @relation("DefectCorrectiveActionUpdater", fields: [updatedById], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([defectRecordId])
+  @@index([assigneeId])
+}
+
+// ─── 청운커팅 사업계획서 "품질검사 > 재발방지관리" ──────────────────────────
+//
+// 불량 발생 → 원인분석 → 조치관리("현재 발생한 문제를 바로잡는 조치") →
+// 재발방지관리("같은 원인으로 재발하지 않도록 표준/공정/점검/교육 등을
+// 개선하고, 그 대책이 실제 효과가 있었는지 검증하는 단계") 흐름의 마지막
+// 구간을 담당한다.
+//
+// DefectRecord 1건에 여러 재발방지 대책이 있을 수 있어 조치관리와 동일하게
+// 1:N으로 둔다(@unique(defectRecordId) 없음). 원인분석/조치관리는 이 모델에서
+// 참조만 하고 절대 수정하지 않는다 — 각각의 원본 화면에서만 관리한다.
+// DefectCorrectiveAction으로의 FK는 두지 않는다 — 선행조건 확인은
+// defectRecordId를 통해 원인분석/조치 존재 여부를 조회하는 것으로 충분하고,
+// 화면 이동 편의만을 위한 FK는 만들지 않는다(§ actions 파일의
+// assertRecurrencePreventionPrerequisites 참조).
+//
+// 상태는 "대책 수행"과 "효과성 검증"을 구분하기 위해 조치관리보다 한 단계
+// 많다: OPEN(등록) → IN_PROGRESS(대책 수행 중) → VERIFYING(검증 중) →
+// COMPLETED(효과 확인 및 종료). 효과성 검증 결과가 EFFECTIVE일 때만
+// COMPLETED로 전이하며, 이때 completedAt을 서버에서 자동 기록한다.
+// INEFFECTIVE면 COMPLETED로 전이하지 않고 IN_PROGRESS로 되돌려 추가 대책을
+// 수행하게 한다 — 검증 이력은 최신 1건만 이 row에 스냅샷으로 보관한다(별도
+// 이력 테이블 없음, DefectCauseAnalysis와 동일한 "단일 row 갱신 + AuditLog로
+// 변경 이력 추적" 패턴).
+//
+// 기한초과는 DB에 별도 컬럼/상태로 저장하지 않는다 — 조치관리와 동일하게
+// `dueDate < today && status !== COMPLETED`를 조회 시점에 계산한다.
+// 삭제 기능은 제공하지 않는다(품질 추적성/감사 증빙 목적, DefectCauseAnalysis/
+// DefectCorrectiveAction과 동일 정책) — 변경은 update와 상태전이만 가능하며
+// AuditLog에 이력을 남긴다.
+model DefectRecurrencePrevention {
+  id             String @id @default(cuid())
+  tenantId       String
+  defectRecordId String
+
+  preventionContent String
+  assigneeId        String?
+  dueDate           DateTime
+
+  status RecurrencePreventionStatus @default(OPEN)
+
+  verificationContent String?
+  verificationResult  VerificationResult?
+  verifierId          String?
+  verifiedAt          DateTime?
+
+  completedAt DateTime?
+
+  createdById String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  defectRecord DefectRecord @relation(fields: [defectRecordId], references: [id])
+  assignee     Profile?     @relation("DefectRecurrencePreventionAssignee", fields: [assigneeId], references: [id])
+  verifier     Profile?     @relation("DefectRecurrencePreventionVerifier", fields: [verifierId], references: [id])
+  createdBy    Profile      @relation("DefectRecurrencePreventionCreator", fields: [createdById], references: [id])
+  updatedBy    Profile      @relation("DefectRecurrencePreventionUpdater", fields: [updatedById], references: [id])
 
   @@index([tenantId])
   @@index([tenantId, status])

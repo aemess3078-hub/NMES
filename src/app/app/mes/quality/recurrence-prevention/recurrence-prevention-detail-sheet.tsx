@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Link from "next/link"
 import {
   Sheet,
   SheetContent,
@@ -24,11 +23,12 @@ import {
 } from "@/components/ui/select"
 import { formatQuantity } from "@/lib/utils"
 import {
-  updateDefectCorrectiveAction,
-  startDefectCorrectiveAction,
-  completeDefectCorrectiveAction,
-} from "@/lib/actions/defect-corrective-action.actions"
-import { STATUS_CONFIG, type DefectCorrectiveActionRow } from "./columns"
+  updateDefectRecurrencePrevention,
+  startDefectRecurrencePrevention,
+  submitDefectRecurrencePreventionForVerification,
+  verifyDefectRecurrencePrevention,
+} from "@/lib/actions/defect-recurrence-prevention.actions"
+import { STATUS_CONFIG, VERIFICATION_RESULT_CONFIG, type DefectRecurrencePreventionRow } from "./columns"
 
 const NONE_VALUE = "__NONE__"
 
@@ -45,6 +45,12 @@ const DISPOSITION_LABEL: Record<string, string> = {
   USE_AS_IS: "특채",
 }
 
+const CORRECTIVE_STATUS_LABEL: Record<string, string> = {
+  OPEN: "등록",
+  IN_PROGRESS: "진행중",
+  COMPLETED: "완료",
+}
+
 function fmtDate(iso: string): string {
   return iso.slice(0, 10)
 }
@@ -55,59 +61,63 @@ function fmtDateTime(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-interface CorrectiveActionDetailSheetProps {
+interface RecurrencePreventionDetailSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  actionId: string | null
-  row: DefectCorrectiveActionRow | null
+  preventionId: string | null
+  row: DefectRecurrencePreventionRow | null
   assignableUsers: { id: string; name: string }[]
   onChanged: () => void
 }
 
-export function CorrectiveActionDetailSheet({
+export function RecurrencePreventionDetailSheet({
   open,
   onOpenChange,
-  actionId,
+  preventionId,
   row,
   assignableUsers,
   onChanged,
-}: CorrectiveActionDetailSheetProps) {
-  const [actionContent, setActionContent] = useState("")
+}: RecurrencePreventionDetailSheetProps) {
+  const [preventionContent, setPreventionContent] = useState("")
   const [assigneeId, setAssigneeId] = useState("")
   const [dueDate, setDueDate] = useState("")
-  const [completionNote, setCompletionNote] = useState("")
+  const [verificationContent, setVerificationContent] = useState("")
+  const [verificationResult, setVerificationResult] = useState<"EFFECTIVE" | "INEFFECTIVE" | "">("")
+  const [verifierId, setVerifierId] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
 
   useEffect(() => {
     if (open && row && initializedFor !== row.id) {
-      setActionContent(row.actionContent)
+      setPreventionContent(row.preventionContent)
       setAssigneeId(row.assigneeId ?? "")
       setDueDate(fmtDate(row.dueDate))
-      setCompletionNote(row.completionNote ?? "")
+      setVerificationContent(row.verificationContent ?? "")
+      setVerificationResult("")
+      setVerifierId(row.verifierId ?? "")
       setInitializedFor(row.id)
     }
     if (!open) setInitializedFor(null)
   }, [open, row, initializedFor])
 
-  if (!row || !actionId) return null
+  if (!row || !preventionId) return null
 
   const cfg = STATUS_CONFIG[row.status]
 
   async function handleSaveEdit() {
-    if (!actionContent.trim()) {
-      alert("조치내용을 입력해 주세요.")
+    if (!preventionContent.trim()) {
+      alert("재발방지 대책을 입력해 주세요.")
       return
     }
     if (!dueDate) {
-      alert("완료예정일을 입력해 주세요.")
+      alert("목표일을 입력해 주세요.")
       return
     }
     setIsSaving(true)
     try {
-      await updateDefectCorrectiveAction(actionId!, {
-        actionContent,
+      await updateDefectRecurrencePrevention(preventionId!, {
+        preventionContent,
         assigneeId: assigneeId || null,
         dueDate,
       })
@@ -122,7 +132,7 @@ export function CorrectiveActionDetailSheet({
   async function handleStart() {
     setIsTransitioning(true)
     try {
-      const res = await startDefectCorrectiveAction(actionId!)
+      const res = await startDefectRecurrencePrevention(preventionId!)
       if (!res.ok) {
         alert(res.error ?? "처리 중 오류가 발생했습니다.")
         return
@@ -133,10 +143,40 @@ export function CorrectiveActionDetailSheet({
     }
   }
 
-  async function handleComplete() {
+  async function handleSubmitForVerification() {
     setIsTransitioning(true)
     try {
-      const res = await completeDefectCorrectiveAction(actionId!, completionNote || null)
+      const res = await submitDefectRecurrencePreventionForVerification(preventionId!)
+      if (!res.ok) {
+        alert(res.error ?? "처리 중 오류가 발생했습니다.")
+        return
+      }
+      onChanged()
+    } finally {
+      setIsTransitioning(false)
+    }
+  }
+
+  async function handleVerify() {
+    if (!verificationContent.trim()) {
+      alert("검증내용을 입력해 주세요.")
+      return
+    }
+    if (verificationResult !== "EFFECTIVE" && verificationResult !== "INEFFECTIVE") {
+      alert("검증결과를 선택해 주세요.")
+      return
+    }
+    if (!verifierId) {
+      alert("검증담당자를 선택해 주세요.")
+      return
+    }
+    setIsTransitioning(true)
+    try {
+      const res = await verifyDefectRecurrencePrevention(preventionId!, {
+        verificationContent,
+        verificationResult,
+        verifierId,
+      })
       if (!res.ok) {
         alert(res.error ?? "처리 중 오류가 발생했습니다.")
         return
@@ -152,11 +192,11 @@ export function CorrectiveActionDetailSheet({
       <SheetContent className="sm:max-w-xl overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
-            조치 상세
+            재발방지 상세
             <Badge className={`${cfg.className} border-0 text-[12px] font-medium`}>{cfg.label}</Badge>
             {row.overdue && <Badge className="bg-red-100 text-red-700 border-0 text-[11px]">기한초과</Badge>}
           </SheetTitle>
-          <SheetDescription>불량정보부터 조치 진행상태까지 한 화면에서 확인합니다.</SheetDescription>
+          <SheetDescription>불량정보부터 효과성 검증까지 CAPA 흐름을 한 화면에서 확인합니다.</SheetDescription>
         </SheetHeader>
 
         <div className="space-y-5 pt-4">
@@ -189,10 +229,31 @@ export function CorrectiveActionDetailSheet({
             )}
           </div>
 
-          {/* 조치내용 / 담당자 / 기한 (수정 가능) */}
+          {/* 조치관리 이력 — 참조만, 이 화면에서는 수정하지 않는다 */}
+          <div className="rounded-lg border p-3 space-y-1.5 text-[14px]">
+            <p className="text-[13px] font-semibold text-muted-foreground">조치관리 이력 (참조)</p>
+            {row.correctiveActions.length === 0 ? (
+              <p className="text-muted-foreground">등록된 조치가 없습니다. 조치 등록은 품질검사 &gt; 조치관리 메뉴에서 진행하세요.</p>
+            ) : (
+              <div className="space-y-1">
+                {row.correctiveActions.map((a) => (
+                  <div key={a.id} className="flex items-start gap-2 text-[13px]">
+                    <Badge
+                      className={`border-0 text-[11px] shrink-0 ${a.status === "COMPLETED" ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-700"}`}
+                    >
+                      {CORRECTIVE_STATUS_LABEL[a.status] ?? a.status}
+                    </Badge>
+                    <span>{a.actionContent}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 재발방지 대책 / 담당자 / 목표일 (수정 가능) */}
           <div className="space-y-3">
-            <p className="text-[13px] font-semibold text-muted-foreground">조치내용</p>
-            <Textarea value={actionContent} onChange={(e) => setActionContent(e.target.value)} rows={4} />
+            <p className="text-[13px] font-semibold text-muted-foreground">재발방지 대책</p>
+            <Textarea value={preventionContent} onChange={(e) => setPreventionContent(e.target.value)} rows={4} />
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-[13px]">담당자</Label>
@@ -207,7 +268,7 @@ export function CorrectiveActionDetailSheet({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[13px]">완료예정일</Label>
+                <Label className="text-[13px]">목표일</Label>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </div>
             </div>
@@ -216,42 +277,76 @@ export function CorrectiveActionDetailSheet({
             </Button>
           </div>
 
-          {/* 진행상태 / 완료결과 */}
+          {/* 진행상태 / 효과성 검증 */}
           <div className="rounded-lg border p-3 space-y-3">
             <p className="text-[13px] font-semibold text-muted-foreground">진행상태</p>
             {row.status === "OPEN" && (
               <Button size="sm" onClick={handleStart} disabled={isTransitioning}>
-                {isTransitioning ? "처리 중..." : "조치 진행 시작"}
+                {isTransitioning ? "처리 중..." : "대책 수행 시작"}
               </Button>
             )}
             {row.status === "IN_PROGRESS" && (
+              <Button size="sm" onClick={handleSubmitForVerification} disabled={isTransitioning}>
+                {isTransitioning ? "처리 중..." : "검증 요청"}
+              </Button>
+            )}
+            {row.status === "VERIFYING" && (
               <div className="space-y-2">
-                <Label className="text-[13px]">완료결과 (선택)</Label>
+                <Label className="text-[13px]">검증내용 *</Label>
                 <Textarea
-                  value={completionNote}
-                  onChange={(e) => setCompletionNote(e.target.value)}
-                  placeholder="조치 완료 결과를 입력하세요"
+                  value={verificationContent}
+                  onChange={(e) => setVerificationContent(e.target.value)}
+                  placeholder="효과성 검증 내용을 입력하세요"
                   rows={3}
                 />
-                <Button size="sm" onClick={handleComplete} disabled={isTransitioning}>
-                  {isTransitioning ? "처리 중..." : "조치 완료 처리"}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">검증결과 *</Label>
+                    <Select value={verificationResult} onValueChange={(v) => setVerificationResult(v as "EFFECTIVE" | "INEFFECTIVE")}>
+                      <SelectTrigger><SelectValue placeholder="검증결과 선택" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EFFECTIVE">유효 (재발방지 완료)</SelectItem>
+                        <SelectItem value="INEFFECTIVE">무효 (추가 대책 필요)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[13px]">검증담당자 *</Label>
+                    <Select value={verifierId} onValueChange={setVerifierId}>
+                      <SelectTrigger><SelectValue placeholder="검증담당자 선택" /></SelectTrigger>
+                      <SelectContent>
+                        {assignableUsers.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button size="sm" onClick={handleVerify} disabled={isTransitioning}>
+                  {isTransitioning ? "처리 중..." : "검증 처리"}
                 </Button>
               </div>
             )}
             {row.status === "COMPLETED" && (
               <div className="text-[14px] space-y-1">
-                <p><span className="text-muted-foreground">완료일</span> {row.completedAt ? fmtDateTime(row.completedAt) : "—"}</p>
-                <p><span className="text-muted-foreground">완료결과</span> {row.completionNote ?? "—"}</p>
-                {/* 조치가 완료된 불량은 재발방지관리 등록 대상이 될 수 있다(§ 재발방지관리 선행조건: 완료된 조치 1건 이상). 화면 이동 편의만을 위한 최소 연결 — 조치관리 기능 자체는 변경하지 않는다. */}
-                <p className="pt-1">
-                  <Link
-                    href={`/app/mes/quality/recurrence-prevention${row.manufacturingNo ? `?manufacturingNo=${encodeURIComponent(row.manufacturingNo)}` : ""}`}
-                    className="text-blue-700 hover:underline"
-                  >
-                    재발방지관리에서 진행 →
-                  </Link>
+                <p>
+                  <span className="text-muted-foreground">검증결과</span>{" "}
+                  {row.verificationResult && (
+                    <Badge className={`${VERIFICATION_RESULT_CONFIG[row.verificationResult].className} border-0 text-[12px] font-medium`}>
+                      {VERIFICATION_RESULT_CONFIG[row.verificationResult].label}
+                    </Badge>
+                  )}
                 </p>
+                <p><span className="text-muted-foreground">검증내용</span> {row.verificationContent ?? "—"}</p>
+                <p><span className="text-muted-foreground">검증담당자</span> {row.verifierName ?? "—"}</p>
+                <p><span className="text-muted-foreground">검증일</span> {row.verifiedAt ? fmtDateTime(row.verifiedAt) : "—"}</p>
+                <p><span className="text-muted-foreground">완료일</span> {row.completedAt ? fmtDateTime(row.completedAt) : "—"}</p>
               </div>
+            )}
+            {row.status === "IN_PROGRESS" && row.verificationResult === "INEFFECTIVE" && (
+              <p className="text-[12px] text-amber-700">
+                직전 검증결과가 무효로 판정되어 추가 대책 수행 중입니다. 대책 내용을 보완한 후 다시 검증을 요청하세요.
+              </p>
             )}
           </div>
 
