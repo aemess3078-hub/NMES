@@ -40,6 +40,10 @@ export const MES_NAV: NavItem[] = [
           // Gap Analysis Rev.2 계층 정렬: 사업계획서 기준정보관리 산하로 이동(기존 시스템관리 아래 있던 항목).
           // developerOnly는 원래 부모(nav-sysadmin)에서 상속되던 것이므로, 이동하면서 항목 자체에 명시해 보호를 그대로 유지한다.
           { id: 'nav-common-codes', parentId: 'nav-master', label: '코드관리', icon: 'BookOpen', href: '/app/mes/common-codes', displayOrder: 15, developerOnly: true, children: [] },
+          // 사업계획서 "첨부파일관리" — 조치관리/재발방지관리 등 업무 데이터에 연결된
+          // 첨부파일을 한 화면에서 조회한다. 업로드/삭제는 각 업무 상세 화면(AttachmentSection)에서
+          // 진행하며, 이 화면은 전체 조회 전용이다.
+          { id: 'nav-attachments', parentId: 'nav-master', label: '첨부파일관리', icon: 'Paperclip', href: '/app/mes/attachments', displayOrder: 16, children: [] },
         ],
       },
       // 2. 생산관리

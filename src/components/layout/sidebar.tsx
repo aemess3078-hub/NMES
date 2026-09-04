@@ -72,6 +72,7 @@ import {
   CircleAlert,
   Undo2,
   Banknote,
+  Paperclip,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -145,6 +146,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   CircleAlert,
   Undo2,
   Banknote,
+  Paperclip,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {
