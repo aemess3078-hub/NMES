@@ -275,6 +275,24 @@ export const MES_NAV: NavItem[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════
+  // 리포트 (사업계획서 정본 — 생산일보/품질리포트/설비리포트)
+  // 새 업무 데이터를 만들지 않고, 이미 쌓이는 데이터를 조회/집계해
+  // 화면 확인 + Excel/인쇄로 출력하는 화면들이다.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: 'section-reports',
+    parentId: null,
+    label: '리포트',
+    icon: 'FileBarChart2',
+    displayOrder: 2.7,
+    children: [
+      { id: 'nav-report-production-daily', parentId: 'section-reports', label: '생산일보', icon: 'CalendarDays', href: '/app/mes/reports/production-daily', displayOrder: 1, children: [] },
+      { id: 'nav-report-quality', parentId: 'section-reports', label: '품질리포트', icon: 'ShieldCheck', href: '/app/mes/reports/quality', displayOrder: 2, children: [] },
+      { id: 'nav-report-equipment', parentId: 'section-reports', label: '설비리포트', icon: 'Gauge', href: '/app/mes/reports/equipment', displayOrder: 3, children: [] },
+    ],
+  },
+
+  // ═══════════════════════════════════════════════════════════════
   // 시스템
   // ═══════════════════════════════════════════════════════════════
   {

@@ -85,15 +85,19 @@ export default async function AppLayout({
     <FeatureProvider enabledFeatures={enabledFeatures}>
       <UserRoleProvider role={userRole}>
         <IdleLogoutProvider />
-        <div className="flex h-screen overflow-hidden bg-background">
-          <Sidebar
-            navItems={filteredNav}
-            userName={user.name}
-            userEmail={user.email}
-          />
-          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            <Header />
-            <main className="flex-1 overflow-y-auto p-6">
+        <div className="flex h-screen overflow-hidden bg-background print:block print:h-auto">
+          <div className="print:hidden">
+            <Sidebar
+              navItems={filteredNav}
+              userName={user.name}
+              userEmail={user.email}
+            />
+          </div>
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden print:block">
+            <div className="print:hidden">
+              <Header />
+            </div>
+            <main className="flex-1 overflow-y-auto p-6 print:overflow-visible print:h-auto print:p-0">
               {children}
             </main>
           </div>
