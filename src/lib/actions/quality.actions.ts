@@ -706,8 +706,11 @@ export async function deleteQualityInspection(id: string) {
     // 조치관리(DefectCorrectiveAction.defectRecordId도 RESTRICT)도 동일한 이유로
     // DefectRecord보다 먼저 정리한다 — 조치이력 자체를 삭제하는 기능이 아니라,
     // 검사 전체 삭제 시 남는 자식 row를 정리하는 용도다.
+    // 재발방지관리(DefectRecurrencePrevention.defectRecordId도 RESTRICT)도
+    // 동일한 이유로 DefectRecord보다 먼저 정리한다.
     await tx.defectCauseAnalysis.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
     await tx.defectCorrectiveAction.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
+    await tx.defectRecurrencePrevention.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
     await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
     await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
     await tx.qualityInspection.delete({ where: { id } })
