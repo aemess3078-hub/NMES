@@ -112,6 +112,9 @@ export const MES_NAV: NavItem[] = [
         icon: 'ShieldCheck',
         displayOrder: 60,
         children: [
+          // 사업계획서 "품질현황" — 불량분석/원인분석/조치관리/재발방지관리를 종합한 대시보드.
+          // 각 화면의 기존 계산식을 그대로 재사용하며 별도의 숫자 정의를 만들지 않는다.
+          { id: 'nav-quality-dashboard', parentId: 'nav-quality', label: '품질현황', icon: 'LayoutDashboard', href: '/app/mes/quality/dashboard', displayOrder: 0.3, children: [] },
           { id: 'nav-defect-stats', parentId: 'nav-quality', label: '불량분석', icon: 'BarChart2', href: '/app/mes/quality/defect-stats', displayOrder: 1, children: [] },
           { id: 'nav-inspection-stages', parentId: 'nav-quality', label: '검사결과 관리', icon: 'ClipboardCheck', href: '/app/mes/inspection-stages', displayOrder: 2, children: [] },
           { id: 'nav-work-standards', parentId: 'nav-quality', label: '작업표준서관리', icon: 'BookOpen', href: '/app/mes/quality/work-standards', displayOrder: 3, children: [] },
