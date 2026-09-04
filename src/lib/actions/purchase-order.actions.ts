@@ -11,9 +11,14 @@ export async function getPurchaseOrders(tenantId: string) {
   const rows = await prisma.purchaseOrder.findMany({
     where: {
       tenantId,
-      NOT: [
-        { orderNo: { startsWith: "OS-" } },
-        { note: { contains: "[OUTSOURCING]" } },
+      AND: [
+        { NOT: { orderNo: { startsWith: "OS-" } } },
+        {
+          OR: [
+            { note: null },
+            { NOT: { note: { contains: "[OUTSOURCING]" } } },
+          ],
+        },
       ],
     },
     include: {
@@ -56,9 +61,14 @@ export async function getPendingPurchaseOrdersForReceipt(tenantId: string, siteI
       tenantId,
       siteId,
       status: { in: ["ORDERED", "PARTIAL_RECEIVED"] },
-      NOT: [
-        { orderNo: { startsWith: "OS-" } },
-        { note: { contains: "[OUTSOURCING]" } },
+      AND: [
+        { NOT: { orderNo: { startsWith: "OS-" } } },
+        {
+          OR: [
+            { note: null },
+            { NOT: { note: { contains: "[OUTSOURCING]" } } },
+          ],
+        },
       ],
     },
     include: {
