@@ -123,6 +123,9 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-spc', parentId: 'nav-quality', label: 'SPC 통계분석', icon: 'TrendingUp', href: '/app/mes/spc', displayOrder: 5, children: [] },
           // PR #55: 사업계획서 "원인분석" — DefectRecord 1건당 원인분석 등록/관리
           { id: 'nav-cause-analysis', parentId: 'nav-quality', label: '원인분석', icon: 'Search', href: '/app/mes/quality/cause-analysis', displayOrder: 6, children: [] },
+          // 사업계획서 "조치관리" — DefectRecord 1건당 여러 건의 시정조치(담당자/기한/진행상태) 등록·관리.
+          // 재발방지관리(효과성 검증/CAPA 종료판정)는 별도 메뉴/PR로 분리한다.
+          { id: 'nav-corrective-action', parentId: 'nav-quality', label: '조치관리', icon: 'Wrench', href: '/app/mes/quality/corrective-action', displayOrder: 7, children: [] },
         ],
       },
       // 7. 영업관리
