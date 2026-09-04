@@ -6,6 +6,7 @@ import { type TransactionType } from "@prisma/client"
 import { Badge } from "@/components/ui/badge"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { type InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions"
+import { formatQuantity } from "@/lib/utils"
 
 const txTypeLabels: Record<TransactionType, string> = {
   RECEIPT: "입고",
@@ -127,7 +128,7 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
             }`}
           >
             {isPositive ? "+" : isNegative ? "-" : ""}
-            {qty.toLocaleString()} {row.original.item.uom}
+            {formatQuantity(qty)} {row.original.item.uom}
           </span>
         )
       },
