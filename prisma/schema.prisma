@@ -116,6 +116,10 @@ enum EquipmentStatus {
   ACTIVE
   INACTIVE
   MAINTENANCE
+  // 청운커팅 사업계획서 "설비관리 > 공구관리" — 폐기된 공구/치공구를 나타낸다.
+  // 기존 ACTIVE/INACTIVE/MAINTENANCE와 달리 되돌릴 수 없는 종료 상태로 취급한다
+  // (tool.actions.ts에서 DISCARDED → 다른 상태로의 역행 전이를 차단).
+  DISCARDED
 }
 
 enum WorkOrderStatus {
@@ -480,6 +484,7 @@ model Tenant {
   defectCauseAnalyses           DefectCauseAnalysis[]
   defectCorrectiveActions       DefectCorrectiveAction[]
   defectRecurrencePreventions   DefectRecurrencePrevention[]
+  equipmentUsageHistories       EquipmentUsageHistory[]
 }
 
 model Profile {
@@ -531,6 +536,8 @@ model Profile {
   defectRecurrencePreventionsVerified DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionVerifier")
   defectRecurrencePreventionsCreated  DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionCreator")
   defectRecurrencePreventionsUpdated  DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionUpdater")
+  equipmentUsageHistoriesAsOperator   EquipmentUsageHistory[]      @relation("EquipmentUsageOperator")
+  equipmentUsageHistoriesCreated      EquipmentUsageHistory[]      @relation("EquipmentUsageCreator")
 }
 
 model Site {
@@ -743,8 +750,8 @@ model Item {
   itemGroup        ItemGroup?    @relation(fields: [itemGroupId], references: [id])
   defaultWarehouse Warehouse?    @relation("ItemDefaultWarehouse", fields: [defaultWarehouseId], references: [id])
 
-  substitutes             ItemSubstitute[]       @relation("PrimaryItem")
-  substituteOf            ItemSubstitute[]       @relation("SubstituteItem")
+  substitutes             ItemSubstitute[]        @relation("PrimaryItem")
+  substituteOf            ItemSubstitute[]        @relation("SubstituteItem")
   boms                    BOM[]
   bomItems                BOMItem[]
   itemRoutings            ItemRouting[]
@@ -757,20 +764,22 @@ model Item {
   materialReservations    MaterialReservation[]
   materialConsumptions    MaterialConsumption[]
   wipUnits                WipUnit[]
-  wipUnitMaterialLots     WipUnitMaterialLot[]   @relation("WipUnitMaterialItem")
+  wipUnitMaterialLots     WipUnitMaterialLot[]    @relation("WipUnitMaterialItem")
   finishedGoodsReceipts   FinishedGoodsReceipt[]
   productionPlanItems     ProductionPlanItem[]
-  salesOrderItems         SalesOrderItem[]       @relation("ItemSalesOrderItems")
-  shipmentItems           ShipmentItem[]         @relation("ItemShipmentItems")
-  purchaseOrderItems      PurchaseOrderItem[]    @relation("ItemPurchaseOrderItems")
-  itemPrices              ItemPrice[]            @relation("ItemPrices")
-  quotationItems          QuotationItem[]        @relation("ItemQuotationItems")
-  projectOrders           ProjectOrder[]         @relation("ItemProjectOrders")
-  itemCosts               ItemCost[]             @relation("ItemCosts")
-  engineeringChanges      EngineeringChange[]    @relation("ItemECNs")
-  materialLotConsumptions WorkOrderMaterialLot[] @relation("MaterialLotItem")
+  salesOrderItems         SalesOrderItem[]        @relation("ItemSalesOrderItems")
+  shipmentItems           ShipmentItem[]          @relation("ItemShipmentItems")
+  purchaseOrderItems      PurchaseOrderItem[]     @relation("ItemPurchaseOrderItems")
+  itemPrices              ItemPrice[]             @relation("ItemPrices")
+  quotationItems          QuotationItem[]         @relation("ItemQuotationItems")
+  projectOrders           ProjectOrder[]          @relation("ItemProjectOrders")
+  itemCosts               ItemCost[]              @relation("ItemCosts")
+  engineeringChanges      EngineeringChange[]     @relation("ItemECNs")
+  materialLotConsumptions WorkOrderMaterialLot[]  @relation("MaterialLotItem")
   materialReturnItems     MaterialReturnItem[]
-  projectOrderPrices      ProjectOrderPrice[]    @relation("ItemProjectOrderPrices")
+  projectOrderPrices      ProjectOrderPrice[]     @relation("ItemProjectOrderPrices")
+  equipmentAppliedItems   EquipmentAppliedItem[]
+  equipmentUsageHistories EquipmentUsageHistory[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -899,6 +908,15 @@ model Equipment {
   name          String
   equipmentType EquipmentType
   status        EquipmentStatus @default(ACTIVE)
+  // 청운커팅 사업계획서 "설비관리 > 공구관리" — 공구/치공구(TOOL/JIG/FIXTURE)의
+  // 수명 관리용 필드. MACHINE/VEHICLE에는 의미가 없어 lifeLimit은 선택값으로
+  // 둔다(값이 없으면 화면에서 잔여수명/사용률을 계산·표시하지 않는다). 실제
+  // 현장 데이터가 전부 "사용횟수(타수)" 기준이라 lifeUnit 같은 범용 단위 개념은
+  // 아직 두지 않는다 — 시간 기준 수명 관리가 실제로 필요해지면 그때 추가한다.
+  // remainingLife/usageRate 같은 파생값은 DB에 저장하지 않고 조회 시점에 계산한다
+  // (tool.helpers.ts 참조, DefectCorrectiveAction의 overdue 계산과 동일 원칙).
+  lifeLimit     Int?
+  currentUsage  Int             @default(0)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -914,11 +932,68 @@ model Equipment {
   dailyChecks                   EquipmentDailyCheck[]
   workOrderOperationAssignments WorkOrderOperationAssignment[]
   ncwatchMappings               NcwatchEquipmentMapping[]      @relation("EquipmentNcwatchMappings")
+  appliedItems                  EquipmentAppliedItem[]
+  usageHistories                EquipmentUsageHistory[]
 
   @@unique([siteId, code])
   @@index([tenantId])
   @@index([siteId])
   @@index([workCenterId])
+}
+
+// ─── 청운커팅 사업계획서 "설비관리 > 공구관리" ──────────────────────────────
+//
+// 공구/치공구 전용 신규 모델을 만들지 않고 기존 Equipment(TOOL/JIG/FIXTURE
+// 타입)를 그대로 재사용한다 — EquipmentType이 이미 TOOL/JIG/FIXTURE를 구분하고
+// 있고, 기준정보 CRUD(mold.actions.ts, /app/mes/master/molds)와 설비수리이력
+// (EquipmentRepairRequest)/설비점검이력(EquipmentDailyCheck)이 이미 equipmentId
+// 기준으로 동작해 공구에도 그대로 적용된다. 새로 필요한 것은 (1) 수명 관리
+// 필드(위 Equipment.lifeLimit/currentUsage), (2) 공구-품목 다대다 연결,
+// (3) 사용이력 기록뿐이라 이 두 모델만 추가한다.
+
+// 공구 1건에 여러 적용품목이 연결될 수 있고, 품목 1건도 여러 공구에서 쓰일 수 있어 M:N(EquipmentOperationMap과 동일한 join 패턴)으로 둔다.
+model EquipmentAppliedItem {
+  id          String @id @default(cuid())
+  equipmentId String
+  itemId      String
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
+  item      Item      @relation(fields: [itemId], references: [id])
+
+  @@unique([equipmentId, itemId])
+  @@index([equipmentId])
+  @@index([itemId])
+}
+
+// 공구 사용이력 — 등록 시 같은 트랜잭션에서 Equipment.currentUsage를 누적한다.
+// 생산실적 완료 시 자동 적산은 이번 PR 범위가 아니다(공구-공정 배정 구조가
+// 아직 없음) — 지금은 수동 등록만 지원하며, 등록된 이력은 수정하지 않는다
+// (InventoryTransaction/WipMovement와 동일한 append-only 이력 정책).
+model EquipmentUsageHistory {
+  id          String   @id @default(cuid())
+  tenantId    String
+  equipmentId String
+  usedAt      DateTime
+  usageCount  Int
+
+  itemId               String?
+  workOrderOperationId String?
+  operatorId           String?
+  note                 String?
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  equipment          Equipment           @relation(fields: [equipmentId], references: [id])
+  item               Item?               @relation(fields: [itemId], references: [id])
+  workOrderOperation WorkOrderOperation? @relation(fields: [workOrderOperationId], references: [id])
+  operator           Profile?            @relation("EquipmentUsageOperator", fields: [operatorId], references: [id])
+  createdBy          Profile             @relation("EquipmentUsageCreator", fields: [createdById], references: [id])
+
+  @@index([tenantId])
+  @@index([equipmentId])
+  @@index([usedAt])
 }
 
 model EquipmentOperationMap {
@@ -1179,13 +1254,14 @@ model WorkOrderOperation {
   routingOperation RoutingOperation @relation(fields: [routingOperationId], references: [id])
   equipment        Equipment?       @relation(fields: [equipmentId], references: [id])
 
-  materialConsumptions MaterialConsumption[]
-  wipUnits             WipUnit[]
-  productionResults    ProductionResult[]
-  qualityInspections   QualityInspection[]
-  wipMovementsFrom     WipMovement[]                  @relation("WipMovementFromOperation")
-  wipMovementsTo       WipMovement[]                  @relation("WipMovementToOperation")
-  assignments          WorkOrderOperationAssignment[]
+  materialConsumptions    MaterialConsumption[]
+  wipUnits                WipUnit[]
+  productionResults       ProductionResult[]
+  qualityInspections      QualityInspection[]
+  wipMovementsFrom        WipMovement[]                  @relation("WipMovementFromOperation")
+  wipMovementsTo          WipMovement[]                  @relation("WipMovementToOperation")
+  assignments             WorkOrderOperationAssignment[]
+  equipmentUsageHistories EquipmentUsageHistory[]
 
   @@unique([workOrderId, seq])
   @@index([workOrderId])

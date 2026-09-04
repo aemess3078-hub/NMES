@@ -206,7 +206,12 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-lms-check-status', parentId: 'nav-lms-equipment', label: '설비일상점검현황', icon: 'BarChart2', href: '/app/mes/equipment-check-status', displayOrder: 6, children: [] },
         ],
       },
-      // 3. 설비 통계분석
+      // 3. 공구관리 — 청운커팅 사업계획서 "설비관리 > 공구관리". 공구/치공구
+      // 전용 신규 모델 대신 기존 Equipment(TOOL/JIG/FIXTURE)를 재사용하며,
+      // 기준정보 CRUD 화면인 '금형/치공구관리'(기준정보 메뉴, /app/mes/master/molds)와는
+      // 별개로 수명/사용이력까지 다루는 사업계획서 전용 화면이다.
+      { id: 'nav-lms-tools', parentId: 'section-lms', label: '공구관리', icon: 'Package', href: '/app/mes/equipment-tools', displayOrder: 25, children: [] },
+      // 4. 설비 통계분석
       {
         id: 'nav-lms-statistics',
         parentId: 'section-lms',
@@ -218,7 +223,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-lms-stats-capacity', parentId: 'nav-lms-statistics', label: '능력', icon: 'Gauge', href: '/app/lms/statistics/capacity', displayOrder: 2, children: [] },
         ],
       },
-      // 4. 설비연동 설정 (개발자 전용)
+      // 5. 설비연동 설정 (개발자 전용)
       {
         id: 'nav-lms-integration',
         parentId: 'section-lms',
