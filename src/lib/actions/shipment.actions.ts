@@ -205,6 +205,14 @@ export type AvailableFinishedGoodsLotResult = {
   emptyReasonByItem: Record<string, EmptyLotReason>
 }
 
+/** Quantity that can be newly reserved without changing physical inventory. */
+function calculateReservableQty(
+  physicalQty: number,
+  reservedQty: number,
+): number {
+  return Math.max(0, physicalQty - reservedQty)
+}
+
 export async function getAvailableFinishedGoodsLots(
   tenantId: string,
   warehouseId: string,
@@ -251,6 +259,19 @@ export async function getAvailableFinishedGoodsLots(
       balance.lot.itemId === balance.itemId,
   )
 
+  const reservedRows = await prisma.shipmentItem.groupBy({
+    by: ["itemId", "lotId"],
+    where: {
+      shipmentOrder: { tenantId, siteId: warehouse.siteId, warehouseId, status: "PLANNED" },
+      itemId: { in: uniqueItemIds },
+      lotId: { not: null },
+    },
+    _sum: { qty: true },
+  })
+  const reservedByLot = new Map(
+    reservedRows.map((row) => [row.lotId!, Number(row._sum.qty ?? 0)]),
+  )
+
   const lotIds = validBalances.map((balance) => balance.lot.id)
   const receipts = lotIds.length > 0
     ? await prisma.finishedGoodsReceipt.findMany({
@@ -289,8 +310,12 @@ export async function getAvailableFinishedGoodsLots(
       warehouseName: balance.warehouse.name,
       locationId: receipt?.locationId ?? null,
       locationName: receipt?.locationName ?? null,
-      qtyAvailable: Number(balance.qtyAvailable),
+      qtyAvailable: calculateReservableQty(
+        Number(balance.qtyAvailable),
+        reservedByLot.get(balance.lot.id) ?? 0,
+      ),
     }
+    if (row.qtyAvailable <= 0) continue
     if (!lotsByItem[row.itemId]) lotsByItem[row.itemId] = []
     lotsByItem[row.itemId].push(row)
   }
@@ -494,10 +519,24 @@ export async function createShipment(
       )
     }
 
+    const reservedBySalesOrderItem = new Map<string, number>()
+    const reservedSalesOrderItems = await tx.shipmentItem.groupBy({
+      by: ["salesOrderItemId"],
+      where: {
+        salesOrderItemId: { in: salesOrderItemIds },
+        shipmentOrder: { tenantId, status: "PLANNED" },
+      },
+      _sum: { qty: true },
+    })
+    for (const row of reservedSalesOrderItems) {
+      reservedBySalesOrderItem.set(row.salesOrderItemId, Number(row._sum.qty ?? 0))
+    }
+
     for (const [salesOrderItemId, requestedQty] of Array.from(requestedQtyBySalesOrderItem)) {
       const salesOrderItem = salesOrderItemById.get(salesOrderItemId)!
       const remainingQty =
-        Number(salesOrderItem.qty) - Number(salesOrderItem.shippedQty)
+        Number(salesOrderItem.qty) - Number(salesOrderItem.shippedQty) -
+        (reservedBySalesOrderItem.get(salesOrderItemId) ?? 0)
       if (requestedQty > remainingQty) {
         throw new Error(
           `[${salesOrderItem.item.code}] LOT 분할수량 합계(${requestedQty})가 미출하수량(${remainingQty})을 초과합니다.`,
@@ -552,15 +591,18 @@ export async function createShipment(
         if (!balance) {
           throw new Error(`LOT(${lot.lotNo})의 출하 가능 재고가 없습니다.`)
         }
-        const qtyOnHand = Number(balance.qtyOnHand)
-        const qtyAvailable = Number(balance.qtyAvailable)
-        if (qtyAvailable < item.qty || qtyOnHand < item.qty) {
+        const reserved = await tx.shipmentItem.aggregate({
+          where: { itemId: item.itemId, lotId: lot.id, shipmentOrder: { tenantId, siteId: warehouse.siteId, warehouseId, status: "PLANNED" } },
+          _sum: { qty: true },
+        })
+        const reservableQty = calculateReservableQty(Number(balance.qtyAvailable), Number(reserved._sum.qty ?? 0))
+        if (reservableQty < item.qty || Number(balance.qtyOnHand) < item.qty) {
           throw new Error(
-            `LOT(${lot.lotNo}) 출하 가능 수량(${qtyAvailable})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
+            `LOT(${lot.lotNo}) 예약 가능 수량(${reservableQty})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
           )
         }
 
-        const shipmentItem = await tx.shipmentItem.create({
+        await tx.shipmentItem.create({
           data: {
             shipmentOrderId: shipment.id,
             salesOrderItemId: item.salesOrderItemId,
@@ -570,42 +612,6 @@ export async function createShipment(
           },
         })
 
-        const txNo = generateShipmentIssueTxNo()
-        await tx.inventoryTransaction.create({
-          data: {
-            tenantId,
-            itemId: item.itemId,
-            lotId: lot.id,
-            fromLocationId: warehouseId,
-            txNo,
-            txType: "ISSUE",
-            qty: item.qty,
-            refType: "SHIPMENT_ITEM",
-            refId: shipmentItem.id,
-            note: `출하 처리 (${shipmentNo})`,
-            txAt: new Date(),
-          },
-        })
-
-        const updatedBalance = await tx.inventoryBalance.updateMany({
-          where: {
-            id: balance.id,
-            tenantId,
-            siteId: warehouse.siteId,
-            warehouseId,
-            itemId: item.itemId,
-            lotId: lot.id,
-            qtyOnHand: { gte: item.qty },
-            qtyAvailable: { gte: item.qty },
-          },
-          data: {
-            qtyOnHand: { decrement: item.qty },
-            qtyAvailable: { decrement: item.qty },
-          },
-        })
-        if (updatedBalance.count !== 1) {
-          throw new Error(`LOT(${lot.lotNo})의 가용 재고가 부족합니다. 다시 조회 후 시도하세요.`)
-        }
       } else {
         // 비LOT 품목: lotId 없이 처리
         const balance = await tx.inventoryBalance.findFirst({
@@ -621,13 +627,18 @@ export async function createShipment(
           throw new Error(`[${salesOrderItem.item.code}] 선택한 창고에 출하 가능한 재고가 없습니다.`)
         }
         const qtyAvailable = Number(balance.qtyAvailable)
-        if (qtyAvailable < item.qty) {
+        const reserved = await tx.shipmentItem.aggregate({
+          where: { itemId: item.itemId, lotId: null, shipmentOrder: { tenantId, siteId: warehouse.siteId, warehouseId, status: "PLANNED" } },
+          _sum: { qty: true },
+        })
+        const reservableQty = calculateReservableQty(qtyAvailable, Number(reserved._sum.qty ?? 0))
+        if (reservableQty < item.qty) {
           throw new Error(
-            `[${salesOrderItem.item.code}] 출하 가능 수량(${qtyAvailable})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
+            `[${salesOrderItem.item.code}] 예약 가능 수량(${reservableQty})보다 많은 수량(${item.qty})을 출하할 수 없습니다.`,
           )
         }
 
-        const shipmentItem = await tx.shipmentItem.create({
+        await tx.shipmentItem.create({
           data: {
             shipmentOrderId: shipment.id,
             salesOrderItemId: item.salesOrderItemId,
@@ -636,59 +647,8 @@ export async function createShipment(
           },
         })
 
-        const txNo = generateShipmentIssueTxNo()
-        await tx.inventoryTransaction.create({
-          data: {
-            tenantId,
-            itemId: item.itemId,
-            lotId: null,
-            fromLocationId: warehouseId,
-            txNo,
-            txType: "ISSUE",
-            qty: item.qty,
-            refType: "SHIPMENT_ITEM",
-            refId: shipmentItem.id,
-            note: `출하 처리 (${shipmentNo})`,
-            txAt: new Date(),
-          },
-        })
-
-        const updatedBalance = await tx.inventoryBalance.updateMany({
-          where: {
-            id: balance.id,
-            tenantId,
-            siteId: warehouse.siteId,
-            warehouseId,
-            itemId: item.itemId,
-            lotId: null,
-            qtyAvailable: { gte: item.qty },
-          },
-          data: {
-            qtyOnHand: { decrement: item.qty },
-            qtyAvailable: { decrement: item.qty },
-          },
-        })
-        if (updatedBalance.count !== 1) {
-          throw new Error(`[${salesOrderItem.item.code}] 재고가 부족합니다. 다시 조회 후 시도하세요.`)
-        }
       }
-
-      await tx.salesOrderItem.update({
-        where: { id: item.salesOrderItemId },
-        data: { shippedQty: { increment: item.qty } },
-      })
     }
-
-    const updatedItems = await tx.salesOrderItem.findMany({
-      where: { salesOrderId: data.salesOrderId },
-    })
-    const fullyShipped = updatedItems.every(
-      (i) => Number(i.shippedQty) >= Number(i.qty)
-    )
-    await tx.salesOrder.update({
-      where: { id: data.salesOrderId },
-      data: { status: fullyShipped ? "SHIPPED" : "PARTIAL_SHIPPED" },
-    })
   })
 
   revalidatePath("/app/mes/shipments")
@@ -701,12 +661,61 @@ export async function createShipment(
 }
 
 export async function confirmShipment(id: string) {
-  await requireRole("OPERATOR")
-  await prisma.shipmentOrder.update({
-    where: { id },
-    data: { status: "SHIPPED", shippedDate: new Date() },
+  const user = await requireRole("OPERATOR")
+  await prisma.$transaction(async (tx) => {
+    // The conditional transition makes a second confirmation a no-op failure,
+    // before any physical inventory mutation is made.
+    const transitioned = await tx.shipmentOrder.updateMany({
+      where: { id, tenantId: user.tenantId, status: "PLANNED" },
+      data: { status: "SHIPPED", shippedDate: new Date() },
+    })
+    if (transitioned.count !== 1) throw new Error("PLANNED 상태의 출하만 확정할 수 있습니다.")
+
+    const shipment = await tx.shipmentOrder.findFirstOrThrow({
+      where: { id, tenantId: user.tenantId },
+      include: {
+        warehouse: { select: { siteId: true } },
+        items: {
+          include: {
+            item: { select: { code: true, isLotTracked: true } },
+            lot: { select: { lotNo: true, itemId: true, status: true } },
+          },
+        },
+      },
+    })
+    if (!shipment.warehouseId || !shipment.warehouse) throw new Error("출하 창고 정보를 찾을 수 없습니다.")
+
+    for (const item of shipment.items) {
+      if (item.item.isLotTracked && (!item.lotId || !item.lot || item.lot.itemId !== item.itemId || item.lot.status !== "ACTIVE")) {
+        throw new Error(`[${item.item.code}] 출하 LOT 정보를 확인할 수 없습니다.`)
+      }
+      const balance = await tx.inventoryBalance.findFirst({
+        where: { tenantId: user.tenantId, siteId: shipment.warehouse.siteId, warehouseId: shipment.warehouseId, itemId: item.itemId, lotId: item.lotId ?? null },
+      })
+      if (!balance || Number(balance.qtyOnHand) < Number(item.qty) || Number(balance.qtyAvailable) < Number(item.qty)) {
+        throw new Error(`[${item.item.code}] 출하 가능한 재고가 부족합니다.`)
+      }
+      const orderItem = await tx.salesOrderItem.findUniqueOrThrow({ where: { id: item.salesOrderItemId }, select: { qty: true, shippedQty: true } })
+      if (Number(orderItem.shippedQty) + Number(item.qty) > Number(orderItem.qty)) {
+        throw new Error(`[${item.item.code}] 실제 출하 수량이 수주 수량을 초과합니다.`)
+      }
+      const updated = await tx.inventoryBalance.updateMany({
+        where: { id: balance.id, qtyOnHand: { gte: item.qty }, qtyAvailable: { gte: item.qty } },
+        data: { qtyOnHand: { decrement: item.qty }, qtyAvailable: { decrement: item.qty } },
+      })
+      if (updated.count !== 1) throw new Error(`[${item.item.code}] 출하 가능한 재고가 부족합니다.`)
+      await tx.inventoryTransaction.create({ data: { tenantId: user.tenantId, itemId: item.itemId, lotId: item.lotId, fromLocationId: shipment.warehouseId, txNo: generateShipmentIssueTxNo(), txType: "ISSUE", qty: item.qty, refType: "SHIPMENT_ITEM", refId: item.id, note: `출하 처리 (${shipment.shipmentNo})`, txAt: new Date() } })
+      await tx.salesOrderItem.update({ where: { id: item.salesOrderItemId }, data: { shippedQty: { increment: item.qty } } })
+    }
+    const status = await resolveSalesOrderStatusAfterShipmentRollback(tx, shipment.salesOrderId)
+    await tx.salesOrder.update({ where: { id: shipment.salesOrderId }, data: { status } })
   })
   revalidatePath("/app/mes/shipments")
+  revalidatePath("/app/mes/sales-orders")
+  revalidatePath("/app/mes/sales/delivery-status")
+  revalidatePath("/app/mes/sales/order-status")
+  revalidatePath("/app/mes/inventory")
+  revalidatePath("/app/mes/inventory-transactions")
 }
 
 export async function deleteShipment(id: string) {
@@ -723,93 +732,10 @@ export async function deleteShipment(id: string) {
   if (shipment.status !== "PLANNED") {
     throw new Error("PLANNED 상태의 출하만 삭제할 수 있습니다.")
   }
-  if (shipment.warehouseId && !shipment.warehouse) {
-    throw new Error("출하 창고 정보를 찾을 수 없어 재고를 복구할 수 없습니다.")
-  }
-  if (shipment.warehouse && shipment.warehouse.tenantId !== shipment.tenantId) {
-    throw new Error("출하 창고의 tenant 정보가 일치하지 않습니다.")
-  }
-
   await prisma.$transaction(async (tx) => {
-    const shipmentItemIds = shipment.items.map((item) => item.id)
-
-    for (const item of shipment.items) {
-      if (shipment.warehouseId && shipment.warehouse) {
-        const isLotTracked = item.item.isLotTracked
-
-        if (isLotTracked) {
-          // LOT 관리 품목: lotId 기준으로 재고 복구
-          if (item.lotId) {
-            const balance = await tx.inventoryBalance.findFirst({
-              where: {
-                tenantId: shipment.tenantId,
-                siteId: shipment.warehouse.siteId,
-                warehouseId: shipment.warehouseId,
-                itemId: item.itemId,
-                lotId: item.lotId,
-              },
-            })
-            if (balance) {
-              const qty = Number(item.qty)
-              await tx.inventoryBalance.update({
-                where: { id: balance.id },
-                data: {
-                  qtyOnHand: Number(balance.qtyOnHand) + qty,
-                  qtyAvailable: Number(balance.qtyAvailable) + qty,
-                },
-              })
-            }
-          }
-        } else {
-          // 비LOT 품목: lotId=null 기준으로 재고 복구
-          const balance = await tx.inventoryBalance.findFirst({
-            where: {
-              tenantId: shipment.tenantId,
-              siteId: shipment.warehouse.siteId,
-              warehouseId: shipment.warehouseId,
-              itemId: item.itemId,
-              lotId: null,
-            },
-          })
-          if (balance) {
-            const qty = Number(item.qty)
-            await tx.inventoryBalance.update({
-              where: { id: balance.id },
-              data: {
-                qtyOnHand: Number(balance.qtyOnHand) + qty,
-                qtyAvailable: Number(balance.qtyAvailable) + qty,
-              },
-            })
-          }
-        }
-      }
-
-      await tx.salesOrderItem.update({
-        where: { id: item.salesOrderItemId },
-        data: { shippedQty: { decrement: Number(item.qty) } },
-      })
-    }
-
-    if (shipmentItemIds.length > 0) {
-      await tx.inventoryTransaction.deleteMany({
-        where: {
-          tenantId: shipment.tenantId,
-          refType: "SHIPMENT_ITEM",
-          refId: { in: shipmentItemIds },
-        },
-      })
-    }
+    // PLANNED is only a reservation: there is no balance, ledger, or SO rollback.
     await tx.shipmentItem.deleteMany({ where: { shipmentOrderId: id } })
     await tx.shipmentOrder.delete({ where: { id } })
-
-    const nextSalesOrderStatus = await resolveSalesOrderStatusAfterShipmentRollback(
-      tx,
-      shipment.salesOrderId
-    )
-    await tx.salesOrder.update({
-      where: { id: shipment.salesOrderId },
-      data: { status: nextSalesOrderStatus },
-    })
   })
 
   revalidatePath("/app/mes/shipments")

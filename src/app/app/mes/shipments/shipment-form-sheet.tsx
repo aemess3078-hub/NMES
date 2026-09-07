@@ -390,8 +390,8 @@ export function ShipmentFormSheet({
       open={open}
       onOpenChange={onOpenChange}
       mode="create"
-      title="출하 등록"
-      description="수주 기반으로 완제품 LOT를 선택해 출하를 등록합니다."
+      title="출하예정 등록"
+      description="완제품 LOT를 예약합니다. 실제 재고는 출하 확정 시 차감됩니다."
       isLoading={isLoading}
       onSubmit={form.handleSubmit(onSubmit)}
     >
