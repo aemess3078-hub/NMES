@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { getAvailableRoutingsForItem, validateRoutingForItem } from "@/lib/actions/routing.actions"
 import { getTenantId } from "@/lib/auth"
 import { reconcileProductionPlanItems } from "@/lib/production-plan-item-reconciliation"
+import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan-workorder-integrity"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,8 +94,10 @@ export async function syncProductionPlanStatusFromWorkOrders(
       status: true,
       items: {
         select: {
+          id: true,
+          plannedQty: true,
           workOrders: {
-            select: { status: true },
+            select: { id: true, status: true, plannedQty: true },
           },
         },
       },
@@ -103,18 +106,9 @@ export async function syncProductionPlanStatusFromWorkOrders(
 
   if (!plan || FINAL_PLAN_STATUSES.includes(plan.status)) return
 
-  const workOrders = plan.items.flatMap((item) => item.workOrders)
-  const effectiveWorkOrders = workOrders.filter(
-    (workOrder) => workOrder.status !== "CANCELLED"
-  )
+  const completion = evaluateProductionPlanWorkOrderCompletion(plan.items)
 
-  if (effectiveWorkOrders.length === 0) return
-
-  const allCompleted = effectiveWorkOrders.every(
-    (workOrder) => workOrder.status === "COMPLETED"
-  )
-
-  if (allCompleted && ["CONFIRMED", "IN_PROGRESS"].includes(plan.status)) {
+  if (completion.shouldComplete && ["CONFIRMED", "IN_PROGRESS"].includes(plan.status)) {
     await tx.productionPlan.update({
       where: { id: plan.id },
       data: { status: "COMPLETED" },
@@ -122,7 +116,7 @@ export async function syncProductionPlanStatusFromWorkOrders(
     return
   }
 
-  if (plan.status === "CONFIRMED") {
+  if (completion.hasEffectiveWorkOrders && plan.status === "CONFIRMED") {
     await tx.productionPlan.update({
       where: { id: plan.id },
       data: { status: "IN_PROGRESS" },
