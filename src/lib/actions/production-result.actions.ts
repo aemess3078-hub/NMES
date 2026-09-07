@@ -22,9 +22,12 @@ export type ProductionResultWithDetails = {
     id: string
     seq: number
     status: string
+    plannedQty: number
+    completedQty: number
     workOrder: {
       id: string
       orderNo: string
+      manufacturingNo: string | null
       item: {
         id: string
         code: string
@@ -48,6 +51,8 @@ export type ProductionResultFilters = {
   orderNo?: string
   startDate?: Date
   endDate?: Date
+  itemId?: string
+  routingOperationId?: string
 }
 
 // ─── 1. 실적 전체 조회 ─────────────────────────────────────────────────────────
@@ -60,6 +65,9 @@ export async function getProductionResults(
   const results = await prisma.productionResult.findMany({
     where: {
       workOrderOperation: {
+        ...(filters?.routingOperationId
+          ? { routingOperationId: filters.routingOperationId }
+          : {}),
         workOrder: {
           tenantId,
           ...(filters?.orderNo
@@ -70,6 +78,7 @@ export async function getProductionResults(
                 },
               }
             : {}),
+          ...(filters?.itemId ? { itemId: filters.itemId } : {}),
         },
       },
       ...(filters?.startDate || filters?.endDate
@@ -140,9 +149,12 @@ export async function getProductionResults(
         id: r.workOrderOperation.id,
         seq: r.workOrderOperation.seq,
         status: r.workOrderOperation.status,
+        plannedQty: Number(r.workOrderOperation.plannedQty),
+        completedQty: Number(r.workOrderOperation.completedQty),
         workOrder: {
           id: r.workOrderOperation.workOrder.id,
           orderNo: r.workOrderOperation.workOrder.orderNo,
+          manufacturingNo: r.workOrderOperation.workOrder.manufacturingNo,
           item: r.workOrderOperation.workOrder.item,
         },
         routingOperation: {

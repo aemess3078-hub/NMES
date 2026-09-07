@@ -74,6 +74,8 @@ import {
   Banknote,
   Paperclip,
   Archive,
+  FileBarChart2,
+  Gauge,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -149,6 +151,8 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Banknote,
   Paperclip,
   Archive,
+  FileBarChart2,
+  Gauge,
 };
 
 function DynamicIcon({ name, className }: { name?: string | null; className?: string }) {

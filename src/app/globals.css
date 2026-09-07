@@ -100,3 +100,19 @@
   width: 8px;
   height: 8px;
 }
+
+/*
+ * 리포트(생산일보/품질리포트/설비리포트) 인쇄 지원.
+ * html/body가 기본적으로 overflow:hidden(위 @layer base)이고 실제 스크롤은
+ * <main class="overflow-y-auto">에서 일어나므로, 인쇄 시에도 이 값이 유지되면
+ * 브라우저가 현재 스크롤 위치의 뷰포트 분량만 인쇄해 내용이 잘린다. 인쇄
+ * 매체에서만 전체 컨텐츠가 자연스러운 높이로 흐르도록 되돌린다(사이드바/헤더
+ * 숨김은 layout.tsx의 Tailwind print: 유틸리티가 담당).
+ */
+@media print {
+  html,
+  body {
+    overflow: visible !important;
+    height: auto !important;
+  }
+}

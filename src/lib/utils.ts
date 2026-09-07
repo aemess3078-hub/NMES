@@ -178,6 +178,21 @@ export function formatAmountWithCurrency(
 }
 
 /**
+ * 0~1 사이 비율(defectRate, availability rate 등 기존 정본 계산 결과)을
+ * "12.3%" 형태로 표시한다. 기존 화면들(defect-stats-client.tsx 등)이 각자
+ * `(rate * 100).toFixed(n) + '%'`로 반복 구현하던 것을 리포트 3종에서 함께
+ * 쓰기 위해 공용화했다 — rate 계산 자체(분자/분모 정의)는 건드리지 않고
+ * 표시 포맷만 통일한다. null/undefined는 "-"를 반환한다.
+ */
+export function formatPercent(
+  ratio: number | null | undefined,
+  decimals = 1
+): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '-';
+  return `${(ratio * 100).toFixed(decimals)}%`;
+}
+
+/**
  * "1,234.56" 같은 콤마 포함 표시 문자열을 raw number로 되돌린다(입력 파싱 /
  * UI<->서버 storage boundary 용). 빈 문자열이나 숫자가 아닌 값은 예외를
  * 던지지 않고 undefined를 반환한다.
