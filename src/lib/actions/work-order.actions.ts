@@ -12,6 +12,11 @@ import {
   syncProductionPlanStatusFromWorkOrders,
 } from "@/lib/actions/production-plan.actions"
 import { validateRoutingForItem } from "@/lib/actions/routing.actions"
+import {
+  assertProductionPlanItemCapacity,
+  formatProductionPlanQuantity,
+  summarizeProductionPlanItemAllocation,
+} from "@/lib/production-plan-workorder-integrity"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -191,6 +196,8 @@ export type ProductionPlanItemForWorkOrder = {
   bomId: string | null
   routingId: string | null
   plannedQty: number
+  assignedQty: number
+  remainingQty: number
   item: { id: string; code: string; name: string }
   bom: { id: string; version: string } | null
   routing: { id: string; version: string } | null
@@ -537,7 +544,7 @@ export async function getConfirmedProductionPlanItemsForWorkOrder(
     where: {
       plan: {
         tenantId,
-        status: "CONFIRMED",
+        status: { in: ["CONFIRMED", "IN_PROGRESS"] },
       },
     },
     select: {
@@ -546,6 +553,9 @@ export async function getConfirmedProductionPlanItemsForWorkOrder(
       bomId: true,
       routingId: true,
       plannedQty: true,
+      workOrders: {
+        select: { id: true, plannedQty: true, status: true },
+      },
       item: { select: { id: true, code: true, name: true } },
       bom: { select: { id: true, version: true } },
       routing: { select: { id: true, version: true } },
@@ -566,14 +576,23 @@ export async function getConfirmedProductionPlanItemsForWorkOrder(
     ],
   })
 
-  return rows.map((row) => ({
-    ...row,
-    plannedQty: Number(row.plannedQty),
-    plan: {
-      ...row.plan,
-      endDate: row.plan.endDate.toISOString(),
-    },
-  }))
+  return rows.map((row) => {
+    const { workOrders, ...planItem } = row
+    const allocation = summarizeProductionPlanItemAllocation(
+      row.plannedQty,
+      workOrders
+    )
+    return {
+      ...planItem,
+      plannedQty: Number(row.plannedQty),
+      assignedQty: Number(formatProductionPlanQuantity(allocation.assignedQty)),
+      remainingQty: Number(formatProductionPlanQuantity(allocation.remainingQty)),
+      plan: {
+        ...row.plan,
+        endDate: row.plan.endDate.toISOString(),
+      },
+    }
+  })
 }
 
 type ValidatedWorkOrderOperationInput = Omit<WorkOrderOperationInput, "assignments"> & {
@@ -820,28 +839,28 @@ export async function generateManufacturingNo(
 
 async function validateProductionPlanItemForWorkOrder(
   productionPlanItemId: string | null | undefined,
-  data: Pick<CreateWorkOrderInput, "itemId" | "bomId" | "routingId">,
+  data: Pick<CreateWorkOrderInput, "itemId" | "bomId" | "routingId" | "plannedQty" | "status">,
   tenantId: string,
-  options: { allowInProgress?: boolean } = {}
+  options: { excludeWorkOrderId?: string } = {}
 ) {
   if (!productionPlanItemId) return
-
-  const allowedPlanStatuses = options.allowInProgress
-    ? ["CONFIRMED", "IN_PROGRESS"]
-    : ["CONFIRMED"]
 
   const planItem = await prisma.productionPlanItem.findFirst({
     where: {
       id: productionPlanItemId,
       plan: {
         tenantId,
-        status: { in: allowedPlanStatuses as any },
+        status: { in: ["CONFIRMED", "IN_PROGRESS"] },
       },
     },
     select: {
       itemId: true,
       bomId: true,
       routingId: true,
+      plannedQty: true,
+      workOrders: {
+        select: { id: true, plannedQty: true, status: true },
+      },
     },
   })
 
@@ -856,6 +875,14 @@ async function validateProductionPlanItemForWorkOrder(
   }
   if (planItem.routingId && planItem.routingId !== data.routingId) {
     throw new Error("생산계획 품목의 라우팅과 작업지시 라우팅이 일치하지 않습니다.")
+  }
+  if (data.status !== "CANCELLED") {
+    assertProductionPlanItemCapacity({
+      plannedQty: planItem.plannedQty,
+      workOrders: planItem.workOrders,
+      requestedQty: data.plannedQty,
+      excludeWorkOrderId: options.excludeWorkOrderId,
+    })
   }
 }
 
@@ -952,7 +979,7 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     headerFields.productionPlanItemId,
     headerFields,
     existing.tenantId,
-    { allowInProgress: headerFields.productionPlanItemId === existing.productionPlanItemId }
+    { excludeWorkOrderId: id }
   )
   const validatedOperations = await validateWorkOrderOperationAssignments(
     operations,

@@ -236,7 +236,7 @@ export function WorkOrderFormSheet({
     const planItem = productionPlanItems.find((item) => item.id === productionPlanItemId)
     if (!planItem) return
 
-    const plannedQty = Number(planItem.plannedQty || 1)
+    const plannedQty = Math.max(Number(planItem.remainingQty), 1)
     form.setValue("productionPlanItemId", planItem.id)
     form.setValue("siteId", planItem.plan.siteId)
     form.setValue("itemId", planItem.itemId)
@@ -415,7 +415,7 @@ export function WorkOrderFormSheet({
                       </SelectItem>
                       {productionPlanItems.map((planItem) => (
                         <SelectItem key={planItem.id} value={planItem.id}>
-                          [{planItem.plan.planNo}] {planItem.item.name} · {formatQuantity(planItem.plannedQty)} · {new Date(planItem.plan.endDate).toISOString().slice(0, 10)}
+                          [{planItem.plan.planNo}] {planItem.item.name} · 계획 {formatQuantity(planItem.plannedQty)} / 배정 {formatQuantity(planItem.assignedQty)} / 잔여 {formatQuantity(planItem.remainingQty)} · {new Date(planItem.plan.endDate).toISOString().slice(0, 10)}
                         </SelectItem>
                       ))}
                     </SelectContent>
