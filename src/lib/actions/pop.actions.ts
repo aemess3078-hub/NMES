@@ -16,7 +16,6 @@ import {
 } from "@/lib/auth/pop-worker-session"
 import {
   advanceWipUnitOnOperationComplete,
-  assertWipUnitNotOnHold,
   findActiveWipUnitForWorkOrder,
   recordProductionResultQualityMovements,
   transitionWipUnitOnStart,
@@ -26,6 +25,12 @@ import {
   type SelfInspectionDefectDetail,
 } from "@/lib/actions/self-inspection.helpers"
 import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-plan.actions"
+import {
+  assertDirectOperationStatusRequestAllowed,
+  assertOperationResultAllowed,
+  assertOperationStartAllowed,
+  MATERIAL_NOT_ISSUED_MESSAGE,
+} from "@/lib/operation-status-integrity"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -306,14 +311,7 @@ export async function getTodayWorkOrders() {
   })
 }
 
-// 자재출고 미완료 안내 문구 (UI/서버 가드 공통)
-const MATERIAL_NOT_ISSUED_MESSAGE =
-  "자재출고가 완료되지 않아 작업을 시작할 수 없습니다. 먼저 자재출고를 처리해 주세요."
-
-// 작업지시 자재출고 완료 여부 판정
-//  - 원본 WipUnit(parentWipUnitId=null, sourceProductionResultId=null)은
-//    자재출고 시에만 생성되므로, 그 존재 자체가 "자재출고 완료" 신호다.
-//  - 후속 공정(후처리/포장 등)은 같은 WipUnit이 계속 흐르므로 자동 충족된다.
+// 원본 WIP는 자재출고 시 생성되며 POP 화면의 출고 완료 신호로 사용한다.
 async function workOrderHasMaterialIssuance(
   tenantId: string,
   workOrderId: string
@@ -728,6 +726,7 @@ export async function submitProductionResult(
               tenantId: true,
               siteId: true,
               itemId: true,
+              status: true,
               operations: {
                 select: { seq: true, status: true },
                 orderBy: { seq: "asc" },
@@ -745,26 +744,6 @@ export async function submitProductionResult(
       }
 
       const previousOperations = op.workOrder.operations.filter((candidate) => candidate.seq < op.seq)
-      if (previousOperations.length > 0 && !previousOperations.every((candidate) => candidate.status === "COMPLETED")) {
-        throw new Error("이전 공정이 완료되지 않아 실적을 등록할 수 없습니다.")
-      }
-
-      // 자재출고 완료(원본 WipUnit 존재) 전에는 실적등록 차단 (우회 입력 방지)
-      const hasIssuance = await tx.wipUnit.findFirst({
-        where: {
-          workOrderId: op.workOrderId,
-          parentWipUnitId: null,
-          sourceProductionResultId: null,
-        },
-        select: { id: true },
-      })
-      if (!hasIssuance) {
-        throw new Error(MATERIAL_NOT_ISSUED_MESSAGE)
-      }
-
-      if (op.status !== "IN_PROGRESS") {
-        throw new Error("작업시작 후 실적을 등록해 주세요.")
-      }
 
       // ── 전공정 양품 기준 투입 가능 수량 제한 + 공정 완료 판단용 WIP 소진 여부 ────
       // 이 공정에 투입 가능한 수량은 plannedQty(작업지시 계획수량)가 아니라
@@ -794,13 +773,13 @@ export async function submitProductionResult(
           where: { id: rootWip.id },
           select: { status: true, qty: true },
         })
-        if (lockedRootWip) {
-          assertWipUnitNotOnHold(
-            lockedRootWip.status,
-            "보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 실적을 등록해 주세요."
-          )
-        }
       }
+      assertOperationResultAllowed({
+        operationStatus: op.status,
+        previousOperationStatuses: previousOperations.map((candidate) => candidate.status),
+        materialIssuanceReady: lockedRootWip != null,
+        wipStatus: lockedRootWip?.status ?? null,
+      })
       let wipExhaustedAfterThisResult = false
       if (rootWip && lockedRootWip) {
         const rootQtyScaled = toScaledQty(lockedRootWip.qty, "이동 가능 수량", { allowZero: true })
@@ -1125,6 +1104,7 @@ export async function startOperation(
           select: {
             id: true,
             siteId: true,
+            status: true,
             operations: {
               select: { seq: true, status: true },
               orderBy: { seq: "asc" },
@@ -1145,14 +1125,17 @@ export async function startOperation(
     }
 
     const prevOps = op.workOrder.operations.filter((o) => o.seq < op.seq)
-    if (prevOps.length > 0 && !prevOps.every((o) => o.status === "COMPLETED")) {
-      return { success: false, error: "Previous operation must be completed first." }
-    }
-
-    // 자재출고 완료(원본 WipUnit 존재) 전에는 작업시작 차단
-    if (!(await workOrderHasMaterialIssuance(tenantId, op.workOrderId))) {
-      return { success: false, error: MATERIAL_NOT_ISSUED_MESSAGE }
-    }
+    const rootWip = await findActiveWipUnitForWorkOrder(prisma, {
+      tenantId,
+      workOrderId: op.workOrderId,
+    })
+    assertOperationStartAllowed({
+      operationStatus: op.status,
+      workOrderStatus: op.workOrder.status,
+      previousOperationStatuses: prevOps.map((operation) => operation.status),
+      materialIssuanceReady: rootWip != null,
+      wipStatus: rootWip?.status ?? null,
+    })
 
     const assignment = assignmentId
       ? op.assignments.find((candidate) => candidate.id === assignmentId) ?? null
@@ -1185,19 +1168,22 @@ export async function startOperation(
         tenantId,
         workOrderId: op.workOrderId,
       })
+      let lockedWipStatus = null
       if (rootWipForHoldCheck) {
         await tx.$queryRaw`SELECT id FROM "WipUnit" WHERE id = ${rootWipForHoldCheck.id} FOR UPDATE`
         const lockedWip = await tx.wipUnit.findUnique({
           where: { id: rootWipForHoldCheck.id },
           select: { status: true },
         })
-        if (lockedWip) {
-          assertWipUnitNotOnHold(
-            lockedWip.status,
-            "보류 중인 재공품입니다. 재작업/보류관리에서 보류를 해제한 후 작업을 시작해 주세요."
-          )
-        }
+        lockedWipStatus = lockedWip?.status ?? null
       }
+      assertOperationStartAllowed({
+        operationStatus: op.status,
+        workOrderStatus: op.workOrder.status,
+        previousOperationStatuses: prevOps.map((operation) => operation.status),
+        materialIssuanceReady: lockedWipStatus != null,
+        wipStatus: lockedWipStatus,
+      })
 
       if (op.status === "PENDING") {
         await tx.workOrderOperation.update({
@@ -1278,55 +1264,19 @@ export async function getTodayProductionResults() {
 export async function updateOperationStatus(
   operationId: string,
   status: OperationStatus
-) {
+): Promise<{ success: boolean; error?: string }> {
   await requireRole("OPERATOR")
-  await prisma.$transaction(async (tx) => {
-    await tx.workOrderOperation.update({
-      where: { id: operationId },
-      data: { status },
-    })
-
-      const op = await tx.workOrderOperation.findUnique({
-        where: { id: operationId },
-        select: {
-          workOrderId: true,
-          workOrder: { select: { tenantId: true } },
-          assignments: {
-            select: { status: true },
-          },
-      },
-    })
-    if (!op) return
-
-    if (
-      status === "COMPLETED" &&
-      op.assignments.length > 0 &&
-      !op.assignments.every((assignment) => assignment.status === "COMPLETED")
-    ) {
-      throw new Error("All equipment assignments must be completed first.")
-    }
-
-      if (status === "IN_PROGRESS") {
-        await tx.workOrder.update({
-          where: { id: op.workOrderId },
-          data: { status: "IN_PROGRESS" },
-        })
-        await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
-      } else if (status === "COMPLETED") {
-      // 모든 공정이 완료된 경우 WorkOrder도 완료
-      const allOps = await tx.workOrderOperation.findMany({
-        where: { workOrderId: op.workOrderId },
-        select: { status: true },
-      })
-      const allCompleted = allOps.every((o) => o.status === "COMPLETED")
-        if (allCompleted) {
-          await tx.workOrder.update({
-            where: { id: op.workOrderId },
-            data: { status: "COMPLETED" },
-          })
-          await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
-        }
-    }
+  const tenantId = await getTenantId()
+  const operation = await prisma.workOrderOperation.findFirst({
+    where: { id: operationId, workOrder: { tenantId } },
+    select: { status: true },
   })
-  revalidatePath("/app/mes/production-plan")
+  if (!operation) return { success: false, error: "공정을 찾을 수 없습니다." }
+
+  try {
+    assertDirectOperationStatusRequestAllowed(operation.status, status)
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "오류가 발생했습니다." }
+  }
+  return startOperation(operationId)
 }

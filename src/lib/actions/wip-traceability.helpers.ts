@@ -4,6 +4,7 @@ import { Prisma, WipMovementType, WipUnitStatus } from "@prisma/client"
 // 직접 호출되는 Server Action이 아니므로 "use server" 미사용.
 
 export type WipTraceabilityTx = Prisma.TransactionClient
+type WipUnitLookupClient = Pick<Prisma.TransactionClient, "wipUnit">
 
 // production-progress.service.ts(생산진행 현황 집계)에서도 "활성 재공" 정의를
 // 동일하게 재사용하기 위해 export한다. 값 자체는 변경하지 않음.
@@ -18,7 +19,7 @@ export const REUSABLE_WIP_STATUSES: WipUnitStatus[] = [
 ]
 
 export async function findActiveWipUnitForWorkOrder(
-  tx: WipTraceabilityTx,
+  tx: WipUnitLookupClient,
   params: { tenantId: string; workOrderId: string }
 ) {
   return tx.wipUnit.findFirst({

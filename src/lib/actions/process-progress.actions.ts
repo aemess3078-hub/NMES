@@ -4,7 +4,8 @@ import { prisma } from "@/lib/db/prisma"
 import { OperationStatus, WipMovementType, WipUnitStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
-import { syncProductionPlanStatusForWorkOrder } from "@/lib/actions/production-plan.actions"
+import { startOperation } from "@/lib/actions/pop.actions"
+import { assertDirectOperationStatusRequestAllowed } from "@/lib/operation-status-integrity"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -254,50 +255,19 @@ export async function updateOperationStatusAction(
     await requireRole("OPERATOR")
     const tenantId = await getTenantId()
 
-    const op = await prisma.workOrderOperation.findUnique({
-      where: { id: operationId },
+    const op = await prisma.workOrderOperation.findFirst({
+      where: { id: operationId, workOrder: { tenantId } },
       select: {
-        workOrderId: true,
-        workOrder: { select: { tenantId: true } },
+        status: true,
       },
     })
-    if (!op || op.workOrder.tenantId !== tenantId) return { ok: false, error: "공정을 찾을 수 없습니다." }
+    if (!op) return { ok: false, error: "공정을 찾을 수 없습니다." }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.workOrderOperation.update({
-        where: { id: operationId },
-        data: { status },
-      })
-
-      if (status === "IN_PROGRESS") {
-        await tx.workOrder.update({
-          where: { id: op.workOrderId },
-          data: { status: "IN_PROGRESS" },
-        })
-        await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
-      } else if (status === "COMPLETED") {
-        const allOps = await tx.workOrderOperation.findMany({
-          where: { workOrderId: op.workOrderId },
-        })
-        const allDone = allOps.every(
-          (o) =>
-            o.id === operationId ||
-            o.status === "COMPLETED" ||
-            o.status === "SKIPPED"
-        )
-        if (allDone) {
-          await tx.workOrder.update({
-            where: { id: op.workOrderId },
-            data: { status: "COMPLETED" },
-          })
-          await syncProductionPlanStatusForWorkOrder(tx, op.workOrderId, op.workOrder.tenantId)
-        }
-      }
-    })
+    assertDirectOperationStatusRequestAllowed(op.status, status)
+    const result = await startOperation(operationId)
+    if (!result.success) return { ok: false, error: result.error }
 
     revalidatePath("/app/mes/process-progress")
-    revalidatePath("/app/mes/work-orders")
-    revalidatePath("/app/mes/production-plan")
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "오류가 발생했습니다." }

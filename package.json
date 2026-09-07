@@ -29,6 +29,7 @@
     "test:number-format": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-number-format.ts",
     "test:production-plan-sales-link": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-production-plan-sales-link.ts",
     "test:production-plan-workorder-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-production-plan-workorder-integrity.ts",
+    "test:operation-status-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-operation-status-integrity.ts",
     "dev:set-pop-pin": "ts-node --project tsconfig.scripts.json scripts/set-pop-pin-dev.ts"
   },
   "dependencies": {
