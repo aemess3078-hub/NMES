@@ -63,7 +63,7 @@ export function ShipmentDataTable({
   const handleConfirm = async (id: string) => {
     const shipment = data.find((d) => d.id === id)
     if (!shipment) return
-    if (!confirm(`'${shipment.shipmentNo}' 출하를 확정하시겠습니까?`)) return
+    if (!confirm(`'${shipment.shipmentNo}' 출하를 확정하면 실제 재고가 차감됩니다. 계속하시겠습니까?`)) return
     try {
       await confirmShipment(id)
       router.refresh()
@@ -185,7 +185,7 @@ export function ShipmentDataTable({
                           onClick={() => openFormWithOrder(so.id)}
                         >
                           <Truck className="h-3.5 w-3.5" />
-                          출하 등록
+                          출하예정 등록
                         </Button>
                       </div>
                     </div>
@@ -202,7 +202,7 @@ export function ShipmentDataTable({
             <div className="flex justify-end">
               <Button onClick={() => openFormWithOrder(undefined)}>
                 <Plus className="mr-2 h-4 w-4" />
-                출하 등록
+                출하예정 등록
               </Button>
             </div>
           )}
