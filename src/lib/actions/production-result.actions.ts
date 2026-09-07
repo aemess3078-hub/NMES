@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
+import { calculateWorkDurationMinutes } from "@/lib/pop-worktime-operator"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,8 @@ export type ProductionResultWithDetails = {
   reworkQty: number
   startedAt: string | null
   endedAt: string | null
+  workDurationMinutes: number | null
+  operator: { id: string; name: string } | null
   equipment: {
     id: string
     code: string
@@ -91,6 +94,7 @@ export async function getProductionResults(
         : {}),
     },
     include: {
+      operator: { select: { id: true, name: true } },
       workOrderOperationAssignment: {
         select: {
           equipment: {
@@ -144,6 +148,8 @@ export async function getProductionResults(
       reworkQty: Number(r.reworkQty),
       startedAt: r.startedAt?.toISOString() ?? null,
       endedAt: r.endedAt?.toISOString() ?? null,
+      workDurationMinutes: calculateWorkDurationMinutes(r.startedAt, r.endedAt),
+      operator: r.operator,
       equipment,
       workOrderOperation: {
         id: r.workOrderOperation.id,

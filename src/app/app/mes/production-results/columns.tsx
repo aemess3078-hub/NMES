@@ -19,9 +19,21 @@ function formatDateTime(date: string | null): string {
   if (!date) return "-"
   const d = new Date(date)
   if (Number.isNaN(d.getTime())) return "-"
-  const dateStr = d.toISOString().split("T")[0]
-  const timeStr = d.toTimeString().slice(0, 5)
+  const dateStr = d.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
+  const timeStr = d.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
   return `${dateStr} ${timeStr}`
+}
+
+function formatDuration(minutes: number | null): string {
+  if (minutes == null) return "-"
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  return hours > 0 ? `${hours}시간 ${remainder}분` : `${remainder}분`
 }
 
 export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
@@ -151,6 +163,18 @@ export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
       },
     },
     {
+      id: "operator",
+      accessorFn: (row) => row.operator?.name ?? "",
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="작업자" />
+      ),
+      cell: ({ row }) => (
+        <span className="text-[14px] whitespace-nowrap">
+          {row.original.operator?.name ?? "-"}
+        </span>
+      ),
+    },
+    {
       id: "startedAt",
       accessorFn: (row) => row.startedAt,
       header: ({ column }) => (
@@ -171,6 +195,18 @@ export function getColumns(): ColumnDef<ProductionResultWithDetails>[] {
       cell: ({ row }) => (
         <span className="text-[14px] text-muted-foreground whitespace-nowrap">
           {formatDateTime(row.original.endedAt)}
+        </span>
+      ),
+    },
+    {
+      id: "workDuration",
+      accessorFn: (row) => row.workDurationMinutes ?? -1,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="작업시간" />
+      ),
+      cell: ({ row }) => (
+        <span className="text-[14px] text-muted-foreground whitespace-nowrap">
+          {formatDuration(row.original.workDurationMinutes)}
         </span>
       ),
     },

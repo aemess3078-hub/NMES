@@ -48,6 +48,9 @@ export type DailyProductionRow = {
   itemCode: string
   itemName: string
   operationName: string
+  operatorName: string | null
+  startedAt: string
+  endedAt: string | null
   equipmentName: string | null
   plannedQty: number // 해당 공정(WorkOrderOperation)의 계획수량 — 행마다 동일 공정이면 반복 표시됨
   producedQty: number // goodQty + defectQty + reworkQty
@@ -78,6 +81,9 @@ export function buildDailyProductionRows(
       itemCode: op.workOrder.item.code,
       itemName: op.workOrder.item.name,
       operationName: op.routingOperation.name,
+      operatorName: r.operator?.name ?? null,
+      startedAt: r.startedAt,
+      endedAt: r.endedAt,
       equipmentName: r.equipment?.name ?? null,
       plannedQty: op.plannedQty,
       producedQty: r.goodQty + r.defectQty + r.reworkQty,
