@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { PlanStatus, PlanType, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getAvailableRoutingsForItem, validateRoutingForItem } from "@/lib/actions/routing.actions"
-import { getTenantId } from "@/lib/auth"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { reconcileProductionPlanItems } from "@/lib/production-plan-item-reconciliation"
 import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan-workorder-integrity"
 
@@ -150,7 +150,10 @@ export async function syncProductionPlanStatusForWorkOrder(
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
 export async function getProductionPlans(): Promise<PlanWithDetails[]> {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "READ")
+
   return prisma.productionPlan.findMany({
+    where: { tenantId: user.tenantId },
     include: {
       site: {
         select: { id: true, code: true, name: true, type: true },
@@ -191,8 +194,10 @@ export async function getProductionPlans(): Promise<PlanWithDetails[]> {
 }
 
 export async function getPlanById(id: string): Promise<PlanWithDetails | null> {
-  return prisma.productionPlan.findUnique({
-    where: { id },
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "READ")
+
+  return prisma.productionPlan.findFirst({
+    where: { id, tenantId: user.tenantId },
     include: {
       site: {
         select: { id: true, code: true, name: true, type: true },
@@ -232,23 +237,30 @@ export async function getPlanById(id: string): Promise<PlanWithDetails | null> {
 }
 
 export async function getSites() {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "READ")
+
   return prisma.site.findMany({
+    where: { tenantId: user.tenantId },
     select: { id: true, code: true, name: true, type: true },
     orderBy: { name: "asc" },
   })
 }
 
 export async function getItemsForPlan() {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "READ")
+
   return prisma.item.findMany({
-    where: { itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
+    where: { tenantId: user.tenantId, itemType: { in: ["FINISHED", "SEMI_FINISHED"] } },
     select: { id: true, code: true, name: true, itemType: true },
     orderBy: { code: "asc" },
   })
 }
 
 export async function getBomsForPlanItem(itemId: string) {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "READ")
+
   return prisma.bOM.findMany({
-    where: { itemId, status: "ACTIVE" },
+    where: { tenantId: user.tenantId, itemId, status: "ACTIVE" },
     select: { id: true, version: true, isDefault: true },
     orderBy: { version: "asc" },
   })
@@ -256,12 +268,15 @@ export async function getBomsForPlanItem(itemId: string) {
 
 // 범용(COMMON) + 품목전용(ITEM_SPECIFIC) 라우팅을 함께 조회한다 — routing.actions.ts의 공용 헬퍼 재사용.
 export async function getRoutingsForPlanItem(itemId: string) {
+  await requireResourcePermission("PRODUCTION_PLAN", "READ")
+
   return getAvailableRoutingsForItem(itemId)
 }
 
 // ─── Business Logic ───────────────────────────────────────────────────────────
 
-export async function generatePlanNo(tenantId: string, planType: PlanType): Promise<string> {
+export async function generatePlanNo(_tenantId: string, planType: PlanType): Promise<string> {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "CREATE")
   const now = new Date()
   const year = now.getFullYear()
 
@@ -286,7 +301,7 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
   // 중복 체크 후 suffix 추가
   const existing = await prisma.productionPlan.findMany({
     where: {
-      tenantId,
+      tenantId: user.tenantId,
       planNo: { startsWith: baseNo },
     },
     select: { planNo: true },
@@ -307,7 +322,9 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-export async function createPlan(data: CreatePlanInput, tenantId: string) {
+export async function createPlan(data: CreatePlanInput, _tenantId: string) {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "CREATE")
+  const tenantId = user.tenantId
   const { items, startDate, endDate, note, ...headerFields } = data
 
   if (items.some((item) => item.productionPlanItemId || item.salesOrderItemId)) {
@@ -343,7 +360,8 @@ export async function createPlan(data: CreatePlanInput, tenantId: string) {
 }
 
 export async function updatePlan(id: string, data: CreatePlanInput) {
-  const tenantId = await getTenantId()
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "UPDATE")
+  const tenantId = user.tenantId
   const existing = await prisma.productionPlan.findFirst({
     where: { id, tenantId },
     select: {
@@ -447,8 +465,9 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
 }
 
 export async function deletePlan(id: string) {
-  const existing = await prisma.productionPlan.findUnique({
-    where: { id },
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "DELETE")
+  const existing = await prisma.productionPlan.findFirst({
+    where: { id, tenantId: user.tenantId },
     select: { status: true },
   })
 

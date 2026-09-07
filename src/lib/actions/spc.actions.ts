@@ -20,6 +20,7 @@ import {
   isValidKstDateRange,
   kstDefaultDateRange,
 } from "@/lib/date/kst"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── SPC Profile CRUD ────────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ async function assertNumericInspectionItemInTenant(inspectionItemId: string, ten
 }
 
 export async function createSpcProfile(data: CreateSpcProfileInput): Promise<{ id: string }> {
+  await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
   const actor = await requireRole("MANAGER")
   const tenantId = await getTenantId()
   const name = data.name.trim()
@@ -215,6 +217,7 @@ export type UpdateSpcProfileInput = {
 }
 
 export async function updateSpcProfile(id: string, data: UpdateSpcProfileInput) {
+  await requireResourcePermission("QUALITY_INSPECTION", "UPDATE")
   const actor = await requireRole("MANAGER")
   const tenantId = await getTenantId()
 
@@ -257,6 +260,7 @@ export async function updateSpcProfile(id: string, data: UpdateSpcProfileInput) 
 }
 
 export async function deleteSpcProfile(id: string) {
+  await requireResourcePermission("QUALITY_INSPECTION", "DELETE")
   const actor = await requireRole("MANAGER")
   const tenantId = await getTenantId()
 

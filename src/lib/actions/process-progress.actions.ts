@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { startOperation } from "@/lib/actions/pop.actions"
 import { assertDirectOperationStatusRequestAllowed } from "@/lib/operation-status-integrity"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -251,6 +252,7 @@ export async function updateOperationStatusAction(
   operationId: string,
   status: OperationStatus
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("WORK_RESULT", "UPDATE")
   try {
     await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -280,6 +282,7 @@ export async function dispositionDefects(
   productionResultId: string,
   reworkQty: number
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "CREATE")
   try {
     await prisma.$transaction(async (tx) => {
       const productionResult = await tx.productionResult.findUnique({
@@ -335,6 +338,7 @@ export type CompleteReworkInput = {
 export async function completeRework(
   input: CompleteReworkInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("WORK_RESULT", "UPDATE")
   try {
     await prisma.$transaction(async (tx) => {
       const { reworkWipUnitId, mergedQty, scrapQty } = input

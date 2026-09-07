@@ -16,6 +16,7 @@ import { requireRole, getTenantId } from "@/lib/auth"
 import { checkDefectCodeReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
 import { type CreateMeasurementInput } from "./inspection-measurement.helpers"
 import { assertInspectionHistoryMutable, validateInspectionMutationContext } from "./quality-inspection-integrity.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type { CreateMeasurementInput }
 
@@ -318,6 +319,7 @@ export async function getDefectCodes(tenantId: string): Promise<DefectCodeRow[]>
 }
 
 export async function createDefectCode(data: CreateDefectCodeInput, tenantId: string) {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "CREATE")
   await requireRole("OPERATOR")
   const existing = await prisma.defectCode.findFirst({
     where: { tenantId, code: data.code },
@@ -337,6 +339,7 @@ export async function createDefectCode(data: CreateDefectCodeInput, tenantId: st
 }
 
 export async function updateDefectCode(id: string, data: UpdateDefectCodeInput) {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   await requireRole("OPERATOR")
   await prisma.defectCode.update({
     where: { id },
@@ -349,6 +352,7 @@ export async function updateDefectCode(id: string, data: UpdateDefectCodeInput) 
 }
 
 export async function deleteDefectCode(id: string) {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "DELETE")
   await requireRole("OPERATOR")
   const used = await prisma.defectRecord.count({ where: { defectCodeId: id } })
   if (used > 0) throw new Error("This defect code is used by inspection records.")
@@ -398,6 +402,7 @@ export type BulkDeleteDefectCodesResult = {
  * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteDefectCodes(ids: string[]): Promise<BulkDeleteDefectCodesResult> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }
@@ -458,6 +463,7 @@ export async function createInspectionSpec(
   data: CreateInspectionSpecInput,
   tenantId: string
 ) {
+  await requireResourcePermission("INSPECTION_SPEC", "CREATE")
   await requireRole("OPERATOR")
   const existing = await prisma.inspectionSpec.findFirst({
     where: {
@@ -485,6 +491,7 @@ export async function createInspectionSpec(
 }
 
 export async function updateInspectionSpec(id: string, data: UpdateInspectionSpecInput) {
+  await requireResourcePermission("INSPECTION_SPEC", "UPDATE")
   await requireRole("OPERATOR")
   await prisma.inspectionSpec.update({
     where: { id },
@@ -498,6 +505,7 @@ export async function updateInspectionSpec(id: string, data: UpdateInspectionSpe
 }
 
 export async function deleteInspectionSpec(id: string) {
+  await requireResourcePermission("INSPECTION_SPEC", "DELETE")
   await requireRole("OPERATOR")
   const used = await prisma.qualityInspection.count({ where: { inspectionSpecId: id } })
   if (used > 0) throw new Error("This inspection spec is used by inspection records.")
@@ -518,6 +526,7 @@ export async function upsertInspectionItems(
   inspectionSpecId: string,
   items: UpsertInspectionItemInput[]
 ) {
+  await requireResourcePermission("INSPECTION_SPEC", "UPDATE")
   await requireRole("OPERATOR")
 
   await prisma.$transaction(async (tx) => {
@@ -552,6 +561,7 @@ export async function upsertInspectionItems(
 }
 
 export async function deleteInspectionItem(id: string) {
+  await requireResourcePermission("INSPECTION_SPEC", "DELETE")
   await requireRole("OPERATOR")
   const measuredCount = await prisma.inspectionMeasurement.count({
     where: { inspectionItemId: id },
@@ -577,6 +587,7 @@ export async function createQualityInspection(
   data: CreateQualityInspectionInput,
   tenantId: string
 ) {
+  await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
   await requireRole("OPERATOR")
 
   const { validatedMeasurements } = await validateInspectionMutationContext(prisma, tenantId, data)
@@ -636,6 +647,7 @@ export async function createQualityInspection(
 }
 
 export async function updateInspectionResult(id: string, result: InspectionResult) {
+  await requireResourcePermission("QUALITY_INSPECTION", "UPDATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   await assertInspectionHistoryMutable(prisma, id, tenantId)
@@ -647,6 +659,7 @@ export async function updateInspectionResult(id: string, result: InspectionResul
 }
 
 export async function deleteQualityInspection(id: string) {
+  await requireResourcePermission("QUALITY_INSPECTION", "DELETE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   await prisma.$transaction(async (tx) => {

@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { assertLotQualityReleaseAllowed } from "./quality-release-gate.helpers"
 import type { Prisma } from "@prisma/client"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export async function getShipments(tenantId: string) {
   const rows = await prisma.shipmentOrder.findMany({
@@ -440,6 +441,7 @@ export async function createShipment(
   tenantId: string,
   data: CreateShipmentInput
 ) {
+  await requireResourcePermission("SHIPMENT", "CREATE")
   const user = await requireRole("OPERATOR")
   if (user.tenantId !== tenantId) {
     throw new Error("FORBIDDEN")
@@ -661,6 +663,7 @@ export async function createShipment(
 }
 
 export async function confirmShipment(id: string) {
+  await requireResourcePermission("SHIPMENT", "UPDATE")
   const user = await requireRole("OPERATOR")
   await prisma.$transaction(async (tx) => {
     // The conditional transition makes a second confirmation a no-op failure,
@@ -719,6 +722,7 @@ export async function confirmShipment(id: string) {
 }
 
 export async function deleteShipment(id: string) {
+  await requireResourcePermission("SHIPMENT", "DELETE")
   const user = await requireRole("OPERATOR")
   const shipment = await prisma.shipmentOrder.findFirstOrThrow({
     where: { id, tenantId: user.tenantId },

@@ -10,6 +10,7 @@ import {
   PROJECT_ORDER_STATUS_TRANSITIONS,
   PROJECT_ORDER_CREATABLE_STATUSES,
 } from "@/lib/project-order-status"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 청운커팅 사업계획서 "영업관리 > 프로젝트 오더" ────────────────────────────────
 //
@@ -283,6 +284,7 @@ export type CreateProjectOrderInput = {
 export async function createProjectOrder(
   input: CreateProjectOrderInput
 ): Promise<{ ok: boolean; error?: string; projectOrderId?: string }> {
+  await requireResourcePermission("PROJECT_ORDER", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -381,6 +383,7 @@ export type UpdateProjectOrderInput = {
 export async function updateProjectOrder(
   input: UpdateProjectOrderInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_ORDER", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -552,6 +555,7 @@ export async function updateProjectOrder(
 // 패턴으로 확장한다 — 별도 isDeleted 플래그는 이번에도 만들지 않는다.
 
 export async function deleteProjectOrder(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_ORDER", "DELETE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()

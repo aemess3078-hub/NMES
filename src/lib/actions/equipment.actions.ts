@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { EquipmentType, EquipmentStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export type CreateEquipmentInput = {
 }
 
 export async function createEquipment(data: CreateEquipmentInput) {
+  await requireResourcePermission("EQUIPMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const existing = await prisma.equipment.findUnique({
@@ -113,6 +115,7 @@ export type UpdateEquipmentInput = {
 }
 
 export async function updateEquipment(id: string, data: UpdateEquipmentInput) {
+  await requireResourcePermission("EQUIPMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.equipment.findFirst({ where: { id, tenantId } })
@@ -138,6 +141,7 @@ export async function updateEquipment(id: string, data: UpdateEquipmentInput) {
 // ─── 삭제 ─────────────────────────────────────────────────────────────────────
 
 export async function deleteEquipment(id: string) {
+  await requireResourcePermission("EQUIPMENT", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.equipment.findFirst({ where: { id, tenantId } })

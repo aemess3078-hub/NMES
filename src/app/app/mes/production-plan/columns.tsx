@@ -27,13 +27,15 @@ type GetColumnsProps = {
   onEdit: (plan: PlanWithDetails) => void
   onDelete: (plan: PlanWithDetails) => void
   onViewDetail: (plan: PlanWithDetails) => void
+  canUpdate: boolean
+  canDelete: boolean
 }
 
 function formatDate(date: Date): string {
   return new Date(date).toISOString().split("T")[0]
 }
 
-export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
+export function getColumns({ onEdit, onDelete, onViewDetail, canUpdate, canDelete }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
   return [
     {
       accessorKey: "planNo",
@@ -208,11 +210,12 @@ export function getColumns({ onEdit, onDelete, onViewDetail }: GetColumnsProps):
       id: "actions",
       cell: ({ row }) => {
         const status = row.original.status
-        const canDelete = status === "DRAFT"
+        const canDeletePlan = canDelete && status === "DRAFT"
+        if (!canUpdate && !canDeletePlan) return null
         return (
           <DataTableRowActions
-            onEdit={() => onEdit(row.original)}
-            onDelete={canDelete ? () => onDelete(row.original) : undefined}
+            onEdit={canUpdate ? () => onEdit(row.original) : undefined}
+            onDelete={canDeletePlan ? () => onDelete(row.original) : undefined}
           />
         )
       },

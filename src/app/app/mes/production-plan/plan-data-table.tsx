@@ -10,15 +10,17 @@ import { getColumns } from "./columns"
 import { PlanFormSheet } from "./plan-form-sheet"
 import { PlanDetailSheet } from "./plan-detail-sheet"
 import { deletePlan, PlanWithDetails } from "@/lib/actions/production-plan.actions"
+import type { ResourcePermissionFlags } from "@/lib/auth/role-permissions"
 
 interface PlanDataTableProps {
   data: PlanWithDetails[]
   sites: { id: string; code: string; name: string; type: string }[]
   items: { id: string; code: string; name: string; itemType: string }[]
   tenantId: string
+  permissions: ResourcePermissionFlags
 }
 
-export function PlanDataTable({ data, sites, items, tenantId }: PlanDataTableProps) {
+export function PlanDataTable({ data, sites, items, tenantId, permissions }: PlanDataTableProps) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
@@ -60,6 +62,8 @@ export function PlanDataTable({ data, sites, items, tenantId }: PlanDataTablePro
     onEdit: handleEdit,
     onDelete: handleDelete,
     onViewDetail: handleViewDetail,
+    canUpdate: permissions.canUpdate,
+    canDelete: permissions.canDelete,
   })
 
   const filterableColumns = [
@@ -87,18 +91,20 @@ export function PlanDataTable({ data, sites, items, tenantId }: PlanDataTablePro
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button
-          onClick={() => {
-            setEditingPlan(null)
-            setFormMode("create")
-            setFormOpen(true)
-          }}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          생산계획 등록
-        </Button>
-      </div>
+      {permissions.canCreate && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => {
+              setEditingPlan(null)
+              setFormMode("create")
+              setFormOpen(true)
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            생산계획 등록
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

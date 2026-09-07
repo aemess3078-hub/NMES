@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // 타입 정의
 export type CodeGroupWithCodes = {
@@ -55,6 +56,7 @@ export type CreateCodeGroupInput = {
 
 // 3. 그룹 생성
 export async function createCodeGroup(data: CreateCodeGroupInput, tenantId: string) {
+  await requireResourcePermission("COMMON_CODE", "CREATE")
   const actor = await requireRole("OPERATOR")
   const created = await prisma.codeGroup.create({
     data: { ...data, tenantId },
@@ -76,6 +78,7 @@ export async function createCodeGroup(data: CreateCodeGroupInput, tenantId: stri
 
 // 4. 그룹 수정
 export async function updateCodeGroup(id: string, data: Partial<CreateCodeGroupInput>) {
+  await requireResourcePermission("COMMON_CODE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.codeGroup.findUnique({ where: { id } })
@@ -100,6 +103,7 @@ export async function updateCodeGroup(id: string, data: Partial<CreateCodeGroupI
 
 // 5. 그룹 삭제 (isSystem=true면 불가)
 export async function deleteCodeGroup(id: string) {
+  await requireResourcePermission("COMMON_CODE", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const group = await prisma.codeGroup.findUnique({ where: { id } })
@@ -136,6 +140,7 @@ export type CreateCommonCodeInput = {
 
 // 6. 코드 생성
 export async function createCommonCode(data: CreateCommonCodeInput) {
+  await requireResourcePermission("COMMON_CODE", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const created = await prisma.commonCode.create({ data })
@@ -159,6 +164,7 @@ export async function updateCommonCode(
   id: string,
   data: Partial<Omit<CreateCommonCodeInput, "groupId">>
 ) {
+  await requireResourcePermission("COMMON_CODE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.commonCode.findUnique({ where: { id } })
@@ -183,6 +189,7 @@ export async function updateCommonCode(
 
 // 8. 코드 삭제
 export async function deleteCommonCode(id: string) {
+  await requireResourcePermission("COMMON_CODE", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.commonCode.findUnique({ where: { id } })
@@ -206,6 +213,7 @@ export async function deleteCommonCode(id: string) {
 
 // 9. 코드 활성/비활성 토글
 export async function toggleCodeActive(id: string, isActive: boolean) {
+  await requireResourcePermission("COMMON_CODE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.commonCode.findUnique({ where: { id } })

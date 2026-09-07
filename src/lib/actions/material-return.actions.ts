@@ -7,6 +7,7 @@ import { requireRole, getTenantId } from "@/lib/auth"
 import { getErrorMessage } from "@/lib/utils"
 import { toKstDateKey } from "@/lib/date/kst"
 import { MATERIAL_RETURN_STATUS_TRANSITIONS } from "@/lib/material-return-status"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 청운커팅 사업계획서 "자재관리 > 반품관리" (PR #50) ────────────────────────
 //
@@ -471,6 +472,7 @@ async function validateMaterialReturnInput(
 export async function createMaterialReturn(
   input: MaterialReturnHeaderInput
 ): Promise<{ ok: boolean; error?: string; returnId?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -554,6 +556,7 @@ export async function updateMaterialReturn(
   id: string,
   input: MaterialReturnHeaderInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -630,6 +633,7 @@ export async function updateMaterialReturn(
 // ─── 삭제 (DRAFT만) ───────────────────────────────────────────────────────────
 
 export async function deleteMaterialReturn(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "DELETE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -668,6 +672,7 @@ export async function deleteMaterialReturn(id: string): Promise<{ ok: boolean; e
 // ─── 취소 (DRAFT → CANCELLED) ─────────────────────────────────────────────────
 
 export async function cancelMaterialReturn(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -728,6 +733,7 @@ export async function cancelMaterialReturn(id: string): Promise<{ ok: boolean; e
 //    풀린 뒤에는 첫 번째가 반영한 완료 반품수량을 보고 상한을 재검증하므로 둘 다
 //    통과하는 경우가 없다.
 export async function completeMaterialReturn(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   try {
     const actor = await requireRole("MANAGER")
     const tenantId = await getTenantId()

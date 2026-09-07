@@ -19,6 +19,7 @@ import {
   type ToolStatusFilter,
   type ToolRow,
 } from "./tool.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type { ToolRow, ToolEquipmentType, ToolStatusFilter }
 
@@ -250,6 +251,7 @@ export type CreateToolInput = {
 }
 
 export async function createTool(data: CreateToolInput): Promise<{ id: string }> {
+  await requireResourcePermission("EQUIPMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -315,6 +317,7 @@ export type UpdateToolInput = {
 }
 
 export async function updateTool(id: string, data: UpdateToolInput) {
+  await requireResourcePermission("EQUIPMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -380,6 +383,7 @@ export async function updateTool(id: string, data: UpdateToolInput) {
 // 동일한 정책(품질/생산 추적성 보존).
 
 export async function deleteTool(id: string) {
+  await requireResourcePermission("EQUIPMENT", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -435,6 +439,7 @@ export type CreateToolUsageHistoryInput = {
 }
 
 export async function createToolUsageHistory(data: CreateToolUsageHistoryInput): Promise<{ id: string }> {
+  await requireResourcePermission("EQUIPMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 

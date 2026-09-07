@@ -4,6 +4,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import { checkWarehouseReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type LocationWithSite = {
   id: string
@@ -41,6 +42,7 @@ export type CreateLocationInput = {
 }
 
 export async function createLocation(data: CreateLocationInput) {
+  await requireResourcePermission("ITEM", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { zone, ...rest } = data
@@ -63,6 +65,7 @@ export async function createLocation(data: CreateLocationInput) {
 }
 
 export async function updateLocation(id: string, data: Omit<CreateLocationInput, "siteId">) {
+  await requireResourcePermission("ITEM", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.warehouse.findFirst({ where: { id, tenantId } })
@@ -90,6 +93,7 @@ export async function updateLocation(id: string, data: Omit<CreateLocationInput,
 }
 
 export async function deleteLocation(id: string) {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.warehouse.findFirst({ where: { id, tenantId } })
@@ -156,6 +160,7 @@ export type BulkDeleteLocationsResult = {
  * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteLocations(ids: string[]): Promise<BulkDeleteLocationsResult> {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }

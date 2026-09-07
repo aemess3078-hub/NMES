@@ -5,6 +5,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, ItemType } from "@prisma/client"
 import { checkItemCategoryReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type ItemCategoryWithCounts = Prisma.ItemCategoryGetPayload<{
   include: { _count: { select: { items: true; itemGroups: true } } }
@@ -29,6 +30,7 @@ export type ItemCategoryFormData = {
 }
 
 export async function createItemCategory(data: ItemCategoryFormData) {
+  await requireResourcePermission("ITEM", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -62,6 +64,7 @@ export async function createItemCategory(data: ItemCategoryFormData) {
 }
 
 export async function updateItemCategory(id: string, data: ItemCategoryFormData) {
+  await requireResourcePermission("ITEM", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -99,6 +102,7 @@ export async function updateItemCategory(id: string, data: ItemCategoryFormData)
 }
 
 export async function deleteItemCategory(id: string) {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -169,6 +173,7 @@ export type BulkDeleteItemCategoriesResult = {
  * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteItemCategories(ids: string[]): Promise<BulkDeleteItemCategoriesResult> {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }

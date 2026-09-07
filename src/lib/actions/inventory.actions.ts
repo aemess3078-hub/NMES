@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { generateReceivingLotNo } from "@/lib/actions/receiving.actions"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -688,6 +689,7 @@ export async function createTransaction(
   data: CreateTransactionInput,
   tenantId: string
 ) {
+  await requireResourcePermission("INVENTORY_TXN", "CREATE")
   const isInbound = data.txType === TransactionType.RECEIPT || data.txType === TransactionType.RETURN
 
   const item = await prisma.item.findUniqueOrThrow({
@@ -866,6 +868,7 @@ export type StockAdjustmentResult = {
 export async function adjustInventoryStock(
   input: StockAdjustmentInput
 ): Promise<StockAdjustmentResult> {
+  await requireResourcePermission("INVENTORY", "UPDATE")
   // 권한: 의료기기 재고 보정은 책임자 권한(MANAGER 이상)으로 제한.
   let actor
   try {

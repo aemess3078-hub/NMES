@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { generateCnsMaterialReceiptLotNo } from "@/lib/lot-numbering/lot-number-generator"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,7 @@ export async function getLots(): Promise<LotWithDetails[]> {
 // ─── LOT 생성 ─────────────────────────────────────────────────────────────────
 
 export async function createLot(data: CreateLotInput, tenantId: string) {
+  await requireResourcePermission("LOT", "CREATE")
   const existing = await prisma.lot.findFirst({
     where: { tenantId, lotNo: data.lotNo },
   })
@@ -121,6 +123,7 @@ export async function createLot(data: CreateLotInput, tenantId: string) {
 // ─── LOT 상태 변경 ────────────────────────────────────────────────────────────
 
 export async function updateLotStatus(id: string, status: string) {
+  await requireResourcePermission("LOT", "UPDATE")
   await prisma.lot.update({
     where: { id },
     data: { status: status as any },

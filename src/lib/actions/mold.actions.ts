@@ -5,6 +5,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { EquipmentStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { checkMoldReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 const REVALIDATE_PATH = "/app/mes/master/molds"
 
@@ -103,6 +104,7 @@ export async function createMold(data: {
   equipmentType: MoldEquipmentType
   status?: EquipmentStatus
 }) {
+  await requireResourcePermission("EQUIPMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -148,6 +150,7 @@ export async function updateMold(
     status?: EquipmentStatus
   }
 ) {
+  await requireResourcePermission("EQUIPMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -177,6 +180,7 @@ export async function updateMold(
 // 이력이 있으면 hard delete 차단 → 삭제 대신 INACTIVE 상태 변경 권유
 
 export async function deleteMold(id: string) {
+  await requireResourcePermission("EQUIPMENT", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -255,6 +259,7 @@ export type BulkDeleteMoldsResult = {
  * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteMolds(ids: string[]): Promise<BulkDeleteMoldsResult> {
+  await requireResourcePermission("EQUIPMENT", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }

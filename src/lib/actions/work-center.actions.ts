@@ -4,6 +4,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { WorkCenterKind } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type WorkCenterWithDetails = {
   id: string
@@ -46,12 +47,14 @@ export type CreateWorkCenterInput = {
 }
 
 export async function createWorkCenter(data: CreateWorkCenterInput) {
+  await requireResourcePermission("ROUTING", "CREATE")
   await requireRole("OPERATOR")
   await prisma.workCenter.create({ data })
   revalidatePath("/app/mes/work-centers")
 }
 
 export async function updateWorkCenter(id: string, data: Omit<CreateWorkCenterInput, "siteId">) {
+  await requireResourcePermission("ROUTING", "UPDATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.workCenter.findFirst({
@@ -64,6 +67,7 @@ export async function updateWorkCenter(id: string, data: Omit<CreateWorkCenterIn
 }
 
 export async function deleteWorkCenter(id: string) {
+  await requireResourcePermission("ROUTING", "DELETE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.workCenter.findFirst({

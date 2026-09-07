@@ -5,6 +5,7 @@ import { WipUnitStatus, WipHoldStatus, WipMovementType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { getErrorMessage } from "@/lib/utils"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 청운커팅 사업계획서 "재작업/보류관리" — 보류(ON_HOLD) 조회/등록/수정/해제/취소 ──────
 //
@@ -194,6 +195,7 @@ export type CreateHoldInput = {
 export async function createHold(
   input: CreateHoldInput
 ): Promise<{ ok: boolean; error?: string; holdId?: string }> {
+  await requireResourcePermission("WORK_RESULT", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -300,6 +302,7 @@ export type UpdateHoldInput = {
 }
 
 export async function updateHold(input: UpdateHoldInput): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("WORK_RESULT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -363,6 +366,7 @@ export type ReleaseHoldInput = {
 }
 
 export async function releaseHold(input: ReleaseHoldInput): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("WORK_RESULT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -465,6 +469,7 @@ export type CancelHoldInput = {
 }
 
 export async function cancelHold(input: CancelHoldInput): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("WORK_RESULT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()

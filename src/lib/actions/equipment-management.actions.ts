@@ -5,6 +5,7 @@ import { getTenantId, getCurrentUserId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { RepairRequestStatus, RepairPriority, CheckResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,7 @@ export async function createProblemType(data: {
   category?: string
   description?: string
 }) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
   const tenantId = await getTenantId()
   await prisma.equipmentProblemType.create({
     data: { tenantId, ...data },
@@ -94,6 +96,7 @@ export async function updateProblemType(
   id: string,
   data: { name?: string; category?: string; description?: string; isActive?: boolean }
 ) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
   const tenantId = await getTenantId()
   await prisma.equipmentProblemType.update({
     where: { id, tenantId },
@@ -103,6 +106,7 @@ export async function updateProblemType(
 }
 
 export async function deleteProblemType(id: string) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
   const tenantId = await getTenantId()
   await prisma.equipmentProblemType.delete({ where: { id, tenantId } })
   revalidatePath("/app/mes/equipment-problems")
@@ -141,6 +145,7 @@ export async function createRepairRequest(data: {
   description?: string
   priority?: RepairPriority
 }) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
   const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
 
@@ -175,6 +180,7 @@ export async function updateRepairStatus(
   status: RepairRequestStatus,
   extra?: { assignedTo?: string; note?: string }
 ) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
   const tenantId = await getTenantId()
   const now = new Date()
   await prisma.equipmentRepairRequest.update({
@@ -200,6 +206,7 @@ export async function updateRepairRequest(
     note?: string
   }
 ) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
   const tenantId = await getTenantId()
   await prisma.equipmentRepairRequest.update({
     where: { id, tenantId },
@@ -209,6 +216,7 @@ export async function updateRepairRequest(
 }
 
 export async function deleteRepairRequest(id: string) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
   const tenantId = await getTenantId()
   await prisma.equipmentRepairRequest.delete({ where: { id, tenantId } })
   revalidatePath("/app/mes/equipment-repair")
@@ -250,6 +258,7 @@ export async function createDailyCheck(data: {
   note?: string
   items?: Record<string, string>
 }) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
   const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
 

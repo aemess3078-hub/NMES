@@ -5,6 +5,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { Prisma, PurchaseOrderStatus, ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { randomBytes } from "crypto"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Filter & Types ───────────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ function generateOutsourcingOrderNo(): string {
 }
 
 export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -182,6 +184,7 @@ export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) 
 // ─── WipUnit 외주출고 ──────────────────────────────────────────────────────────
 
 export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingInput) {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -236,6 +239,7 @@ export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingI
 // ─── WipUnit 외주입고 ──────────────────────────────────────────────────────────
 
 export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOutsourcingInput) {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -304,6 +308,8 @@ export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOuts
 export async function inspectOutsourcedWipUnit(
   input: InspectOutsourcedWipUnitInput
 ): Promise<InspectOutsourcedWipUnitResult> {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
+  await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 

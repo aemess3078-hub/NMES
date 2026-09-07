@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import type { Token, ContextKey } from "@/lib/types/numbering-rule"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 규칙 조회 ────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ export async function upsertNumberingRule(
   type: "LOT" | "SERIAL",
   tokens: Token[]
 ) {
+  await requireResourcePermission("LOT", "UPDATE")
   await prisma.numberingRule.upsert({
     where: { tenantId_type: { tenantId, type } },
     update: { tokens: tokens as any },

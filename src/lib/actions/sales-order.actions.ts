@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth"
 import { SalesOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ export async function createSalesOrder(
   siteId: string,
   data: CreateSalesOrderInput
 ) {
+  await requireResourcePermission("SALES_ORDER", "CREATE")
   await requireRole("OPERATOR")
   const orderNo = await generateSalesOrderNo(tenantId)
   const order = await prisma.salesOrder.create({
@@ -173,6 +175,7 @@ export type UpdateSalesOrderInput = {
 }
 
 export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) {
+  await requireResourcePermission("SALES_ORDER", "UPDATE")
   await requireRole("OPERATOR")
   const current = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
   const canEditItems = current.status === "DRAFT"
@@ -209,6 +212,7 @@ export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) 
 }
 
 export async function deleteSalesOrder(id: string) {
+  await requireResourcePermission("SALES_ORDER", "DELETE")
   await requireRole("OPERATOR")
   const order = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
   if (order.status !== "DRAFT") {
@@ -519,6 +523,8 @@ export async function requestProductionFromSalesOrder(
   tenantId: string,
   siteId: string
 ): Promise<{ ok: boolean; planNo?: string; error?: string }> {
+  await requireResourcePermission("SALES_ORDER", "UPDATE")
+  await requireResourcePermission("PRODUCTION_PLAN", "CREATE")
   await requireRole("OPERATOR")
   if (items.length === 0) return { ok: false, error: "생산의뢰 품목이 없습니다." }
 

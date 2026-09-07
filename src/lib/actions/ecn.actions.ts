@@ -5,6 +5,7 @@ import { ECNStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getCurrentUser, requireRole, type CurrentUser } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type ECNDetail = {
   id: string
@@ -182,6 +183,7 @@ export type CreateECNInput = {
 }
 
 export async function createECN(data: CreateECNInput, tenantId: string, requestedBy: string) {
+  await requireResourcePermission("ECN", "CREATE")
   const user = await requireRole("OPERATOR")
   if (tenantId !== user.tenantId || requestedBy !== user.profileId) {
     throw new Error("권한이 없습니다.")
@@ -214,6 +216,7 @@ export async function createECN(data: CreateECNInput, tenantId: string, requeste
 }
 
 export async function updateECN(id: string, data: CreateECNInput) {
+  await requireResourcePermission("ECN", "UPDATE")
   const user = await requireECNUser()
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   assertSameTenant(current, user)
@@ -252,6 +255,7 @@ export async function updateECN(id: string, data: CreateECNInput) {
 }
 
 export async function deleteECN(id: string) {
+  await requireResourcePermission("ECN", "DELETE")
   const user = await requireECNUser()
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   assertSameTenant(current, user)
@@ -272,6 +276,7 @@ export async function deleteECN(id: string) {
 }
 
 export async function submitECN(id: string) {
+  await requireResourcePermission("ECN", "UPDATE")
   const user = await requireECNUser()
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   assertSameTenant(current, user)
@@ -292,6 +297,7 @@ export async function submitECN(id: string) {
 }
 
 export async function approveECN(id: string, approvedBy: string) {
+  await requireResourcePermission("ECN", "APPROVE")
   void approvedBy
   const user = await requireRole("MANAGER")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
@@ -308,6 +314,7 @@ export async function approveECN(id: string, approvedBy: string) {
 }
 
 export async function rejectECN(id: string, approvedBy: string) {
+  await requireResourcePermission("ECN", "APPROVE")
   void approvedBy
   const user = await requireRole("MANAGER")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
@@ -324,6 +331,7 @@ export async function rejectECN(id: string, approvedBy: string) {
 }
 
 export async function implementECN(id: string) {
+  await requireResourcePermission("ECN", "UPDATE")
   const user = await requireRole("ADMIN")
   const current = await prisma.engineeringChange.findUniqueOrThrow({ where: { id } })
   assertSameTenant(current, user)

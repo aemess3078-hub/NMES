@@ -5,6 +5,7 @@ import { getTenantId } from "@/lib/auth"
 import { calculateMRP } from "@/lib/services/mrp.service"
 import { suggestOptimalOrder } from "@/lib/services/mrp-ai.service"
 import type { MRPResult } from "@/lib/services/mrp.service"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export async function getPlansForMRP() {
   const tenantId = await getTenantId()
@@ -36,6 +37,8 @@ export async function createPurchaseOrdersFromMRP(
   tenantId: string,
   siteId: string
 ): Promise<{ success: boolean; orderNo?: string; error?: string }> {
+  await requireResourcePermission("MRP", "CREATE")
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   try {
     if (items.length === 0) {
       return { success: false, error: "발주할 자재가 없습니다." }

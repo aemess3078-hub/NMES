@@ -7,6 +7,7 @@ import { computeNextMaterialReceiptLotNo } from "@/lib/lot-numbering/lot-reserva
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { Prisma, ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type CreateReceivingInspectionInput = {
   purchaseOrderItemId: string
@@ -69,6 +70,7 @@ async function generateTxNo(tenantId: string): Promise<string> {
 export async function createReceivingInspection(
   data: CreateReceivingInspectionInput,
 ): Promise<{ success: boolean; message?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   try {
     return await createReceivingInspectionInternal(data)
   } catch (error) {

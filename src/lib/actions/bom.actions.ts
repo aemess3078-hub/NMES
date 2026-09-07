@@ -4,6 +4,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { BOMStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type BOMWithDetails = {
   id: string
@@ -114,6 +115,7 @@ export type CreateBomInput = {
 }
 
 export async function createBom(data: CreateBomInput, _tenantId?: string) {
+  await requireResourcePermission("BOM", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { bomItems, ...bomFields } = data
@@ -147,6 +149,7 @@ export async function createBom(data: CreateBomInput, _tenantId?: string) {
 }
 
 export async function updateBom(id: string, data: CreateBomInput) {
+  await requireResourcePermission("BOM", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })
@@ -191,6 +194,7 @@ export async function updateBom(id: string, data: CreateBomInput) {
 }
 
 export async function deleteBom(id: string) {
+  await requireResourcePermission("BOM", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.bOM.findFirst({ where: { id, tenantId } })

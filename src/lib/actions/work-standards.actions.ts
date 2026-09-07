@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { DocType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 const REVALIDATE_PATH = "/app/mes/quality/work-standards"
 
@@ -73,6 +74,7 @@ export async function createWorkStandard(data: {
   docType: string
   fileUrl?: string
 }) {
+  await requireResourcePermission("WORK_STANDARD", "CREATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -106,6 +108,7 @@ export async function updateWorkStandard(
     fileUrl?: string
   }
 ) {
+  await requireResourcePermission("WORK_STANDARD", "UPDATE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -129,6 +132,7 @@ export async function updateWorkStandard(
 // DocumentLink 참조가 있으면 삭제 거부 (hard delete 전 안전 확인)
 
 export async function deleteWorkStandard(id: string) {
+  await requireResourcePermission("WORK_STANDARD", "DELETE")
   await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 

@@ -14,6 +14,7 @@ import {
   type RecurrencePreventionStatusFilter,
   type DefectRecurrencePreventionRow,
 } from "./defect-recurrence-prevention.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type { DefectRecurrencePreventionRow }
 
@@ -331,6 +332,7 @@ export type CreateDefectRecurrencePreventionInput = {
 export async function createDefectRecurrencePrevention(
   data: CreateDefectRecurrencePreventionInput
 ): Promise<{ id: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -390,6 +392,7 @@ export type UpdateDefectRecurrencePreventionInput = {
 }
 
 export async function updateDefectRecurrencePrevention(id: string, data: UpdateDefectRecurrencePreventionInput) {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -431,6 +434,7 @@ export async function updateDefectRecurrencePrevention(id: string, data: UpdateD
 // ─── 상태전이: 대책 수행 시작 (OPEN → IN_PROGRESS) ───────────────────────────
 
 export async function startDefectRecurrencePrevention(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -474,6 +478,7 @@ export async function startDefectRecurrencePrevention(id: string): Promise<{ ok:
 export async function submitDefectRecurrencePreventionForVerification(
   id: string
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -529,6 +534,7 @@ export async function verifyDefectRecurrencePrevention(
   id: string,
   data: VerifyDefectRecurrencePreventionInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()

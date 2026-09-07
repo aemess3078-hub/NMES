@@ -4,6 +4,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { revalidatePath } from "next/cache"
 import { checkDowntimeReasonReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 const GROUP_CODE = "DOWNTIME_REASON"
 const REVALIDATE  = "/app/mes/master/downtime-reasons"
@@ -63,6 +64,7 @@ export type DowntimeReasonInput = {
 }
 
 export async function createDowntimeReason(data: DowntimeReasonInput) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const groupId  = await ensureGroup(tenantId)
@@ -99,6 +101,7 @@ export async function updateDowntimeReason(
   id:   string,
   data: Partial<Omit<DowntimeReasonInput, "code">>,
 ) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const groupId  = await ensureGroup(tenantId)
@@ -124,6 +127,7 @@ export async function updateDowntimeReason(
 }
 
 export async function toggleDowntimeReasonActive(id: string, isActive: boolean) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const groupId  = await ensureGroup(tenantId)
@@ -190,6 +194,7 @@ export type BulkDeleteDowntimeReasonsResult = {
  * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteDowntimeReasons(ids: string[]): Promise<BulkDeleteDowntimeReasonsResult> {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }

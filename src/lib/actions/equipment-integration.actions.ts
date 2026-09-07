@@ -10,6 +10,7 @@ import {
 } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireDeveloper } from "@/lib/auth"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,7 @@ export async function createGateway(
   data: CreateGatewayInput,
   _tenantId?: string
 ): Promise<{ id: string; apiKey: string }> {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "CREATE")
   const actor = await requireDeveloper()
   const scopedTenantId = actor.tenantId
   const site = await prisma.site.findFirst({
@@ -225,6 +227,7 @@ export async function createGateway(
 }
 
 export async function updateGateway(id: string, data: UpdateGatewayInput) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "UPDATE")
   const actor = await requireDeveloper()
   const owned = await prisma.edgeGateway.findFirst({
     where: { id, tenantId: actor.tenantId },
@@ -244,6 +247,7 @@ export async function updateGateway(id: string, data: UpdateGatewayInput) {
 }
 
 export async function deleteGateway(id: string) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "DELETE")
   const actor = await requireDeveloper()
   const owned = await prisma.edgeGateway.findFirst({
     where: { id, tenantId: actor.tenantId },
@@ -281,6 +285,7 @@ export async function getConnections(
 }
 
 export async function createConnection(data: CreateConnectionInput) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "CREATE")
   const actor = await requireDeveloper()
   const [equipment, gateway] = await Promise.all([
     prisma.equipment.findFirst({
@@ -323,6 +328,7 @@ export async function updateConnection(
   id: string,
   data: UpdateConnectionInput
 ) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "UPDATE")
   const actor = await requireDeveloper()
   const owned = await prisma.equipmentConnection.findFirst({
     where: { id, equipment: { tenantId: actor.tenantId } },
@@ -343,6 +349,7 @@ export async function updateConnection(
 }
 
 export async function deleteConnection(id: string) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "DELETE")
   const actor = await requireDeveloper()
   const owned = await prisma.equipmentConnection.findFirst({
     where: { id, equipment: { tenantId: actor.tenantId } },
@@ -359,6 +366,7 @@ export async function deleteConnection(id: string) {
 }
 
 export async function toggleConnectionActive(id: string, isActive: boolean) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "UPDATE")
   const actor = await requireDeveloper()
   const owned = await prisma.equipmentConnection.findFirst({
     where: { id, equipment: { tenantId: actor.tenantId } },
@@ -739,6 +747,7 @@ export async function getNcwatchMappings(
 }
 
 export async function upsertNcwatchMapping(input: UpsertNcwatchMappingInput) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "UPDATE")
   const actor = await requireDeveloper()
   const tenantId = actor.tenantId
   const machineName = normalizeMachineName(input.machineName)
@@ -826,6 +835,7 @@ export async function upsertNcwatchMapping(input: UpsertNcwatchMappingInput) {
 }
 
 export async function unmapNcwatchMapping(id: string) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "UPDATE")
   const actor = await requireDeveloper()
   const tenantId = actor.tenantId
   const owned = await prisma.ncwatchEquipmentMapping.findFirst({
@@ -856,6 +866,7 @@ export async function unmapNcwatchMapping(id: string) {
 }
 
 export async function toggleNcwatchMappingActive(id: string, isActive: boolean) {
+  await requireResourcePermission("EQUIPMENT_CONNECTION", "UPDATE")
   const actor = await requireDeveloper()
   const tenantId = actor.tenantId
   const owned = await prisma.ncwatchEquipmentMapping.findFirst({
@@ -915,6 +926,7 @@ export async function getTags(tenantId: string): Promise<DataTagRow[]> {
 }
 
 export async function createTag(data: CreateTagInput) {
+  await requireResourcePermission("TAG_MANAGEMENT", "CREATE")
   const actor = await requireDeveloper()
   const connection = await prisma.equipmentConnection.findFirst({
     where: { id: data.connectionId, equipment: { tenantId: actor.tenantId } },
@@ -952,6 +964,7 @@ export async function createTag(data: CreateTagInput) {
 }
 
 export async function updateTag(id: string, data: UpdateTagInput) {
+  await requireResourcePermission("TAG_MANAGEMENT", "UPDATE")
   const actor = await requireDeveloper()
   const owned = await prisma.dataTag.findFirst({
     where: { id, connection: { equipment: { tenantId: actor.tenantId } } },
@@ -977,6 +990,7 @@ export async function updateTag(id: string, data: UpdateTagInput) {
 }
 
 export async function deleteTag(id: string) {
+  await requireResourcePermission("TAG_MANAGEMENT", "DELETE")
   const actor = await requireDeveloper()
   const owned = await prisma.dataTag.findFirst({
     where: { id, connection: { equipment: { tenantId: actor.tenantId } } },
@@ -991,6 +1005,7 @@ export async function deleteTag(id: string) {
 }
 
 export async function toggleTagActive(id: string, isActive: boolean) {
+  await requireResourcePermission("TAG_MANAGEMENT", "UPDATE")
   const actor = await requireDeveloper()
   const owned = await prisma.dataTag.findFirst({
     where: { id, connection: { equipment: { tenantId: actor.tenantId } } },
@@ -1008,6 +1023,7 @@ export async function toggleTagActive(id: string, isActive: boolean) {
 export async function copyEquipmentTags(
   input: CopyEquipmentTagsInput
 ): Promise<CopyEquipmentTagResult[]> {
+  await requireResourcePermission("TAG_MANAGEMENT", "CREATE")
   const actor = await requireDeveloper()
   const tenantId = actor.tenantId
   const targetEquipmentIds = Array.from(new Set(input.targetEquipmentIds)).filter(

@@ -6,6 +6,7 @@ import { requireRole, getTenantId } from "@/lib/auth"
 import { getErrorMessage } from "@/lib/utils"
 import { validateRoutingForItem } from "@/lib/actions/routing.actions"
 import { getRoutingsForItem } from "@/lib/actions/work-order.actions"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 청운커팅 사업계획서 "프로젝트관리 > 프로젝트 진행현황" ──────────────────────────
 //
@@ -204,6 +205,7 @@ export type CreateProjectStageInput = {
 export async function createProjectStage(
   input: CreateProjectStageInput
 ): Promise<{ ok: boolean; error?: string; stageId?: string }> {
+  await requireResourcePermission("PROJECT_STAGE", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -277,6 +279,7 @@ export type UpdateProjectStageInput = {
 export async function updateProjectStage(
   input: UpdateProjectStageInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_STAGE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -353,6 +356,7 @@ export async function updateProjectStage(
 // ─── 단계 삭제 (PENDING만) ────────────────────────────────────────────────────
 
 export async function deleteProjectStage(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_STAGE", "DELETE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -405,6 +409,7 @@ export async function deleteProjectStage(id: string): Promise<{ ok: boolean; err
 // 동일한 이유(두 단계를 동시에 시작하는 race를 DB 잠금으로 막는다).
 
 export async function startProjectStage(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_STAGE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -475,6 +480,7 @@ export async function startProjectStage(id: string): Promise<{ ok: boolean; erro
 // updateMany claim 패턴만으로 충분히 안전하다.
 
 export async function completeProjectStage(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_STAGE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -531,6 +537,7 @@ export async function importProjectStagesFromRouting(
   projectOrderId: string,
   routingId: string
 ): Promise<{ ok: boolean; error?: string; importedCount?: number }> {
+  await requireResourcePermission("PROJECT_STAGE", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()

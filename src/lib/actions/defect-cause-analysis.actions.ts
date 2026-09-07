@@ -12,6 +12,7 @@ import {
   type AnalysisStatusFilter,
   type DefectCauseAnalysisRow,
 } from "./defect-cause-analysis.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type { DefectCauseAnalysisRow }
 
@@ -164,6 +165,7 @@ export type CreateDefectCauseAnalysisInput = {
 export async function createDefectCauseAnalysis(
   data: CreateDefectCauseAnalysisInput
 ): Promise<{ id: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -215,6 +217,7 @@ export type UpdateDefectCauseAnalysisInput = {
 }
 
 export async function updateDefectCauseAnalysis(id: string, data: UpdateDefectCauseAnalysisInput) {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 

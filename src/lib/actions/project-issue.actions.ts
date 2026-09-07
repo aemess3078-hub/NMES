@@ -7,6 +7,7 @@ import { requireRole, getTenantId } from "@/lib/auth"
 import { getErrorMessage } from "@/lib/utils"
 import { toKstDateKey } from "@/lib/date/kst"
 import { PROJECT_ISSUE_BLOCKED_ORDER_STATUSES } from "@/lib/project-issue-status"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 청운커팅 사업계획서 "프로젝트관리 > 이슈 관리" ───────────────────────────────
 //
@@ -288,6 +289,7 @@ export type CreateProjectIssueInput = {
 export async function createProjectIssue(
   input: CreateProjectIssueInput
 ): Promise<{ ok: boolean; error?: string; issueId?: string }> {
+  await requireResourcePermission("PROJECT_ISSUE", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -391,6 +393,7 @@ export type UpdateProjectIssueInput = {
 export async function updateProjectIssue(
   input: UpdateProjectIssueInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_ISSUE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -482,6 +485,7 @@ export async function updateProjectIssue(
 // 종료된 프로젝트의 업무이력 변조 방지 원칙(§14)을 삭제에도 동일하게 적용한다.
 
 export async function deleteProjectIssue(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_ISSUE", "DELETE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -529,6 +533,7 @@ export async function deleteProjectIssue(id: string): Promise<{ ok: boolean; err
 // ─── 조치 시작 (OPEN → IN_PROGRESS) ──────────────────────────────────────────
 
 export async function startProjectIssue(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_ISSUE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -585,6 +590,7 @@ export async function resolveProjectIssue(
   id: string,
   resolution: string
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_ISSUE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()

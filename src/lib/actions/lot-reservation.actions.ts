@@ -10,6 +10,7 @@ import {
 } from "@/lib/lot-numbering/lot-reservation"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { Prisma } from "@prisma/client"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 const MAX_RESERVE_ATTEMPTS = 5
 
@@ -42,6 +43,7 @@ export type ReserveReceivingLotNumberResult =
 export async function reserveReceivingLotNumber(
   input: ReserveReceivingLotNumberInput,
 ): Promise<ReserveReceivingLotNumberResult> {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   try {
     return await reserveReceivingLotNumberInternal(input)
   } catch (error) {
@@ -165,6 +167,7 @@ async function reserveReceivingLotNumberInternal(
 export async function releaseLotReservation(input: {
   reservationId: string
 }): Promise<{ success: boolean }> {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   try {
     await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -190,6 +193,7 @@ export async function markLotReservationPrinted(input: {
   reservationId: string
   purchaseOrderItemId: string
 }): Promise<MarkLotReservationPrintedResult> {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   try {
     await requireRole("OPERATOR")
     const tenantId = await getTenantId()
