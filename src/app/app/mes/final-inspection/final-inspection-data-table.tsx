@@ -25,6 +25,11 @@ const INSPECTION_CONFIG = {
     className: "bg-amber-100 text-amber-800 border-amber-200",
     icon: AlertCircle,
   },
+  NOT_INSPECTED: {
+    label: "미검사",
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+    icon: Clock,
+  },
 } as const
 
 interface FinalInspectionDataTableProps {
@@ -90,15 +95,18 @@ export function FinalInspectionDataTable({ data }: FinalInspectionDataTableProps
       id: "inspectionResult",
       header: "최종검사 결과",
       cell: ({ row }) => {
-        const result = row.original.latestInspectionResult
-        if (!result) {
+        const release = row.original.qualityRelease
+        if (!release.requiresInspection) {
           return (
             <div className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[13px] text-muted-foreground">검사 미완료</span>
+              <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[13px] text-muted-foreground">검사비대상</span>
             </div>
           )
         }
+        const result = release.inspectionStatus === "NOT_REQUIRED"
+          ? "NOT_INSPECTED"
+          : release.inspectionStatus
         const cfg = INSPECTION_CONFIG[result]
         const Icon = cfg.icon
         return (
@@ -143,12 +151,12 @@ export function FinalInspectionDataTable({ data }: FinalInspectionDataTableProps
               className="h-7 text-[13px] px-2 gap-1"
               asChild
             >
-              <Link href="/app/mes/inspection">
+              <Link href="/app/mes/inspection-stages">
                 <ExternalLink className="h-3 w-3" />
                 검사 등록
               </Link>
             </Button>
-            {wo.pendingQty > 0 && (
+            {wo.pendingQty > 0 && (!wo.qualityRelease.requiresInspection || wo.qualityRelease.inspectionResult === "PASS") && (
               <Button
                 size="sm"
                 variant="outline"

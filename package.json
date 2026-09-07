@@ -31,6 +31,7 @@
     "test:production-plan-workorder-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-production-plan-workorder-integrity.ts",
     "test:operation-status-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-operation-status-integrity.ts",
     "test:pop-worktime-operator": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-pop-worktime-operator.ts",
+    "test:quality-release-gate": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-quality-release-gate.ts",
     "dev:set-pop-pin": "ts-node --project tsconfig.scripts.json scripts/set-pop-pin-dev.ts"
   },
   "dependencies": {

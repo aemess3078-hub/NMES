@@ -76,7 +76,26 @@ export async function createStagedInspection(data: {
   result: string
   inspectedQty: number
 }) {
+  const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
+
+  const [operation, spec] = await Promise.all([
+    prisma.workOrderOperation.findFirst({
+      where: { id: data.workOrderOperationId, workOrder: { tenantId } },
+      select: { routingOperationId: true, workOrder: { select: { itemId: true } } },
+    }),
+    prisma.inspectionSpec.findFirst({
+      where: { id: data.inspectionSpecId, tenantId, status: "ACTIVE" },
+      select: { routingOperationId: true, itemId: true },
+    }),
+  ])
+  if (!operation || !spec) throw new Error("검사 대상 또는 활성 검사표준을 찾을 수 없습니다.")
+  if (
+    operation.routingOperationId !== spec.routingOperationId ||
+    operation.workOrder.itemId !== spec.itemId
+  ) {
+    throw new Error("검사표준이 선택한 작업지시 공정과 일치하지 않습니다.")
+  }
 
   await prisma.qualityInspection.create({
     data: {
@@ -90,6 +109,8 @@ export async function createStagedInspection(data: {
   })
   revalidatePath("/app/mes/inspection-stages")
   revalidatePath("/app/mes/inspection")
+  revalidatePath("/app/mes/final-inspection")
+  revalidatePath("/app/mes/finished-goods-receipt")
 }
 
 export async function updateStagedInspection(
@@ -150,13 +171,15 @@ export async function updateStagedInspection(
   revalidatePath("/app/mes/inspection-stages")
   revalidatePath("/app/mes/inspection")
   revalidatePath("/app/mes/manufacturing-traceability")
+  revalidatePath("/app/mes/final-inspection")
+  revalidatePath("/app/mes/finished-goods-receipt")
 }
 
 export async function getWorkOrdersForInspection() {
   const tenantId = await getTenantId()
   const ops = await prisma.workOrderOperation.findMany({
     where: {
-      workOrder: { tenantId, status: { in: ["RELEASED", "IN_PROGRESS"] } },
+      workOrder: { tenantId, status: { in: ["RELEASED", "IN_PROGRESS", "COMPLETED"] } },
     },
     include: {
       workOrder: {
@@ -173,9 +196,13 @@ export async function getWorkOrdersForInspection() {
   if (routingOpIds.length > 0) {
     const specs = await prisma.inspectionSpec.findMany({
       where: { tenantId, routingOperationId: { in: routingOpIds }, status: "ACTIVE" },
-      select: { id: true, routingOperationId: true },
+      select: { id: true, itemId: true, routingOperationId: true },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     })
-    specs.forEach((s) => specMap.set(s.routingOperationId, { id: s.id }))
+    specs.forEach((s) => {
+      const key = `${s.itemId}:${s.routingOperationId}`
+      if (!specMap.has(key)) specMap.set(key, { id: s.id })
+    })
   }
 
   return ops.map((op) => ({
@@ -188,7 +215,9 @@ export async function getWorkOrdersForInspection() {
       orderNo: op.workOrder.orderNo,
       item:    op.workOrder.item,
     },
-    inspectionSpecs:  specMap.has(op.routingOperationId) ? [specMap.get(op.routingOperationId)!] : [],
+    inspectionSpecs: specMap.has(`${op.workOrder.item.id}:${op.routingOperationId}`)
+      ? [specMap.get(`${op.workOrder.item.id}:${op.routingOperationId}`)!]
+      : [],
   }))
 }
 

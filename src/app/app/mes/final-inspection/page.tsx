@@ -10,10 +10,10 @@ export default async function FinalInspectionPage() {
   const workOrders = await getWorkOrdersForReceipt(tenantId)
 
   const pendingInspection = workOrders.filter(
-    (wo) => wo.latestInspectionResult === null
+    (wo) => wo.qualityRelease.requiresInspection && wo.qualityRelease.inspectionStatus === "NOT_INSPECTED"
   ).length
   const failCount = workOrders.filter(
-    (wo) => wo.latestInspectionResult === "FAIL"
+    (wo) => wo.qualityRelease.inspectionResult === "FAIL"
   ).length
 
   return (
