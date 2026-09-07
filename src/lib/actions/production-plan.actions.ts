@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db/prisma"
 import { PlanStatus, PlanType, Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getAvailableRoutingsForItem, validateRoutingForItem } from "@/lib/actions/routing.actions"
+import { getTenantId } from "@/lib/auth"
+import { reconcileProductionPlanItems } from "@/lib/production-plan-item-reconciliation"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,8 @@ export type PlanWithDetails = {
 }
 
 export type PlanItemInput = {
+  productionPlanItemId?: string | null
+  salesOrderItemId?: string | null
   itemId: string
   bomId?: string | null
   routingId?: string | null
@@ -312,6 +316,10 @@ export async function generatePlanNo(tenantId: string, planType: PlanType): Prom
 export async function createPlan(data: CreatePlanInput, tenantId: string) {
   const { items, startDate, endDate, note, ...headerFields } = data
 
+  if (items.some((item) => item.productionPlanItemId || item.salesOrderItemId)) {
+    throw new Error("신규 생산계획에 기존 품목 또는 수주 연결을 지정할 수 없습니다.")
+  }
+
   for (const item of items) {
     if (item.routingId) {
       await validateRoutingForItem({ tenantId, itemId: item.itemId, routingId: item.routingId })
@@ -341,9 +349,25 @@ export async function createPlan(data: CreatePlanInput, tenantId: string) {
 }
 
 export async function updatePlan(id: string, data: CreatePlanInput) {
-  const existing = await prisma.productionPlan.findUnique({
-    where: { id },
-    select: { status: true, tenantId: true },
+  const tenantId = await getTenantId()
+  const existing = await prisma.productionPlan.findFirst({
+    where: { id, tenantId },
+    select: {
+      status: true,
+      tenantId: true,
+      items: {
+        select: {
+          id: true,
+          itemId: true,
+          salesOrderItemId: true,
+          salesOrderItem: {
+            select: {
+              salesOrder: { select: { tenantId: true } },
+            },
+          },
+        },
+      },
+    },
   })
 
   if (!existing) {
@@ -359,33 +383,71 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
 
   const { items, startDate, endDate, note, ...headerFields } = data
 
+  const reconciliation = reconcileProductionPlanItems(
+    existing.tenantId,
+    existing.items.map((item) => ({
+      id: item.id,
+      itemId: item.itemId,
+      salesOrderItemId: item.salesOrderItemId,
+      salesOrderItemTenantId: item.salesOrderItem?.salesOrder.tenantId ?? null,
+    })),
+    items
+  )
+
   for (const item of items) {
     if (item.routingId) {
       await validateRoutingForItem({ tenantId: existing.tenantId, itemId: item.itemId, routingId: item.routingId })
     }
   }
 
-  await prisma.$transaction([
-    prisma.productionPlanItem.deleteMany({ where: { planId: id } }),
-    prisma.productionPlan.update({
+  await prisma.$transaction(async (tx) => {
+    if (reconciliation.deleteIds.length > 0) {
+      await tx.productionPlanItem.deleteMany({
+        where: { planId: id, id: { in: reconciliation.deleteIds } },
+      })
+    }
+
+    for (const productionPlanItemId of reconciliation.updateIds) {
+      const item = items.find(
+        (candidate) => candidate.productionPlanItemId?.trim() === productionPlanItemId
+      )!
+      await tx.productionPlanItem.update({
+        where: { id: productionPlanItemId },
+        data: {
+          itemId: item.itemId,
+          bomId: item.bomId ?? null,
+          routingId: item.routingId ?? null,
+          plannedQty: item.plannedQty,
+          note: item.note ?? null,
+        },
+      })
+    }
+
+    for (const itemIndex of reconciliation.createIndexes) {
+      const item = items[itemIndex]
+      await tx.productionPlanItem.create({
+        data: {
+          planId: id,
+          itemId: item.itemId,
+          bomId: item.bomId ?? null,
+          routingId: item.routingId ?? null,
+          plannedQty: item.plannedQty,
+          note: item.note ?? null,
+          salesOrderItemId: null,
+        },
+      })
+    }
+
+    await tx.productionPlan.update({
       where: { id },
       data: {
         ...headerFields,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         note: note ?? null,
-        items: {
-          create: items.map((item) => ({
-            itemId: item.itemId,
-            bomId: item.bomId ?? null,
-            routingId: item.routingId ?? null,
-            plannedQty: item.plannedQty,
-            note: item.note ?? null,
-          })),
-        },
       },
-    }),
-  ])
+    })
+  })
 
   revalidatePath("/app/mes/production-plan")
 }
