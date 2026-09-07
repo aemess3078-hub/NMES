@@ -14,7 +14,8 @@ import {
 import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { checkDefectCodeReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
-import { validateMeasurements, type CreateMeasurementInput } from "./inspection-measurement.helpers"
+import { type CreateMeasurementInput } from "./inspection-measurement.helpers"
+import { assertInspectionHistoryMutable, validateInspectionMutationContext } from "./quality-inspection-integrity.helpers"
 
 export type { CreateMeasurementInput }
 
@@ -578,54 +579,7 @@ export async function createQualityInspection(
 ) {
   await requireRole("OPERATOR")
 
-  const [operation, spec, inspector] = await Promise.all([
-    prisma.workOrderOperation.findFirst({
-      where: {
-        id: data.workOrderOperationId,
-        workOrder: { tenantId },
-      },
-      select: { routingOperationId: true },
-    }),
-    prisma.inspectionSpec.findFirst({
-      where: {
-        id: data.inspectionSpecId,
-        tenantId,
-        status: "ACTIVE",
-      },
-      select: {
-        routingOperationId: true,
-        inspectionItems: {
-          select: { id: true, name: true, inputType: true, lowerLimit: true, upperLimit: true, unit: true },
-        },
-      },
-    }),
-    prisma.profile.findFirst({
-      where: {
-        id: data.inspectorId,
-        tenantUsers: { some: { tenantId, isActive: true } },
-      },
-      select: { id: true },
-    }),
-  ])
-
-  if (!operation) throw new Error("Inspection target operation was not found.")
-  if (!spec) throw new Error("Active inspection spec was not found.")
-  if (!inspector) throw new Error("Inspector was not found.")
-  if (spec.routingOperationId !== operation.routingOperationId) {
-    throw new Error("Inspection spec does not match the selected operation.")
-  }
-
-  if (data.defectRecords.length > 0) {
-    const defectCodeIds = Array.from(new Set(data.defectRecords.map((record) => record.defectCodeId)))
-    const validDefectCodeCount = await prisma.defectCode.count({
-      where: { tenantId, id: { in: defectCodeIds } },
-    })
-    if (validDefectCodeCount !== defectCodeIds.length) {
-      throw new Error("One or more defect codes do not belong to this tenant.")
-    }
-  }
-
-  const validatedMeasurements = validateMeasurements(data.measurements ?? [], spec.inspectionItems)
+  const { validatedMeasurements } = await validateInspectionMutationContext(prisma, tenantId, data)
   const inspectedAt = new Date(data.inspectedAt)
 
   await prisma.$transaction(async (tx) => {
@@ -683,6 +637,8 @@ export async function createQualityInspection(
 
 export async function updateInspectionResult(id: string, result: InspectionResult) {
   await requireRole("OPERATOR")
+  const tenantId = await getTenantId()
+  await assertInspectionHistoryMutable(prisma, id, tenantId)
   await prisma.qualityInspection.update({
     where: { id },
     data: { result },
@@ -696,23 +652,7 @@ export async function deleteQualityInspection(id: string) {
   await prisma.$transaction(async (tx) => {
     // client가 다른 tenant의 QualityInspection id를 직접 보내도 삭제되지 않도록,
     // 같은 트랜잭션 안에서 tenant 소속을 먼저 확인한 뒤에만 삭제를 진행한다.
-    const inspection = await tx.qualityInspection.findFirst({
-      where: { id, workOrderOperation: { workOrder: { tenantId } } },
-      select: { id: true },
-    })
-    if (!inspection) throw new Error("검사 기록을 찾을 수 없습니다.")
-
-    // PR #55: DefectCauseAnalysis.defectRecordId -> DefectRecord는 RESTRICT라
-    // DefectRecord보다 먼저 지워야 한다(원인분석 자체를 삭제하는 기능이 아니라,
-    // 검사 전체 삭제 시 남는 자식 row를 정리하는 referential integrity 용도).
-    // 조치관리(DefectCorrectiveAction.defectRecordId도 RESTRICT)도 동일한 이유로
-    // DefectRecord보다 먼저 정리한다 — 조치이력 자체를 삭제하는 기능이 아니라,
-    // 검사 전체 삭제 시 남는 자식 row를 정리하는 용도다.
-    // 재발방지관리(DefectRecurrencePrevention.defectRecordId도 RESTRICT)도
-    // 동일한 이유로 DefectRecord보다 먼저 정리한다.
-    await tx.defectCauseAnalysis.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
-    await tx.defectCorrectiveAction.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
-    await tx.defectRecurrencePrevention.deleteMany({ where: { defectRecord: { qualityInspectionId: id } } })
+    await assertInspectionHistoryMutable(tx, id, tenantId)
     await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
     await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
     await tx.qualityInspection.delete({ where: { id } })
