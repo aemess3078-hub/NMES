@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth';
 import { isDeveloperUser } from '@/lib/developer';
 import { Sidebar } from '@/components/layout/sidebar';
@@ -7,11 +7,12 @@ import { MES_NAV } from '@/lib/nav-config';
 import { FeatureProvider } from '@/lib/contexts/feature-context'
 import { UserRoleProvider } from '@/lib/contexts/user-role-context';
 import { getEnabledFeatureCodes, getEnabledMenuCodes } from '@/lib/services/feature.service';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { IdleLogoutProvider } from './idle-logout-provider';
 import { NMES_SESSION_COOKIE } from '@/lib/jwt';
 import type { NavItem } from '@/types/menu';
 import type { UserRole } from '@prisma/client';
+import { canReadMenuCode, canReadPath, getCurrentPermissionSnapshot } from '@/lib/auth/role-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +61,12 @@ export default async function AppLayout({
 
   const userRole = user.role
   const isDev = isDeveloperUser(user)
+  const permissionSnapshot = await getCurrentPermissionSnapshot(user)
+  const pathname = (await headers()).get('x-nmes-pathname') ?? ''
+  if (!canReadPath(permissionSnapshot, pathname)) {
+    notFound()
+  }
+
   function filterNav(items: NavItem[], codes: string[]): NavItem[] {
     return items.reduce<NavItem[]>((acc, item) => {
       // 개발자 전용 메뉴: loginId='test' 계정에만 표시
@@ -74,6 +81,7 @@ export default async function AppLayout({
         acc.push(item)
       } else {
         const menuCode = item.href.split('/').pop() ?? ''
+        if (!canReadMenuCode(permissionSnapshot, menuCode)) return acc
         if (codes.includes(menuCode)) acc.push(item)
       }
       return acc

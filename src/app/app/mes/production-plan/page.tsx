@@ -1,9 +1,11 @@
 export const dynamic = "force-dynamic"
 
 import { getTenantId } from "@/lib/auth"
+import { getResourcePermissions } from "@/lib/auth/role-permissions"
 import { getProductionPlans, getSites, getItemsForPlan } from "@/lib/actions/production-plan.actions"
 import { PlanDataTable } from "./plan-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
+import { notFound } from "next/navigation"
 
 export default async function ProductionPlanPage() {
   const tenantId = await getTenantId()
@@ -16,6 +18,9 @@ export default async function ProductionPlanPage() {
       </div>
     )
   }
+
+  const permissions = await getResourcePermissions("PRODUCTION_PLAN")
+  if (!permissions.canRead) notFound()
 
   const [plans, sites, items] = await Promise.all([
     getProductionPlans(),
@@ -40,6 +45,7 @@ export default async function ProductionPlanPage() {
         sites={sites}
         items={items}
         tenantId={tenantId}
+        permissions={permissions}
       />
     </div>
   )
