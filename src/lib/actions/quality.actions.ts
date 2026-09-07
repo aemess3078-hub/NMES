@@ -253,6 +253,8 @@ function serializeQualityInspection(inspection: QualityInspectionRecord): Qualit
 function revalidateQualityViews() {
   revalidatePath("/app/mes/inspection")
   revalidatePath("/app/mes/manufacturing-traceability")
+  revalidatePath("/app/mes/final-inspection")
+  revalidatePath("/app/mes/finished-goods-receipt")
 }
 
 async function getInspectionSpecRecord(routingOperationId: string, tenantId: string) {

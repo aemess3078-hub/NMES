@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
+import { assertLotQualityReleaseAllowed } from "./quality-release-gate.helpers"
 import type { Prisma } from "@prisma/client"
 
 export async function getShipments(tenantId: string) {
@@ -536,6 +537,8 @@ export async function createShipment(
         if (lot.itemId !== item.itemId) {
           throw new Error(`LOT(${lot.lotNo}) 품목과 출하 품목이 일치하지 않습니다.`)
         }
+
+        await assertLotQualityReleaseAllowed(tx, { tenantId, lotId: lot.id })
 
         const balance = await tx.inventoryBalance.findFirst({
           where: {

@@ -12,6 +12,7 @@ const INSPECTION_CONFIG = {
   PASS: { label: "합격", className: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle2 },
   FAIL: { label: "불합격", className: "bg-red-100 text-red-800 border-red-200", icon: AlertCircle },
   CONDITIONAL: { label: "조건부", className: "bg-amber-100 text-amber-800 border-amber-200", icon: AlertCircle },
+  NOT_INSPECTED: { label: "미검사", className: "bg-slate-100 text-slate-700 border-slate-200", icon: Clock },
 } as const
 
 type GetColumnsProps = {
@@ -108,15 +109,18 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
       id: "inspectionResult",
       header: "검사결과",
       cell: ({ row }) => {
-        const result = row.original.latestInspectionResult
-        if (!result) {
+        const release = row.original.qualityRelease
+        if (!release.requiresInspection) {
           return (
             <div className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[13px] text-muted-foreground">검사 없음</span>
+              <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[13px] text-muted-foreground">검사비대상</span>
             </div>
           )
         }
+        const result = release.inspectionStatus === "NOT_REQUIRED"
+          ? "NOT_INSPECTED"
+          : release.inspectionStatus
         const cfg = INSPECTION_CONFIG[result]
         const Icon = cfg.icon
         return (
@@ -151,12 +155,18 @@ export function getColumns({ onReceipt }: GetColumnsProps): ColumnDef<WorkOrderF
       cell: ({ row }) => {
         const wo = row.original
         if (wo.pendingQty <= 0) return null
+        const qualityBlocked = wo.qualityRelease.requiresInspection &&
+          wo.qualityRelease.inspectionResult !== "PASS"
         return (
           <Button
             size="sm"
             variant="outline"
             className="h-7 text-[13px] px-2 gap-1 border-green-200 text-green-700 hover:bg-green-50"
             onClick={() => onReceipt(wo)}
+            disabled={qualityBlocked}
+            title={qualityBlocked ? (wo.qualityRelease.inspectionResult === "FAIL"
+              ? "최종검사 불합격 제품은 입고할 수 없습니다."
+              : "최종검사를 완료한 후 완제품을 입고할 수 있습니다.") : undefined}
           >
             <PackagePlus className="h-3.5 w-3.5" />
             입고처리

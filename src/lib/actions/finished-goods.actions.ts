@@ -11,6 +11,11 @@ import {
   WIP_RECEIPT_BLOCK_REASONS,
   computeWipReceiptStatus,
 } from "./wip-receipt.helpers"
+import {
+  assertWorkOrderQualityReleaseAllowed,
+  getWorkOrderQualityReleaseStatus,
+  type QualityReleaseStatus,
+} from "./quality-release-gate.helpers"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +34,7 @@ export type WorkOrderForReceipt = {
   pendingQty: number
   isWipTracked: boolean
   receiptBlockedReason: string | null
-  latestInspectionResult: "PASS" | "FAIL" | "CONDITIONAL" | null
+  qualityRelease: QualityReleaseStatus
   // WipUnit 진행 상태 — 입고 가능 여부 판단 보조용. null 이면 WIP 추적 없는 레거시 작업지시.
   wipUnitStatus: string | null
   receipts: {
@@ -138,11 +143,6 @@ export async function getWorkOrdersForReceipt(
           productionResults: {
             select: { id: true, goodQty: true, reworkQty: true },
           },
-          qualityInspections: {
-            select: { result: true, inspectedAt: true },
-            orderBy: { inspectedAt: "desc" },
-            take: 1,
-          },
         },
         orderBy: { seq: "desc" },
       },
@@ -184,14 +184,14 @@ export async function getWorkOrdersForReceipt(
     orderBy: { updatedAt: "desc" },
   })
 
-  return workOrders.map((wo) => {
+  return Promise.all(workOrders.map(async (wo) => {
     const receiptQuantity = calculateReceiptQuantity(wo)
     const latestRootWipUnit = receiptQuantity.rootWipUnits[0] ?? null
 
-    // 가장 최근 공정(마지막 seq)의 검사 결과
-    const latestInspection = wo.operations
-      .flatMap((op) => op.qualityInspections)
-      .sort((a, b) => new Date(b.inspectedAt).getTime() - new Date(a.inspectedAt).getTime())[0]
+    const qualityRelease = await getWorkOrderQualityReleaseStatus(prisma, {
+      tenantId,
+      workOrderId: wo.id,
+    })
 
     return {
       id: wo.id,
@@ -208,7 +208,7 @@ export async function getWorkOrdersForReceipt(
       pendingQty: receiptQuantity.pendingQty,
       isWipTracked: receiptQuantity.isWipTracked,
       receiptBlockedReason: receiptQuantity.receiptBlockedReason,
-      latestInspectionResult: (latestInspection?.result as WorkOrderForReceipt["latestInspectionResult"]) ?? null,
+      qualityRelease,
       wipUnitStatus: latestRootWipUnit?.status ?? null,
       receipts: wo.finishedGoodsReceipts.map((r) => ({
         id: r.id,
@@ -219,7 +219,7 @@ export async function getWorkOrdersForReceipt(
         location: r.location,
       })),
     }
-  })
+  }))
 }
 
 // ─── 완제품 입고 로케이션 목록 (Warehouse) ─────────────────────────────────
@@ -334,6 +334,12 @@ export async function createFinishedGoodsReceiptAction(
       if (workOrder.siteId !== data.siteId) {
         throw new Error("입고 창고가 올바르지 않습니다.")
       }
+
+      await assertWorkOrderQualityReleaseAllowed(tx, {
+        tenantId,
+        workOrderId: workOrder.id,
+        target: "RECEIPT",
+      })
 
       const { warehouse, location } = await resolveFinishedGoodsReceiptDestination(tx, {
         warehouseId: data.warehouseId,
