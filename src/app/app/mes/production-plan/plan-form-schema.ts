@@ -2,6 +2,8 @@ import { z } from "zod"
 import { PlanType, PlanStatus } from "@prisma/client"
 
 export const planItemFormSchema = z.object({
+  productionPlanItemId: z.string().optional().nullable(),
+  salesOrderItemId: z.string().optional().nullable(),
   itemId: z.string().min(1, "품목을 선택하세요"),
   bomId: z.string().optional().nullable(),
   routingId: z.string().optional().nullable(),

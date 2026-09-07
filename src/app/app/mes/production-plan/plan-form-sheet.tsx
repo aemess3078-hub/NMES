@@ -92,6 +92,8 @@ const planStatusOptions = [
 ]
 
 const DEFAULT_ITEM = {
+  productionPlanItemId: null,
+  salesOrderItemId: null,
   itemId: "",
   bomId: null,
   routingId: null,
@@ -169,6 +171,8 @@ export function PlanFormSheet({
         status: plan.status,
         note: plan.note ?? "",
         items: plan.items.map((item) => ({
+          productionPlanItemId: item.id,
+          salesOrderItemId: item.salesOrderItemId,
           itemId: item.itemId,
           bomId: item.bomId ?? null,
           routingId: item.routingId ?? null,
@@ -444,6 +448,7 @@ export function PlanFormSheet({
                                   <SearchableItemCombobox
                                     items={items}
                                     value={f.value ?? ""}
+                                    disabled={Boolean(watchedItems[index]?.salesOrderItemId)}
                                     disabledItemIds={selectedInOtherRows}
                                     onSelect={(itemId) =>
                                       handleItemChangeForRow(index, itemId)
