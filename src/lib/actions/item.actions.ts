@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db/prisma"
 import { Prisma, ItemStatus, UOM, LotNumberingType, ManualLotPolicy } from "@prisma/client"
 import { ItemFormValues } from "@/app/app/mes/items/item-form-schema"
 import { checkItemReferencesForBulk } from "./reference-check.server"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 /** 선택 일괄삭제 권한: ADMIN 이상, 또는 role 계층과 무관한 개발자 계정(loginId='test'). */
 async function requireBulkDeletePermission(): Promise<CurrentUser> {
@@ -153,6 +154,7 @@ async function resolveCategoryAndValidateGroup(
 }
 
 export async function createItem(data: ItemFormValues) {
+  await requireResourcePermission("ITEM", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -203,6 +205,7 @@ export async function createItem(data: ItemFormValues) {
 }
 
 export async function updateItem(id: string, data: ItemFormValues) {
+  await requireResourcePermission("ITEM", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -289,6 +292,7 @@ export async function checkItemReferences(id: string): Promise<ItemReferenceCoun
 }
 
 export async function deleteItem(id: string) {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.item.findFirst({ where: { id, tenantId } })
@@ -367,6 +371,7 @@ export type BulkDeleteItemsResult = {
  * race condition 방지를 위해 삭제 직전 품목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteItems(ids: string[]): Promise<BulkDeleteItemsResult> {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }

@@ -4,6 +4,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { SiteType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type SiteWithLocations = {
   id: string
@@ -70,6 +71,7 @@ export type CreateSiteInput = {
 }
 
 export async function createSite(data: CreateSiteInput) {
+  await requireResourcePermission("ITEM", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const site = await prisma.site.create({
@@ -96,6 +98,7 @@ export async function createSite(data: CreateSiteInput) {
 }
 
 export async function updateSite(id: string, data: CreateSiteInput) {
+  await requireResourcePermission("ITEM", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.site.findFirst({ where: { id, tenantId } })
@@ -122,6 +125,7 @@ export async function updateSite(id: string, data: CreateSiteInput) {
 }
 
 export async function deleteSite(id: string) {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.site.findFirst({ where: { id, tenantId } })

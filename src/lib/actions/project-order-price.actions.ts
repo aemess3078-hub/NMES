@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { getErrorMessage } from "@/lib/utils"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── 청운커팅 사업계획서 "영업관리 > 프로젝트 단가관리" (PR #52A) ────────────────
 //
@@ -498,6 +499,7 @@ export type CreateProjectOrderPriceInput = {
 export async function createProjectOrderPrice(
   input: CreateProjectOrderPriceInput
 ): Promise<{ ok: boolean; error?: string; projectOrderPriceId?: string }> {
+  await requireResourcePermission("PROJECT_PRICE", "CREATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -652,6 +654,7 @@ function resolveManualCurrency(manualCurrency: string | undefined, fallback: str
 export async function updateProjectOrderPrice(
   input: UpdateProjectOrderPriceInput
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_PRICE", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -801,6 +804,7 @@ export async function updateProjectOrderPrice(
 // 오등록이 아닌 이상 삭제 대상이 아니다. DRAFT 오입력만 삭제 허용.
 
 export async function deleteProjectOrderPrice(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_PRICE", "DELETE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -850,6 +854,7 @@ export async function setProjectOrderPriceFinal(
   id: string,
   input: { finalUnitPrice: number; decisionReason?: string | null }
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PROJECT_PRICE", "UPDATE")
   try {
     const actor = await requireRole("MANAGER")
     const tenantId = await getTenantId()

@@ -1,6 +1,7 @@
 import { readFileSync } from "fs"
 import { join } from "path"
 import assert from "assert"
+import ts from "typescript"
 
 const root = process.cwd()
 
@@ -11,6 +12,29 @@ function read(path: string) {
 function ok(value: unknown, message: string) {
   assert.ok(value, message)
   console.log(`PASS ${message}`)
+}
+
+function functionBody(source: string, filePath: string, functionName: string): string {
+  const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  let body = ""
+
+  function visit(node: ts.Node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === functionName && node.body) {
+      body = source.slice(node.body.getStart(sourceFile), node.body.end)
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  assert.ok(body, `${filePath} exports ${functionName}`)
+  return body
+}
+
+function hasGuard(filePath: string, functionName: string, resource: string, action: string) {
+  return functionBody(read(filePath), filePath, functionName).includes(
+    `requireResourcePermission("${resource}", "${action}")`
+  )
 }
 
 const schema = read("prisma/schema.prisma")
@@ -37,6 +61,8 @@ ok(!/from "react"/.test(rolePermissions) && !/cache\(/.test(rolePermissions), "s
 ok(/if\s*\(tenantUser\.role === "OWNER"\)/.test(rolePermissions), "existing OWNER full-access policy is preserved")
 ok(/throw new Error\(ROLE_PERMISSION_DENIED_MESSAGE\)/.test(rolePermissions), "server mutation guard fails before mutation when permission is missing")
 ok(/configured\.has\(permissionKey\(resource,\s*"READ"\)\)/.test(rolePermissions), "menu/page READ filtering only applies when a READ row exists")
+ok(rolePermissions.includes('"material-return": "PURCHASE_ORDER"') && rolePermissions.includes('"equipment-tools": "EQUIPMENT"') && rolePermissions.includes('spc: "QUALITY_INSPECTION"'), "menu/page READ mapping covers routed MES resources without creating new resource codes")
+ok(["SALES_ORDER", "SHIPMENT", "QUOTATION", "COSTING"].every((resource) => permissionActions.includes(`"${resource}"`)), "permission catalog includes seeded sales/quotation/costing resources")
 
 ok(middleware.includes("x-nmes-pathname"), "middleware forwards pathname to the app layout for direct URL guard")
 ok(layout.includes("getCurrentPermissionSnapshot(user)") && layout.includes("canReadPath(permissionSnapshot, pathname)") && layout.includes("canReadMenuCode(permissionSnapshot, menuCode)"), "app layout applies RolePermission READ to direct URL and Sidebar")
@@ -51,6 +77,75 @@ ok(/where:\s*\{\s*tenantId:\s*user\.tenantId/.test(productionPlanActions), "prod
 
 ok(productionPlanTable.includes("permissions.canCreate"), "production plan create button follows CREATE permission")
 ok(productionPlanColumns.includes("canUpdate") && productionPlanColumns.includes("canDeletePlan"), "production plan row actions follow UPDATE/DELETE permissions")
+
+const expectedMutationGuards: Array<[string, string, string, string]> = [
+  ["src/lib/actions/business-partner.actions.ts", "createBusinessPartner", "PARTNER_MANAGEMENT", "CREATE"],
+  ["src/lib/actions/business-partner.actions.ts", "updateBusinessPartner", "PARTNER_MANAGEMENT", "UPDATE"],
+  ["src/lib/actions/business-partner.actions.ts", "deleteBusinessPartner", "PARTNER_MANAGEMENT", "DELETE"],
+  ["src/lib/actions/item.actions.ts", "createItem", "ITEM", "CREATE"],
+  ["src/lib/actions/item.actions.ts", "updateItem", "ITEM", "UPDATE"],
+  ["src/lib/actions/item.actions.ts", "deleteItem", "ITEM", "DELETE"],
+  ["src/lib/actions/bom.actions.ts", "createBom", "BOM", "CREATE"],
+  ["src/lib/actions/bom.actions.ts", "updateBom", "BOM", "UPDATE"],
+  ["src/lib/actions/bom.actions.ts", "deleteBom", "BOM", "DELETE"],
+  ["src/lib/actions/routing.actions.ts", "createRouting", "ROUTING", "CREATE"],
+  ["src/lib/actions/routing.actions.ts", "updateRouting", "ROUTING", "UPDATE"],
+  ["src/lib/actions/routing.actions.ts", "deleteRouting", "ROUTING", "DELETE"],
+  ["src/lib/actions/sales-order.actions.ts", "createSalesOrder", "SALES_ORDER", "CREATE"],
+  ["src/lib/actions/sales-order.actions.ts", "updateSalesOrder", "SALES_ORDER", "UPDATE"],
+  ["src/lib/actions/sales-order.actions.ts", "deleteSalesOrder", "SALES_ORDER", "DELETE"],
+  ["src/lib/actions/production-plan.actions.ts", "createPlan", "PRODUCTION_PLAN", "CREATE"],
+  ["src/lib/actions/production-plan.actions.ts", "updatePlan", "PRODUCTION_PLAN", "UPDATE"],
+  ["src/lib/actions/production-plan.actions.ts", "deletePlan", "PRODUCTION_PLAN", "DELETE"],
+  ["src/lib/actions/work-order.actions.ts", "createWorkOrder", "WORK_ORDER", "CREATE"],
+  ["src/lib/actions/work-order.actions.ts", "updateWorkOrder", "WORK_ORDER", "UPDATE"],
+  ["src/lib/actions/work-order.actions.ts", "deleteWorkOrder", "WORK_ORDER", "DELETE"],
+  ["src/lib/actions/material-issue.actions.ts", "issueMaterialsForWorkOrder", "PURCHASE_ORDER", "CREATE"],
+  ["src/lib/actions/purchase-order.actions.ts", "createPurchaseOrder", "PURCHASE_ORDER", "CREATE"],
+  ["src/lib/actions/purchase-order.actions.ts", "updatePurchaseOrder", "PURCHASE_ORDER", "UPDATE"],
+  ["src/lib/actions/purchase-order.actions.ts", "deletePurchaseOrder", "PURCHASE_ORDER", "DELETE"],
+  ["src/lib/actions/receiving.actions.ts", "createReceivingInspection", "PURCHASE_ORDER", "CREATE"],
+  ["src/lib/actions/inventory.actions.ts", "createTransaction", "INVENTORY_TXN", "CREATE"],
+  ["src/lib/actions/inventory.actions.ts", "adjustInventoryStock", "INVENTORY", "UPDATE"],
+  ["src/lib/actions/finished-goods.actions.ts", "createFinishedGoodsReceiptAction", "WORK_RESULT", "CREATE"],
+  ["src/lib/actions/process-progress.actions.ts", "updateOperationStatusAction", "WORK_RESULT", "UPDATE"],
+  ["src/lib/actions/lot.actions.ts", "createLot", "LOT", "CREATE"],
+  ["src/lib/actions/lot.actions.ts", "updateLotStatus", "LOT", "UPDATE"],
+  ["src/lib/actions/lot-reservation.actions.ts", "reserveReceivingLotNumber", "PURCHASE_ORDER", "CREATE"],
+  ["src/lib/actions/lot-reservation.actions.ts", "markLotReservationPrinted", "PURCHASE_ORDER", "CREATE"],
+  ["src/lib/actions/numbering-rule.actions.ts", "upsertNumberingRule", "LOT", "UPDATE"],
+  ["src/lib/actions/outsourcing.actions.ts", "createOutsourcingOrder", "PURCHASE_ORDER", "CREATE"],
+  ["src/lib/actions/outsourcing.actions.ts", "issueWipUnitToOutsourcing", "PURCHASE_ORDER", "UPDATE"],
+  ["src/lib/actions/outsourcing.actions.ts", "receiveWipUnitFromOutsourcing", "PURCHASE_ORDER", "UPDATE"],
+  ["src/lib/actions/outsourcing.actions.ts", "inspectOutsourcedWipUnit", "QUALITY_INSPECTION", "CREATE"],
+  ["src/lib/actions/quality.actions.ts", "createQualityInspection", "QUALITY_INSPECTION", "CREATE"],
+  ["src/lib/actions/quality.actions.ts", "updateInspectionResult", "QUALITY_INSPECTION", "UPDATE"],
+  ["src/lib/actions/quality.actions.ts", "deleteQualityInspection", "QUALITY_INSPECTION", "DELETE"],
+  ["src/lib/actions/quality.actions.ts", "createDefectCode", "DEFECT_MANAGEMENT", "CREATE"],
+  ["src/lib/actions/quality.actions.ts", "updateDefectCode", "DEFECT_MANAGEMENT", "UPDATE"],
+  ["src/lib/actions/quality.actions.ts", "deleteDefectCode", "DEFECT_MANAGEMENT", "DELETE"],
+  ["src/lib/actions/defect-cause-analysis.actions.ts", "createDefectCauseAnalysis", "DEFECT_MANAGEMENT", "CREATE"],
+  ["src/lib/actions/defect-cause-analysis.actions.ts", "updateDefectCauseAnalysis", "DEFECT_MANAGEMENT", "UPDATE"],
+  ["src/lib/actions/defect-corrective-action.actions.ts", "createDefectCorrectiveAction", "DEFECT_MANAGEMENT", "CREATE"],
+  ["src/lib/actions/defect-corrective-action.actions.ts", "updateDefectCorrectiveAction", "DEFECT_MANAGEMENT", "UPDATE"],
+  ["src/lib/actions/defect-recurrence-prevention.actions.ts", "createDefectRecurrencePrevention", "DEFECT_MANAGEMENT", "CREATE"],
+  ["src/lib/actions/defect-recurrence-prevention.actions.ts", "updateDefectRecurrencePrevention", "DEFECT_MANAGEMENT", "UPDATE"],
+  ["src/lib/actions/equipment.actions.ts", "createEquipment", "EQUIPMENT", "CREATE"],
+  ["src/lib/actions/equipment.actions.ts", "updateEquipment", "EQUIPMENT", "UPDATE"],
+  ["src/lib/actions/equipment.actions.ts", "deleteEquipment", "EQUIPMENT", "DELETE"],
+  ["src/lib/actions/tool.actions.ts", "createTool", "EQUIPMENT", "CREATE"],
+  ["src/lib/actions/tool.actions.ts", "updateTool", "EQUIPMENT", "UPDATE"],
+  ["src/lib/actions/tool.actions.ts", "deleteTool", "EQUIPMENT", "DELETE"],
+  ["src/lib/actions/shipment.actions.ts", "createShipment", "SHIPMENT", "CREATE"],
+  ["src/lib/actions/shipment.actions.ts", "confirmShipment", "SHIPMENT", "UPDATE"],
+  ["src/lib/actions/shipment.actions.ts", "deleteShipment", "SHIPMENT", "DELETE"],
+  ["src/lib/actions/user-management.actions.ts", "updateUserRole", "USER_MANAGEMENT", "UPDATE"],
+  ["src/lib/actions/user-management.actions.ts", "deleteUserPermanently", "USER_MANAGEMENT", "DELETE"],
+]
+
+for (const [filePath, functionName, resource, action] of expectedMutationGuards) {
+  ok(hasGuard(filePath, functionName, resource, action), `${resource} ${action} server guard protects ${functionName}`)
+}
 
 ok(/rolePermission\.findFirst\(\{\s*where:\s*\{\s*id,\s*tenantId:\s*actor\.tenantId\s*\}/.test(permissionActions), "single permission update is scoped to actor tenant")
 ok(/rolePermission\.findMany\(\{[\s\S]*where:\s*\{\s*id:\s*\{\s*in:\s*ids\s*\},\s*tenantId:\s*actor\.tenantId\s*\}/.test(permissionActions), "bulk permission update verifies all target rows are in actor tenant")

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { PurchaseOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -178,6 +179,7 @@ export async function createPurchaseOrder(
   siteId: string,
   data: CreatePurchaseOrderInput
 ) {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   await requireRole("OPERATOR")
   const orderNo = await generatePurchaseOrderNo(tenantId)
 
@@ -227,6 +229,7 @@ export type UpdatePurchaseOrderInput = {
 }
 
 export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderInput) {
+  await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   await requireRole("OPERATOR")
   const current = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
   const canEditItems = current.status === "DRAFT"
@@ -263,6 +266,7 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
 }
 
 export async function deletePurchaseOrder(id: string) {
+  await requireResourcePermission("PURCHASE_ORDER", "DELETE")
   await requireRole("OPERATOR")
   const order = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
   if (order.status !== "DRAFT") {

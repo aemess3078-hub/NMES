@@ -16,6 +16,7 @@ import {
   getWorkOrderQualityReleaseStatus,
   type QualityReleaseStatus,
 } from "./quality-release-gate.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -265,6 +266,7 @@ export async function createFinishedGoodsReceiptAction(
   data: CreateReceiptInput,
   requestedTenantId?: string
 ): Promise<{ ok: boolean; error?: string; lotNo?: string }> {
+  await requireResourcePermission("WORK_RESULT", "CREATE")
   try {
     let currentUser: Awaited<ReturnType<typeof requireRole>>
     try {

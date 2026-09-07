@@ -14,6 +14,7 @@ import {
   type CorrectiveActionStatusFilter,
   type DefectCorrectiveActionRow,
 } from "./defect-corrective-action.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type { DefectCorrectiveActionRow }
 
@@ -296,6 +297,7 @@ export type CreateDefectCorrectiveActionInput = {
 export async function createDefectCorrectiveAction(
   data: CreateDefectCorrectiveActionInput
 ): Promise<{ id: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -355,6 +357,7 @@ export type UpdateDefectCorrectiveActionInput = {
 }
 
 export async function updateDefectCorrectiveAction(id: string, data: UpdateDefectCorrectiveActionInput) {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -396,6 +399,7 @@ export async function updateDefectCorrectiveAction(id: string, data: UpdateDefec
 // ─── 상태전이: 조치 진행 (OPEN → IN_PROGRESS) ────────────────────────────────
 
 export async function startDefectCorrectiveAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()
@@ -440,6 +444,7 @@ export async function completeDefectCorrectiveAction(
   id: string,
   completionNote?: string | null
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("DEFECT_MANAGEMENT", "UPDATE")
   try {
     const actor = await requireRole("OPERATOR")
     const tenantId = await getTenantId()

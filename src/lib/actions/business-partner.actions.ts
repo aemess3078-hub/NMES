@@ -3,6 +3,7 @@
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma, PartnerType, PartnerStatus } from "@prisma/client"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type BusinessPartner = {
   id: string
@@ -78,6 +79,7 @@ export async function getBusinessPartners(type?: "CUSTOMER" | "SUPPLIER"): Promi
 }
 
 export async function createBusinessPartner(_tenantId: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
+  await requireResourcePermission("PARTNER_MANAGEMENT", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const existing = await prisma.businessPartner.findFirst({
@@ -104,6 +106,7 @@ export async function createBusinessPartner(_tenantId: string, data: BusinessPar
 }
 
 export async function updateBusinessPartner(id: string, data: BusinessPartnerFormValues): Promise<BusinessPartner> {
+  await requireResourcePermission("PARTNER_MANAGEMENT", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.businessPartner.findFirst({ where: { id, tenantId } })
@@ -135,6 +138,7 @@ export async function updateBusinessPartner(id: string, data: BusinessPartnerFor
 }
 
 export async function deleteBusinessPartner(id: string): Promise<void> {
+  await requireResourcePermission("PARTNER_MANAGEMENT", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.businessPartner.findFirst({ where: { id, tenantId } })

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { QuotationStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import type { QuotationFormValues } from "@/app/app/mes/quotations/quotation-form-schema"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type QuotationWithDetails = {
   id: string
@@ -117,6 +118,7 @@ async function generateQuotationNo(tenantId: string): Promise<string> {
 }
 
 export async function createQuotation(data: QuotationFormValues, tenantId: string) {
+  await requireResourcePermission("QUOTATION", "CREATE")
   const quotationNo = await generateQuotationNo(tenantId)
   const totalAmount = data.items.reduce((sum, i) => sum + i.qty * i.unitPrice, 0)
 
@@ -149,6 +151,7 @@ export async function createQuotation(data: QuotationFormValues, tenantId: strin
 }
 
 export async function updateQuotation(id: string, data: QuotationFormValues) {
+  await requireResourcePermission("QUOTATION", "UPDATE")
   const current = await prisma.quotation.findUniqueOrThrow({ where: { id } })
   const lockedStatuses: QuotationStatus[] = ["WON", "LOST", "EXPIRED", "CANCELLED"]
   if (lockedStatuses.includes(current.status)) {
@@ -185,6 +188,7 @@ export async function updateQuotation(id: string, data: QuotationFormValues) {
 }
 
 export async function deleteQuotation(id: string) {
+  await requireResourcePermission("QUOTATION", "DELETE")
   const current = await prisma.quotation.findUniqueOrThrow({ where: { id } })
   if (current.status !== "DRAFT") {
     throw new Error("초안(DRAFT) 상태의 견적만 삭제할 수 있습니다")
@@ -207,6 +211,8 @@ export async function convertToSalesOrder(
   quotationId: string,
   tenantId: string
 ): Promise<string> {
+  await requireResourcePermission("QUOTATION", "UPDATE")
+  await requireResourcePermission("SALES_ORDER", "CREATE")
   const quotation = await prisma.quotation.findUniqueOrThrow({
     where: { id: quotationId },
     include: { items: true },

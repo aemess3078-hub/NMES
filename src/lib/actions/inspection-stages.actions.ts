@@ -6,6 +6,7 @@ import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { InspectionStage, InspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { assertInspectionHistoryMutable, validateInspectionMutationContext } from "./quality-inspection-integrity.helpers"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type InspectionStageRow = {
   id: string
@@ -77,6 +78,7 @@ export async function createStagedInspection(data: {
   result: string
   inspectedQty: number
 }) {
+  await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
   const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
 
@@ -113,6 +115,7 @@ export async function updateStagedInspection(
     inspectedAt?: Date
   }
 ) {
+  await requireResourcePermission("QUALITY_INSPECTION", "UPDATE")
   const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
 

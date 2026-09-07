@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import type { WipUnit } from "@prisma/client"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -235,6 +236,7 @@ export async function issueMaterialsForWorkOrder(
   data: IssueMaterialInput,
   tenantId: string
 ): Promise<{ ok: boolean; error?: string }> {
+  await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   await requireRole("OPERATOR")
   const activeItems = data.items.filter((i) => i.issueQty > 0)
   if (activeItems.length === 0)

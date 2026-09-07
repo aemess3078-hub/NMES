@@ -17,6 +17,7 @@ import {
   formatProductionPlanQuantity,
   summarizeProductionPlanItemAllocation,
 } from "@/lib/production-plan-workorder-integrity"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -889,6 +890,7 @@ async function validateProductionPlanItemForWorkOrder(
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: string) {
+  await requireResourcePermission("WORK_ORDER", "CREATE")
   const user = await requireRole("OPERATOR")
   if (tenantId !== user.tenantId) throw new Error("FORBIDDEN")
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
@@ -949,6 +951,7 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
 }
 
 export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
+  await requireResourcePermission("WORK_ORDER", "UPDATE")
   const user = await requireRole("OPERATOR")
   const existing = await prisma.workOrder.findUnique({
     where: { id },
@@ -1042,6 +1045,7 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
 }
 
 export async function releaseWorkOrder(id: string): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("WORK_ORDER", "UPDATE")
   try {
     const user = await requireRole("OPERATOR")
     const existing = await prisma.workOrder.findFirst({
@@ -1077,6 +1081,7 @@ export async function releaseWorkOrder(id: string): Promise<{ success: boolean; 
 }
 
 export async function deleteWorkOrder(id: string) {
+  await requireResourcePermission("WORK_ORDER", "DELETE")
   const user = await requireRole("OPERATOR")
   const existing = await prisma.workOrder.findFirst({
     where: { id, tenantId: user.tenantId },

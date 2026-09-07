@@ -11,6 +11,7 @@ import {
   type CostHistoryItem,
   type CostResult,
 } from "@/lib/services/costing.service"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export async function getItemsForCosting() {
   const tenantId = await getTenantId()
@@ -46,6 +47,7 @@ export async function runStandardCost(
   itemId: string,
   bomId: string
 ): Promise<{ success: boolean; result?: CostResult; error?: string }> {
+  await requireResourcePermission("COSTING", "CREATE")
   try {
     const tenantId = await getTenantId()
     const result = await calculateStandardCost(itemId, bomId, tenantId)
@@ -59,6 +61,7 @@ export async function runActualCost(
   itemId: string,
   workOrderId: string
 ): Promise<{ success: boolean; result?: CostResult; error?: string }> {
+  await requireResourcePermission("COSTING", "CREATE")
   try {
     const tenantId = await getTenantId()
     const result = await calculateActualCost(itemId, workOrderId, tenantId)

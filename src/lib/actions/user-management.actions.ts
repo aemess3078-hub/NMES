@@ -12,6 +12,7 @@ import {
 import { UserRole, type AuditAction, type LoginEventType, type LoginFailReason, type Prisma } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 const RESET_PASSWORD = 'Cns@123'
 
@@ -91,6 +92,7 @@ export async function updateUserRole(
   tenantUserId: string,
   newRole: UserRole
 ): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("USER_MANAGEMENT", "UPDATE")
   try {
     const tenantId = await getTenantId()
     const actor = await requireRole("ADMIN")
@@ -147,6 +149,7 @@ export async function updateUserRole(
 // ─── 비활성화 ─────────────────────────────────────────────────────────────────
 
 export async function deactivateUser(tenantUserId: string): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("USER_MANAGEMENT", "UPDATE")
   try {
     const tenantId = await getTenantId()
     const actor = await requireRole("ADMIN")
@@ -245,6 +248,7 @@ async function getProfileHistoryCounts(profileId: string) {
 export async function deleteUserPermanently(
   tenantUserId: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("USER_MANAGEMENT", "DELETE")
   try {
     const tenantId = await getTenantId()
     const actor = await requireRole("ADMIN")
@@ -753,6 +757,7 @@ export async function getAuditLogsExport(
 // ─── 재활성화 ─────────────────────────────────────────────────────────────────
 
 export async function reactivateUser(tenantUserId: string): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("USER_MANAGEMENT", "UPDATE")
   try {
     const tenantId = await getTenantId()
     const actor = await requireRole("ADMIN")
@@ -793,6 +798,7 @@ export async function reactivateUser(tenantUserId: string): Promise<{ success: b
 export async function resetUserPassword(
   tenantUserId: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("USER_MANAGEMENT", "UPDATE")
   try {
     const tenantId = await getTenantId()
     const actor = await requireFullUserManagementAccess()
@@ -859,6 +865,7 @@ export async function resetUserPopPin(
   tenantUserId: string,
   newPin: string
 ): Promise<{ success: boolean; error?: string }> {
+  await requireResourcePermission("USER_MANAGEMENT", "UPDATE")
   try {
     const tenantId = await getTenantId()
     const actor = await requireFullUserManagementAccess()

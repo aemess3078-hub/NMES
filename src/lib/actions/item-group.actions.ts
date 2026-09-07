@@ -5,6 +5,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { Prisma } from "@prisma/client"
 import { checkItemGroupReferencesForBulk, requireBulkDeletePermission } from "./reference-check.server"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type ItemGroupWithDetails = Prisma.ItemGroupGetPayload<{
   include: {
@@ -35,6 +36,7 @@ export type ItemGroupFormData = {
 }
 
 export async function createItemGroup(data: ItemGroupFormData) {
+  await requireResourcePermission("ITEM", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -72,6 +74,7 @@ export async function createItemGroup(data: ItemGroupFormData) {
 }
 
 export async function updateItemGroup(id: string, data: ItemGroupFormData) {
+  await requireResourcePermission("ITEM", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -113,6 +116,7 @@ export async function updateItemGroup(id: string, data: ItemGroupFormData) {
 }
 
 export async function deleteItemGroup(id: string) {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
@@ -179,6 +183,7 @@ export type BulkDeleteItemGroupsResult = {
  * race condition 방지를 위해 삭제 직전 항목별로 참조 여부를 다시 확인한다.
  */
 export async function bulkDeleteItemGroups(ids: string[]): Promise<BulkDeleteItemGroupsResult> {
+  await requireResourcePermission("ITEM", "DELETE")
   const actor = await requireBulkDeletePermission()
   const tenantId = await getTenantId()
   if (ids.length === 0) return { deleted: [], blocked: [], failed: [] }

@@ -4,6 +4,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
 import { RoutingScope, RoutingStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 export type RoutingWithDetails = {
   id: string
@@ -197,6 +198,7 @@ async function assertItemsOwnedAndEligible(tenantId: string, itemIds: string[]) 
 }
 
 export async function createRouting(data: CreateRoutingInput, _tenantId?: string) {
+  await requireResourcePermission("ROUTING", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const { operations, itemIds, isDefault, scope, ...routingFields } = data
@@ -272,6 +274,7 @@ export async function createRouting(data: CreateRoutingInput, _tenantId?: string
 }
 
 export async function updateRouting(id: string, data: CreateRoutingInput) {
+  await requireResourcePermission("ROUTING", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.routing.findFirst({
@@ -485,6 +488,7 @@ export async function getRoutingUsageSummary(id: string): Promise<RoutingUsageSu
 }
 
 export async function deleteRouting(id: string) {
+  await requireResourcePermission("ROUTING", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.routing.findFirst({ where: { id, tenantId } })

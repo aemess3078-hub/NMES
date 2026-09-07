@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
+import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export type CreateItemPriceInput = {
 }
 
 export async function createItemPrice(tenantId: string, data: CreateItemPriceInput) {
+  await requireResourcePermission("ITEM_PRICE", "CREATE")
   const actor = await requireRole("OPERATOR")
   const created = await prisma.itemPrice.create({
     data: { tenantId, ...data },
@@ -63,6 +65,7 @@ export type UpdateItemPriceInput = {
 }
 
 export async function updateItemPrice(id: string, data: UpdateItemPriceInput) {
+  await requireResourcePermission("ITEM_PRICE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.itemPrice.findUnique({ where: { id } })
@@ -86,6 +89,7 @@ export async function updateItemPrice(id: string, data: UpdateItemPriceInput) {
 }
 
 export async function deleteItemPrice(id: string) {
+  await requireResourcePermission("ITEM_PRICE", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
   const owned = await prisma.itemPrice.findUnique({ where: { id } })
