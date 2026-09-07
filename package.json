@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit",
     "check:server-actions": "ts-node --project tsconfig.json scripts/check-use-server-exports.ts",
     "test:shipment-state-integrity": "ts-node --project tsconfig.json scripts/test-shipment-state-integrity.ts",
+    "test:quality-history-integrity": "ts-node --project tsconfig.json scripts/test-quality-history-integrity.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",

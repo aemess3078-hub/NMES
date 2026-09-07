@@ -5,6 +5,7 @@ import { getTenantId, getCurrentUserId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { InspectionStage, InspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
+import { assertInspectionHistoryMutable, validateInspectionMutationContext } from "./quality-inspection-integrity.helpers"
 
 export type InspectionStageRow = {
   id: string
@@ -79,23 +80,13 @@ export async function createStagedInspection(data: {
   const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
 
-  const [operation, spec] = await Promise.all([
-    prisma.workOrderOperation.findFirst({
-      where: { id: data.workOrderOperationId, workOrder: { tenantId } },
-      select: { routingOperationId: true, workOrder: { select: { itemId: true } } },
-    }),
-    prisma.inspectionSpec.findFirst({
-      where: { id: data.inspectionSpecId, tenantId, status: "ACTIVE" },
-      select: { routingOperationId: true, itemId: true },
-    }),
-  ])
-  if (!operation || !spec) throw new Error("검사 대상 또는 활성 검사표준을 찾을 수 없습니다.")
-  if (
-    operation.routingOperationId !== spec.routingOperationId ||
-    operation.workOrder.itemId !== spec.itemId
-  ) {
-    throw new Error("검사표준이 선택한 작업지시 공정과 일치하지 않습니다.")
-  }
+  await validateInspectionMutationContext(prisma, tenantId, {
+    ...data,
+    inspectorId: userId,
+    result: data.result as InspectionResult,
+    measurements: [],
+    defectRecords: [],
+  })
 
   await prisma.qualityInspection.create({
     data: {
@@ -133,6 +124,9 @@ export async function updateStagedInspection(
     select: { id: true, stage: true, result: true, inspectedQty: true, inspectedAt: true },
   })
   if (!existing) throw new Error("검사 기록을 찾을 수 없거나 권한이 없습니다.")
+  if (data.result !== undefined && data.result !== existing.result) {
+    await assertInspectionHistoryMutable(prisma, inspectionId, tenantId)
+  }
 
   const updated = await prisma.qualityInspection.update({
     where: { id: inspectionId },
