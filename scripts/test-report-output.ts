@@ -94,6 +94,11 @@ function makeResult(over: Partial<{
     reworkQty: o.reworkQty,
     startedAt: o.startedAt,
     endedAt: o.endedAt,
+    workDurationMinutes:
+      o.startedAt && o.endedAt
+        ? Math.round((new Date(o.endedAt).getTime() - new Date(o.startedAt).getTime()) / 60_000)
+        : null,
+    operator: null,
     equipment: o.equipmentName ? { id: "eq1", code: "EQ01", name: o.equipmentName } : null,
     workOrderOperation: {
       id: o.workOrderOperationId,

@@ -542,6 +542,7 @@ model Profile {
   defectRecurrencePreventionsUpdated  DefectRecurrencePrevention[] @relation("DefectRecurrencePreventionUpdater")
   equipmentUsageHistoriesAsOperator   EquipmentUsageHistory[]      @relation("EquipmentUsageOperator")
   equipmentUsageHistoriesCreated      EquipmentUsageHistory[]      @relation("EquipmentUsageCreator")
+  productionResultsOperated           ProductionResult[]           @relation("ProductionResultOperator")
   attachmentsUploaded                 Attachment[]
   backupGroupsCreated                 BackupGroup[]                @relation("BackupGroupCreator")
   backupGroupsUpdated                 BackupGroup[]                @relation("BackupGroupUpdater")
@@ -1375,6 +1376,7 @@ model WorkOrderOperation {
   status             OperationStatus @default(PENDING)
   plannedQty         Decimal         @db.Decimal(18, 6)
   completedQty       Decimal         @default(0) @db.Decimal(18, 6)
+  startedAt          DateTime?
 
   workOrder        WorkOrder        @relation(fields: [workOrderId], references: [id])
   routingOperation RoutingOperation @relation(fields: [routingOperationId], references: [id])
@@ -1403,6 +1405,7 @@ model WorkOrderOperationAssignment {
   assignedQty          Decimal         @db.Decimal(18, 6)
   completedQty         Decimal         @default(0) @db.Decimal(18, 6)
   status               OperationStatus @default(PENDING)
+  startedAt            DateTime?
   seq                  Int             @default(1)
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
@@ -1754,13 +1757,16 @@ model ProductionResult {
   reworkQty                      Decimal   @default(0) @db.Decimal(18, 6)
   startedAt                      DateTime?
   endedAt                        DateTime?
+  operatorId                     String?
 
   workOrderOperation           WorkOrderOperation            @relation(fields: [workOrderOperationId], references: [id])
   workOrderOperationAssignment WorkOrderOperationAssignment? @relation(fields: [workOrderOperationAssignmentId], references: [id])
   sourceWipUnits               WipUnit[]                     @relation("WipUnitSourceProductionResult")
+  operator                     Profile?                      @relation("ProductionResultOperator", fields: [operatorId], references: [id], onDelete: SetNull)
 
   @@index([workOrderOperationId])
   @@index([workOrderOperationAssignmentId])
+  @@index([operatorId])
 }
 
 model FinishedGoodsReceipt {

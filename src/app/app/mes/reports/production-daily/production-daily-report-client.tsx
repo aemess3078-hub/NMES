@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { formatQuantity, formatPercent } from "@/lib/utils"
 import { downloadExcelSheet } from "@/lib/export-excel"
-import { buildReportFilename } from "@/lib/actions/report.helpers"
+import { buildReportFilename, formatKstDateTime } from "@/lib/actions/report.helpers"
 import type {
   DailyProductionReportData,
   ReportFilterOptions,
@@ -84,6 +84,9 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
       "품목코드",
       "품목명",
       "공정",
+      "작업자",
+      "작업시작",
+      "작업종료",
       "계획수량",
       "생산수량",
       "양품수량",
@@ -100,6 +103,9 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
         r.itemCode,
         r.itemName,
         r.operationName,
+        r.operatorName ?? "",
+        formatKstDateTime(r.startedAt),
+        r.endedAt ? formatKstDateTime(r.endedAt) : "",
         r.plannedQty,
         r.producedQty,
         r.goodQty,
@@ -239,6 +245,9 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
                   <TableHead className="text-[13px]">제조번호</TableHead>
                   <TableHead className="text-[13px]">품목</TableHead>
                   <TableHead className="text-[13px]">공정</TableHead>
+                  <TableHead className="text-[13px]">작업자</TableHead>
+                  <TableHead className="text-[13px]">작업시작</TableHead>
+                  <TableHead className="text-[13px]">작업종료</TableHead>
                   <TableHead className="text-[13px] text-right">계획수량</TableHead>
                   <TableHead className="text-[13px] text-right">생산수량</TableHead>
                   <TableHead className="text-[13px] text-right">양품수량</TableHead>
@@ -265,7 +274,7 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
   return (
     <>
       <TableRow className="bg-muted/50">
-        <TableCell colSpan={11} className="text-[13px] font-medium text-foreground">
+        <TableCell colSpan={14} className="text-[13px] font-medium text-foreground">
           {group.date}
         </TableCell>
       </TableRow>
@@ -275,6 +284,9 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
           <TableCell className="text-[14px]">{r.manufacturingNo ?? "-"}</TableCell>
           <TableCell className="text-[14px]">[{r.itemCode}] {r.itemName}</TableCell>
           <TableCell className="text-[14px]">{r.operationName}</TableCell>
+          <TableCell className="text-[14px]">{r.operatorName ?? "-"}</TableCell>
+          <TableCell className="text-[14px] whitespace-nowrap">{formatKstDateTime(r.startedAt)}</TableCell>
+          <TableCell className="text-[14px] whitespace-nowrap">{r.endedAt ? formatKstDateTime(r.endedAt) : "-"}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.plannedQty)}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.producedQty)}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.goodQty)}</TableCell>
@@ -287,7 +299,7 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
         </TableRow>
       ))}
       <TableRow className="border-t-2">
-        <TableCell colSpan={5} className="text-[13px] text-muted-foreground text-right">
+        <TableCell colSpan={8} className="text-[13px] text-muted-foreground text-right">
           {group.date} 소계
         </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">

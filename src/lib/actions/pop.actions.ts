@@ -31,6 +31,7 @@ import {
   assertOperationStartAllowed,
   MATERIAL_NOT_ISSUED_MESSAGE,
 } from "@/lib/operation-status-integrity"
+import { resolveProductionResultTime } from "@/lib/pop-worktime-operator"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,12 +91,7 @@ type PopAuthContext =
 
 async function resolvePopAuthContext(): Promise<PopAuthContext> {
   const popWorkerSession = await getPopWorkerSession()
-  try {
-    const user = await requireRole("OPERATOR")
-    const tenantId = await getTenantId()
-    return { mode: "USER_SESSION", tenantId, profileId: user.profileId }
-  } catch {
-    if (!popWorkerSession) return { mode: "UNAUTHENTICATED" }
+  if (popWorkerSession) {
     return {
       mode: "POP_WORKER_SESSION",
       tenantId: popWorkerSession.tenantId,
@@ -103,6 +99,33 @@ async function resolvePopAuthContext(): Promise<PopAuthContext> {
       profileId: popWorkerSession.profileId,
       session: popWorkerSession,
     }
+  }
+  try {
+    const user = await requireRole("OPERATOR")
+    const tenantId = await getTenantId()
+    return { mode: "USER_SESSION", tenantId, profileId: user.profileId }
+  } catch {
+    return { mode: "UNAUTHENTICATED" }
+  }
+}
+
+async function assertActivePopOperator(
+  tx: Prisma.TransactionClient,
+  authCtx: Exclude<PopAuthContext, { mode: "UNAUTHENTICATED" }>
+): Promise<void> {
+  const tenantUser = await tx.tenantUser.findFirst({
+    where: {
+      tenantId: authCtx.tenantId,
+      profileId: authCtx.profileId,
+      isActive: true,
+      ...(authCtx.mode === "POP_WORKER_SESSION"
+        ? { id: authCtx.session.tenantUserId }
+        : {}),
+    },
+    select: { id: true },
+  })
+  if (!tenantUser) {
+    throw new Error("현재 사업장의 활성 작업자만 생산실적을 처리할 수 있습니다.")
   }
 }
 
@@ -704,6 +727,7 @@ export async function submitProductionResult(
           status: true,
           completedQty: true,
           plannedQty: true,
+          startedAt: true,
           workOrderId: true,
           seq: true,
           assignments: {
@@ -714,6 +738,7 @@ export async function submitProductionResult(
               assignedQty: true,
               completedQty: true,
               status: true,
+              startedAt: true,
             },
             orderBy: { seq: "asc" },
           },
@@ -742,6 +767,7 @@ export async function submitProductionResult(
         }
         assertPopSessionSiteMatch(authCtx.session, op.workOrder.siteId)
       }
+      await assertActivePopOperator(tx, authCtx)
 
       const previousOperations = op.workOrder.operations.filter((candidate) => candidate.seq < op.seq)
 
@@ -844,6 +870,22 @@ export async function submitProductionResult(
         )
         const operationCompletedScaled = sumScaledQty(Array.from(assignmentCompletedById.values()))
 
+        const previousResult = await tx.productionResult.findFirst({
+          where: {
+            workOrderOperationId,
+            workOrderOperationAssignmentId: assignment.id,
+            endedAt: { not: null },
+          },
+          select: { endedAt: true },
+          orderBy: { endedAt: "desc" },
+        })
+        const resultTime = resolveProductionResultTime({
+          endedAt: new Date(),
+          operationStartedAt: op.startedAt,
+          assignmentStartedAt: assignment.startedAt,
+          previousResultEndedAt: previousResult?.endedAt ?? null,
+        })
+
         const createdResult = await tx.productionResult.create({
           data: {
             workOrderOperationId,
@@ -851,8 +893,9 @@ export async function submitProductionResult(
             goodQty,
             defectQty,
             reworkQty,
-            startedAt: new Date(),
-            endedAt: new Date(),
+            startedAt: resultTime.startedAt,
+            endedAt: resultTime.endedAt,
+            operatorId: authCtx.profileId,
           },
         })
 
@@ -973,14 +1016,30 @@ export async function submitProductionResult(
 
       const shouldComplete = newCompletedScaled >= plannedScaled || wipExhaustedAfterThisResult
 
+      const previousResult = await tx.productionResult.findFirst({
+        where: {
+          workOrderOperationId,
+          workOrderOperationAssignmentId: null,
+          endedAt: { not: null },
+        },
+        select: { endedAt: true },
+        orderBy: { endedAt: "desc" },
+      })
+      const resultTime = resolveProductionResultTime({
+        endedAt: new Date(),
+        operationStartedAt: op.startedAt,
+        previousResultEndedAt: previousResult?.endedAt ?? null,
+      })
+
       const createdResult = await tx.productionResult.create({
         data: {
           workOrderOperationId,
           goodQty,
           defectQty,
           reworkQty,
-          startedAt: new Date(),
-          endedAt: new Date(),
+          startedAt: resultTime.startedAt,
+          endedAt: resultTime.endedAt,
+          operatorId: authCtx.profileId,
         },
       })
 
@@ -1087,6 +1146,7 @@ export async function startOperation(
       },
       select: {
         status: true,
+        startedAt: true,
         seq: true,
         workOrderId: true,
         assignments: {
@@ -1095,6 +1155,7 @@ export async function startOperation(
             tenantId: true,
             workOrderOperationId: true,
             status: true,
+            startedAt: true,
           },
         },
         routingOperation: {
@@ -1158,6 +1219,7 @@ export async function startOperation(
     }
 
     await prisma.$transaction(async (tx) => {
+      await assertActivePopOperator(tx, authCtx)
       // 재작업/보류관리 방어(동시성): op.status가 이미 IN_PROGRESS인 경우(새 설비배정만
       // 시작하는 경로)에는 transitionWipUnitOnStart를 거치지 않아 WipUnit을 전혀 쓰지 않으므로
       // createHold의 updateMany와 경쟁해도 자연스러운 row lock이 걸리지 않는다. transaction
@@ -1185,10 +1247,11 @@ export async function startOperation(
         wipStatus: lockedWipStatus,
       })
 
+      const startedAt = new Date()
       if (op.status === "PENDING") {
         await tx.workOrderOperation.update({
           where: { id: operationId },
-          data: { status: "IN_PROGRESS" },
+          data: { status: "IN_PROGRESS", startedAt },
         })
         await tx.workOrder.update({
           where: { id: op.workOrderId },
@@ -1208,7 +1271,7 @@ export async function startOperation(
       if (assignment && assignment.status === "PENDING") {
         await tx.workOrderOperationAssignment.update({
           where: { id: assignment.id },
-          data: { status: "IN_PROGRESS" },
+          data: { status: "IN_PROGRESS", startedAt },
         })
       }
     })
