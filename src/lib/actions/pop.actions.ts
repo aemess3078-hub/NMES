@@ -32,6 +32,10 @@ import {
   MATERIAL_NOT_ISSUED_MESSAGE,
 } from "@/lib/operation-status-integrity"
 import { resolveProductionResultTime } from "@/lib/pop-worktime-operator"
+import {
+  assertProductionQuantityWithinMaterialLimit,
+  getWorkOrderMaterialSufficiency,
+} from "@/lib/bom-material-sufficiency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -585,6 +589,11 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
       ? Math.max(0, Number(rootWipForDisplay.qty) - Number(goodSoFarAgg?._sum?.goodQty ?? 0))
       : null
 
+  const materialSufficiency = await getWorkOrderMaterialSufficiency(prisma, {
+    tenantId: operation.workOrder.tenantId,
+    workOrderOperationId: operation.id,
+  })
+
   // POP 자주검사 불량코드 선택용 목록
   const defectCodes = await prisma.defectCode.findMany({
     where: { tenantId: operation.workOrder.tenantId },
@@ -600,6 +609,22 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     plannedQty: Number(operation.plannedQty),
     completedQty: Number(operation.completedQty),
     availableWipQty,
+    materialSufficiency: {
+      plannedQty: materialSufficiency.plannedQty,
+      producedQty: materialSufficiency.producedQty,
+      materialProducibleQty: materialSufficiency.materialProducibleQty,
+      remainingPlanQty: materialSufficiency.remainingPlanQty,
+      remainingMaterialQty: materialSufficiency.remainingMaterialQty,
+      maxAdditionalProductionQty: materialSufficiency.maxAdditionalProductionQty,
+      shortages: materialSufficiency.shortages.map((shortage) => ({
+        itemId: shortage.itemId,
+        itemCode: shortage.itemCode,
+        itemName: shortage.itemName,
+        requiredQty: shortage.requiredQty,
+        issuedQty: shortage.issuedQty,
+        shortageQty: shortage.shortageQty,
+      })),
+    },
     defectCodes: defectCodes.map((dc) => ({
       id: dc.id,
       code: dc.code,
@@ -825,6 +850,15 @@ export async function submitProductionResult(
         }
         wipExhaustedAfterThisResult = availableInputScaled - totalScaled <= ZERO_QTY
       }
+
+      const materialSufficiency = await getWorkOrderMaterialSufficiency(tx, {
+        tenantId: op.workOrder.tenantId,
+        workOrderOperationId,
+      })
+      assertProductionQuantityWithinMaterialLimit(
+        materialSufficiency,
+        Number(totalScaled) / Number(QTY_SCALE_MULTIPLIER)
+      )
 
       const assignment = assignmentId
         ? op.assignments.find((candidate) => candidate.id === assignmentId) ?? null
