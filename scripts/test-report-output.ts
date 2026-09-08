@@ -215,7 +215,7 @@ function makeEquipStats(over: Partial<EquipmentStatisticsData> = {}): EquipmentS
   })
   const rows = buildEquipmentReportRows(data)
   assertEqual(rows.length, 1, "T12. 설비코드 기준으로 가동률/비가동/알람 통계가 한 행으로 합쳐짐(새 지표 계산 없이 join만)")
-  assertEqual(rows[0], { code: "EQ01", name: "설비1", runMinutes: 600, availabilityRate: 0.8, stopMinutes: 40, maintenanceMinutes: 20, downtimeMinutes: 60, alarmCount: 2, warningCount: 1 }, "T12. 조인 결과가 각 카테고리의 canonical 값을 그대로 보존")
+  assertEqual(rows[0], { code: "EQ01", name: "설비1", goodQty: 0, defectQty: 0, workHours: 0, runMinutes: 600, availabilityRate: 0.8, stopMinutes: 40, maintenanceMinutes: 20, downtimeMinutes: 60, alarmCount: 2, warningCount: 1 }, "T12. 조인 결과가 각 카테고리의 canonical 값을 그대로 보존")
 }
 {
   const rows = buildEquipmentReportRows(makeEquipStats())
@@ -223,8 +223,8 @@ function makeEquipStats(over: Partial<EquipmentStatisticsData> = {}): EquipmentS
 }
 {
   const data = makeEquipStats({
-    production: { totalGoodQty: 10, totalDefectQty: 2, defectRate: 2 / 12, resultCount: 1, rows: [{ date: "2026-08-01", goodQty: 10, defectQty: 2 }] },
-    workTime: { totalHours: 5, resultCount: 1, rows: [{ date: "2026-08-01", hours: 5, goodQty: 10 }] },
+    production: { totalGoodQty: 10, totalDefectQty: 2, defectRate: 2 / 12, resultCount: 1, rows: [{ date: "2026-08-01", equipmentId: "EQ01", equipmentCode: "EQ01", equipmentName: "설비1", goodQty: 10, defectQty: 2 }] },
+    workTime: { totalHours: 5, resultCount: 1, rows: [{ date: "2026-08-01", equipmentId: "EQ01", equipmentCode: "EQ01", equipmentName: "설비1", hours: 5, goodQty: 10 }] },
   })
   const trend = buildEquipmentDailyTrend(data)
   assertEqual(trend, [{ date: "2026-08-01", goodQty: 10, defectQty: 2, hours: 5 }], "T14. 일자별 생산량(production.rows)과 작업시간(workTime.rows)이 날짜 기준으로 합쳐짐")

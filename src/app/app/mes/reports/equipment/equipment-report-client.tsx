@@ -80,10 +80,13 @@ export function EquipmentReportClient({ initialFilter, data, equipments }: Props
     // downloadExcelSheet은 단일 시트 헬퍼다(§ export-excel.ts) — 설비별
     // 통계와 일자별 추이를 한 시트에 담기 위해 구분 빈 행을 두고 이어붙인다
     // (다중시트 API를 새로 만들지 않고 기존 헬퍼를 그대로 재사용).
-    const header = ["설비코드", "설비명", "가동시간(분)", "가동률", "비가동시간(분)", "알람건수", "경고건수"]
+    const header = ["설비코드", "설비명", "양품수량", "불량수량", "작업시간(h)", "가동시간(분)", "가동률", "비가동시간(분)", "알람건수", "경고건수"]
     const rows = equipmentRows.map((r) => [
       r.code,
       r.name,
+      r.goodQty,
+      r.defectQty,
+      r.workHours,
       r.runMinutes,
       r.availabilityRate !== null ? Number((r.availabilityRate * 100).toFixed(1)) : "",
       r.downtimeMinutes,
@@ -202,6 +205,9 @@ export function EquipmentReportClient({ initialFilter, data, equipments }: Props
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-[13px]">설비</TableHead>
+                  <TableHead className="text-[13px] text-right">양품수량</TableHead>
+                  <TableHead className="text-[13px] text-right">불량수량</TableHead>
+                  <TableHead className="text-[13px] text-right">작업시간(h)</TableHead>
                   <TableHead className="text-[13px] text-right">가동시간(분)</TableHead>
                   <TableHead className="text-[13px] text-right">가동률</TableHead>
                   <TableHead className="text-[13px] text-right">비가동시간(분)</TableHead>
@@ -213,6 +219,9 @@ export function EquipmentReportClient({ initialFilter, data, equipments }: Props
                 {equipmentRows.map((r) => (
                   <TableRow key={r.code}>
                     <TableCell className="text-[14px]">[{r.code}] {r.name}</TableCell>
+                    <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.goodQty)}</TableCell>
+                    <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.defectQty)}</TableCell>
+                    <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.workHours)}</TableCell>
                     <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.runMinutes)}</TableCell>
                     <TableCell className="text-[14px] text-right tabular-nums">{formatPercent(r.availabilityRate)}</TableCell>
                     <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.downtimeMinutes)}</TableCell>

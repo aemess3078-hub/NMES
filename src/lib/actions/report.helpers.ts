@@ -208,6 +208,9 @@ export function computeDailyProductionSummary(
 export type EquipmentReportRow = {
   code: string
   name: string
+  goodQty: number
+  defectQty: number
+  workHours: number
   runMinutes: number
   availabilityRate: number | null
   stopMinutes: number
@@ -225,6 +228,9 @@ export function buildEquipmentReportRows(data: EquipmentStatisticsData): Equipme
       row = {
         code,
         name,
+        goodQty: 0,
+        defectQty: 0,
+        workHours: 0,
         runMinutes: 0,
         availabilityRate: null,
         stopMinutes: 0,
@@ -238,6 +244,15 @@ export function buildEquipmentReportRows(data: EquipmentStatisticsData): Equipme
     return row
   }
 
+  for (const p of data.production.rows) {
+    const row = ensure(p.equipmentCode, p.equipmentName)
+    row.goodQty += p.goodQty
+    row.defectQty += p.defectQty
+  }
+  for (const w of data.workTime.rows) {
+    const row = ensure(w.equipmentCode, w.equipmentName)
+    row.workHours += w.hours
+  }
   for (const a of data.availability.rows) {
     const row = ensure(a.code, a.name)
     row.runMinutes = a.runMinutes
@@ -255,7 +270,14 @@ export function buildEquipmentReportRows(data: EquipmentStatisticsData): Equipme
     row.warningCount = e.warningCount
   }
 
-  return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code))
+  return Array.from(map.values())
+    .map((row) => ({
+      ...row,
+      goodQty: Math.round(row.goodQty * 10) / 10,
+      defectQty: Math.round(row.defectQty * 10) / 10,
+      workHours: Math.round(row.workHours * 10) / 10,
+    }))
+    .sort((a, b) => a.code.localeCompare(b.code))
 }
 
 export type DailyEquipmentTrendRow = {
@@ -279,13 +301,20 @@ export function buildEquipmentDailyTrend(data: EquipmentStatisticsData): DailyEq
 
   for (const p of data.production.rows) {
     const row = ensure(p.date)
-    row.goodQty = p.goodQty
-    row.defectQty = p.defectQty
+    row.goodQty += p.goodQty
+    row.defectQty += p.defectQty
   }
   for (const w of data.workTime.rows) {
     const row = ensure(w.date)
-    row.hours = w.hours
+    row.hours += w.hours
   }
 
-  return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date))
+  return Array.from(map.values())
+    .map((row) => ({
+      ...row,
+      goodQty: Math.round(row.goodQty * 10) / 10,
+      defectQty: Math.round(row.defectQty * 10) / 10,
+      hours: Math.round(row.hours * 10) / 10,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
 }

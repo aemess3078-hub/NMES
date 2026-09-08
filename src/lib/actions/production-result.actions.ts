@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { calculateWorkDurationMinutes } from "@/lib/pop-worktime-operator"
+import { resolveActualProductionEquipment } from "@/lib/equipment-result-attribution"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -135,10 +136,7 @@ export async function getProductionResults(
   })
 
   return results.map((r) => {
-    const equipment =
-      r.workOrderOperationAssignment?.equipment ??
-      r.workOrderOperation.equipment ??
-      null
+    const equipment = resolveActualProductionEquipment(r)
 
     return {
       id: r.id,
