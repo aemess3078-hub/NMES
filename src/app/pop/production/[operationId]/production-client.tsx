@@ -55,6 +55,23 @@ type DefectLine = {
   qty: number
 }
 
+type MaterialSufficiency = {
+  plannedQty: number
+  producedQty: number
+  materialProducibleQty: number | null
+  remainingPlanQty: number
+  remainingMaterialQty: number | null
+  maxAdditionalProductionQty: number
+  shortages: Array<{
+    itemId: string
+    itemCode: string
+    itemName: string
+    requiredQty: number
+    issuedQty: number
+    shortageQty: number
+  }>
+}
+
 type Operation = {
   id: string
   seq: number
@@ -63,6 +80,7 @@ type Operation = {
   plannedQty: unknown
   completedQty: unknown
   availableWipQty?: number | null
+  materialSufficiency?: MaterialSufficiency | null
   defectCodes?: DefectCode[]
   workOrder: WorkOrder | null
   routingOperation: RoutingOperation | null
@@ -129,12 +147,23 @@ export function ProductionClient({ operation }: Props) {
 
   // 실제 투입 가능 WIP (전공정 불량 차감 반영). null이면 WIP 추적 없음 → plannedQty 기준 표시.
   const availableWipQty = operation.availableWipQty ?? null
+  const materialSufficiency = operation.materialSufficiency ?? null
+  const materialMaxAdditional =
+    materialSufficiency && materialSufficiency.materialProducibleQty !== null
+      ? materialSufficiency.maxAdditionalProductionQty
+      : null
   const hasWipShortfall =
     availableWipQty !== null && availableWipQty < plannedQty && status !== "COMPLETED"
   // 잔여수량은 WIP 제약이 있으면 실제 투입 가능 기준, 없으면 계획 기준
-  const effectiveRemaining = hasWipShortfall
+  const wipLimitedRemaining = hasWipShortfall
     ? Math.max(availableWipQty - completedQty, 0)
     : Math.max(plannedQty - completedQty, 0)
+  const effectiveRemaining =
+    materialMaxAdditional !== null
+      ? Math.min(wipLimitedRemaining, materialMaxAdditional)
+      : wipLimitedRemaining
+  const hasMaterialShortfall =
+    materialMaxAdditional !== null && materialMaxAdditional < wipLimitedRemaining
   const progress =
     plannedQty > 0
       ? Math.min(100, Math.round((completedQty / plannedQty) * 100))
@@ -279,6 +308,38 @@ export function ProductionClient({ operation }: Props) {
                 <strong>잔여 투입 가능: {formatQuantity(effectiveRemaining)}개</strong>{" "}
                 (계획: {formatQuantity(plannedQty)}개)
               </span>
+            </div>
+          )}
+          {materialSufficiency && materialSufficiency.materialProducibleQty !== null && (
+            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div>
+                  <span className="text-blue-700">계획수량</span>
+                  <div className="font-bold">{formatQuantity(materialSufficiency.plannedQty)}</div>
+                </div>
+                <div>
+                  <span className="text-blue-700">누적실적</span>
+                  <div className="font-bold">{formatQuantity(materialSufficiency.producedQty)}</div>
+                </div>
+                <div>
+                  <span className="text-blue-700">자재기준 가능</span>
+                  <div className="font-bold">{formatQuantity(materialSufficiency.materialProducibleQty)}</div>
+                </div>
+                <div>
+                  <span className="text-blue-700">추가 생산가능</span>
+                  <div className="font-bold">{formatQuantity(effectiveRemaining)}</div>
+                </div>
+              </div>
+              {hasMaterialShortfall && materialSufficiency.shortages.length > 0 && (
+                <div className="mt-2 text-[13px] text-blue-800">
+                  부족 자재:{" "}
+                  {materialSufficiency.shortages.slice(0, 2).map((shortage) => (
+                    <span key={shortage.itemId} className="mr-2">
+                      {shortage.itemCode} 필요 {formatQuantity(shortage.requiredQty)} / 출고 {formatQuantity(shortage.issuedQty)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
