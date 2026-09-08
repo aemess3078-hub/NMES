@@ -75,10 +75,12 @@ export type QualityInspectionWithDetails = {
   workOrderOperationId: string
   inspectionSpecId: string
   inspectorId: string
+  lotId: string | null
   stage: InspectionStage
   result: InspectionResult | null
   inspectedQty: number
   inspectedAt: string
+  lot: { id: string; lotNo: string; status: string; item: { code: string; name: string } } | null
   workOrderOperation: {
     id: string
     seq: number
@@ -144,6 +146,7 @@ export type CreateQualityInspectionInput = {
   workOrderOperationId: string
   inspectionSpecId: string
   inspectorId: string
+  lotId?: string | null
   result: InspectionResult | null
   inspectedQty: number
   inspectedAt: string
@@ -213,10 +216,12 @@ function serializeQualityInspection(inspection: QualityInspectionRecord): Qualit
     workOrderOperationId: inspection.workOrderOperationId,
     inspectionSpecId: inspection.inspectionSpecId,
     inspectorId: inspection.inspectorId,
+    lotId: inspection.lotId,
     stage: inspection.stage,
     result: inspection.result,
     inspectedQty: Number(inspection.inspectedQty),
     inspectedAt: inspection.inspectedAt.toISOString(),
+    lot: inspection.lot,
     workOrderOperation: {
       id: inspection.workOrderOperation.id,
       seq: inspection.workOrderOperation.seq,
@@ -298,6 +303,14 @@ async function getQualityInspectionRecords(tenantId: string) {
         },
       },
       inspector: { select: { id: true, name: true } },
+      lot: {
+        select: {
+          id: true,
+          lotNo: true,
+          status: true,
+          item: { select: { code: true, name: true } },
+        },
+      },
       defectRecords: {
         include: {
           defectCode: {
@@ -590,7 +603,7 @@ export async function createQualityInspection(
   await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
   await requireRole("OPERATOR")
 
-  const { validatedMeasurements } = await validateInspectionMutationContext(prisma, tenantId, data)
+  const { validatedLotId, validatedMeasurements } = await validateInspectionMutationContext(prisma, tenantId, data)
   const inspectedAt = new Date(data.inspectedAt)
 
   await prisma.$transaction(async (tx) => {
@@ -599,6 +612,7 @@ export async function createQualityInspection(
         workOrderOperationId: data.workOrderOperationId,
         inspectionSpecId: data.inspectionSpecId,
         inspectorId: data.inspectorId,
+        lotId: validatedLotId,
         result: data.result,
         inspectedQty: data.inspectedQty,
         inspectedAt,

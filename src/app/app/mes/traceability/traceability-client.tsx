@@ -1,289 +1,294 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  searchLotByNo,
-  getLotForwardTrace,
-  getLotBackwardTrace,
-  LotGenealogyNode,
-} from "@/lib/actions/lot.actions"
+import { getLotLineageByNo, type LotLineageResult } from "@/lib/actions/lot-lineage.actions"
 import { formatQuantity } from "@/lib/utils"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+type Lineage = NonNullable<LotLineageResult>
 
-type TraceDirection = "forward" | "backward" | "both"
-
-type TraceResult = {
-  forward: LotGenealogyNode | null
-  backward: LotGenealogyNode | null
-}
-
-// ─── Relation labels ──────────────────────────────────────────────────────────
-
-const RELATION_LABELS: Record<string, string> = {
-  INPUT:  "투입",
-  OUTPUT: "산출",
-  REWORK: "재작업",
-}
-
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  ACTIVE:     { label: "활성",   className: "bg-green-100 text-green-800" },
-  QUARANTINE: { label: "격리",   className: "bg-amber-100 text-amber-800" },
-  ON_HOLD:    { label: "보류",   className: "bg-blue-100 text-blue-800" },
-  CONSUMED:   { label: "소진",   className: "bg-slate-100 text-slate-600" },
-  EXPIRED:    { label: "만료",   className: "bg-red-100 text-red-800" },
-}
-
-// ─── LOT 트리 노드 (재귀) ─────────────────────────────────────────────────────
-
-function LotTreeView({
-  node,
-  depth = 0,
-}: {
-  node: LotGenealogyNode
-  depth?: number
-}) {
-  if (!node) return null
-  const statusCfg = STATUS_CONFIG[node.status]
-
-  return (
-    <div className={depth > 0 ? "ml-6 mt-2 pl-4 border-l-2 border-slate-200" : ""}>
-      <div
-        className={`flex items-start gap-2 p-3 rounded-lg border ${
-          depth === 0
-            ? "bg-blue-50 border-blue-200"
-            : "bg-slate-50 border-slate-200"
-        }`}
-      >
-        <div className="flex-1 min-w-0">
-          {node.relationType && (
-            <span className="text-[12px] bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full mr-2 font-medium">
-              {RELATION_LABELS[node.relationType] ?? node.relationType}
-            </span>
-          )}
-          <span className="font-mono font-bold text-[14px]">{node.lotNo}</span>
-          <span className="text-slate-500 text-[13px] ml-2">{node.itemName}</span>
-          <span className="text-slate-400 text-[12px] ml-1">({node.itemCode})</span>
-          <div className="flex items-center gap-2 mt-1.5">
-            <span
-              className={`text-[12px] px-2 py-0.5 rounded-full font-medium ${
-                statusCfg?.className ?? "bg-gray-100 text-gray-600"
-              }`}
-            >
-              {statusCfg?.label ?? node.status}
-            </span>
-            <span className="text-[12px] text-slate-500">
-              재고: {formatQuantity(Number(node.qty))}
-            </span>
-          </div>
-        </div>
-      </div>
-      {node.children?.map((child, i) => (
-        <LotTreeView key={`${child.id}-${i}`} node={child} depth={depth + 1} />
-      ))}
-    </div>
-  )
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-interface TraceabilityClientProps {
+type TraceabilityClientProps = {
   initialLotNo?: string
   tenantId: string
 }
 
-export function TraceabilityClient({
-  initialLotNo,
-  tenantId,
-}: TraceabilityClientProps) {
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  ACTIVE: { label: "활성", className: "bg-green-100 text-green-800" },
+  QUARANTINE: { label: "격리", className: "bg-amber-100 text-amber-800" },
+  ON_HOLD: { label: "보류", className: "bg-blue-100 text-blue-800" },
+  CONSUMED: { label: "소진", className: "bg-slate-100 text-slate-600" },
+  EXPIRED: { label: "만료", className: "bg-red-100 text-red-800" },
+}
+
+const RESULT_CONFIG: Record<string, { label: string; className: string }> = {
+  PASS: { label: "합격", className: "bg-green-100 text-green-800" },
+  FAIL: { label: "불합격", className: "bg-red-100 text-red-800" },
+  PENDING: { label: "대기", className: "bg-slate-100 text-slate-700" },
+}
+
+const SHIPMENT_STATUS: Record<string, string> = {
+  PLANNED: "예약",
+  SHIPPED: "실출하",
+  DELIVERED: "납품완료",
+  CANCELLED: "취소",
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border bg-white p-5">
+      <h3 className="mb-3 text-[18px] font-semibold text-slate-900">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+function Empty({ children = "연결된 생산이력을 확인할 수 없습니다." }: { children?: React.ReactNode }) {
+  return <p className="rounded-lg border border-dashed bg-slate-50 p-5 text-center text-[14px] text-slate-500">{children}</p>
+}
+
+function Badge({ children, className = "bg-slate-100 text-slate-700" }: { children: React.ReactNode; className?: string }) {
+  return <span className={`rounded-full px-2 py-0.5 text-[13px] font-medium ${className}`}>{children}</span>
+}
+
+function LotSummary({ lineage }: { lineage: Lineage }) {
+  const status = STATUS_CONFIG[lineage.lot.status]
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+      <p className="mb-2 text-[13px] font-semibold text-blue-700">기준 LOT</p>
+      <div className="flex flex-wrap items-center gap-3 text-[14px]">
+        <span className="font-mono text-[18px] font-bold text-blue-950">{lineage.lot.lotNo}</span>
+        <span className="font-medium text-blue-900">{lineage.lot.item.name}</span>
+        <span className="text-blue-800">{lineage.lot.item.code}</span>
+        <Badge className={status?.className}>{status?.label ?? lineage.lot.status}</Badge>
+        {!lineage.lot.isTraceTarget && <Badge className="bg-amber-100 text-amber-800">LOT 추적 대상 아님</Badge>}
+      </div>
+      <div className="mt-3 grid gap-3 text-[14px] sm:grid-cols-3">
+        <div>현재고 <b>{formatQuantity(lineage.inventory.qtyOnHand)}</b></div>
+        <div>가용재고 <b>{formatQuantity(lineage.inventory.qtyAvailable)}</b></div>
+        <div>품목유형 <b>{lineage.lot.item.itemType}</b></div>
+      </div>
+    </div>
+  )
+}
+
+export function TraceabilityClient({ initialLotNo, tenantId }: TraceabilityClientProps) {
   const [query, setQuery] = useState(initialLotNo ?? "")
-  const [direction, setDirection] = useState<TraceDirection>("both")
-  const [searchResult, setSearchResult] = useState<any>(null)
-  const [traceTree, setTraceTree] = useState<TraceResult | null>(null)
+  const [lineage, setLineage] = useState<Lineage | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const hasAnyProductionLink = useMemo(() => Boolean(
+    lineage && (
+      lineage.materialIssues.length > 0 ||
+      lineage.parentLots.length > 0 ||
+      lineage.childLots.length > 0 ||
+      lineage.workOrders.length > 0 ||
+      lineage.receipts.length > 0 ||
+      lineage.shipments.length > 0 ||
+      lineage.inspections.length > 0
+    ),
+  ), [lineage])
 
   const handleSearch = async () => {
     const q = query.trim()
     if (!q) return
-
     setLoading(true)
     setError(null)
-    setSearchResult(null)
-    setTraceTree(null)
-
+    setLineage(null)
     try {
-      const lot = await searchLotByNo(q, tenantId)
-      if (!lot) {
+      const result = await getLotLineageByNo(q, tenantId)
+      if (!result) {
         setError(`'${q}' LOT를 찾을 수 없습니다.`)
         return
       }
-      setSearchResult(lot)
-
-      if (direction === "forward") {
-        const fwd = await getLotForwardTrace(lot.id)
-        setTraceTree({ forward: fwd, backward: null })
-      } else if (direction === "backward") {
-        const bwd = await getLotBackwardTrace(lot.id)
-        setTraceTree({ forward: null, backward: bwd })
-      } else {
-        const [fwd, bwd] = await Promise.all([
-          getLotForwardTrace(lot.id),
-          getLotBackwardTrace(lot.id),
-        ])
-        setTraceTree({ forward: fwd, backward: bwd })
-      }
+      setLineage(result)
     } catch (e) {
-      setError("추적 중 오류가 발생했습니다.")
       console.error(e)
+      setError("추적 중 오류가 발생했습니다.")
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    if (initialLotNo) handleSearch()
+    if (initialLotNo) void handleSearch()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const hasForward =
-    traceTree?.forward &&
-    (traceTree.forward.children?.length ?? 0) > 0
-
-  const hasBackward =
-    traceTree?.backward &&
-    (traceTree.backward.children?.length ?? 0) > 0
-
   return (
     <div className="space-y-6">
-      {/* 검색 영역 */}
-      <div className="bg-white rounded-xl border p-6">
-        <p className="text-[15px] font-medium text-foreground mb-4">LOT 번호로 추적</p>
+      <div className="rounded-xl border bg-white p-6">
+        <p className="mb-4 text-[15px] font-medium text-foreground">LOT 번호로 추적</p>
         <div className="flex gap-3">
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="LOT 번호 입력 (부분 검색 가능)..."
+            placeholder="LOT 번호 입력"
             className="flex-1 text-[14px]"
           />
-          <Select
-            value={direction}
-            onValueChange={(v) => setDirection(v as TraceDirection)}
-          >
-            <SelectTrigger className="w-44 text-[14px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="both" className="text-[14px]">정/역추적 (양방향)</SelectItem>
-              <SelectItem value="forward" className="text-[14px]">정추적 (어디로 갔나)</SelectItem>
-              <SelectItem value="backward" className="text-[14px]">역추적 (어디서 왔나)</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            onClick={handleSearch}
-            disabled={loading || !query.trim()}
-            className="gap-2 shrink-0"
-          >
+          <Button onClick={handleSearch} disabled={loading || !query.trim()} className="shrink-0 gap-2">
             <Search className="h-4 w-4" />
             {loading ? "추적 중..." : "추적"}
           </Button>
         </div>
-        {error && (
-          <p className="text-red-500 text-[14px] mt-3">{error}</p>
-        )}
+        {error && <p className="mt-3 text-[14px] text-red-500">{error}</p>}
       </div>
 
-      {/* 기준 LOT 정보 */}
-      {searchResult && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-[13px] font-semibold text-blue-700 mb-2">기준 LOT</p>
-          <div className="flex flex-wrap gap-6 text-[14px]">
-            <span className="font-mono font-bold text-blue-900">
-              {searchResult.lotNo}
-            </span>
-            <span className="text-blue-800">{searchResult.item?.name}</span>
-            <span className="text-blue-700">
-              ({searchResult.item?.code})
-            </span>
-            <span className="text-blue-700">
-              상태: {STATUS_CONFIG[searchResult.status]?.label ?? searchResult.status}
-            </span>
-          </div>
-        </div>
+      {lineage && <LotSummary lineage={lineage} />}
+
+      {lineage && !hasAnyProductionLink && (
+        <Empty>연결된 생산이력을 확인할 수 없습니다. LOT 번호/일자/품목명으로 생산이력을 추정 연결하지 않습니다.</Empty>
       )}
 
-      {/* 트리 시각화 */}
-      {traceTree && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 역추적 */}
-          {traceTree.backward && (
-            <div className="bg-white rounded-xl border p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="h-0.5 w-4 bg-slate-400" />
-                <h3 className="text-[15px] font-semibold text-slate-700">
-                  역추적 (원자재 방향)
-                </h3>
-              </div>
-              {hasBackward ? (
-                <LotTreeView node={traceTree.backward} />
-              ) : (
-                <div className="text-center py-8 text-[14px] text-muted-foreground">
-                  <div className="mb-2">
-                    <LotTreeView node={traceTree.backward} />
+      {lineage && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Section title="원자재/상위 LOT">
+            {lineage.parentLots.length === 0 ? <Empty /> : (
+              <div className="space-y-2">
+                {lineage.parentLots.map((lot) => (
+                  <div key={lot.id} className="rounded-lg border p-3 text-[14px]">
+                    <div className="font-mono font-semibold">{lot.lotNo}</div>
+                    <div className="text-slate-600">{lot.item.code} · {lot.item.name} · {formatQuantity(lot.qty)} · {lot.relationType}</div>
                   </div>
-                  <p className="text-[13px] mt-4 text-slate-400">
-                    부모 LOT가 없습니다. (원자재 출발점)
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 정추적 */}
-          {traceTree.forward && (
-            <div className="bg-white rounded-xl border p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <h3 className="text-[15px] font-semibold text-slate-700">
-                  정추적 (제품 방향)
-                </h3>
-                <div className="h-0.5 w-4 bg-slate-400" />
+                ))}
               </div>
-              {hasForward ? (
-                <LotTreeView node={traceTree.forward} />
-              ) : (
-                <div>
-                  <LotTreeView node={traceTree.forward} />
-                  <p className="text-[13px] mt-4 text-center text-slate-400">
-                    자식 LOT가 없습니다. (최종 제품 또는 소진)
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </Section>
+
+          <Section title="하위/산출 LOT">
+            {lineage.childLots.length === 0 ? <Empty /> : (
+              <div className="space-y-2">
+                {lineage.childLots.map((lot) => (
+                  <div key={lot.id} className="rounded-lg border p-3 text-[14px]">
+                    <div className="font-mono font-semibold">{lot.lotNo}</div>
+                    <div className="text-slate-600">{lot.item.code} · {lot.item.name} · {formatQuantity(lot.qty)} · {lot.relationType}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="이 LOT가 투입된 작업지시">
+            {lineage.materialIssues.length === 0 ? <Empty /> : (
+              <div className="space-y-2">
+                {lineage.materialIssues.map((issue) => (
+                  <div key={issue.id} className="rounded-lg border p-3 text-[14px]">
+                    <div className="font-semibold">{issue.workOrder.orderNo} {issue.workOrder.manufacturingNo && `· ${issue.workOrder.manufacturingNo}`}</div>
+                    <div className="text-slate-600">투입 {formatQuantity(issue.qty)} {issue.materialItem.uom} · {issue.materialItem.code} · {new Date(issue.issuedAt).toLocaleString()}</div>
+                    {issue.transaction && <div className="text-[13px] text-slate-500">재고거래 {issue.transaction.txNo} · {issue.transaction.txType}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="입고/출하">
+            {lineage.receipts.length === 0 && lineage.shipments.length === 0 ? <Empty /> : (
+              <div className="space-y-3 text-[14px]">
+                {lineage.receipts.map((receipt) => (
+                  <div key={receipt.id} className="rounded-lg border border-green-200 bg-green-50 p-3">
+                    <b>입고</b> {formatQuantity(receipt.receiptQty)} · {receipt.workOrder.orderNo} · {receipt.warehouse.name}/{receipt.location.name} · {new Date(receipt.receiptAt).toLocaleString()}
+                  </div>
+                ))}
+                {lineage.shipments.map((shipment) => (
+                  <div key={shipment.id} className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                    <b>출하</b> {formatQuantity(shipment.qty)} · {shipment.shipmentOrder.shipmentNo} · {SHIPMENT_STATUS[shipment.shipmentOrder.status] ?? shipment.shipmentOrder.status} · {shipment.shipmentOrder.salesOrder.orderNo}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
         </div>
       )}
 
-      {/* 안내 메시지 (초기 상태) */}
-      {!traceTree && !loading && !error && (
-        <div className="bg-slate-50 rounded-xl border border-dashed border-slate-300 p-12 text-center">
-          <Search className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-[15px] text-slate-500">
-            LOT 번호를 입력하고 추적 버튼을 클릭하세요.
-          </p>
-          <p className="text-[13px] text-slate-400 mt-1">
-            정추적: 이 LOT가 어느 제품으로 변환되었는지 / 역추적: 이 LOT가 어느 원자재로부터 왔는지
-          </p>
+      {lineage && (
+        <Section title="작업지시 / 공정 / 생산실적">
+          {lineage.workOrders.length === 0 ? <Empty /> : (
+            <div className="space-y-4">
+              {lineage.workOrders.map((workOrder) => (
+                <div key={workOrder.id} className="rounded-lg border p-4">
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-[14px]">
+                    <b className="text-[15px]">{workOrder.orderNo}</b>
+                    {workOrder.manufacturingNo && <Badge>{workOrder.manufacturingNo}</Badge>}
+                    <span className="text-slate-600">{workOrder.item.code} · {workOrder.item.name}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {workOrder.operations.map((operation) => (
+                      <div key={operation.id} className="rounded-lg bg-slate-50 p-3 text-[14px]">
+                        <div className="font-medium">{operation.seq}. {operation.routingOperation.name} · {operation.routingOperation.workCenter.name}</div>
+                        {operation.productionResults.length === 0 ? (
+                          <div className="mt-1 text-[13px] text-slate-500">생산실적 없음</div>
+                        ) : operation.productionResults.map((result) => (
+                          <div key={result.id} className="mt-1 text-[13px] text-slate-600">
+                            양품 {formatQuantity(result.goodQty)} · 불량 {formatQuantity(result.defectQty)} · 작업자 {result.operator?.name ?? "미지정"} · 설비 {result.equipment?.name ?? "미지정"}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {lineage && (
+        <Section title="검사 / 측정 / 불량 / CAPA">
+          {lineage.inspections.length === 0 && lineage.legacyWorkOrderInspections.length === 0 ? <Empty /> : (
+            <div className="space-y-3">
+              {lineage.inspections.map((inspection) => {
+                const result = inspection.result ? RESULT_CONFIG[inspection.result] : null
+                return (
+                  <div key={inspection.id} className="rounded-lg border p-4 text-[14px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <b>{inspection.stage}</b>
+                      {inspection.result && <Badge className={result?.className}>{result?.label ?? inspection.result}</Badge>}
+                      <span className="text-slate-600">{inspection.workOrder.orderNo} · {inspection.operation.name} · 검사자 {inspection.inspector.name}</span>
+                    </div>
+                    {inspection.measurements.length > 0 && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {inspection.measurements.map((m) => (
+                          <div key={m.id} className="rounded bg-slate-50 px-3 py-2 text-[13px]">
+                            {m.itemName}: {m.numericValue ?? m.textValue ?? String(m.booleanValue)} {m.unit ?? ""} {m.judgement && `· ${m.judgement}`}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {inspection.defects.length > 0 && (
+                      <div className="mt-2 space-y-2">
+                        {inspection.defects.map((defect) => (
+                          <div key={defect.id} className="rounded border border-red-100 bg-red-50 p-3 text-[13px] text-red-900">
+                            불량 {defect.defectCode.code} · {defect.defectCode.name} · {formatQuantity(defect.qty)}
+                            {defect.causeAnalysis && <div>원인분석: {defect.causeAnalysis.rootCause}</div>}
+                            {defect.correctiveActions.map((a) => <div key={a.id}>시정조치: {a.status} · {a.actionContent}</div>)}
+                            {defect.recurrencePreventions.map((p) => <div key={p.id}>재발방지: {p.status} · {p.preventionContent}</div>)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {lineage.legacyWorkOrderInspections.map((inspection) => (
+                <div key={inspection.id} className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-[14px]">
+                  <b>{inspection.stage}</b> · {inspection.result ?? "미판정"} · {inspection.workOrder.orderNo} · {inspection.operation.name}
+                  <div className="text-[13px] text-amber-700">이 검사는 LOT 직접 귀속 전의 작업지시 기준 이력입니다.</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {!lineage && !loading && !error && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
+          <Search className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+          <p className="text-[15px] text-slate-500">LOT 번호를 입력하고 추적 버튼을 클릭하세요.</p>
+          <p className="mt-1 text-[13px] text-slate-400">원자재 투입, 작업지시, 공정/실적, 검사, 입고, 출하를 LOT FK 기준으로 조회합니다.</p>
         </div>
       )}
     </div>
