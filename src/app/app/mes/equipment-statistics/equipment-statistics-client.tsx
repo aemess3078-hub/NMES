@@ -40,6 +40,8 @@ import { formatQuantity } from "@/lib/utils"
 
 const productionColumns: ColumnDef<ProductionStats["rows"][number]>[] = [
   { accessorKey: "date", header: "날짜", cell: ({ row }) => <span className="font-mono text-[13px]">{row.original.date}</span> },
+  { accessorKey: "equipmentCode", header: "설비코드", cell: ({ row }) => <span className="font-mono text-[13px]">{row.original.equipmentCode}</span> },
+  { accessorKey: "equipmentName", header: "설비명", cell: ({ row }) => <span className="text-[14px]">{row.original.equipmentName}</span> },
   { accessorKey: "goodQty", header: "양품 수량", cell: ({ row }) => <span className="text-[14px]">{formatQuantity(row.original.goodQty)}</span> },
   { accessorKey: "defectQty", header: "불량 수량", cell: ({ row }) => <span className="text-[14px] text-red-600">{formatQuantity(row.original.defectQty)}</span> },
 ]
@@ -71,6 +73,8 @@ const downtimeColumns: ColumnDef<DowntimeStats["rows"][number]>[] = [
 
 const workTimeColumns: ColumnDef<WorkTimeStats["rows"][number]>[] = [
   { accessorKey: "date", header: "날짜", cell: ({ row }) => <span className="font-mono text-[13px]">{row.original.date}</span> },
+  { accessorKey: "equipmentCode", header: "설비코드", cell: ({ row }) => <span className="font-mono text-[13px]">{row.original.equipmentCode}</span> },
+  { accessorKey: "equipmentName", header: "설비명", cell: ({ row }) => <span className="text-[14px]">{row.original.equipmentName}</span> },
   { accessorKey: "hours", header: "작업시간 (h)", cell: ({ row }) => <span className="text-[14px]">{row.original.hours.toLocaleString()}</span> },
   { accessorKey: "goodQty", header: "양품 수량", cell: ({ row }) => <span className="text-[14px]">{formatQuantity(row.original.goodQty)}</span> },
 ]

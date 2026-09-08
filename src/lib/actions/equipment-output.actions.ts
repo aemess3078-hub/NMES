@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
+import { resolveActualProductionEquipment } from "@/lib/equipment-result-attribution"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export async function getEquipmentOutputStats(
   const map = new Map<string, EquipmentOutputRow>()
 
   for (const r of results) {
-    const eq = r.workOrderOperationAssignment?.equipment ?? r.workOrderOperation.equipment
+    const eq = resolveActualProductionEquipment(r)
     if (!eq) continue
 
     const good    = Number(r.goodQty)

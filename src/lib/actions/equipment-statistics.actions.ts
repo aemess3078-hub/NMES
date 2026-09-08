@@ -3,6 +3,10 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { monitoringEligibleEquipmentWhere } from "@/lib/actions/equipment-monitoring.utils"
+import {
+  actualProductionEquipmentWhere,
+  resolveActualProductionEquipment,
+} from "@/lib/equipment-result-attribution"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,7 +39,14 @@ export type ProductionStats = {
   totalDefectQty: number
   defectRate: number | null
   resultCount: number
-  rows: Array<{ date: string; goodQty: number; defectQty: number }>
+  rows: Array<{
+    date: string
+    equipmentId: string
+    equipmentCode: string
+    equipmentName: string
+    goodQty: number
+    defectQty: number
+  }>
 }
 
 async function fetchProductionStats(
@@ -49,34 +60,70 @@ async function fetchProductionStats(
       startedAt: { gte: from, lte: to },
       workOrderOperation: {
         workOrder: { tenantId },
-        ...(f.equipmentId ? { equipmentId: f.equipmentId } : {}),
+      },
+      ...actualProductionEquipmentWhere(f.equipmentId),
+    },
+    select: {
+      startedAt: true,
+      goodQty: true,
+      defectQty: true,
+      workOrderOperationAssignment: {
+        select: {
+          equipment: { select: { id: true, code: true, name: true } },
+        },
+      },
+      workOrderOperation: {
+        select: {
+          equipment: { select: { id: true, code: true, name: true } },
+        },
       },
     },
-    select: { startedAt: true, goodQty: true, defectQty: true },
   })
 
-  const dayMap = new Map<string, { goodQty: number; defectQty: number }>()
+  const dayMap = new Map<
+    string,
+    {
+      date: string
+      equipmentId: string
+      equipmentCode: string
+      equipmentName: string
+      goodQty: number
+      defectQty: number
+    }
+  >()
   let totalGoodQty = 0
   let totalDefectQty = 0
+  let resultCount = 0
 
   for (const r of results) {
     if (!r.startedAt) continue
+    const equipment = resolveActualProductionEquipment(r)
+    if (!equipment) continue
     const gq = Number(r.goodQty)
     const dq = Number(r.defectQty)
     totalGoodQty += gq
     totalDefectQty += dq
+    resultCount++
     const date = r.startedAt.toISOString().slice(0, 10)
-    const e = dayMap.get(date) ?? { goodQty: 0, defectQty: 0 }
+    const key = `${date}|${equipment.id}`
+    const e = dayMap.get(key) ?? {
+      date,
+      equipmentId: equipment.id,
+      equipmentCode: equipment.code,
+      equipmentName: equipment.name,
+      goodQty: 0,
+      defectQty: 0,
+    }
     e.goodQty += gq
     e.defectQty += dq
-    dayMap.set(date, e)
+    dayMap.set(key, e)
   }
 
   const totalProd = totalGoodQty + totalDefectQty
-  const rows = Array.from(dayMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, v]) => ({
-      date,
+  const rows = Array.from(dayMap.values())
+    .sort((a, b) => a.date.localeCompare(b.date) || a.equipmentCode.localeCompare(b.equipmentCode))
+    .map((v) => ({
+      ...v,
       goodQty: Math.round(v.goodQty * 10) / 10,
       defectQty: Math.round(v.defectQty * 10) / 10,
     }))
@@ -85,7 +132,7 @@ async function fetchProductionStats(
     totalGoodQty: Math.round(totalGoodQty * 10) / 10,
     totalDefectQty: Math.round(totalDefectQty * 10) / 10,
     defectRate: totalProd > 0 ? totalDefectQty / totalProd : null,
-    resultCount: results.length,
+    resultCount,
     rows,
   }
 }
@@ -246,7 +293,14 @@ async function fetchDowntimeStats(
 export type WorkTimeStats = {
   totalHours: number | null
   resultCount: number
-  rows: Array<{ date: string; hours: number; goodQty: number }>
+  rows: Array<{
+    date: string
+    equipmentId: string
+    equipmentCode: string
+    equipmentName: string
+    hours: number
+    goodQty: number
+  }>
 }
 
 async function fetchWorkTimeStats(
@@ -261,37 +315,73 @@ async function fetchWorkTimeStats(
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId },
-        ...(f.equipmentId ? { equipmentId: f.equipmentId } : {}),
+      },
+      ...actualProductionEquipmentWhere(f.equipmentId),
+    },
+    select: {
+      startedAt: true,
+      endedAt: true,
+      goodQty: true,
+      workOrderOperationAssignment: {
+        select: {
+          equipment: { select: { id: true, code: true, name: true } },
+        },
+      },
+      workOrderOperation: {
+        select: {
+          equipment: { select: { id: true, code: true, name: true } },
+        },
       },
     },
-    select: { startedAt: true, endedAt: true, goodQty: true },
   })
 
-  const dayMap = new Map<string, { hours: number; goodQty: number }>()
+  const dayMap = new Map<
+    string,
+    {
+      date: string
+      equipmentId: string
+      equipmentCode: string
+      equipmentName: string
+      hours: number
+      goodQty: number
+    }
+  >()
   let totalHours = 0
+  let resultCount = 0
 
   for (const r of results) {
     if (!r.startedAt || !r.endedAt) continue
+    const equipment = resolveActualProductionEquipment(r)
+    if (!equipment) continue
     const h = (r.endedAt.getTime() - r.startedAt.getTime()) / 3_600_000
     totalHours += h
+    resultCount++
     const date = r.startedAt.toISOString().slice(0, 10)
-    const e = dayMap.get(date) ?? { hours: 0, goodQty: 0 }
+    const key = `${date}|${equipment.id}`
+    const e = dayMap.get(key) ?? {
+      date,
+      equipmentId: equipment.id,
+      equipmentCode: equipment.code,
+      equipmentName: equipment.name,
+      hours: 0,
+      goodQty: 0,
+    }
     e.hours += h
     e.goodQty += Number(r.goodQty)
-    dayMap.set(date, e)
+    dayMap.set(key, e)
   }
 
-  const rows = Array.from(dayMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, v]) => ({
-      date,
+  const rows = Array.from(dayMap.values())
+    .sort((a, b) => a.date.localeCompare(b.date) || a.equipmentCode.localeCompare(b.equipmentCode))
+    .map((v) => ({
+      ...v,
       hours: Math.round(v.hours * 10) / 10,
       goodQty: Math.round(v.goodQty * 10) / 10,
     }))
 
   return {
-    totalHours: results.length > 0 ? Math.round(totalHours * 10) / 10 : null,
-    resultCount: results.length,
+    totalHours: resultCount > 0 ? Math.round(totalHours * 10) / 10 : null,
+    resultCount,
     rows,
   }
 }
@@ -555,18 +645,21 @@ export async function getEquipmentCapacityStats(
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId },
-        equipmentId: { not: null },
-        ...(filter.equipmentId ? { equipmentId: filter.equipmentId } : {}),
       },
+      ...actualProductionEquipmentWhere(filter.equipmentId),
     },
     select: {
       goodQty: true,
       startedAt: true,
       endedAt: true,
+      workOrderOperationAssignment: {
+        select: {
+          equipment: { select: { id: true, code: true, name: true } },
+        },
+      },
       workOrderOperation: {
         select: {
-          equipmentId: true,
-          equipment: { select: { code: true, name: true } },
+          equipment: { select: { id: true, code: true, name: true } },
           routingOperation: { select: { standardTime: true } },
         },
       },
@@ -585,13 +678,13 @@ export async function getEquipmentCapacityStats(
   const eqMap = new Map<string, EqAgg>()
 
   for (const r of results) {
-    const op = r.workOrderOperation
-    if (!op.equipmentId || !op.equipment) continue
-    const key = op.equipmentId
+    const equipment = resolveActualProductionEquipment(r)
+    if (!equipment) continue
+    const key = equipment.id
     const e = eqMap.get(key) ?? {
-      equipmentId: op.equipmentId,
-      equipmentCode: op.equipment.code,
-      equipmentName: op.equipment.name,
+      equipmentId: equipment.id,
+      equipmentCode: equipment.code,
+      equipmentName: equipment.name,
       totalGoodQty: 0,
       workMs: 0,
       stdTimeSecs: [],
@@ -601,7 +694,7 @@ export async function getEquipmentCapacityStats(
     if (r.startedAt && r.endedAt) {
       e.workMs += r.endedAt.getTime() - r.startedAt.getTime()
     }
-    const st = Number(op.routingOperation.standardTime)
+    const st = Number(r.workOrderOperation.routingOperation.standardTime)
     if (st > 0) e.stdTimeSecs.push(st)
     e.resultCount++
     eqMap.set(key, e)
