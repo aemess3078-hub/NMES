@@ -36,6 +36,7 @@ import {
   assertProductionQuantityWithinMaterialLimit,
   getWorkOrderMaterialSufficiency,
 } from "@/lib/bom-material-sufficiency"
+import { lockWorkOrderOperationForUpdate } from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -740,10 +741,9 @@ export async function submitProductionResult(
     let isCompleted = false
 
     await prisma.$transaction(async (tx) => {
-      // Serialize concurrent assignment completions on the same operation via row-level lock
-      if (assignmentId) {
-        await tx.$queryRaw`SELECT id FROM "WorkOrderOperation" WHERE id = ${workOrderOperationId} FOR UPDATE`
-      }
+      // 같은 공정의 동시 실적 등록을 직렬화한다. assignment 없는 공정도 F10 자재기준
+      // 추가 생산가능량과 completedQty 집계를 공유하므로 동일 anchor를 먼저 잠근다.
+      await lockWorkOrderOperationForUpdate(tx, workOrderOperationId)
 
       const op = await tx.workOrderOperation.findUnique({
         where: { id: workOrderOperationId },

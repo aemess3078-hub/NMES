@@ -17,6 +17,10 @@ import {
   type QualityReleaseStatus,
 } from "./quality-release-gate.helpers"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import {
+  lockWorkOrderForUpdate,
+  withQuantityTransactionRetry,
+} from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -245,11 +249,11 @@ export async function getFinishedGoodsWarehouses(
 // ─── 완제품 입고 처리 ─────────────────────────────────────────────────────────
 
 async function generateReceiptTxNo(tenantId: string): Promise<string> {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-  const count = await prisma.inventoryTransaction.count({
-    where: { tenantId, txNo: { startsWith: `RCP-${today}` } },
-  })
-  return `RCP-${today}-${String(count + 1).padStart(4, "0")}`
+  const now = new Date()
+  const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, "")
+  const hhmmssSSS = now.toISOString().slice(11, 23).replace(/[:.]/g, "")
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0")
+  return `RCP-${yyyymmdd}-${hhmmssSSS}-${random}`
 }
 
 function isPrismaTransactionTimeoutError(error: unknown): boolean {
@@ -283,7 +287,9 @@ export async function createFinishedGoodsReceiptAction(
     let createdLotNo: string | null = null
     const txNo = await generateReceiptTxNo(tenantId)
 
-    await prisma.$transaction(async (tx) => {
+    await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+      await lockWorkOrderForUpdate(tx, tenantId, data.workOrderId)
+
       // 1. WorkOrder 재조회 (입고 가능 수량 / WipUnit 상태 / 완제품 LOT 발번 정보)
       const workOrder = await tx.workOrder.findFirst({
         where: { id: data.workOrderId, tenantId },
@@ -497,12 +503,11 @@ export async function createFinishedGoodsReceiptAction(
       })
 
       if (existing) {
-        const newQty = Number(existing.qtyOnHand) + data.receiptQty
         await tx.inventoryBalance.update({
           where: { id: existing.id },
           data: {
-            qtyOnHand: newQty,
-            qtyAvailable: newQty - Number(existing.qtyHold),
+            qtyOnHand: { increment: data.receiptQty },
+            qtyAvailable: { increment: data.receiptQty },
           },
         })
       } else {
@@ -522,7 +527,7 @@ export async function createFinishedGoodsReceiptAction(
     }, {
       maxWait: 10000,
       timeout: 15000,
-    })
+    }))
 
     revalidatePath("/app/mes/finished-goods-receipt")
     revalidatePath("/app/mes/inventory")

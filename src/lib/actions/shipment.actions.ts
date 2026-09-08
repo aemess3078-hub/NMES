@@ -6,6 +6,11 @@ import { revalidatePath } from "next/cache"
 import { assertLotQualityReleaseAllowed } from "./quality-release-gate.helpers"
 import type { Prisma } from "@prisma/client"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import {
+  lockInventoryBalancesForUpdate,
+  lockSalesOrderItemsForUpdate,
+  withQuantityTransactionRetry,
+} from "@/lib/quantity-concurrency"
 
 export async function getShipments(tenantId: string) {
   const rows = await prisma.shipmentOrder.findMany({
@@ -465,7 +470,7 @@ export async function createShipment(
 
   const shipmentNo = await generateShipmentNo(tenantId)
 
-  await prisma.$transaction(async (tx) => {
+  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
     const warehouse = await tx.warehouse.findFirst({
       where: { id: warehouseId, tenantId },
       select: { id: true, siteId: true },
@@ -485,6 +490,8 @@ export async function createShipment(
     const salesOrderItemIds = Array.from(
       new Set(data.items.map((item) => item.salesOrderItemId)),
     )
+    await lockSalesOrderItemsForUpdate(tx, tenantId, salesOrderItemIds)
+
     const salesOrderItems = await tx.salesOrderItem.findMany({
       where: {
         id: { in: salesOrderItemIds },
@@ -545,6 +552,58 @@ export async function createShipment(
         )
       }
     }
+
+    const balanceIdsToLock: string[] = []
+    for (const item of data.items) {
+      const salesOrderItem = salesOrderItemById.get(item.salesOrderItemId)!
+      if (salesOrderItem.item.isLotTracked) {
+        if (!item.lotId) {
+          throw new Error(`[${salesOrderItem.item.code}] LOT 관리 품목은 LOT를 선택해야 합니다.`)
+        }
+        const lot = await tx.lot.findFirst({
+          where: { id: item.lotId, tenantId, status: "ACTIVE" },
+          select: { id: true, lotNo: true, itemId: true },
+        })
+        if (!lot) {
+          throw new Error("출하할 완제품 LOT를 찾을 수 없습니다.")
+        }
+        if (lot.itemId !== item.itemId) {
+          throw new Error(`LOT(${lot.lotNo}) 품목과 출하 품목이 일치하지 않습니다.`)
+        }
+        await assertLotQualityReleaseAllowed(tx, { tenantId, lotId: lot.id })
+        const balance = await tx.inventoryBalance.findFirst({
+          where: {
+            tenantId,
+            siteId: warehouse.siteId,
+            warehouseId,
+            itemId: item.itemId,
+            lotId: lot.id,
+          },
+          select: { id: true },
+        })
+        if (!balance) {
+          throw new Error(`LOT(${lot.lotNo})의 출하 가능 재고가 없습니다.`)
+        }
+        balanceIdsToLock.push(balance.id)
+      } else {
+        const balance = await tx.inventoryBalance.findFirst({
+          where: {
+            tenantId,
+            siteId: warehouse.siteId,
+            warehouseId,
+            itemId: item.itemId,
+            lotId: null,
+          },
+          select: { id: true },
+        })
+        if (!balance) {
+          throw new Error(`[${salesOrderItem.item.code}] 선택한 창고에 출하 가능한 재고가 없습니다.`)
+        }
+        balanceIdsToLock.push(balance.id)
+      }
+    }
+
+    await lockInventoryBalancesForUpdate(tx, balanceIdsToLock)
 
     const shipment = await tx.shipmentOrder.create({
       data: {
@@ -651,7 +710,7 @@ export async function createShipment(
 
       }
     }
-  })
+  }))
 
   revalidatePath("/app/mes/shipments")
   revalidatePath("/app/mes/sales-orders")
@@ -665,7 +724,7 @@ export async function createShipment(
 export async function confirmShipment(id: string) {
   await requireResourcePermission("SHIPMENT", "UPDATE")
   const user = await requireRole("OPERATOR")
-  await prisma.$transaction(async (tx) => {
+  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
     // The conditional transition makes a second confirmation a no-op failure,
     // before any physical inventory mutation is made.
     const transitioned = await tx.shipmentOrder.updateMany({
@@ -687,6 +746,12 @@ export async function confirmShipment(id: string) {
       },
     })
     if (!shipment.warehouseId || !shipment.warehouse) throw new Error("출하 창고 정보를 찾을 수 없습니다.")
+
+    await lockSalesOrderItemsForUpdate(
+      tx,
+      user.tenantId,
+      shipment.items.map((item) => item.salesOrderItemId)
+    )
 
     for (const item of shipment.items) {
       if (item.item.isLotTracked && (!item.lotId || !item.lot || item.lot.itemId !== item.itemId || item.lot.status !== "ACTIVE")) {
@@ -712,7 +777,7 @@ export async function confirmShipment(id: string) {
     }
     const status = await resolveSalesOrderStatusAfterShipmentRollback(tx, shipment.salesOrderId)
     await tx.salesOrder.update({ where: { id: shipment.salesOrderId }, data: { status } })
-  })
+  }))
   revalidatePath("/app/mes/shipments")
   revalidatePath("/app/mes/sales-orders")
   revalidatePath("/app/mes/sales/delivery-status")
