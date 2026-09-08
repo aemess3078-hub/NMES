@@ -8,6 +8,7 @@ import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { Prisma, ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { lockPurchaseOrderItemsForUpdate } from "@/lib/quantity-concurrency"
 
 export type CreateReceivingInspectionInput = {
   purchaseOrderItemId: string
@@ -208,8 +209,31 @@ async function createReceivingInspectionInternal(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       await prisma.$transaction(async (tx) => {
-    let consumedReservationId: string | null = null
-    let resolvedLotNo: string | null = null
+        await lockPurchaseOrderItemsForUpdate(tx, tenantId, [data.purchaseOrderItemId])
+        const lockedPurchaseOrderItem = await tx.purchaseOrderItem.findFirst({
+          where: {
+            id: data.purchaseOrderItemId,
+            purchaseOrder: { tenantId },
+          },
+          select: {
+            qty: true,
+            receivedQty: true,
+            item: { select: { uom: true } },
+          },
+        })
+        if (!lockedPurchaseOrderItem) {
+          throw new Error("발주 품목을 찾을 수 없습니다.")
+        }
+        const lockedRemainingQty =
+          Number(lockedPurchaseOrderItem.qty) - Number(lockedPurchaseOrderItem.receivedQty)
+        if (data.receivedQty > lockedRemainingQty) {
+          throw new Error(
+            `입고수량은 잔여수량을 초과할 수 없습니다. 잔여수량: ${lockedRemainingQty.toLocaleString("ko-KR")} ${lockedPurchaseOrderItem.item.uom}`
+          )
+        }
+
+        let consumedReservationId: string | null = null
+        let resolvedLotNo: string | null = null
 
     // 4-0. 자동채번 미리보기(RESERVED) 검증 — 예약이 유효할 때만 그 번호를 그대로 사용한다.
     //      임의로 다른 순번을 대신 발행하지 않는다: 이미 라벨이 출력됐을 수 있기 때문.

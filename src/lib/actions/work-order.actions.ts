@@ -18,6 +18,11 @@ import {
   summarizeProductionPlanItemAllocation,
 } from "@/lib/production-plan-workorder-integrity"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import {
+  lockProductionPlanItemsForUpdate,
+  lockWorkOrderForUpdate,
+  withQuantityTransactionRetry,
+} from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -839,6 +844,7 @@ export async function generateManufacturingNo(
 }
 
 async function validateProductionPlanItemForWorkOrder(
+  db: Pick<Prisma.TransactionClient, "productionPlanItem">,
   productionPlanItemId: string | null | undefined,
   data: Pick<CreateWorkOrderInput, "itemId" | "bomId" | "routingId" | "plannedQty" | "status">,
   tenantId: string,
@@ -846,7 +852,7 @@ async function validateProductionPlanItemForWorkOrder(
 ) {
   if (!productionPlanItemId) return
 
-  const planItem = await prisma.productionPlanItem.findFirst({
+  const planItem = await db.productionPlanItem.findFirst({
     where: {
       id: productionPlanItemId,
       plan: {
@@ -895,11 +901,6 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
   if (tenantId !== user.tenantId) throw new Error("FORBIDDEN")
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
   await validateRoutingForItem({ tenantId, itemId: headerFields.itemId, routingId: headerFields.routingId })
-  await validateProductionPlanItemForWorkOrder(
-    headerFields.productionPlanItemId,
-    headerFields,
-    tenantId
-  )
   const validatedOperations = await validateWorkOrderOperationAssignments(operations, tenantId)
 
   // 제조번호: 수동 입력 우선, 미입력 시 자동 생성 (MFG-YYYYMMDD-NNN)
@@ -913,7 +914,15 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
     ? (manualDisabled ? await generateManufacturingNo(tenantId, headerFields.itemId) : trimmed)
     : await generateManufacturingNo(tenantId, headerFields.itemId)
 
-  await prisma.$transaction(async (tx) => {
+  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+    await lockProductionPlanItemsForUpdate(tx, tenantId, [headerFields.productionPlanItemId])
+    await validateProductionPlanItemForWorkOrder(
+      tx,
+      headerFields.productionPlanItemId,
+      headerFields,
+      tenantId
+    )
+
     const workOrder = await tx.workOrder.create({
       data: {
         ...headerFields,
@@ -944,7 +953,7 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
     })
 
     await syncProductionPlanStatusForWorkOrder(tx, workOrder.id, tenantId)
-  })
+  }))
 
   revalidatePath("/app/mes/work-orders")
   revalidatePath("/app/mes/production-plan")
@@ -978,12 +987,6 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
 
   const { operations, dueDate, manufacturingNo, ...headerFields } = data
   await validateRoutingForItem({ tenantId: existing.tenantId, itemId: headerFields.itemId, routingId: headerFields.routingId })
-  await validateProductionPlanItemForWorkOrder(
-    headerFields.productionPlanItemId,
-    headerFields,
-    existing.tenantId,
-    { excludeWorkOrderId: id }
-  )
   const validatedOperations = await validateWorkOrderOperationAssignments(
     operations,
     existing.tenantId
@@ -998,7 +1001,39 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     ? (manualDisabled ? await generateManufacturingNo(existing.tenantId, headerFields.itemId) : trimmed)
     : null
 
-  await prisma.$transaction(async (tx) => {
+  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+    await lockWorkOrderForUpdate(tx, existing.tenantId, id)
+    const lockedExisting = await tx.workOrder.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        tenantId: true,
+        productionPlanItemId: true,
+        productionPlanItem: { select: { planId: true } },
+      },
+    })
+    if (!lockedExisting) {
+      throw new Error("작업지시를 찾을 수 없습니다.")
+    }
+    if (lockedExisting.tenantId !== existing.tenantId) throw new Error("FORBIDDEN")
+    if (blockedStatuses.includes(lockedExisting.status)) {
+      throw new Error(
+        `'${lockedExisting.status}' 상태의 작업지시는 수정할 수 없습니다.`
+      )
+    }
+
+    await lockProductionPlanItemsForUpdate(tx, existing.tenantId, [
+      lockedExisting.productionPlanItemId,
+      headerFields.productionPlanItemId,
+    ])
+    await validateProductionPlanItemForWorkOrder(
+      tx,
+      headerFields.productionPlanItemId,
+      headerFields,
+      existing.tenantId,
+      { excludeWorkOrderId: id }
+    )
+
     await tx.workOrderOperation.deleteMany({ where: { workOrderId: id } })
     await tx.workOrder.update({
       where: { id },
@@ -1029,16 +1064,16 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
     })
     await syncProductionPlanStatusForWorkOrder(tx, id, existing.tenantId)
     if (
-      existing.productionPlanItem?.planId &&
-      existing.productionPlanItemId !== headerFields.productionPlanItemId
+      lockedExisting.productionPlanItem?.planId &&
+      lockedExisting.productionPlanItemId !== headerFields.productionPlanItemId
     ) {
       await syncProductionPlanStatusFromWorkOrders(
         tx,
-        existing.productionPlanItem.planId,
+        lockedExisting.productionPlanItem.planId,
         existing.tenantId
       )
     }
-  })
+  }))
 
   revalidatePath("/app/mes/work-orders")
   revalidatePath("/app/mes/production-plan")

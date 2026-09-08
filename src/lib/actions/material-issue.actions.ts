@@ -5,6 +5,10 @@ import { requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import type { WipUnit } from "@prisma/client"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import {
+  lockWorkOrderForUpdate,
+  withQuantityTransactionRetry,
+} from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +50,14 @@ export type WarehouseStockOption = {
   code: string
   name: string
   itemStocks: Record<string, number>   // itemId → qtyAvailable
+}
+
+function generateMaterialIssueTxNo(index: number): string {
+  const now = new Date()
+  const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, "")
+  const hhmmssSSS = now.toISOString().slice(11, 23).replace(/[:.]/g, "")
+  const random = Math.floor(Math.random() * 10000).toString().padStart(4, "0")
+  return `ISS-${yyyymmdd}-${hhmmssSSS}-${String(index + 1).padStart(3, "0")}-${random}`
 }
 
 export type IssueMaterialInput = {
@@ -338,6 +350,10 @@ export async function issueMaterialsForWorkOrder(
     },
   })
 
+  if (!workOrder || workOrder.tenantId !== tenantId) {
+    return { ok: false, error: "작업지시를 찾을 수 없습니다." }
+  }
+
   const firstOperation = workOrder?.operations[0] ?? null
   if (workOrder && !firstOperation) {
     console.warn(
@@ -345,20 +361,14 @@ export async function issueMaterialsForWorkOrder(
     )
   }
 
-  // txNo 사전 생성 (트랜잭션 외부) — LOT별로 전개된 expandedItems 기준
-  const txNos: string[] = []
-  if (expandedItems.length > 0) {
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-    const baseCount = await prisma.inventoryTransaction.count({
-      where: { tenantId, txNo: { startsWith: `ISS-${today}` } },
-    })
-    for (let i = 0; i < expandedItems.length; i++) {
-      txNos.push(`ISS-${today}-${String(baseCount + i + 1).padStart(4, "0")}`)
-    }
-  }
+  // txNo 사전 생성 (트랜잭션 외부) — count 기반 채번은 동시요청에서 unique 충돌이 쉬워
+  // timestamp + random suffix를 사용한다. 업무 정합성은 아래 transaction이 보장한다.
+  const txNos = expandedItems.map((_, index) => generateMaterialIssueTxNo(index))
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+      await lockWorkOrderForUpdate(tx, tenantId, data.workOrderId)
+
       // ── 0. WipUnit 중복/차단 검증 (자재 루프 진입 전) ─────────────────────
       //  - 같은 작업지시의 원본 WipUnit (parent/sourceProductionResult 없음)
       //    중 비-terminal 상태가 있으면 재사용한다.
@@ -582,13 +592,24 @@ export async function issueMaterialsForWorkOrder(
         }
 
         // ── 3. InventoryBalance 차감 ─────────────────────────────────────────
-        await tx.inventoryBalance.update({
-          where: { id: balance.id },
+        const decremented = await tx.inventoryBalance.updateMany({
+          where: {
+            id: balance.id,
+            tenantId,
+            qtyOnHand: { gte: item.issueQty },
+            qtyAvailable: { gte: item.issueQty },
+          },
           data: {
-            qtyOnHand: newQty,
-            qtyAvailable: Math.max(0, newQty - Number(balance.qtyHold)),
+            qtyOnHand: { decrement: item.issueQty },
+            qtyAvailable: { decrement: item.issueQty },
           },
         })
+        if (decremented.count !== 1) {
+          const lotInfo = lotId ? ` LOT(${item.lotId})` : ""
+          throw new Error(
+            `가용재고 부족: ${meta?.code ?? item.itemId}${lotInfo} — 다른 작업으로 재고가 변경되었습니다. 현재 재고를 확인한 후 다시 시도해주세요.`
+          )
+        }
 
         // ── 4. MaterialReservation 갱신 ──────────────────────────────────────
         if (item.reservationId) {
@@ -639,7 +660,7 @@ export async function issueMaterialsForWorkOrder(
           }
         }
       }
-    })
+    }))
 
     revalidatePath("/app/mes/material-issue")
     revalidatePath("/app/mes/inventory")
