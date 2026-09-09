@@ -87,6 +87,7 @@ export function TraceabilityClient({ initialLotNo, tenantId }: TraceabilityClien
       lineage.workOrders.length > 0 ||
       lineage.receipts.length > 0 ||
       lineage.shipments.length > 0 ||
+      lineage.outsourcingHistory.length > 0 ||
       lineage.inspections.length > 0
     ),
   ), [lineage])
@@ -196,6 +197,25 @@ export function TraceabilityClient({ initialLotNo, tenantId }: TraceabilityClien
                 {lineage.shipments.map((shipment) => (
                   <div key={shipment.id} className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                     <b>출하</b> {formatQuantity(shipment.qty)} · {shipment.shipmentOrder.shipmentNo} · {SHIPMENT_STATUS[shipment.shipmentOrder.status] ?? shipment.shipmentOrder.status} · {shipment.shipmentOrder.salesOrder.orderNo}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="외주 이력">
+            {lineage.outsourcingHistory.length === 0 ? <Empty /> : (
+              <div className="space-y-2">
+                {lineage.outsourcingHistory.map((movement) => (
+                  <div key={movement.id} className="rounded-lg border border-violet-100 bg-violet-50 p-3 text-[14px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <b>{movement.movementType}</b>
+                      {movement.purchaseOrder && <Badge>{movement.purchaseOrder.orderNo}</Badge>}
+                      <span className="text-slate-700">{movement.partner?.name ?? "외주처 미지정"}</span>
+                    </div>
+                    <div className="mt-1 text-[13px] text-slate-600">
+                      {movement.workOrder?.orderNo ?? "-"} · {movement.operation.seq}. {movement.operation.name} · {formatQuantity(movement.qty)} · {new Date(movement.createdAt).toLocaleString()}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -6,6 +6,11 @@ import { Prisma, PurchaseOrderStatus, ReceivingInspectionResult } from "@prisma/
 import { revalidatePath } from "next/cache"
 import { randomBytes } from "crypto"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import {
+  lockPurchaseOrderItemsForUpdate,
+  lockWorkOrderOperationForUpdate,
+  withQuantityTransactionRetry,
+} from "@/lib/quantity-concurrency"
 
 // ─── Filter & Types ───────────────────────────────────────────────────────────
 
@@ -30,6 +35,9 @@ export type OutsourcingOrderRow = {
   firstItemCode: string | null
   totalQty: number
   totalReceivedQty: number
+  workOrderNo: string | null
+  operationName: string | null
+  operationSeq: number | null
   isOverdue: boolean
   note: string | null
 }
@@ -39,6 +47,9 @@ export type OutsourcingReceivingRow = {
   inspectedAt: string
   orderNo: string
   supplierName: string
+  workOrderNo: string | null
+  operationName: string | null
+  operationSeq: number | null
   itemCode: string
   itemName: string
   receivedQty: number
@@ -58,6 +69,9 @@ export type OutsourcingSummary = {
 export type OutsourcingWipUnitRow = {
   id: string
   mfgNo: string
+  workOrderNo: string | null
+  outsourcingOrderNo: string | null
+  outsourcingOrderItemId: string | null
   itemCode: string
   itemName: string
   qty: number
@@ -82,6 +96,9 @@ export type OutsourcingWipReceivingRow = {
   id: string
   createdAt: string
   mfgNo: string
+  workOrderNo: string | null
+  outsourcingOrderNo: string | null
+  outsourcingOrderItemId: string | null
   itemCode: string
   itemName: string
   qty: number
@@ -146,6 +163,45 @@ function generateOutsourcingOrderNo(): string {
   return `OS-${yyyymmdd}-${hhmmss}-${random}`
 }
 
+function isOutsourcingPurchaseOrder(order: { orderNo: string; note: string | null }) {
+  return order.orderNo.startsWith("OS-") || (order.note ?? "").includes("[OUTSOURCING]")
+}
+
+async function getLatestOutsourcingOrderItemForWipUnit(
+  client: Pick<Prisma.TransactionClient, "wipMovement" | "purchaseOrderItem">,
+  tenantId: string,
+  wipUnitId: string,
+) {
+  const latestIssue = await client.wipMovement.findFirst({
+    where: {
+      tenantId,
+      wipUnitId,
+      movementType: "OUTSOURCED",
+      sourceType: "PurchaseOrderItem",
+      sourceId: { not: null },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { sourceId: true },
+  })
+  if (!latestIssue?.sourceId) return null
+
+  return client.purchaseOrderItem.findFirst({
+    where: {
+      id: latestIssue.sourceId,
+      purchaseOrder: { tenantId },
+    },
+    include: {
+      purchaseOrder: { include: { supplier: true } },
+      workOrderOperation: {
+        include: {
+          workOrder: { select: { id: true, orderNo: true, tenantId: true } },
+          routingOperation: { select: { id: true, seq: true, name: true } },
+        },
+      },
+    },
+  })
+}
+
 export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) {
   await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   await requireRole("OPERATOR")
@@ -190,7 +246,14 @@ export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingI
 
   const wipUnit = await prisma.wipUnit.findUniqueOrThrow({
     where: { id: data.wipUnitId },
-    include: { workOrderOperation: true },
+    include: {
+      workOrderOperation: {
+        include: {
+          workOrder: { select: { id: true, tenantId: true, siteId: true, orderNo: true } },
+          routingOperation: { select: { id: true, seq: true, name: true } },
+        },
+      },
+    },
   })
   if (wipUnit.tenantId !== tenantId) {
     throw new Error("작업 WIP을 찾을 수 없습니다.")
@@ -204,32 +267,83 @@ export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingI
     where: { id: data.outsourcingOrderId },
     include: { supplier: true },
   })
-  if (purchaseOrder.tenantId !== tenantId) {
+  if (purchaseOrder.tenantId !== tenantId || !isOutsourcingPurchaseOrder(purchaseOrder)) {
     throw new Error("외주발주를 찾을 수 없습니다.")
   }
+  if (purchaseOrder.supplier.tenantId !== tenantId || !["SUPPLIER", "BOTH"].includes(purchaseOrder.supplier.partnerType)) {
+    throw new Error("선택한 외주처를 찾을 수 없습니다.")
+  }
+  if (purchaseOrder.siteId !== wipUnit.workOrderOperation.workOrder.siteId) {
+    throw new Error("외주발주 사업장과 작업지시 사업장이 일치하지 않습니다.")
+  }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.wipUnit.update({
-      where: { id: data.wipUnitId },
+  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+    await lockWorkOrderOperationForUpdate(tx, wipUnit.workOrderOperationId)
+
+    let orderItem = await tx.purchaseOrderItem.findFirst({
+      where: { purchaseOrderId: purchaseOrder.id, itemId: wipUnit.itemId },
+      include: { workOrderOperation: true },
+    })
+    if (orderItem && orderItem.workOrderOperationId !== wipUnit.workOrderOperationId) {
+      throw new Error("같은 외주발주에 동일 품목의 다른 공정을 함께 연결할 수 없습니다. 공정별 외주발주를 분리해주세요.")
+    }
+    if (!orderItem) {
+      orderItem = await tx.purchaseOrderItem.create({
+        data: {
+          purchaseOrderId: purchaseOrder.id,
+          itemId: wipUnit.itemId,
+          workOrderOperationId: wipUnit.workOrderOperationId,
+          qty: wipUnit.qty,
+          unitPrice: 0,
+          stockAtOrder: 0,
+          note: `외주공정: ${wipUnit.workOrderOperation.workOrder.orderNo} / ${wipUnit.workOrderOperation.routingOperation.seq}. ${wipUnit.workOrderOperation.routingOperation.name}`,
+        },
+        include: { workOrderOperation: true },
+      })
+    }
+    await lockPurchaseOrderItemsForUpdate(tx, tenantId, [orderItem.id])
+
+    const currentIssuedQty = await tx.wipMovement.aggregate({
+      where: {
+        tenantId,
+        movementType: "OUTSOURCED",
+        sourceType: "PurchaseOrderItem",
+        sourceId: orderItem.id,
+      },
+      _sum: { qty: true },
+    })
+    const nextIssuedQty = Number(currentIssuedQty._sum.qty ?? 0) + Number(wipUnit.qty)
+    if (nextIssuedQty - Number(orderItem.qty) > 0.000001) {
+      throw new Error(`외주출고수량은 외주발주수량을 초과할 수 없습니다. 잔여수량: ${Math.max(0, Number(orderItem.qty) - Number(currentIssuedQty._sum.qty ?? 0)).toLocaleString("ko-KR")}`)
+    }
+
+    const updated = await tx.wipUnit.updateMany({
+      where: { id: data.wipUnitId, tenantId, status: { in: ["IN_PROCESS", "WAITING", "REWORK"] } },
       data: {
         status: "OUTSOURCED",
         outsourcingPartnerId: purchaseOrder.supplierId,
       },
     })
+    if (updated.count !== 1) {
+      throw new Error("이미 외주 처리되었거나 외주출고 가능한 상태가 아닙니다.")
+    }
 
     await tx.wipMovement.create({
       data: {
         tenantId,
+        siteId: wipUnit.siteId,
         wipUnitId: data.wipUnitId,
         movementType: "OUTSOURCED",
+        fromOperationId: wipUnit.workOrderOperationId,
+        toOperationId: wipUnit.workOrderOperationId,
         toPartnerId: purchaseOrder.supplierId,
-        sourceType: "PurchaseOrder",
-        sourceId: data.outsourcingOrderId,
+        sourceType: "PurchaseOrderItem",
+        sourceId: orderItem.id,
         qty: wipUnit.qty,
-        note: `외주출고: ${purchaseOrder.supplier.name} - 공정순서 ${wipUnit.workOrderOperation.seq} - 제조번호: ${wipUnit.manufacturingNo || "-"}`,
+        note: `외주출고: ${purchaseOrder.orderNo} / ${purchaseOrder.supplier.name} - ${wipUnit.workOrderOperation.routingOperation.seq}. ${wipUnit.workOrderOperation.routingOperation.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}`,
       },
     })
-  })
+  }))
 
   revalidatePath("/app/mes/production/outsourcing")
   revalidatePath("/app/mes/production/wip-inventory")
@@ -245,6 +359,7 @@ export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOuts
 
   const wipUnit = await prisma.wipUnit.findUniqueOrThrow({
     where: { id: data.wipUnitId },
+    include: { workOrderOperation: true },
   })
   if (wipUnit.tenantId !== tenantId) {
     throw new Error("작업 WIP을 찾을 수 없습니다.")
@@ -258,47 +373,61 @@ export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOuts
     throw new Error("외주처 정보가 없습니다.")
   }
 
-  const supplier = await prisma.businessPartner.findUniqueOrThrow({
-    where: { id: wipUnit.outsourcingPartnerId },
-  })
+  const orderItem = await getLatestOutsourcingOrderItemForWipUnit(prisma, tenantId, data.wipUnitId)
+  if (!orderItem || !orderItem.workOrderOperation) {
+    throw new Error("외주발주 item 연결을 찾을 수 없습니다.")
+  }
+  if (orderItem.workOrderOperationId !== wipUnit.workOrderOperationId) {
+    throw new Error("외주발주 공정과 재공 공정이 일치하지 않습니다.")
+  }
+  if (orderItem.purchaseOrder.supplierId !== wipUnit.outsourcingPartnerId) {
+    throw new Error("외주발주 업체와 재공 외주처가 일치하지 않습니다.")
+  }
 
-  // TODO: OS-2 UI에서 purchaseOrderId를 명시적으로 입력받도록 개선
-  // 현재는 같은 외주처의 최신 외주발주를 임시로 연결
-  // 향후: IssueWipUnitToOutsourcingInput에 outsourcingOrderId를 추가하고,
-  //      receiveWipUnitFromOutsourcingInput에도 outsourcingOrderId 추가
-  const purchaseOrder = await prisma.purchaseOrder.findFirst({
-    where: {
-      tenantId,
-      supplierId: wipUnit.outsourcingPartnerId,
-      note: { contains: "[OUTSOURCING]" },
-      orderDate: {
-        gte: new Date(new Date().getTime() - 90 * 24 * 60 * 60 * 1000),
-      },
-    },
-  })
+  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+    await lockPurchaseOrderItemsForUpdate(tx, tenantId, [orderItem.id])
+    const lockedItem = await tx.purchaseOrderItem.findFirst({
+      where: { id: orderItem.id, purchaseOrder: { tenantId } },
+      include: { purchaseOrder: { include: { supplier: true } } },
+    })
+    if (!lockedItem) throw new Error("외주발주 item을 찾을 수 없습니다.")
+    const remainingQty = Number(lockedItem.qty) - Number(lockedItem.receivedQty)
+    if (Number(wipUnit.qty) - remainingQty > 0.000001) {
+      throw new Error(`외주입고수량은 외주발주 잔량을 초과할 수 없습니다. 잔여수량: ${Math.max(0, remainingQty).toLocaleString("ko-KR")}`)
+    }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.wipUnit.update({
-      where: { id: data.wipUnitId },
+    const updated = await tx.wipUnit.updateMany({
+      where: { id: data.wipUnitId, tenantId, status: "OUTSOURCED", outsourcingPartnerId: lockedItem.purchaseOrder.supplierId },
       data: {
         status: "RECEIVED",
         outsourcingPartnerId: null,
       },
     })
+    if (updated.count !== 1) {
+      throw new Error("이미 외주입고 처리되었거나 외주처 정보가 일치하지 않습니다.")
+    }
+
+    await tx.purchaseOrderItem.update({
+      where: { id: lockedItem.id },
+      data: { receivedQty: { increment: wipUnit.qty } },
+    })
 
     await tx.wipMovement.create({
       data: {
         tenantId,
+        siteId: wipUnit.siteId,
         wipUnitId: data.wipUnitId,
         movementType: "RETURNED",
-        fromPartnerId: wipUnit.outsourcingPartnerId,
-        sourceType: "PurchaseOrder",
-        sourceId: purchaseOrder?.id || "",
+        fromOperationId: wipUnit.workOrderOperationId,
+        toOperationId: wipUnit.workOrderOperationId,
+        fromPartnerId: lockedItem.purchaseOrder.supplierId,
+        sourceType: "PurchaseOrderItem",
+        sourceId: lockedItem.id,
         qty: wipUnit.qty,
-        note: `외주입고/검사대기: ${supplier.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}${data.note ? ` - ${data.note}` : ""}`,
+        note: `외주입고/검사대기: ${lockedItem.purchaseOrder.orderNo} / ${lockedItem.purchaseOrder.supplier.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}${data.note ? ` - ${data.note}` : ""}`,
       },
     })
-  })
+  }))
 
   revalidatePath("/app/mes/production/outsourcing")
   revalidatePath("/app/mes/production/wip-inventory")
@@ -355,10 +484,29 @@ export async function inspectOutsourcedWipUnit(
       movementType: "RETURNED",
     },
     orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
+    select: { createdAt: true, sourceId: true },
   })
   if (!latestReturned) {
     throw new Error("외주입고 이력을 찾을 수 없습니다.")
+  }
+  const orderItemId = latestReturned.sourceId
+  if (!orderItemId) {
+    throw new Error("외주입고의 외주발주 item 연결을 찾을 수 없습니다.")
+  }
+  const orderItem = await prisma.purchaseOrderItem.findFirst({
+    where: { id: orderItemId, purchaseOrder: { tenantId } },
+    include: {
+      purchaseOrder: { select: { id: true, orderNo: true, supplierId: true } },
+      workOrderOperation: {
+        select: {
+          id: true,
+          workOrderId: true,
+        },
+      },
+    },
+  })
+  if (!orderItem || orderItem.workOrderOperationId !== wipUnit.workOrderOperationId) {
+    throw new Error("외주입고의 외주발주 item과 재공 공정이 일치하지 않습니다.")
   }
 
   const existingInspection = await prisma.wipMovement.findFirst({
@@ -407,8 +555,8 @@ export async function inspectOutsourcedWipUnit(
         movementType: "RELEASED",
         qty: acceptedQty,
         sourceType: "OutsourcingInspection",
-        sourceId: input.wipUnitId,
-        note: `외주검사 합격 복귀${input.note ? ` - ${input.note}` : ""} (합격=${acceptedQty})`,
+        sourceId: orderItem.id,
+        note: `외주검사 합격 복귀: ${orderItem.purchaseOrder.orderNo}${input.note ? ` - ${input.note}` : ""} (합격=${acceptedQty})`,
       })
     }
 
@@ -442,8 +590,8 @@ export async function inspectOutsourcedWipUnit(
           movementType: "DEFECT",
           qty: defectQty,
           sourceType: "OutsourcingInspection",
-          sourceId: input.wipUnitId,
-          note: `외주검사 불량${input.note ? ` - ${input.note}` : ""} (불량=${defectQty})`,
+          sourceId: orderItem.id,
+          note: `외주검사 불량: ${orderItem.purchaseOrder.orderNo}${input.note ? ` - ${input.note}` : ""} (불량=${defectQty})`,
         },
         {
           tenantId,
@@ -453,7 +601,7 @@ export async function inspectOutsourcedWipUnit(
           movementType: "SPLIT",
           qty: defectQty,
           sourceType: "OutsourcingInspection",
-          sourceId: input.wipUnitId,
+          sourceId: orderItem.id,
           note: `외주검사 불량 수량 분리 (defectQty=${defectQty})`,
         }
       )
@@ -489,8 +637,8 @@ export async function inspectOutsourcedWipUnit(
           movementType: "REWORK",
           qty: reworkQty,
           sourceType: "OutsourcingInspection",
-          sourceId: input.wipUnitId,
-          note: `외주검사 재외주 대상${input.note ? ` - ${input.note}` : ""} (재외주=${reworkQty})`,
+          sourceId: orderItem.id,
+          note: `외주검사 재외주 대상: ${orderItem.purchaseOrder.orderNo}${input.note ? ` - ${input.note}` : ""} (재외주=${reworkQty})`,
         },
         {
           tenantId,
@@ -500,7 +648,7 @@ export async function inspectOutsourcedWipUnit(
           movementType: "SPLIT",
           qty: reworkQty,
           sourceType: "OutsourcingInspection",
-          sourceId: input.wipUnitId,
+          sourceId: orderItem.id,
           note: `외주검사 재외주 수량 분리 (reworkQty=${reworkQty})`,
         }
       )
@@ -551,10 +699,18 @@ export async function getOutsourcingData(
       supplier: { select: { id: true, name: true } },
       items: {
         select: {
+          id: true,
           qty: true,
           receivedQty: true,
           unitPrice: true,
           item: { select: { code: true, name: true } },
+          workOrderOperation: {
+            select: {
+              seq: true,
+              routingOperation: { select: { name: true } },
+              workOrder: { select: { orderNo: true } },
+            },
+          },
         },
       },
     },
@@ -569,6 +725,7 @@ export async function getOutsourcingData(
       0
     )
     const firstItem = o.items[0]?.item
+    const firstLinkedOperation = o.items.find((item) => item.workOrderOperation)?.workOrderOperation ?? null
     const itemSummary = firstItem
       ? o.items.length > 1
         ? `${firstItem.name} 외 ${o.items.length - 1}건`
@@ -593,6 +750,9 @@ export async function getOutsourcingData(
       firstItemCode: firstItem?.code ?? null,
       totalQty: Math.round(totalQty * 100) / 100,
       totalReceivedQty: Math.round(totalReceivedQty * 100) / 100,
+      workOrderNo: firstLinkedOperation?.workOrder.orderNo ?? null,
+      operationName: firstLinkedOperation?.routingOperation.name ?? null,
+      operationSeq: firstLinkedOperation?.seq ?? null,
       isOverdue,
       note: o.note,
     }
@@ -624,6 +784,13 @@ export async function getOutsourcingData(
       purchaseOrderItem: {
         include: {
           item: { select: { code: true, name: true } },
+          workOrderOperation: {
+            select: {
+              seq: true,
+              routingOperation: { select: { name: true } },
+              workOrder: { select: { orderNo: true } },
+            },
+          },
           purchaseOrder: {
             select: { orderNo: true, supplier: { select: { name: true } } },
           },
@@ -639,6 +806,9 @@ export async function getOutsourcingData(
     inspectedAt: r.inspectedAt.toISOString(),
     orderNo: r.purchaseOrderItem.purchaseOrder.orderNo,
     supplierName: r.purchaseOrderItem.purchaseOrder.supplier.name,
+    workOrderNo: r.purchaseOrderItem.workOrderOperation?.workOrder.orderNo ?? null,
+    operationName: r.purchaseOrderItem.workOrderOperation?.routingOperation.name ?? null,
+    operationSeq: r.purchaseOrderItem.workOrderOperation?.seq ?? null,
     itemCode: r.purchaseOrderItem.item.code,
     itemName: r.purchaseOrderItem.item.name,
     receivedQty: Number(r.receivedQty),
@@ -663,7 +833,17 @@ export async function getOutsourcingData(
     include: {
       item: { select: { code: true, name: true } },
       outsourcingPartner: { select: { name: true } },
-      workOrderOperation: true,
+      workOrder: { select: { orderNo: true } },
+      workOrderOperation: { include: { routingOperation: { select: { name: true } } } },
+      movements: {
+        where: { movementType: "OUTSOURCED", sourceType: "PurchaseOrderItem" },
+        select: {
+          sourceId: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     },
     orderBy: { createdAt: "desc" },
   })
@@ -671,11 +851,14 @@ export async function getOutsourcingData(
   const wipUnitRows: OutsourcingWipUnitRow[] = outsourcedWipUnits.map((w) => ({
     id: w.id,
     mfgNo: w.manufacturingNo || "-",
+    workOrderNo: w.workOrder?.orderNo ?? null,
+    outsourcingOrderNo: null,
+    outsourcingOrderItemId: w.movements[0]?.sourceId ?? null,
     itemCode: w.item.code,
     itemName: w.item.name,
     qty: Number(w.qty),
     partnerName: w.outsourcingPartner?.name || "-",
-    processName: `공정순서 ${w.workOrderOperation.seq}`,
+    processName: `${w.workOrderOperation.seq}. ${w.workOrderOperation.routingOperation.name}`,
     wipStatus: w.status as "OUTSOURCED" | "RECEIVED",
   }))
 
@@ -688,7 +871,7 @@ export async function getOutsourcingData(
     include: {
       item: { select: { code: true, name: true } },
       workOrder: { select: { orderNo: true } },
-      workOrderOperation: { select: { seq: true } },
+      workOrderOperation: { select: { seq: true, routingOperation: { select: { name: true } } } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -714,7 +897,10 @@ export async function getOutsourcingData(
     },
     include: {
       wipUnit: {
-        include: { item: { select: { code: true, name: true } } },
+        include: {
+          item: { select: { code: true, name: true } },
+          workOrder: { select: { orderNo: true } },
+        },
       },
       fromPartner: { select: { name: true } },
     },
@@ -722,10 +908,31 @@ export async function getOutsourcingData(
     take: 200,
   })
 
+  const outsourcingOrderItemIds = Array.from(
+    new Set([
+      ...outsourcedWipUnits.map((w) => w.movements[0]?.sourceId).filter((id): id is string => Boolean(id)),
+      ...wipReceivingHistoryData.map((m) => m.sourceType === "PurchaseOrderItem" ? m.sourceId : null).filter((id): id is string => Boolean(id)),
+    ])
+  )
+  const outsourcingOrderItems = outsourcingOrderItemIds.length > 0
+    ? await prisma.purchaseOrderItem.findMany({
+        where: { id: { in: outsourcingOrderItemIds }, purchaseOrder: { tenantId } },
+        include: { purchaseOrder: { select: { orderNo: true } } },
+      })
+    : []
+  const outsourcingOrderItemById = new Map(outsourcingOrderItems.map((item) => [item.id, item]))
+  for (const row of wipUnitRows) {
+    if (!row.outsourcingOrderItemId) continue
+    row.outsourcingOrderNo = outsourcingOrderItemById.get(row.outsourcingOrderItemId)?.purchaseOrder.orderNo ?? null
+  }
+
   const wipReceivingHistoryRows: OutsourcingWipReceivingRow[] = wipReceivingHistoryData.map((m) => ({
     id: m.id,
     createdAt: m.createdAt.toISOString(),
     mfgNo: m.wipUnit.manufacturingNo || "-",
+    workOrderNo: m.wipUnit.workOrder?.orderNo ?? null,
+    outsourcingOrderNo: m.sourceType === "PurchaseOrderItem" && m.sourceId ? outsourcingOrderItemById.get(m.sourceId)?.purchaseOrder.orderNo ?? null : null,
+    outsourcingOrderItemId: m.sourceType === "PurchaseOrderItem" ? m.sourceId : null,
     itemCode: m.wipUnit.item.code,
     itemName: m.wipUnit.item.name,
     qty: Number(m.qty),

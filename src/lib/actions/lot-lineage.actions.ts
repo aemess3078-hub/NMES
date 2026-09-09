@@ -149,6 +149,60 @@ export async function getLotLineageByNo(lotNo: string, tenantId: string) {
         orderBy: { inspectedAt: "desc" },
       })
     : []
+  const directWipUnitIds = directWipUnits.map((unit) => unit.id)
+  const outsourcingMovements = directWipUnitIds.length > 0
+    ? await prisma.wipMovement.findMany({
+        where: {
+          tenantId,
+          wipUnitId: { in: directWipUnitIds },
+          OR: [
+            { movementType: { in: ["OUTSOURCED", "RETURNED"] } },
+            { sourceType: "OutsourcingInspection" },
+          ],
+        },
+        include: {
+          wipUnit: {
+            include: {
+              workOrder: { select: { id: true, orderNo: true, manufacturingNo: true } },
+              workOrderOperation: {
+                include: { routingOperation: { select: { id: true, seq: true, name: true } } },
+              },
+            },
+          },
+          fromPartner: { select: { id: true, code: true, name: true } },
+          toPartner: { select: { id: true, code: true, name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+    : []
+  const outsourcingOrderItemIds = unique(
+    outsourcingMovements.map((movement) =>
+      movement.sourceType === "PurchaseOrderItem" || movement.sourceType === "OutsourcingInspection"
+        ? movement.sourceId
+        : null,
+    ),
+  )
+  const outsourcingOrderItems = outsourcingOrderItemIds.length > 0
+    ? await prisma.purchaseOrderItem.findMany({
+        where: { id: { in: outsourcingOrderItemIds }, purchaseOrder: { tenantId } },
+        include: {
+          purchaseOrder: {
+            select: {
+              id: true,
+              orderNo: true,
+              supplier: { select: { id: true, code: true, name: true } },
+            },
+          },
+          workOrderOperation: {
+            include: {
+              workOrder: { select: { id: true, orderNo: true, manufacturingNo: true } },
+              routingOperation: { select: { id: true, seq: true, name: true } },
+            },
+          },
+        },
+      })
+    : []
+  const outsourcingOrderItemById = new Map(outsourcingOrderItems.map((item) => [item.id, item]))
 
   return {
     lot: {
@@ -263,6 +317,33 @@ export async function getLotLineageByNo(lotNo: string, tenantId: string) {
       },
       currentWorkCenter: unit.currentWorkCenter,
     })),
+    outsourcingHistory: outsourcingMovements.map((movement) => {
+      const orderItem = movement.sourceId ? outsourcingOrderItemById.get(movement.sourceId) ?? null : null
+      return {
+        id: movement.id,
+        movementType: movement.movementType,
+        sourceType: movement.sourceType,
+        sourceId: movement.sourceId,
+        qty: toNumber(movement.qty),
+        createdAt: movement.createdAt.toISOString(),
+        partner: movement.toPartner ?? movement.fromPartner ?? orderItem?.purchaseOrder.supplier ?? null,
+        purchaseOrder: orderItem?.purchaseOrder
+          ? { id: orderItem.purchaseOrder.id, orderNo: orderItem.purchaseOrder.orderNo }
+          : null,
+        workOrder: orderItem?.workOrderOperation?.workOrder ?? movement.wipUnit.workOrder,
+        operation: orderItem?.workOrderOperation
+          ? {
+              id: orderItem.workOrderOperation.id,
+              seq: orderItem.workOrderOperation.seq,
+              name: orderItem.workOrderOperation.routingOperation.name,
+            }
+          : {
+              id: movement.wipUnit.workOrderOperation.id,
+              seq: movement.wipUnit.workOrderOperation.seq,
+              name: movement.wipUnit.workOrderOperation.routingOperation.name,
+            },
+      }
+    }),
     inspections: inspections.map((inspection) => ({
       id: inspection.id,
       stage: inspection.stage,

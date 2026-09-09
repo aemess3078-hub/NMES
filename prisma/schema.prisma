@@ -1390,6 +1390,7 @@ model WorkOrderOperation {
   wipMovementsTo          WipMovement[]                  @relation("WipMovementToOperation")
   assignments             WorkOrderOperationAssignment[]
   equipmentUsageHistories EquipmentUsageHistory[]
+  purchaseOrderItems      PurchaseOrderItem[]          @relation("OutsourcingOperationPurchaseItems")
 
   @@unique([workOrderId, seq])
   @@index([workOrderId])
@@ -2568,6 +2569,7 @@ model PurchaseOrderItem {
   id              String  @id @default(cuid())
   purchaseOrderId String
   itemId          String
+  workOrderOperationId String?
   qty             Decimal @db.Decimal(18, 6)
   unitPrice       Decimal @db.Decimal(18, 2)
   receivedQty     Decimal @default(0) @db.Decimal(18, 6)
@@ -2576,6 +2578,7 @@ model PurchaseOrderItem {
 
   purchaseOrder         PurchaseOrder          @relation(fields: [purchaseOrderId], references: [id])
   item                  Item                   @relation("ItemPurchaseOrderItems", fields: [itemId], references: [id])
+  workOrderOperation    WorkOrderOperation?    @relation("OutsourcingOperationPurchaseItems", fields: [workOrderOperationId], references: [id])
   receivingInspections  ReceivingInspection[]
   lotNumberReservations LotNumberReservation[]
   materialReturnItems   MaterialReturnItem[]
@@ -2583,6 +2586,7 @@ model PurchaseOrderItem {
   @@unique([purchaseOrderId, itemId])
   @@index([purchaseOrderId])
   @@index([itemId])
+  @@index([workOrderOperationId])
 }
 
 model ReceivingInspection {
