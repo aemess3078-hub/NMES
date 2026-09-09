@@ -1,8 +1,8 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { requireRole } from "@/lib/auth"
-import { PurchaseOrderStatus } from "@prisma/client"
+import { getTenantId, requireRole } from "@/lib/auth"
+import { Prisma, PurchaseOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 
@@ -154,6 +154,45 @@ async function generatePurchaseOrderNo(tenantId: string): Promise<string> {
   return `${prefix}${String(seq).padStart(3, "0")}`
 }
 
+async function assertPurchaseOrderHasNoOperationalHistory(
+  db: Pick<
+    Prisma.TransactionClient,
+    "purchaseOrderItem" | "receivingInspection" | "materialReturnItem" | "wipMovement"
+  >,
+  purchaseOrderId: string,
+  tenantId: string
+) {
+  const items = await db.purchaseOrderItem.findMany({
+    where: { purchaseOrderId, purchaseOrder: { tenantId } },
+    select: { id: true },
+  })
+  const itemIds = items.map((item) => item.id)
+  if (itemIds.length === 0) return
+
+  const [receivingCount, materialReturnCount, wipMovementCount] = await Promise.all([
+    db.receivingInspection.count({ where: { purchaseOrderItemId: { in: itemIds } } }),
+    db.materialReturnItem.count({
+      where: {
+        purchaseOrderItemId: { in: itemIds },
+        materialReturn: { tenantId, status: "COMPLETED" },
+      },
+    }),
+    db.wipMovement.count({
+      where: {
+        tenantId,
+        sourceType: "PurchaseOrderItem",
+        sourceId: { in: itemIds },
+      },
+    }),
+  ])
+
+  if (receivingCount > 0 || materialReturnCount > 0 || wipMovementCount > 0) {
+    throw new Error(
+      `발주 처리 이력이 있어 품목 재구성/삭제를 할 수 없습니다. 입고검사 ${receivingCount}건, 자재반품 ${materialReturnCount}건, 외주이동 ${wipMovementCount}건`
+    )
+  }
+}
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export type CreatePurchaseOrderItemInput = {
@@ -231,15 +270,20 @@ export type UpdatePurchaseOrderInput = {
 export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderInput) {
   await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   await requireRole("OPERATOR")
-  const current = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
+  const tenantId = await getTenantId()
+  const current = await prisma.purchaseOrder.findFirstOrThrow({ where: { id, tenantId } })
   const canEditItems = current.status === "DRAFT"
 
   await prisma.$transaction(async (tx) => {
     if (canEditItems && data.items) {
+      await assertPurchaseOrderHasNoOperationalHistory(tx, id, tenantId)
       await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } })
     }
+    if (data.supplierId !== undefined && data.supplierId !== current.supplierId) {
+      await assertPurchaseOrderHasNoOperationalHistory(tx, id, tenantId)
+    }
     await tx.purchaseOrder.update({
-      where: { id },
+      where: { id, tenantId },
       data: {
         ...(data.supplierId !== undefined && { supplierId: data.supplierId }),
         ...(data.orderDate !== undefined && { orderDate: data.orderDate }),
@@ -268,11 +312,15 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
 export async function deletePurchaseOrder(id: string) {
   await requireResourcePermission("PURCHASE_ORDER", "DELETE")
   await requireRole("OPERATOR")
-  const order = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id } })
+  const tenantId = await getTenantId()
+  const order = await prisma.purchaseOrder.findFirstOrThrow({ where: { id, tenantId } })
   if (order.status !== "DRAFT") {
     throw new Error("DRAFT 상태인 발주만 삭제할 수 있습니다.")
   }
-  await prisma.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } })
-  await prisma.purchaseOrder.delete({ where: { id } })
+  await prisma.$transaction(async (tx) => {
+    await assertPurchaseOrderHasNoOperationalHistory(tx, id, tenantId)
+    await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } })
+    await tx.purchaseOrder.delete({ where: { id, tenantId } })
+  })
   revalidatePath("/app/mes/purchase-orders")
 }
