@@ -151,10 +151,24 @@ export async function deleteEquipment(id: string) {
   if (connCount > 0)
     throw new Error(`연결된 태그가 ${connCount}개 있습니다. 먼저 설비연결 설정에서 제거해주세요.`)
 
-  // EquipmentEvent, EquipmentOperationMap은 함께 삭제 (모니터링 자동 생성 데이터)
+  const [eventCount, repairCount, dailyCheckCount, usageHistoryCount, assignmentCount, operationCount] = await Promise.all([
+    prisma.equipmentEvent.count({ where: { equipmentId: id } }),
+    prisma.equipmentRepairRequest.count({ where: { equipmentId: id, tenantId } }),
+    prisma.equipmentDailyCheck.count({ where: { equipmentId: id, tenantId } }),
+    prisma.equipmentUsageHistory.count({ where: { equipmentId: id, tenantId } }),
+    prisma.workOrderOperationAssignment.count({ where: { equipmentId: id } }),
+    prisma.workOrderOperation.count({ where: { equipmentId: id } }),
+  ])
+
+  if (eventCount > 0 || repairCount > 0 || dailyCheckCount > 0 || usageHistoryCount > 0 || assignmentCount > 0 || operationCount > 0) {
+    throw new Error(
+      `설비 이력이 있어 삭제할 수 없습니다. 이벤트 ${eventCount}건, 수리 ${repairCount}건, 점검 ${dailyCheckCount}건, 사용 ${usageHistoryCount}건, 작업배정 ${assignmentCount}건, 공정연결 ${operationCount}건`
+    )
+  }
+
   await prisma.$transaction([
-    prisma.equipmentEvent.deleteMany({ where: { equipmentId: id } }),
     prisma.equipmentOperationMap.deleteMany({ where: { equipmentId: id } }),
+    prisma.equipmentAppliedItem.deleteMany({ where: { equipmentId: id } }),
     prisma.equipment.delete({ where: { id } }),
   ])
   await prisma.auditLog.create({

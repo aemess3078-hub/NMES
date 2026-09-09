@@ -108,6 +108,10 @@ export async function updateProblemType(
 export async function deleteProblemType(id: string) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
   const tenantId = await getTenantId()
+  const repairCount = await prisma.equipmentRepairRequest.count({ where: { tenantId, problemTypeId: id } })
+  if (repairCount > 0) {
+    throw new Error(`수리요청 이력이 ${repairCount}건 있어 문제유형을 삭제할 수 없습니다. 비활성화로 관리해 주세요.`)
+  }
   await prisma.equipmentProblemType.delete({ where: { id, tenantId } })
   revalidatePath("/app/mes/equipment-problems")
 }
@@ -208,6 +212,11 @@ export async function updateRepairRequest(
 ) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
   const tenantId = await getTenantId()
+  const current = await prisma.equipmentRepairRequest.findFirst({ where: { id, tenantId } })
+  if (!current) throw new Error("수리요청을 찾을 수 없습니다.")
+  if (current.status === "COMPLETED" || current.status === "CANCELLED") {
+    throw new Error("완료 또는 취소된 수리요청은 수정할 수 없습니다.")
+  }
   await prisma.equipmentRepairRequest.update({
     where: { id, tenantId },
     data,
@@ -218,6 +227,14 @@ export async function updateRepairRequest(
 export async function deleteRepairRequest(id: string) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
   const tenantId = await getTenantId()
+  const current = await prisma.equipmentRepairRequest.findFirst({
+    where: { id, tenantId },
+    select: { status: true, startedAt: true, completedAt: true },
+  })
+  if (!current) throw new Error("수리요청을 찾을 수 없습니다.")
+  if (current.status !== "OPEN" || current.startedAt || current.completedAt) {
+    throw new Error("처리 이력이 없는 OPEN 상태의 수리요청만 삭제할 수 있습니다. 진행/완료/취소 이력은 보존됩니다.")
+  }
   await prisma.equipmentRepairRequest.delete({ where: { id, tenantId } })
   revalidatePath("/app/mes/equipment-repair")
 }
