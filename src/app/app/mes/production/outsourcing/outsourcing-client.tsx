@@ -325,6 +325,12 @@ function IssueWipDialog({
               <p className="text-[12px] text-muted-foreground mb-0.5">외주공정</p>
               <p className="text-[14px] font-medium">{processName}</p>
             </div>
+            {order.workOrderNo && (
+              <div>
+                <p className="text-[12px] text-muted-foreground mb-0.5">연결 작업지시</p>
+                <p className="text-[14px] font-mono font-medium">{order.workOrderNo}</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -865,7 +871,15 @@ export function OutsourcingClient({ data }: Props) {
         id: "processName",
         header: "외주공정",
         cell: ({ row }) => (
-          <span className="text-[14px]">{extractProcessName(row.original.note)}</span>
+          <div className="min-w-[160px]">
+            <p className="text-[14px] font-medium">{row.original.operationName ?? extractProcessName(row.original.note)}</p>
+            {row.original.workOrderNo && (
+              <p className="text-[13px] font-mono text-muted-foreground">
+                {row.original.workOrderNo}
+                {row.original.operationSeq != null ? ` · ${row.original.operationSeq}공정` : ""}
+              </p>
+            )}
+          </div>
         ),
       },
       {
@@ -968,6 +982,15 @@ export function OutsourcingClient({ data }: Props) {
         cell: ({ row }) => <span className="text-[14px]">{row.original.partnerName}</span>,
       },
       {
+        accessorKey: "outsourcingOrderNo",
+        header: "발주번호",
+        cell: ({ row }) => (
+          <span className="font-mono text-[13px] text-muted-foreground">
+            {row.original.outsourcingOrderNo ?? "-"}
+          </span>
+        ),
+      },
+      {
         accessorKey: "processName",
         header: "공정",
         cell: ({ row }) => (
@@ -1035,7 +1058,21 @@ export function OutsourcingClient({ data }: Props) {
         accessorKey: "mfgNo",
         header: "제조번호",
         cell: ({ row }) => (
-          <span className="font-mono text-[13px]">{row.original.mfgNo}</span>
+          <div>
+            <p className="font-mono text-[13px]">{row.original.mfgNo}</p>
+            {row.original.workOrderNo && (
+              <p className="font-mono text-[12px] text-muted-foreground">{row.original.workOrderNo}</p>
+            )}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "outsourcingOrderNo",
+        header: "발주번호",
+        cell: ({ row }) => (
+          <span className="font-mono text-[13px] text-muted-foreground">
+            {row.original.outsourcingOrderNo ?? "-"}
+          </span>
         ),
       },
       {
