@@ -67,10 +67,10 @@ export function evaluateQualityRelease(input: {
   }
 }
 
-export async function getWorkOrderQualityReleaseStatus(
+async function getWorkOrderFinalInspectionContext(
   db: DbClient,
   input: { tenantId: string; workOrderId: string },
-): Promise<QualityReleaseStatus> {
+) {
   const workOrder = await db.workOrder.findFirst({
     where: { id: input.workOrderId, tenantId: input.tenantId },
     select: {
@@ -89,6 +89,7 @@ export async function getWorkOrderQualityReleaseStatus(
               stage: true,
               result: true,
               inspectedAt: true,
+              lotId: true,
             },
           },
         },
@@ -98,7 +99,9 @@ export async function getWorkOrderQualityReleaseStatus(
   if (!workOrder) throw new Error("작업지시를 찾을 수 없습니다.")
 
   const finalOperation = workOrder.operations[0]
-  if (!finalOperation) return evaluateQualityRelease({ inspectionSpecId: null, inspections: [] })
+  if (!finalOperation) {
+    return { activeSpec: null, finalOperation: null }
+  }
 
   const activeSpec = await db.inspectionSpec.findFirst({
     where: {
@@ -111,9 +114,43 @@ export async function getWorkOrderQualityReleaseStatus(
     select: { id: true },
   })
 
+  return { activeSpec, finalOperation }
+}
+
+export async function getWorkOrderQualityReleaseStatus(
+  db: DbClient,
+  input: { tenantId: string; workOrderId: string },
+): Promise<QualityReleaseStatus> {
+  const { activeSpec, finalOperation } = await getWorkOrderFinalInspectionContext(db, input)
+
   return evaluateQualityRelease({
     inspectionSpecId: activeSpec?.id ?? null,
-    inspections: finalOperation.qualityInspections,
+    inspections: finalOperation?.qualityInspections ?? [],
+  })
+}
+
+export async function getWorkOrderLotQualityReleaseStatus(
+  db: DbClient,
+  input: { tenantId: string; workOrderId: string; lotId: string },
+): Promise<QualityReleaseStatus> {
+  const { activeSpec, finalOperation } = await getWorkOrderFinalInspectionContext(db, input)
+  if (!finalOperation || !activeSpec) {
+    return evaluateQualityRelease({ inspectionSpecId: null, inspections: [] })
+  }
+
+  const inspections = finalOperation.qualityInspections
+  const activeFinalInspections = inspections.filter(
+    (inspection) =>
+      inspection.inspectionSpecId === activeSpec.id &&
+      inspection.stage === InspectionStage.FINAL,
+  )
+  const hasLotSpecificInspection = activeFinalInspections.some((inspection) => inspection.lotId)
+
+  return evaluateQualityRelease({
+    inspectionSpecId: activeSpec.id,
+    inspections: hasLotSpecificInspection
+      ? activeFinalInspections.filter((inspection) => inspection.lotId === input.lotId)
+      : activeFinalInspections,
   })
 }
 
@@ -135,9 +172,18 @@ export async function assertWorkOrderQualityReleaseAllowed(
   return status
 }
 
+export async function assertWorkOrderLotQualityReleaseAllowed(
+  db: DbClient,
+  input: { tenantId: string; workOrderId: string; lotId: string; target: QualityReleaseTarget },
+) {
+  const status = await getWorkOrderLotQualityReleaseStatus(db, input)
+  assertQualityReleaseAllowed(status, input.target)
+  return status
+}
+
 export async function assertLotQualityReleaseAllowed(
   db: DbClient,
-  input: { tenantId: string; lotId: string },
+  input: { tenantId: string; lotId: string; target?: QualityReleaseTarget },
 ) {
   const receipts = await db.finishedGoodsReceipt.findMany({
     where: { tenantId: input.tenantId, lotId: input.lotId },
@@ -147,10 +193,11 @@ export async function assertLotQualityReleaseAllowed(
 
   // 생산입고 이력이 없는 기초/수동/외부구매 LOT은 기존 출하 정책을 유지한다.
   for (const receipt of receipts) {
-    await assertWorkOrderQualityReleaseAllowed(db, {
+    await assertWorkOrderLotQualityReleaseAllowed(db, {
       tenantId: input.tenantId,
       workOrderId: receipt.workOrderId,
-      target: "SHIPMENT",
+      lotId: input.lotId,
+      target: input.target ?? "SHIPMENT",
     })
   }
 }

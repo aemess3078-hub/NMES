@@ -12,6 +12,7 @@ import {
   computeWipReceiptStatus,
 } from "./wip-receipt.helpers"
 import {
+  assertWorkOrderLotQualityReleaseAllowed,
   assertWorkOrderQualityReleaseAllowed,
   getWorkOrderQualityReleaseStatus,
   type QualityReleaseStatus,
@@ -343,11 +344,32 @@ export async function createFinishedGoodsReceiptAction(
         throw new Error("입고 창고가 올바르지 않습니다.")
       }
 
-      await assertWorkOrderQualityReleaseAllowed(tx, {
-        tenantId,
-        workOrderId: workOrder.id,
-        target: "RECEIPT",
-      })
+      let selectedLot: { id: string; lotNo: string; itemId: string; status: string } | null = null
+      if (data.lotId) {
+        selectedLot = await tx.lot.findFirst({
+          where: { id: data.lotId, tenantId },
+          select: { id: true, lotNo: true, itemId: true, status: true },
+        })
+        if (!selectedLot) throw new Error("입고 대상 LOT를 찾을 수 없습니다.")
+        if (selectedLot.itemId !== workOrder.itemId) {
+          throw new Error("입고 대상 LOT 품목이 작업지시 품목과 일치하지 않습니다.")
+        }
+        if (selectedLot.status !== "ACTIVE") {
+          throw new Error("활성 LOT만 입고 대상으로 선택할 수 있습니다.")
+        }
+        await assertWorkOrderLotQualityReleaseAllowed(tx, {
+          tenantId,
+          workOrderId: workOrder.id,
+          lotId: selectedLot.id,
+          target: "RECEIPT",
+        })
+      } else {
+        await assertWorkOrderQualityReleaseAllowed(tx, {
+          tenantId,
+          workOrderId: workOrder.id,
+          target: "RECEIPT",
+        })
+      }
 
       const { warehouse, location } = await resolveFinishedGoodsReceiptDestination(tx, {
         warehouseId: data.warehouseId,
@@ -409,7 +431,7 @@ export async function createFinishedGoodsReceiptAction(
 
       // 6. LOT 발번 — WorkOrder.manufacturingNo를 우선 사용하고,
       //    제조번호가 없는 예외 상황에서는 CNS resolver로 발번한다.
-      const lot = await createFinishedGoodsLot(tx, {
+      const lot = selectedLot ?? await createFinishedGoodsLot(tx, {
         tenantId,
         workOrder: {
           orderNo: workOrder.orderNo,

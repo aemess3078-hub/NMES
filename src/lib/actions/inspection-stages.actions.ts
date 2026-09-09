@@ -13,10 +13,12 @@ export type InspectionStageRow = {
   workOrderOperationId: string
   inspectionSpecId: string
   inspectorId: string
+  lotId: string | null
   stage: InspectionStage
   result: InspectionResult | null
   inspectedQty: number
   inspectedAt: Date
+  lot: { id: string; lotNo: string; status: string } | null
   workOrderOperation: {
     id: string
     workOrder: {
@@ -48,6 +50,7 @@ export async function getInspectionsByStage(stage?: InspectionStage): Promise<In
         },
       },
       inspector: { select: { id: true, name: true } },
+      lot: { select: { id: true, lotNo: true, status: true } },
     },
     orderBy: { inspectedAt: "desc" },
   }).catch((error) => {
@@ -77,12 +80,13 @@ export async function createStagedInspection(data: {
   stage: InspectionStage
   result: string
   inspectedQty: number
+  lotId?: string | null
 }) {
   await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
   const tenantId = await getTenantId()
   const userId = await getCurrentUserId()
 
-  await validateInspectionMutationContext(prisma, tenantId, {
+  const { validatedLotId } = await validateInspectionMutationContext(prisma, tenantId, {
     ...data,
     inspectorId: userId,
     result: data.result as InspectionResult,
@@ -95,6 +99,7 @@ export async function createStagedInspection(data: {
       workOrderOperationId: data.workOrderOperationId,
       inspectionSpecId: data.inspectionSpecId,
       inspectorId: userId,
+      lotId: validatedLotId,
       stage: data.stage,
       result: data.result as InspectionResult,
       inspectedQty: data.inspectedQty,
