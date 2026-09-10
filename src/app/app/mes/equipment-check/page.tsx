@@ -6,7 +6,12 @@ import { DailyCheckTable } from "./daily-check-table"
 
 export const dynamic = "force-dynamic"
 
-export default async function EquipmentCheckPage() {
+interface EquipmentCheckPageProps {
+  searchParams: Promise<{ equipmentId?: string }>
+}
+
+export default async function EquipmentCheckPage({ searchParams }: EquipmentCheckPageProps) {
+  const params = await searchParams
   const [checks, equipments] = await Promise.all([
     getDailyChecks(),
     getEquipmentsForLMS(),
@@ -23,7 +28,7 @@ export default async function EquipmentCheckPage() {
         </p>
       </div>
 
-      <DailyCheckTable data={checks} equipments={equipments} />
+      <DailyCheckTable data={checks} equipments={equipments} defaultEquipmentId={params.equipmentId} />
     </div>
   )
 }

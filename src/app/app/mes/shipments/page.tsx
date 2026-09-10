@@ -8,8 +8,13 @@ import {
 } from "@/lib/actions/shipment.actions"
 import { ShipmentDataTable } from "./shipment-data-table"
 
-export default async function ShipmentsPage() {
+interface ShipmentsPageProps {
+  searchParams: Promise<{ salesOrderId?: string }>
+}
+
+export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps) {
   const tenantId = await getTenantId()
+  const params = await searchParams
 
   const [shipments, salesOrders, warehouses] = await Promise.all([
     getShipments(tenantId),
@@ -30,6 +35,7 @@ export default async function ShipmentsPage() {
         tenantId={tenantId}
         salesOrders={salesOrders as any}
         warehouses={warehouses}
+        initialSalesOrderId={params.salesOrderId}
       />
     </div>
   )

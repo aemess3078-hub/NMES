@@ -1,9 +1,11 @@
 "use client"
 
+import Link from "next/link"
 import { ColumnDef } from "@tanstack/react-table"
 import { PlanStatus, PlanType } from "@prisma/client"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { DataTableRowActions } from "@/components/common/data-table"
 import { PlanWithDetails } from "@/lib/actions/production-plan.actions"
@@ -205,6 +207,25 @@ export function getColumns({ onEdit, onDelete, onViewDetail, canUpdate, canDelet
       },
       filterFn: (row, id, filterValues: string[]) =>
         filterValues.includes(row.getValue(id)),
+    },
+    {
+      id: "nextWork",
+      header: "다음 업무",
+      cell: ({ row }) => {
+        const plan = row.original
+        const firstItem = plan.items[0]
+        if (!firstItem) return <span className="text-[13px] text-muted-foreground">—</span>
+        return (
+          <Button variant="outline" size="sm" className="h-7 text-[12px]" asChild>
+            <Link
+              href={`/app/mes/work-orders?productionPlanId=${encodeURIComponent(plan.id)}&productionPlanItemId=${encodeURIComponent(firstItem.id)}`}
+            >
+              작업지시
+            </Link>
+          </Button>
+        )
+      },
+      enableSorting: false,
     },
     {
       id: "actions",

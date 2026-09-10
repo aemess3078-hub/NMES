@@ -1,4 +1,5 @@
 import { getTenantId } from "@/lib/auth"
+import { prisma } from "@/lib/db/prisma"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { TraceabilityClient } from "./traceability-client"
 
@@ -23,7 +24,13 @@ export default async function TraceabilityPage({ searchParams }: TraceabilityPag
   }
 
   const params = await searchParams
-  const initialLotNo = params.lotNo?.trim() || undefined
+  const lotFromId = params.lotId
+    ? await prisma.lot.findFirst({
+        where: { id: params.lotId, tenantId },
+        select: { lotNo: true },
+      })
+    : null
+  const initialLotNo = lotFromId?.lotNo ?? params.lotNo?.trim() ?? undefined
 
   return (
     <div className="space-y-6">

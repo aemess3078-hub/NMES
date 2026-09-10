@@ -37,9 +37,10 @@ interface Props {
   equipments: { id: string; code: string; name: string; workCenter: { name: string } }[]
   profiles: { id: string; name: string }[]
   problemTypes: ProblemTypeRow[]
+  defaultEquipmentId?: string
 }
 
-export function RepairRepairFormSheet({ open, onOpenChange, editingRow, equipments, profiles, problemTypes }: Props) {
+export function RepairRepairFormSheet({ open, onOpenChange, editingRow, equipments, profiles, problemTypes, defaultEquipmentId }: Props) {
   const router = useRouter()
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -66,9 +67,9 @@ export function RepairRepairFormSheet({ open, onOpenChange, editingRow, equipmen
         note: editingRow.note ?? "",
       })
     } else {
-      form.reset({ equipmentId: "", problemTypeId: "", title: "", description: "", priority: "MEDIUM", assignedTo: "", note: "" })
+      form.reset({ equipmentId: defaultEquipmentId ?? "", problemTypeId: "", title: "", description: "", priority: "MEDIUM", assignedTo: "", note: "" })
     }
-  }, [editingRow, open])
+  }, [defaultEquipmentId, editingRow, form, open])
 
   async function onSubmit(values: FormValues) {
     if (editingRow) {

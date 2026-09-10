@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 
@@ -24,6 +25,9 @@ interface InspectionDataTableProps {
   workOrderOperations: WorkOrderOperationForInspection[]
   profiles: { id: string; displayName: string; email: string }[]
   defectCodes: DefectCodeRow[]
+  initialOperationId?: string
+  requestedOperationId?: string
+  requestedWorkOrderId?: string
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -34,12 +38,20 @@ export function InspectionDataTable({
   workOrderOperations,
   profiles,
   defectCodes,
+  initialOperationId,
+  requestedOperationId,
+  requestedWorkOrderId,
 }: InspectionDataTableProps) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedInspection, setSelectedInspection] =
     useState<QualityInspectionWithDetails | null>(null)
+
+  useEffect(() => {
+    if (!initialOperationId) return
+    setFormOpen(true)
+  }, [initialOperationId])
 
   function handleView(row: QualityInspectionWithDetails) {
     setSelectedInspection(row)
@@ -80,6 +92,22 @@ export function InspectionDataTable({
 
   return (
     <div className="space-y-4">
+      {(requestedOperationId || requestedWorkOrderId) && (
+        <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-[14px] ${
+          initialOperationId
+            ? "border-blue-200 bg-blue-50 text-blue-800"
+            : "border-amber-200 bg-amber-50 text-amber-800"
+        }`}>
+          <span>
+            {initialOperationId
+              ? "작업지시/공정 컨텍스트를 유지해 검사 등록 화면을 열었습니다."
+              : "전달된 작업지시 또는 공정이 현재 검사 등록 대상에 없습니다."}
+          </span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/inspection">전체 보기</Link>
+          </Button>
+        </div>
+      )}
       <div className="flex justify-end">
         <Button onClick={() => setFormOpen(true)} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -100,6 +128,7 @@ export function InspectionDataTable({
         workOrderOperations={workOrderOperations}
         profiles={profiles}
         defectCodes={defectCodes}
+        defaultOperationId={initialOperationId}
       />
 
       <InspectionDetailDialog

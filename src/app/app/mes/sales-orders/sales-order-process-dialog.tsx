@@ -146,6 +146,7 @@ export function SalesOrderProcessDialog({
         })
         router.refresh()
         onOpenChange(false)
+        router.push(`/app/mes/shipments?salesOrderId=${encodeURIComponent(salesOrder.id)}`)
       } catch (e) {
         setShipmentError(e instanceof Error ? e.message : "출하요청 생성 중 오류가 발생했습니다.")
       }
@@ -171,6 +172,7 @@ export function SalesOrderProcessDialog({
       alert(`생산계획 ${res.planNo} 이(가) 생성되었습니다.`)
       router.refresh()
       onOpenChange(false)
+      router.push(`/app/mes/production-plan?salesOrderId=${encodeURIComponent(salesOrder.id)}`)
     })
   }
 

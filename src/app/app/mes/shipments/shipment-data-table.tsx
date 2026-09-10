@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Truck, PackageCheck } from "lucide-react"
 import { format, isPast } from "date-fns"
@@ -36,6 +37,7 @@ interface ShipmentDataTableProps {
   tenantId: string
   salesOrders: SalesOrderOption[]
   warehouses: WarehouseOption[]
+  initialSalesOrderId?: string
 }
 
 const SO_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -49,11 +51,25 @@ export function ShipmentDataTable({
   tenantId,
   salesOrders,
   warehouses,
+  initialSalesOrderId,
 }: ShipmentDataTableProps) {
   const router = useRouter()
   const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [preselectedOrderId, setPreselectedOrderId] = useState<string | undefined>()
+  const [contextError, setContextError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!initialSalesOrderId) return
+    const order = salesOrders.find((so) => so.id === initialSalesOrderId)
+    if (!order) {
+      setContextError("전달된 수주가 현재 출하 대기 목록에 없거나 출하 가능한 상태가 아닙니다.")
+      return
+    }
+    setContextError(null)
+    setPreselectedOrderId(order.id)
+    setFormOpen(true)
+  }, [initialSalesOrderId, salesOrders])
 
   const openFormWithOrder = (orderId?: string) => {
     setPreselectedOrderId(orderId)
@@ -107,6 +123,18 @@ export function ShipmentDataTable({
 
   return (
     <div className="space-y-4">
+      {initialSalesOrderId && (
+        <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-[14px] ${
+          contextError
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : "border-blue-200 bg-blue-50 text-blue-800"
+        }`}>
+          <span>{contextError ?? "수주 컨텍스트를 유지해 출하예정 등록 화면을 열었습니다."}</span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/shipments">전체 보기</Link>
+          </Button>
+        </div>
+      )}
       <Tabs defaultValue="pending">
         <TabsList>
           <TabsTrigger value="pending" className="gap-1.5">

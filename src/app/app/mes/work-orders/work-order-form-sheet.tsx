@@ -66,6 +66,7 @@ interface WorkOrderFormSheetProps {
   tenantId: string
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultProductionPlanItemId?: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -101,6 +102,7 @@ export function WorkOrderFormSheet({
   tenantId,
   open,
   onOpenChange,
+  defaultProductionPlanItemId,
 }: WorkOrderFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [boms, setBoms] = useState<BomOption[]>([])
@@ -110,6 +112,7 @@ export function WorkOrderFormSheet({
 
   // 사용자가 직접 수정한 공정 계획수량 인덱스를 추적 (상단 plannedQty 변경 시 덮어쓰지 않기 위함)
   const manuallyEditedOps = useRef<Set<number>>(new Set())
+  const appliedDefaultPlanItemRef = useRef<string | null>(null)
 
   const form = useForm<WorkOrderFormValues>({
     resolver: zodResolver(workOrderFormSchema),
@@ -126,6 +129,7 @@ export function WorkOrderFormSheet({
   useEffect(() => {
     if (mode === "create" && open) {
       manuallyEditedOps.current.clear()
+      appliedDefaultPlanItemRef.current = null
       form.reset(DEFAULT_FORM_VALUES)
       setBoms([])
       setRoutings([])
@@ -268,6 +272,15 @@ export function WorkOrderFormSheet({
       setLoadingBoms(false)
     }
   }
+
+  useEffect(() => {
+    if (mode !== "create" || !open || !defaultProductionPlanItemId) return
+    if (appliedDefaultPlanItemRef.current === defaultProductionPlanItemId) return
+    if (!productionPlanItems.some((item) => item.id === defaultProductionPlanItemId)) return
+
+    appliedDefaultPlanItemRef.current = defaultProductionPlanItemId
+    void handleProductionPlanItemChange(defaultProductionPlanItemId)
+  }, [mode, open, defaultProductionPlanItemId, productionPlanItems]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRoutingChange = (routingId: string) => {
     form.setValue("routingId", routingId)

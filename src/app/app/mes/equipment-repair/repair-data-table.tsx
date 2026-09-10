@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Pencil, Trash2, Play, CheckCircle, MoreHorizontal } from "lucide-react"
 import { format } from "date-fns"
@@ -44,12 +45,20 @@ interface Props {
   equipments: { id: string; code: string; name: string; workCenter: { name: string } }[]
   profiles: { id: string; name: string }[]
   problemTypes: ProblemTypeRow[]
+  defaultEquipmentId?: string
 }
 
-export function RepairDataTable({ data, equipments, profiles, problemTypes }: Props) {
+export function RepairDataTable({ data, equipments, profiles, problemTypes, defaultEquipmentId }: Props) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<RepairRequestRow | null>(null)
+  const defaultEquipment = equipments.find((equipment) => equipment.id === defaultEquipmentId)
+
+  useEffect(() => {
+    if (!defaultEquipmentId || !defaultEquipment) return
+    setEditingRow(null)
+    setFormOpen(true)
+  }, [defaultEquipment, defaultEquipmentId])
 
   async function handleDelete(row: RepairRequestRow) {
     if (!confirm(`'${row.title}' 수리요청을 삭제하시겠습니까?`)) return
@@ -190,6 +199,22 @@ export function RepairDataTable({ data, equipments, profiles, problemTypes }: Pr
 
   return (
     <div className="space-y-4">
+      {defaultEquipmentId && (
+        <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-[14px] ${
+          defaultEquipment
+            ? "border-blue-200 bg-blue-50 text-blue-800"
+            : "border-amber-200 bg-amber-50 text-amber-800"
+        }`}>
+          <span>
+            {defaultEquipment
+              ? `${defaultEquipment.name} 설비 컨텍스트를 유지해 수리 요청 화면을 열었습니다.`
+              : "전달된 설비가 현재 수리 요청 대상에 없습니다."}
+          </span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/equipment-repair">전체 보기</Link>
+          </Button>
+        </div>
+      )}
       <div className="flex justify-end">
         <Button onClick={() => { setEditingRow(null); setFormOpen(true) }} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -206,6 +231,7 @@ export function RepairDataTable({ data, equipments, profiles, problemTypes }: Pr
         equipments={equipments}
         profiles={profiles}
         problemTypes={problemTypes}
+        defaultEquipmentId={defaultEquipment?.id}
       />
     </div>
   )

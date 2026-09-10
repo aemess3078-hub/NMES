@@ -7,8 +7,13 @@ import { PlanDataTable } from "./plan-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 import { notFound } from "next/navigation"
 
-export default async function ProductionPlanPage() {
+interface ProductionPlanPageProps {
+  searchParams: Promise<{ salesOrderId?: string }>
+}
+
+export default async function ProductionPlanPage({ searchParams }: ProductionPlanPageProps) {
   const tenantId = await getTenantId()
+  const params = await searchParams
   const enabled = await isFeatureEnabled(tenantId, "PRODUCTION_PLAN")
 
   if (!enabled) {
@@ -46,6 +51,7 @@ export default async function ProductionPlanPage() {
         items={items}
         tenantId={tenantId}
         permissions={permissions}
+        initialSalesOrderId={params.salesOrderId}
       />
     </div>
   )

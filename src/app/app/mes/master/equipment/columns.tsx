@@ -1,7 +1,8 @@
 "use client"
 
+import Link from "next/link"
 import { ColumnDef } from "@tanstack/react-table"
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Activity, BarChart3, MoreHorizontal, Pencil, Trash2, Wrench } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -146,6 +147,24 @@ export function getColumns({ onEdit, onDelete }: ColCallbacks): ColumnDef<Equipm
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild className="text-[14px]">
+              <Link href={`/app/mes/equipment-repair?equipmentId=${encodeURIComponent(row.original.id)}`}>
+                <Wrench className="h-4 w-4 mr-2" />
+                수리요청
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-[14px]">
+              <Link href={`/app/mes/equipment-check?equipmentId=${encodeURIComponent(row.original.id)}`}>
+                <Activity className="h-4 w-4 mr-2" />
+                점검등록
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild className="text-[14px]">
+              <Link href={`/app/mes/equipment-statistics?equipmentId=${encodeURIComponent(row.original.id)}`}>
+                <BarChart3 className="h-4 w-4 mr-2" />
+                통계보기
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onEdit(row.original)} className="text-[14px]">
               <Pencil className="h-4 w-4 mr-2" />
               수정

@@ -7,8 +7,13 @@ import {
 } from "@/lib/actions/finished-goods.actions"
 import { FinishedGoodsDataTable } from "./finished-goods-data-table"
 
-export default async function FinishedGoodsReceiptPage() {
+interface FinishedGoodsReceiptPageProps {
+  searchParams: Promise<{ workOrderId?: string }>
+}
+
+export default async function FinishedGoodsReceiptPage({ searchParams }: FinishedGoodsReceiptPageProps) {
   const tenantId = await getTenantId()
+  const params = await searchParams
 
   const [workOrders, warehouses] = await Promise.all([
     getWorkOrdersForReceipt(tenantId),
@@ -49,7 +54,7 @@ export default async function FinishedGoodsReceiptPage() {
         )}
       </div>
 
-      {workOrders.length === 0 ? (
+      {workOrders.length === 0 && !params.workOrderId ? (
         <div className="rounded-lg border border-dashed p-12 text-center">
           <p className="text-[15px] text-muted-foreground">
             생산 완료된 작업지시가 없습니다.
@@ -60,6 +65,7 @@ export default async function FinishedGoodsReceiptPage() {
           data={workOrders}
           warehouses={warehouses}
           tenantId={tenantId}
+          initialWorkOrderId={params.workOrderId}
         />
       )}
     </div>

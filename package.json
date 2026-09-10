@@ -43,7 +43,8 @@
     "test:outsource-order-linkage": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-outsource-order-linkage.ts",
     "test:history-retention-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-history-retention-integrity.ts",
     "test:core-audit-log": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-core-audit-log.ts",
-    "test:equipment-downtime-maintenance-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-equipment-downtime-maintenance-integrity.ts"
+    "test:equipment-downtime-maintenance-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-equipment-downtime-maintenance-integrity.ts",
+    "test:next-work-navigation": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-next-work-navigation.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

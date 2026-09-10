@@ -11,7 +11,12 @@ import { Wrench, Clock, CheckCircle, AlertTriangle } from "lucide-react"
 
 export const dynamic = "force-dynamic"
 
-export default async function EquipmentRepairPage() {
+interface EquipmentRepairPageProps {
+  searchParams: Promise<{ equipmentId?: string }>
+}
+
+export default async function EquipmentRepairPage({ searchParams }: EquipmentRepairPageProps) {
+  const params = await searchParams
   const [requests, equipments, profiles, problemTypes, stats] = await Promise.all([
     getRepairRequests(),
     getEquipmentsForLMS(),
@@ -83,6 +88,7 @@ export default async function EquipmentRepairPage() {
         equipments={equipments}
         profiles={profiles}
         problemTypes={problemTypes}
+        defaultEquipmentId={params.equipmentId}
       />
     </div>
   )

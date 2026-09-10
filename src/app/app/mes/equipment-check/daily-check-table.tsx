@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Pencil, CheckCircle2, XCircle, MinusCircle } from "lucide-react"
 import { format } from "date-fns"
@@ -22,12 +23,20 @@ const RESULT_CONFIG = {
 interface Props {
   data: DailyCheckRow[]
   equipments: { id: string; code: string; name: string; workCenter: { name: string } }[]
+  defaultEquipmentId?: string
 }
 
-export function DailyCheckTable({ data, equipments }: Props) {
+export function DailyCheckTable({ data, equipments, defaultEquipmentId }: Props) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<DailyCheckRow | null>(null)
+  const defaultEquipment = equipments.find((equipment) => equipment.id === defaultEquipmentId)
+
+  useEffect(() => {
+    if (!defaultEquipmentId || !defaultEquipment) return
+    setEditingRow(null)
+    setFormOpen(true)
+  }, [defaultEquipment, defaultEquipmentId])
 
   const columns: ColumnDef<DailyCheckRow>[] = [
     {
@@ -109,6 +118,22 @@ export function DailyCheckTable({ data, equipments }: Props) {
 
   return (
     <div className="space-y-4">
+      {defaultEquipmentId && (
+        <div className={`flex items-center justify-between rounded-lg border px-4 py-3 text-[14px] ${
+          defaultEquipment
+            ? "border-blue-200 bg-blue-50 text-blue-800"
+            : "border-amber-200 bg-amber-50 text-amber-800"
+        }`}>
+          <span>
+            {defaultEquipment
+              ? `${defaultEquipment.name} 설비 컨텍스트를 유지해 점검 등록 화면을 열었습니다.`
+              : "전달된 설비가 현재 점검 대상에 없습니다."}
+          </span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/equipment-check">전체 보기</Link>
+          </Button>
+        </div>
+      )}
       <div className="flex justify-end">
         <Button onClick={() => { setEditingRow(null); setFormOpen(true) }} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -123,6 +148,7 @@ export function DailyCheckTable({ data, equipments }: Props) {
         onOpenChange={setFormOpen}
         editingRow={editingRow}
         equipments={equipments}
+        defaultEquipmentId={defaultEquipment?.id}
         onSuccess={() => router.refresh()}
       />
     </div>

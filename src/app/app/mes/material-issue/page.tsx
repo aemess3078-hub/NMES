@@ -7,8 +7,13 @@ import {
 } from "@/lib/actions/material-issue.actions"
 import { MaterialIssueTable } from "./material-issue-table"
 
-export default async function MaterialIssuePage() {
+interface MaterialIssuePageProps {
+  searchParams: Promise<{ workOrderId?: string }>
+}
+
+export default async function MaterialIssuePage({ searchParams }: MaterialIssuePageProps) {
   const tenantId = await getTenantId()
+  const params = await searchParams
 
   const workOrders = await getWorkOrdersForIssue(tenantId)
 
@@ -41,10 +46,11 @@ export default async function MaterialIssuePage() {
       </div>
 
       <MaterialIssueTable
-        data={workOrders}
-        warehouses={warehouses}
-        tenantId={tenantId}
-      />
+          data={workOrders}
+          warehouses={warehouses}
+          tenantId={tenantId}
+          initialWorkOrderId={params.workOrderId}
+        />
     </div>
   )
 }

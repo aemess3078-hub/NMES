@@ -57,6 +57,7 @@ interface InspectionFormSheetProps {
   workOrderOperations: WorkOrderOperationForInspection[]
   profiles: { id: string; displayName: string; email: string }[]
   defectCodes: DefectCodeRow[]
+  defaultOperationId?: string
 }
 
 const now = () => {
@@ -216,6 +217,7 @@ export function InspectionFormSheet({
   workOrderOperations,
   profiles,
   defectCodes,
+  defaultOperationId,
 }: InspectionFormSheetProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [loadingSpec, setLoadingSpec] = useState(false)
@@ -285,6 +287,13 @@ export function InspectionFormSheet({
     },
     [workOrderOperations, tenantId, form, replaceMeasurements]
   )
+
+  useEffect(() => {
+    if (!open || !defaultOperationId) return
+    if (!workOrderOperations.some((operation) => operation.id === defaultOperationId)) return
+
+    void handleOperationChange(defaultOperationId)
+  }, [open, defaultOperationId, handleOperationChange, workOrderOperations])
 
   function addSample(inspectionItemId: string) {
     const existingSampleNos = measurementFields

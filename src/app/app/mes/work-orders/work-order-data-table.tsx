@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 
@@ -26,6 +27,8 @@ interface WorkOrderDataTableProps {
   equipments: { id: string; code: string; name: string; equipmentType: string; workCenterId: string }[]
   productionPlanItems: ProductionPlanItemForWorkOrder[]
   tenantId: string
+  initialProductionPlanId?: string
+  defaultProductionPlanItemId?: string
 }
 
 const operationStatusConfig: Record<string, { label: string; className: string }> = {
@@ -204,12 +207,34 @@ export function WorkOrderDataTable({
   equipments,
   productionPlanItems,
   tenantId,
+  initialProductionPlanId,
+  defaultProductionPlanItemId,
 }: WorkOrderDataTableProps) {
   const router = useRouter()
   const canMutate = useUserRole() !== "VIEWER"
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingWorkOrder, setEditingWorkOrder] = useState<WorkOrderWithDetails | null>(null)
+  const appliedDefaultPlanItemRef = useRef<string | null>(null)
+  const visibleData = useMemo(() => {
+    if (!initialProductionPlanId) return data
+    return data.filter((workOrder) => workOrder.productionPlanItem?.planId === initialProductionPlanId)
+  }, [data, initialProductionPlanId])
+  const contextPlanNo = useMemo(() => {
+    if (!initialProductionPlanId) return null
+    return productionPlanItems.find((item) => item.plan.id === initialProductionPlanId)?.plan.planNo ?? null
+  }, [initialProductionPlanId, productionPlanItems])
+
+  useEffect(() => {
+    if (!defaultProductionPlanItemId || !canMutate) return
+    if (appliedDefaultPlanItemRef.current === defaultProductionPlanItemId) return
+    if (!productionPlanItems.some((item) => item.id === defaultProductionPlanItemId)) return
+
+    appliedDefaultPlanItemRef.current = defaultProductionPlanItemId
+    setEditingWorkOrder(null)
+    setFormMode("create")
+    setFormOpen(true)
+  }, [canMutate, defaultProductionPlanItemId, productionPlanItems])
 
   const handleEdit = (workOrder: WorkOrderWithDetails) => {
     setEditingWorkOrder(workOrder)
@@ -290,9 +315,22 @@ export function WorkOrderDataTable({
         </div>
       )}
 
+      {initialProductionPlanId && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-[14px] text-blue-800">
+          <span>
+            {contextPlanNo
+              ? `${contextPlanNo} 생산계획에서 연결된 작업지시 ${visibleData.length}건을 표시합니다.`
+              : "전달된 생산계획은 현재 작업지시 생성 대상에 없거나 이미 할당이 완료되었습니다."}
+          </span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/work-orders">전체 보기</Link>
+          </Button>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
-        data={data}
+        data={visibleData}
         searchableColumns={[
           { id: "workOrderInfo" as keyof WorkOrderWithDetails, title: "작업지시/제조번호" },
           { id: "itemName" as keyof WorkOrderWithDetails, title: "품목명" },
@@ -313,6 +351,7 @@ export function WorkOrderDataTable({
         equipments={equipments}
         productionPlanItems={productionPlanItems}
         tenantId={tenantId}
+        defaultProductionPlanItemId={defaultProductionPlanItemId}
       />
     </div>
   )

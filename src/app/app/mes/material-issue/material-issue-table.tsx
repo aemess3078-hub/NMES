@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { ChevronDown, ChevronRight, CheckCircle2, PackageMinus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,15 +21,34 @@ interface MaterialIssueTableProps {
   data: WorkOrderForIssue[]
   warehouses: WarehouseStockOption[]
   tenantId: string
+  initialWorkOrderId?: string
 }
 
 export function MaterialIssueTable({
   data,
   warehouses,
   tenantId,
+  initialWorkOrderId,
 }: MaterialIssueTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [issuingOrder, setIssuingOrder] = useState<WorkOrderForIssue | null>(null)
+  const [contextError, setContextError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!initialWorkOrderId) return
+    const workOrder = data.find((row) => row.id === initialWorkOrderId)
+    if (!workOrder) {
+      setContextError("전달된 작업지시가 현재 원자재 출고 대상에 없습니다.")
+      return
+    }
+    setExpandedRows((prev) => new Set(prev).add(workOrder.id))
+    if (workOrder.allIssued) {
+      setContextError("전달된 작업지시는 이미 원자재 출고가 완료되었습니다.")
+      return
+    }
+    setContextError(null)
+    setIssuingOrder(workOrder)
+  }, [data, initialWorkOrderId])
 
   function toggleExpand(id: string) {
     setExpandedRows((prev) => {
@@ -41,19 +61,41 @@ export function MaterialIssueTable({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed py-16 text-center">
-        <p className="text-[15px] text-muted-foreground">
-          원자재 출고 대상 작업지시가 없습니다.
-        </p>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          RELEASED 또는 IN_PROGRESS 상태의 작업지시가 표시됩니다.
-        </p>
+      <div className="space-y-4">
+        {initialWorkOrderId && (
+          <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[14px] text-amber-800">
+            <span>전달된 작업지시가 현재 원자재 출고 대상에 없습니다.</span>
+            <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+              <Link href="/app/mes/material-issue">전체 보기</Link>
+            </Button>
+          </div>
+        )}
+        <div className="rounded-lg border border-dashed py-16 text-center">
+          <p className="text-[15px] text-muted-foreground">
+            원자재 출고 대상 작업지시가 없습니다.
+          </p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            RELEASED 또는 IN_PROGRESS 상태의 작업지시가 표시됩니다.
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
     <>
+      {initialWorkOrderId && (
+        <div className={`mb-4 flex items-center justify-between rounded-lg border px-4 py-3 text-[14px] ${
+          contextError
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : "border-blue-200 bg-blue-50 text-blue-800"
+        }`}>
+          <span>{contextError ?? "작업지시 컨텍스트를 유지해 원자재 출고 화면을 열었습니다."}</span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/material-issue">전체 보기</Link>
+          </Button>
+        </div>
+      )}
       <div className="overflow-hidden rounded-lg border">
         <div className="grid grid-cols-[40px_1.2fr_1fr_130px_130px_1fr_140px] border-b bg-muted/30">
           <div className="px-3 py-2.5" />
