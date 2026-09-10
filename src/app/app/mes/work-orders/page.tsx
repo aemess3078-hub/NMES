@@ -11,8 +11,13 @@ import {
 import { WorkOrderDataTable } from "./work-order-data-table"
 import { isFeatureEnabled } from "@/lib/services/feature.service"
 
-export default async function WorkOrdersPage() {
+interface WorkOrdersPageProps {
+  searchParams: Promise<{ productionPlanId?: string; productionPlanItemId?: string }>
+}
+
+export default async function WorkOrdersPage({ searchParams }: WorkOrdersPageProps) {
   const tenantId = await getTenantId()
+  const params = await searchParams
   const enabled = await isFeatureEnabled(tenantId, "WORK_ORDER")
 
   if (!enabled) {
@@ -33,6 +38,10 @@ export default async function WorkOrdersPage() {
     getConfirmedProductionPlanItemsForWorkOrder(tenantId),
   ])
 
+  const defaultProductionPlanItemId =
+    productionPlanItems.find((item) => item.id === params.productionPlanItemId)?.id ??
+    productionPlanItems.find((item) => item.plan.id === params.productionPlanId)?.id
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -52,6 +61,8 @@ export default async function WorkOrdersPage() {
         equipments={equipments}
         productionPlanItems={productionPlanItems}
         tenantId={tenantId}
+        initialProductionPlanId={params.productionPlanId}
+        defaultProductionPlanItemId={defaultProductionPlanItemId}
       />
     </div>
   )

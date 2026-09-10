@@ -25,10 +25,11 @@ interface Props {
   onOpenChange: (open: boolean) => void
   editingRow: DailyCheckRow | null
   equipments: { id: string; code: string; name: string; workCenter: { name: string } }[]
+  defaultEquipmentId?: string
   onSuccess: () => void
 }
 
-export function DailyCheckFormSheet({ open, onOpenChange, editingRow, equipments, onSuccess }: Props) {
+export function DailyCheckFormSheet({ open, onOpenChange, editingRow, equipments, defaultEquipmentId, onSuccess }: Props) {
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -49,13 +50,13 @@ export function DailyCheckFormSheet({ open, onOpenChange, editingRow, equipments
       })
     } else {
       form.reset({
-        equipmentId: "",
+        equipmentId: defaultEquipmentId ?? "",
         checkDate: new Date().toISOString().split("T")[0],
         result: "PASS",
         note: "",
       })
     }
-  }, [editingRow, open])
+  }, [defaultEquipmentId, editingRow, form, open])
 
   async function onSubmit(values: FormValues) {
     await createDailyCheck({

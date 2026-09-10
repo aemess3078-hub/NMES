@@ -9,8 +9,13 @@ import { InspectionDataTable } from "./inspection-data-table"
 
 export const dynamic = "force-dynamic"
 
-export default async function InspectionPage() {
+interface InspectionPageProps {
+  searchParams: Promise<{ operationId?: string; workOrderId?: string }>
+}
+
+export default async function InspectionPage({ searchParams }: InspectionPageProps) {
   const tenantId = await getTenantId()
+  const params = await searchParams
 
   const [inspections, workOrderOperations, profiles, defectCodes] = await Promise.all([
     getQualityInspections(tenantId),
@@ -24,6 +29,9 @@ export default async function InspectionPage() {
     displayName: p.name,
     email: p.email,
   }))
+  const initialOperationId =
+    workOrderOperations.find((operation) => operation.id === params.operationId)?.id ??
+    workOrderOperations.find((operation) => operation.workOrderId === params.workOrderId)?.id
 
   return (
     <div className="space-y-6">
@@ -44,6 +52,9 @@ export default async function InspectionPage() {
         workOrderOperations={workOrderOperations}
         profiles={profileOptions}
         defectCodes={defectCodes}
+        initialOperationId={initialOperationId}
+        requestedOperationId={params.operationId}
+        requestedWorkOrderId={params.workOrderId}
       />
     </div>
   )

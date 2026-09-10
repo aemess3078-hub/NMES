@@ -363,8 +363,12 @@ export function getColumns({ onEdit, onDelete, onRelease, canMutate }: GetColumn
         const status = workOrder.status
         const canDelete = status === "DRAFT" || status === "RELEASED"
         const isDraft = status === "DRAFT"
+        const currentOperation = getCurrentOperation(workOrder)
+        const popHref = currentOperation
+          ? `/pop/production/${encodeURIComponent(currentOperation.id)}${currentOperation.assignments[0]?.id ? `?assignmentId=${encodeURIComponent(currentOperation.assignments[0].id)}` : ""}`
+          : null
         return (
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {manufacturingNo ? (
               <Button asChild variant="outline" size="sm" className="h-8 gap-1 whitespace-nowrap px-2 text-[13px]">
                 <Link href={`/app/mes/manufacturing-traceability?manufacturingNo=${encodeURIComponent(manufacturingNo)}`}>
@@ -375,6 +379,28 @@ export function getColumns({ onEdit, onDelete, onRelease, canMutate }: GetColumn
             ) : (
               <span className="px-1 text-[13px] text-muted-foreground">-</span>
             )}
+            <Button asChild variant="outline" size="sm" className="h-8 whitespace-nowrap px-2 text-[13px]">
+              <Link href={`/app/mes/material-issue?workOrderId=${encodeURIComponent(workOrder.id)}`}>
+                자재
+              </Link>
+            </Button>
+            {popHref && (
+              <Button asChild variant="outline" size="sm" className="h-8 whitespace-nowrap px-2 text-[13px]">
+                <Link href={popHref}>POP</Link>
+              </Button>
+            )}
+            {currentOperation && (
+              <Button asChild variant="outline" size="sm" className="h-8 whitespace-nowrap px-2 text-[13px]">
+                <Link href={`/app/mes/inspection?operationId=${encodeURIComponent(currentOperation.id)}&workOrderId=${encodeURIComponent(workOrder.id)}`}>
+                  검사
+                </Link>
+              </Button>
+            )}
+            <Button asChild variant="outline" size="sm" className="h-8 whitespace-nowrap px-2 text-[13px]">
+              <Link href={`/app/mes/finished-goods-receipt?workOrderId=${encodeURIComponent(workOrder.id)}`}>
+                입고
+              </Link>
+            </Button>
             {canMutate && isDraft && (
               <Button
                 type="button"

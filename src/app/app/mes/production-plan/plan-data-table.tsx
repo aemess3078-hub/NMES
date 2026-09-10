@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 
@@ -18,15 +19,34 @@ interface PlanDataTableProps {
   items: { id: string; code: string; name: string; itemType: string }[]
   tenantId: string
   permissions: ResourcePermissionFlags
+  initialSalesOrderId?: string
 }
 
-export function PlanDataTable({ data, sites, items, tenantId, permissions }: PlanDataTableProps) {
+export function PlanDataTable({ data, sites, items, tenantId, permissions, initialSalesOrderId }: PlanDataTableProps) {
   const router = useRouter()
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<"create" | "edit">("create")
   const [editingPlan, setEditingPlan] = useState<PlanWithDetails | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailPlan, setDetailPlan] = useState<PlanWithDetails | null>(null)
+  const visibleData = useMemo(() => {
+    if (!initialSalesOrderId) return data
+    return data.filter((plan) =>
+      plan.items.some((item) => item.salesOrderItem?.salesOrder.id === initialSalesOrderId)
+    )
+  }, [data, initialSalesOrderId])
+  const contextSalesOrderNo = useMemo(() => {
+    if (!initialSalesOrderId) return null
+    for (const plan of visibleData) {
+      const linkedItem = plan.items.find(
+        (item) => item.salesOrderItem?.salesOrder.id === initialSalesOrderId
+      )
+      if (linkedItem?.salesOrderItem?.salesOrder.orderNo) {
+        return linkedItem.salesOrderItem.salesOrder.orderNo
+      }
+    }
+    return null
+  }, [initialSalesOrderId, visibleData])
 
   const handleEdit = (plan: PlanWithDetails) => {
     setEditingPlan(plan)
@@ -106,9 +126,22 @@ export function PlanDataTable({ data, sites, items, tenantId, permissions }: Pla
         </div>
       )}
 
+      {initialSalesOrderId && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-[14px] text-blue-800">
+          <span>
+            {contextSalesOrderNo
+              ? `${contextSalesOrderNo} 수주에서 연결된 생산계획 ${visibleData.length}건을 표시합니다.`
+              : "전달된 수주와 연결된 생산계획을 찾지 못했습니다."}
+          </span>
+          <Button variant="outline" size="sm" className="h-8 bg-white text-[13px]" asChild>
+            <Link href="/app/mes/production-plan">전체 보기</Link>
+          </Button>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
-        data={data}
+        data={visibleData}
         searchableColumns={[
           { id: "planNo" as keyof PlanWithDetails, title: "계획번호 검색..." },
         ]}
