@@ -174,7 +174,7 @@ export async function bulkCheckDowntimeReasonsForDelete(ids: string[]): Promise<
 
   const results = await Promise.all(
     reasons.map(async (r) => {
-      const { canDelete, reasons: blockReasons } = await checkDowntimeReasonReferencesForBulk()
+      const { canDelete, reasons: blockReasons } = await checkDowntimeReasonReferencesForBulk(r.id)
       return { id: r.id, code: r.code, name: r.name, canDelete, reasons: blockReasons }
     }),
   )
@@ -207,7 +207,7 @@ export async function bulkDeleteDowntimeReasons(ids: string[]): Promise<BulkDele
   const failed: BulkDeleteDowntimeReasonsResult["failed"] = []
 
   for (const r of reasons) {
-    const { canDelete, reasons: blockReasons } = await checkDowntimeReasonReferencesForBulk()
+    const { canDelete, reasons: blockReasons } = await checkDowntimeReasonReferencesForBulk(r.id)
     if (!canDelete) {
       blocked.push({ id: r.id, code: r.code, name: r.name, reasons: blockReasons })
       continue
