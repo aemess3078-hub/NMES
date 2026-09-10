@@ -154,15 +154,14 @@ export async function checkDefectCodeReferencesForBulk(defectCodeId: string): Pr
   return { canDelete: reasons.length === 0, reasons }
 }
 
-/**
- * 비가동사유관리(CommonCode, groupCode='DOWNTIME_REASON') 선택 일괄삭제 참조 확인.
- * 현재 스키마상 CommonCode를 직접 참조하는 FK가 없다(EquipmentEvent 등 아직 미연결).
- * 향후 연결이 추가되면 여기에 카운트를 더한다.
- */
-export async function checkDowntimeReasonReferencesForBulk(): Promise<ReferenceCheckResult> {
-  return { canDelete: true, reasons: [] }
+/** 비가동사유관리(CommonCode, groupCode='DOWNTIME_REASON') 선택 일괄삭제 참조 확인. */
+export async function checkDowntimeReasonReferencesForBulk(downtimeReasonId?: string): Promise<ReferenceCheckResult> {
+  if (!downtimeReasonId) return { canDelete: true, reasons: [] }
+  const downtime = await prisma.equipmentDowntime.count({ where: { reasonId: downtimeReasonId } })
+  const reasons: string[] = []
+  if (downtime > 0) reasons.push(`비가동 이력 ${downtime}건`)
+  return { canDelete: reasons.length === 0, reasons }
 }
-
 /**
  * 금형/치공구관리(Equipment, equipmentType in TOOL/JIG/FIXTURE) 선택 일괄삭제 참조 확인.
  * 기존 단건삭제(deleteMold)보다 넓은 범위(설비-공정 매핑/작업지시 공정/설비연결/설비이벤트/

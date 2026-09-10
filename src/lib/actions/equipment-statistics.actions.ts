@@ -228,9 +228,8 @@ async function fetchDowntimeStats(
 ): Promise<DowntimeStats> {
   const { from, to } = parseDateRange(f)
 
-  const events = await prisma.equipmentEvent.findMany({
+  const downtimeRecords = await prisma.equipmentDowntime.findMany({
     where: {
-      eventType: { in: ["STOP", "MAINTENANCE"] },
       startedAt: { gte: from, lte: to },
       equipment: {
         tenantId,
@@ -241,7 +240,6 @@ async function fetchDowntimeStats(
       eventType: true,
       startedAt: true,
       endedAt: true,
-      duration: true,
       equipment: { select: { code: true, name: true } },
     },
   })
@@ -253,30 +251,27 @@ async function fetchDowntimeStats(
 
   let totalMinutes = 0
 
-  for (const ev of events) {
-    const mins =
-      ev.duration != null
-        ? ev.duration / 60
-        : ev.endedAt && ev.startedAt
-        ? (ev.endedAt.getTime() - ev.startedAt.getTime()) / 60_000
-        : 0
+  for (const record of downtimeRecords) {
+    const mins = record.endedAt
+      ? (record.endedAt.getTime() - record.startedAt.getTime()) / 60_000
+      : 0
 
     totalMinutes += mins
-    const key = ev.equipment.code
+    const key = record.equipment.code
     const e = eqMap.get(key) ?? {
-      equipmentCode: ev.equipment.code,
-      equipmentName: ev.equipment.name,
+      equipmentCode: record.equipment.code,
+      equipmentName: record.equipment.name,
       stopMinutes: 0,
       maintenanceMinutes: 0,
     }
-    if (ev.eventType === "STOP") e.stopMinutes += mins
+    if (record.eventType === "STOP") e.stopMinutes += mins
     else e.maintenanceMinutes += mins
     eqMap.set(key, e)
   }
 
   return {
     totalMinutes: Math.round(totalMinutes),
-    eventCount: events.length,
+    eventCount: downtimeRecords.length,
     rows: Array.from(eqMap.values())
       .map((e) => ({
         ...e,

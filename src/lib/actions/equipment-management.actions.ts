@@ -3,7 +3,14 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId, getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
-import { RepairRequestStatus, RepairPriority, CheckResult } from "@prisma/client"
+import {
+  RepairRequestStatus,
+  RepairPriority,
+  CheckResult,
+  EquipmentEventType,
+  EquipmentDowntimeKind,
+  PreventiveMaintenanceCycleUnit,
+} from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { recordAuditLog } from "@/lib/audit-log"
@@ -46,6 +53,49 @@ export type RepairRequestRow = {
   assignee: { id: string; name: string } | null
   site: { id: string; name: string }
 }
+export type EquipmentDowntimeRow = {
+  id: string
+  tenantId: string
+  siteId: string
+  equipmentId: string
+  reasonId: string
+  eventType: EquipmentEventType
+  kind: EquipmentDowntimeKind
+  startedAt: Date
+  endedAt: Date | null
+  note: string | null
+  equipmentEventId: string | null
+  repairRequestId: string | null
+  createdAt: Date
+  equipment: { id: string; code: string; name: string }
+  reason: { id: string; code: string; name: string }
+  repairRequest: { id: string; requestNo: string; title: string } | null
+}
+
+export type MaintenancePlanRow = {
+  id: string
+  tenantId: string
+  siteId: string
+  equipmentId: string
+  title: string
+  description: string | null
+  cycleValue: number
+  cycleUnit: PreventiveMaintenanceCycleUnit
+  startDate: Date
+  nextDueAt: Date
+  lastCompletedAt: Date | null
+  isActive: boolean
+  createdAt: Date
+  equipment: { id: string; code: string; name: string }
+  histories: Array<{
+    id: string
+    scheduledAt: Date
+    completedAt: Date
+    result: CheckResult
+    note: string | null
+    performer: { id: string; name: string }
+  }>
+}
 
 export type DailyCheckRow = {
   id: string
@@ -62,7 +112,6 @@ export type DailyCheckRow = {
   checker: { id: string; name: string }
   site: { id: string; name: string }
 }
-
 // ─── Problem Types ─────────────────────────────────────────────────────────────
 
 export async function getProblemTypes(): Promise<ProblemTypeRow[]> {
@@ -531,4 +580,358 @@ export async function getRepairStats() {
     if (isMissingDbObjectError(error)) return { open: 0, inProgress: 0, completed: 0, critical: 0 }
     throw error
   }
+}
+
+// ─── Downtime records ─────────────────────────────────────────────────────────
+
+const DOWNTIME_REASON_GROUP_CODE = "DOWNTIME_REASON"
+const EQUIPMENT_MAINTENANCE_PATH = "/app/mes/equipment-check"
+const EQUIPMENT_REPAIR_PATH = "/app/mes/equipment-repair"
+const EQUIPMENT_STATISTICS_PATH = "/app/mes/equipment-statistics"
+const DOWNTIME_REASON_PATH = "/app/mes/master/downtime-reasons"
+
+function secondsBetween(startedAt: Date, endedAt: Date): number {
+  return Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
+}
+
+function assertValidDowntimeEventType(eventType: EquipmentEventType) {
+  if (eventType !== "STOP" && eventType !== "MAINTENANCE") {
+    throw new Error("비가동 이력은 STOP 또는 MAINTENANCE 이벤트만 연결할 수 있습니다.")
+  }
+}
+
+function assertValidRange(startedAt: Date, endedAt?: Date | null) {
+  if (Number.isNaN(startedAt.getTime())) throw new Error("시작일시가 올바르지 않습니다.")
+  if (endedAt && Number.isNaN(endedAt.getTime())) throw new Error("종료일시가 올바르지 않습니다.")
+  if (endedAt && endedAt <= startedAt) throw new Error("종료일시는 시작일시보다 늦어야 합니다.")
+}
+
+async function getDefaultSiteId(tenantId: string, userId: string): Promise<string> {
+  const tenantUser = await prisma.tenantUser.findFirst({ where: { tenantId, profileId: userId } })
+  const siteId = tenantUser?.siteId ?? (await prisma.site.findFirst({ where: { tenantId }, orderBy: { createdAt: "asc" } }))?.id
+  if (!siteId) throw new Error("사이트를 찾을 수 없습니다.")
+  return siteId
+}
+
+async function requireDowntimeReason(tenantId: string, reasonId: string) {
+  const reason = await prisma.commonCode.findFirst({
+    where: {
+      id: reasonId,
+      isActive: true,
+      group: { tenantId, groupCode: DOWNTIME_REASON_GROUP_CODE, isActive: true },
+    },
+    select: { id: true, code: true, name: true },
+  })
+  if (!reason) throw new Error("사용 가능한 비가동 사유를 찾을 수 없습니다.")
+  return reason
+}
+
+async function assertNoDowntimeOverlap(input: {
+  tenantId: string
+  equipmentId: string
+  startedAt: Date
+  endedAt: Date | null
+  excludeId?: string
+}) {
+  const overlap = await prisma.equipmentDowntime.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      equipmentId: input.equipmentId,
+      ...(input.excludeId ? { id: { not: input.excludeId } } : {}),
+      AND: [
+        { startedAt: { lt: input.endedAt ?? new Date("9999-12-31T23:59:59.999Z") } },
+        { OR: [{ endedAt: null }, { endedAt: { gt: input.startedAt } }] },
+      ],
+    },
+    select: { id: true },
+  })
+  if (overlap) throw new Error("같은 설비에 겹치는 비가동 이력이 이미 있습니다.")
+}
+
+export async function getEquipmentDowntimeRecords(filters?: {
+  equipmentId?: string
+  from?: Date
+  to?: Date
+}): Promise<EquipmentDowntimeRow[]> {
+  const tenantId = await getTenantId()
+  try {
+    return (await prisma.equipmentDowntime.findMany({
+      where: {
+        tenantId,
+        ...(filters?.equipmentId ? { equipmentId: filters.equipmentId } : {}),
+        ...(filters?.from || filters?.to
+          ? { startedAt: { ...(filters?.from ? { gte: filters.from } : {}), ...(filters?.to ? { lte: filters.to } : {}) } }
+          : {}),
+      },
+      include: {
+        equipment: { select: { id: true, code: true, name: true } },
+        reason: { select: { id: true, code: true, name: true } },
+        repairRequest: { select: { id: true, requestNo: true, title: true } },
+      },
+      orderBy: { startedAt: "desc" },
+    })) as any
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
+}
+
+export async function createEquipmentDowntime(data: {
+  equipmentId: string
+  reasonId: string
+  eventType?: EquipmentEventType
+  kind?: EquipmentDowntimeKind
+  startedAt: Date
+  endedAt?: Date | null
+  repairRequestId?: string | null
+  note?: string | null
+}) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  const userId = await getCurrentUserId()
+  const eventType = data.eventType ?? "STOP"
+  const kind = data.kind ?? (eventType === "MAINTENANCE" ? "PLANNED" : "UNPLANNED")
+  const startedAt = new Date(data.startedAt)
+  const endedAt = data.endedAt ? new Date(data.endedAt) : null
+  assertValidDowntimeEventType(eventType)
+  assertValidRange(startedAt, endedAt)
+
+  const [equipment, reason] = await Promise.all([
+    prisma.equipment.findFirst({ where: { id: data.equipmentId, tenantId }, select: { id: true, code: true, name: true } }),
+    requireDowntimeReason(tenantId, data.reasonId),
+  ])
+  if (!equipment) throw new Error("설비를 찾을 수 없습니다.")
+
+  let repairRequest: { id: string; requestNo: string } | null = null
+  if (data.repairRequestId) {
+    repairRequest = await prisma.equipmentRepairRequest.findFirst({
+      where: { id: data.repairRequestId, tenantId, equipmentId: data.equipmentId },
+      select: { id: true, requestNo: true },
+    })
+    if (!repairRequest) throw new Error("같은 설비의 수리요청을 찾을 수 없습니다.")
+  }
+
+  const siteId = await getDefaultSiteId(tenantId, userId)
+  await assertNoDowntimeOverlap({ tenantId, equipmentId: data.equipmentId, startedAt, endedAt })
+
+  await prisma.$transaction(async (tx) => {
+    const event = await tx.equipmentEvent.create({
+      data: {
+        equipmentId: data.equipmentId,
+        eventType,
+        message: reason.name,
+        startedAt,
+        endedAt,
+        duration: endedAt ? secondsBetween(startedAt, endedAt) : null,
+      },
+    })
+    const created = await tx.equipmentDowntime.create({
+      data: {
+        tenantId,
+        siteId,
+        equipmentId: data.equipmentId,
+        reasonId: data.reasonId,
+        eventType,
+        kind,
+        startedAt,
+        endedAt,
+        note: data.note ?? null,
+        equipmentEventId: event.id,
+        repairRequestId: data.repairRequestId ?? null,
+        createdById: userId,
+      },
+    })
+    if (!endedAt) {
+      await tx.equipment.update({
+        where: { id: data.equipmentId },
+        data: { status: eventType === "MAINTENANCE" ? "MAINTENANCE" : "INACTIVE" },
+      })
+    }
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentDowntime",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { equipment, reason, repairRequest, eventType, kind, startedAt, endedAt, note: data.note ?? null },
+      menuName: "설비 비가동",
+    })
+  })
+  revalidatePath(EQUIPMENT_REPAIR_PATH)
+  revalidatePath(EQUIPMENT_STATISTICS_PATH)
+  revalidatePath(DOWNTIME_REASON_PATH)
+}
+
+export async function endEquipmentDowntime(id: string, endedAtInput?: Date | null) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  const endedAt = endedAtInput ? new Date(endedAtInput) : new Date()
+
+  const current = await prisma.equipmentDowntime.findFirst({
+    where: { id, tenantId },
+    include: { equipment: { select: { id: true, code: true, name: true } }, reason: { select: { id: true, code: true, name: true } } },
+  })
+  if (!current) throw new Error("비가동 이력을 찾을 수 없습니다.")
+  if (current.endedAt) throw new Error("이미 종료된 비가동 이력입니다.")
+  assertValidRange(current.startedAt, endedAt)
+
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.equipmentDowntime.update({ where: { id }, data: { endedAt } })
+    if (current.equipmentEventId) {
+      await tx.equipmentEvent.update({
+        where: { id: current.equipmentEventId },
+        data: { endedAt, duration: secondsBetween(current.startedAt, endedAt) },
+      })
+    }
+    const activeSibling = await tx.equipmentDowntime.count({
+      where: { tenantId, equipmentId: current.equipmentId, id: { not: id }, endedAt: null },
+    })
+    if (activeSibling === 0) {
+      await tx.equipment.update({ where: { id: current.equipmentId }, data: { status: "ACTIVE" } })
+    }
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentDowntime",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { endedAt: current.endedAt },
+      afterData: { endedAt: updated.endedAt, durationSeconds: secondsBetween(current.startedAt, endedAt) },
+      menuName: "설비 비가동",
+    })
+  })
+  revalidatePath(EQUIPMENT_REPAIR_PATH)
+  revalidatePath(EQUIPMENT_STATISTICS_PATH)
+}
+
+// ─── Preventive maintenance ──────────────────────────────────────────────────
+
+function addMaintenanceCycle(base: Date, cycleValue: number, cycleUnit: PreventiveMaintenanceCycleUnit): Date {
+  const next = new Date(base)
+  if (cycleUnit === "DAY") next.setDate(next.getDate() + cycleValue)
+  else if (cycleUnit === "WEEK") next.setDate(next.getDate() + cycleValue * 7)
+  else next.setMonth(next.getMonth() + cycleValue)
+  return next
+}
+
+function normalizeDateInput(value: Date | string): Date {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) throw new Error("일시 값이 올바르지 않습니다.")
+  return date
+}
+
+export async function getMaintenancePlans(): Promise<MaintenancePlanRow[]> {
+  const tenantId = await getTenantId()
+  try {
+    return (await prisma.equipmentMaintenancePlan.findMany({
+      where: { tenantId },
+      include: {
+        equipment: { select: { id: true, code: true, name: true } },
+        histories: {
+          orderBy: { completedAt: "desc" },
+          take: 5,
+          select: { id: true, scheduledAt: true, completedAt: true, result: true, note: true, performer: { select: { id: true, name: true } } },
+        },
+      },
+      orderBy: [{ isActive: "desc" }, { nextDueAt: "asc" }],
+    })) as any
+  } catch (error) {
+    if (isMissingDbObjectError(error)) return []
+    throw error
+  }
+}
+
+export async function createMaintenancePlan(data: {
+  equipmentId: string
+  title: string
+  description?: string | null
+  cycleValue: number
+  cycleUnit: PreventiveMaintenanceCycleUnit
+  startDate: Date | string
+  nextDueAt?: Date | string | null
+}) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  const userId = await getCurrentUserId()
+  if (!Number.isInteger(data.cycleValue) || data.cycleValue <= 0) throw new Error("점검 주기는 1 이상이어야 합니다.")
+  const startDate = normalizeDateInput(data.startDate)
+  const nextDueAt = data.nextDueAt ? normalizeDateInput(data.nextDueAt) : startDate
+  const equipment = await prisma.equipment.findFirst({ where: { id: data.equipmentId, tenantId }, select: { id: true, code: true, name: true } })
+  if (!equipment) throw new Error("설비를 찾을 수 없습니다.")
+  const siteId = await getDefaultSiteId(tenantId, userId)
+
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.equipmentMaintenancePlan.create({
+      data: { tenantId, siteId, equipmentId: data.equipmentId, title: data.title, description: data.description ?? null, cycleValue: data.cycleValue, cycleUnit: data.cycleUnit, startDate, nextDueAt, createdById: userId },
+    })
+    await recordAuditLog(tx, { tenantId, actor, entityType: "EquipmentMaintenancePlan", entityId: created.id, action: "CREATE", afterData: { ...data, startDate, nextDueAt, equipment }, menuName: "예방점검" })
+  })
+  revalidatePath(EQUIPMENT_MAINTENANCE_PATH)
+}
+
+export async function updateMaintenancePlan(
+  id: string,
+  data: Partial<{ title: string; description: string | null; cycleValue: number; cycleUnit: PreventiveMaintenanceCycleUnit; nextDueAt: Date | string; isActive: boolean }>,
+) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  if (data.cycleValue !== undefined && (!Number.isInteger(data.cycleValue) || data.cycleValue <= 0)) throw new Error("점검 주기는 1 이상이어야 합니다.")
+  const before = await prisma.equipmentMaintenancePlan.findFirst({ where: { id, tenantId } })
+  if (!before) throw new Error("예방점검 계획을 찾을 수 없습니다.")
+  const updateData = { ...data, ...(data.nextDueAt ? { nextDueAt: normalizeDateInput(data.nextDueAt) } : {}) }
+  await prisma.$transaction(async (tx) => {
+    await tx.equipmentMaintenancePlan.update({ where: { id }, data: updateData })
+    await recordAuditLog(tx, { tenantId, actor, entityType: "EquipmentMaintenancePlan", entityId: id, action: "UPDATE", beforeData: before, afterData: updateData, menuName: "예방점검" })
+  })
+  revalidatePath(EQUIPMENT_MAINTENANCE_PATH)
+}
+
+export async function deleteMaintenancePlan(id: string) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  const before = await prisma.equipmentMaintenancePlan.findFirst({ where: { id, tenantId }, include: { _count: { select: { histories: true } } } })
+  if (!before) throw new Error("예방점검 계획을 찾을 수 없습니다.")
+  if (before._count.histories > 0) throw new Error("실시 이력이 있는 예방점검 계획은 삭제할 수 없습니다. 비활성화로 관리해 주세요.")
+  await prisma.$transaction(async (tx) => {
+    await tx.equipmentMaintenancePlan.delete({ where: { id } })
+    await recordAuditLog(tx, { tenantId, actor, entityType: "EquipmentMaintenancePlan", entityId: id, action: "DELETE", beforeData: before, menuName: "예방점검" })
+  })
+  revalidatePath(EQUIPMENT_MAINTENANCE_PATH)
+}
+
+export async function completeMaintenancePlan(id: string, data?: { completedAt?: Date | string; result?: CheckResult; note?: string | null }) {
+  await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  const userId = await getCurrentUserId()
+  const completedAt = data?.completedAt ? normalizeDateInput(data.completedAt) : new Date()
+  const plan = await prisma.equipmentMaintenancePlan.findFirst({ where: { id, tenantId }, include: { equipment: { select: { id: true, code: true, name: true } } } })
+  if (!plan) throw new Error("예방점검 계획을 찾을 수 없습니다.")
+  if (!plan.isActive) throw new Error("비활성 예방점검 계획은 완료 처리할 수 없습니다.")
+  if (completedAt < plan.nextDueAt) throw new Error("예정일 이전에는 해당 회차를 완료 처리할 수 없습니다.")
+
+  const scheduledAt = plan.nextDueAt
+  const nextDueAt = addMaintenanceCycle(completedAt, plan.cycleValue, plan.cycleUnit)
+  await prisma.$transaction(async (tx) => {
+    const alreadyCompleted = await tx.equipmentMaintenanceHistory.findUnique({ where: { planId_scheduledAt: { planId: id, scheduledAt } }, select: { id: true } })
+    if (alreadyCompleted) throw new Error("이미 완료된 예방점검 회차입니다.")
+    const history = await tx.equipmentMaintenanceHistory.create({
+      data: { tenantId, siteId: plan.siteId, equipmentId: plan.equipmentId, planId: id, scheduledAt, completedAt, result: data?.result ?? "PASS", note: data?.note ?? null, performedBy: userId },
+    })
+    await tx.equipmentMaintenancePlan.update({ where: { id }, data: { lastCompletedAt: completedAt, nextDueAt } })
+    await recordAuditLog(tx, { tenantId, actor, entityType: "EquipmentMaintenanceHistory", entityId: history.id, action: "CREATE", afterData: { planId: id, equipment: plan.equipment, scheduledAt, completedAt, nextDueAt, result: data?.result ?? "PASS" }, menuName: "예방점검" })
+    await recordAuditLog(tx, { tenantId, actor, entityType: "EquipmentMaintenancePlan", entityId: id, action: "UPDATE", beforeData: { nextDueAt: plan.nextDueAt, lastCompletedAt: plan.lastCompletedAt }, afterData: { nextDueAt, lastCompletedAt: completedAt }, menuName: "예방점검" })
+  })
+  revalidatePath(EQUIPMENT_MAINTENANCE_PATH)
 }
