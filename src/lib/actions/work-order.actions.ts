@@ -23,6 +23,7 @@ import {
   lockWorkOrderForUpdate,
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
+import { recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -953,6 +954,22 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
     })
 
     await syncProductionPlanStatusForWorkOrder(tx, workOrder.id, tenantId)
+    await recordAuditLog(tx, {
+      tenantId,
+      actor: user,
+      entityType: "WorkOrder",
+      entityId: workOrder.id,
+      action: "CREATE",
+      afterData: {
+        orderNo: headerFields.orderNo,
+        manufacturingNo: finalManufacturingNo,
+        itemId: headerFields.itemId,
+        plannedQty: headerFields.plannedQty,
+        productionPlanItemId: headerFields.productionPlanItemId,
+        operations: summarizeAuditItems(validatedOperations, ["routingOperationId", "equipmentId", "seq", "plannedQty"]),
+      },
+      menuName: "작업지시",
+    })
   }))
 
   revalidatePath("/app/mes/work-orders")
@@ -1073,6 +1090,23 @@ export async function updateWorkOrder(id: string, data: CreateWorkOrderInput) {
         existing.tenantId
       )
     }
+    await recordAuditLog(tx, {
+      tenantId: existing.tenantId,
+      actor: user,
+      entityType: "WorkOrder",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: lockedExisting,
+      afterData: {
+        orderNo: headerFields.orderNo,
+        manufacturingNo: nextManufacturingNo,
+        itemId: headerFields.itemId,
+        plannedQty: headerFields.plannedQty,
+        productionPlanItemId: headerFields.productionPlanItemId,
+        operationCount: validatedOperations.length,
+      },
+      menuName: "작업지시",
+    })
   }))
 
   revalidatePath("/app/mes/work-orders")
@@ -1106,6 +1140,16 @@ export async function releaseWorkOrder(id: string): Promise<{ success: boolean; 
         data: { status: "RELEASED" },
       })
       await syncProductionPlanStatusForWorkOrder(tx, id, existing.tenantId)
+      await recordAuditLog(tx, {
+        tenantId: existing.tenantId,
+        actor: user,
+        entityType: "WorkOrder",
+        entityId: id,
+        action: "UPDATE",
+        beforeData: { status: existing.status },
+        afterData: { status: "RELEASED" },
+        menuName: "작업지시",
+      })
     })
     revalidatePath("/app/mes/work-orders")
     revalidatePath("/app/mes/production-plan")
@@ -1148,6 +1192,15 @@ export async function deleteWorkOrder(id: string) {
         existing.tenantId
       )
     }
+    await recordAuditLog(tx, {
+      tenantId: existing.tenantId,
+      actor: user,
+      entityType: "WorkOrder",
+      entityId: id,
+      action: "DELETE",
+      beforeData: existing,
+      menuName: "작업지시",
+    })
   })
 
   revalidatePath("/app/mes/work-orders")

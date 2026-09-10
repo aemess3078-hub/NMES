@@ -5,6 +5,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { Prisma, PurchaseOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -219,7 +220,8 @@ export async function createPurchaseOrder(
   data: CreatePurchaseOrderInput
 ) {
   await requireResourcePermission("PURCHASE_ORDER", "CREATE")
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
+  if (actor.tenantId !== tenantId) throw new Error("FORBIDDEN")
   const orderNo = await generatePurchaseOrderNo(tenantId)
 
   const itemsWithStock = await Promise.all(
@@ -229,28 +231,46 @@ export async function createPurchaseOrder(
     })
   )
 
-  await prisma.purchaseOrder.create({
-    data: {
-      tenantId,
-      siteId,
-      supplierId: data.supplierId,
-      orderNo,
-      orderDate: data.orderDate,
-      expectedDate: data.expectedDate,
-      status: data.status,
-      totalAmount: data.totalAmount,
-      currency: data.currency ?? "KRW",
-      note: data.note,
-      items: {
-        create: itemsWithStock.map((item) => ({
-          itemId: item.itemId,
-          qty: item.qty,
-          unitPrice: item.unitPrice,
-          stockAtOrder: item.stockAtOrder,
-          note: item.note,
-        })),
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.purchaseOrder.create({
+      data: {
+        tenantId,
+        siteId,
+        supplierId: data.supplierId,
+        orderNo,
+        orderDate: data.orderDate,
+        expectedDate: data.expectedDate,
+        status: data.status,
+        totalAmount: data.totalAmount,
+        currency: data.currency ?? "KRW",
+        note: data.note,
+        items: {
+          create: itemsWithStock.map((item) => ({
+            itemId: item.itemId,
+            qty: item.qty,
+            unitPrice: item.unitPrice,
+            stockAtOrder: item.stockAtOrder,
+            note: item.note,
+          })),
+        },
       },
-    },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "PurchaseOrder",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: {
+        orderNo,
+        siteId,
+        supplierId: data.supplierId,
+        status: data.status,
+        itemCount: itemsWithStock.length,
+        items: summarizeAuditItems(itemsWithStock, ["itemId", "qty", "unitPrice", "stockAtOrder"]),
+      },
+      menuName: "발주관리",
+    })
   })
 
   revalidatePath("/app/mes/purchase-orders")
@@ -269,8 +289,8 @@ export type UpdatePurchaseOrderInput = {
 
 export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderInput) {
   await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
   const current = await prisma.purchaseOrder.findFirstOrThrow({ where: { id, tenantId } })
   const canEditItems = current.status === "DRAFT"
 
@@ -282,7 +302,7 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
     if (data.supplierId !== undefined && data.supplierId !== current.supplierId) {
       await assertPurchaseOrderHasNoOperationalHistory(tx, id, tenantId)
     }
-    await tx.purchaseOrder.update({
+    const updated = await tx.purchaseOrder.update({
       where: { id, tenantId },
       data: {
         ...(data.supplierId !== undefined && { supplierId: data.supplierId }),
@@ -303,6 +323,28 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
           },
         }),
       },
+      include: { items: true },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "PurchaseOrder",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: current,
+      afterData: {
+        changes: buildAuditChanges(current as any, updated as any, [
+          "supplierId",
+          "orderDate",
+          "expectedDate",
+          "status",
+          "totalAmount",
+          "currency",
+          "note",
+        ]),
+        itemCount: updated.items.length,
+      },
+      menuName: "발주관리",
     })
   })
 
@@ -311,9 +353,12 @@ export async function updatePurchaseOrder(id: string, data: UpdatePurchaseOrderI
 
 export async function deletePurchaseOrder(id: string) {
   await requireResourcePermission("PURCHASE_ORDER", "DELETE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
-  const order = await prisma.purchaseOrder.findFirstOrThrow({ where: { id, tenantId } })
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
+  const order = await prisma.purchaseOrder.findFirstOrThrow({
+    where: { id, tenantId },
+    include: { items: true },
+  })
   if (order.status !== "DRAFT") {
     throw new Error("DRAFT 상태인 발주만 삭제할 수 있습니다.")
   }
@@ -321,6 +366,20 @@ export async function deletePurchaseOrder(id: string) {
     await assertPurchaseOrderHasNoOperationalHistory(tx, id, tenantId)
     await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } })
     await tx.purchaseOrder.delete({ where: { id, tenantId } })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "PurchaseOrder",
+      entityId: id,
+      action: "DELETE",
+      beforeData: {
+        orderNo: order.orderNo,
+        supplierId: order.supplierId,
+        status: order.status,
+        itemCount: order.items.length,
+      },
+      menuName: "발주관리",
+    })
   })
   revalidatePath("/app/mes/purchase-orders")
 }

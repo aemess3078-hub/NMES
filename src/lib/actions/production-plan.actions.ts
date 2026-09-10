@@ -7,6 +7,7 @@ import { getAvailableRoutingsForItem, validateRoutingForItem } from "@/lib/actio
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { reconcileProductionPlanItems } from "@/lib/production-plan-item-reconciliation"
 import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan-workorder-integrity"
+import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -337,23 +338,40 @@ export async function createPlan(data: CreatePlanInput, _tenantId: string) {
     }
   }
 
-  await prisma.productionPlan.create({
-    data: {
-      ...headerFields,
-      tenantId,
-      startDate: new Date(startDate),
-      endDate: new Date(endDate),
-      note: note ?? null,
-      items: {
-        create: items.map((item) => ({
-          itemId: item.itemId,
-          bomId: item.bomId ?? null,
-          routingId: item.routingId ?? null,
-          plannedQty: item.plannedQty,
-          note: item.note ?? null,
-        })),
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.productionPlan.create({
+      data: {
+        ...headerFields,
+        tenantId,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        note: note ?? null,
+        items: {
+          create: items.map((item) => ({
+            itemId: item.itemId,
+            bomId: item.bomId ?? null,
+            routingId: item.routingId ?? null,
+            plannedQty: item.plannedQty,
+            note: item.note ?? null,
+          })),
+        },
       },
-    },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor: user,
+      entityType: "ProductionPlan",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: {
+        planNo: data.planNo,
+        planType: data.planType,
+        status: data.status,
+        itemCount: items.length,
+        items: summarizeAuditItems(items, ["itemId", "bomId", "routingId", "plannedQty"]),
+      },
+      menuName: "생산계획",
+    })
   })
 
   revalidatePath("/app/mes/production-plan")
@@ -459,6 +477,23 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
         note: note ?? null,
       },
     })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor: user,
+      entityType: "ProductionPlan",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: {
+        status: existing.status,
+        itemCount: existing.items.length,
+      },
+      afterData: {
+        changes: buildAuditChanges(existing as any, data as any, ["status"]),
+        itemCount: items.length,
+        reconciliation,
+      },
+      menuName: "생산계획",
+    })
   })
 
   revalidatePath("/app/mes/production-plan")
@@ -481,10 +516,19 @@ export async function deletePlan(id: string) {
     )
   }
 
-  await prisma.$transaction([
-    prisma.productionPlanItem.deleteMany({ where: { planId: id } }),
-    prisma.productionPlan.delete({ where: { id } }),
-  ])
+  await prisma.$transaction(async (tx) => {
+    await tx.productionPlanItem.deleteMany({ where: { planId: id } })
+    await tx.productionPlan.delete({ where: { id } })
+    await recordAuditLog(tx, {
+      tenantId: user.tenantId,
+      actor: user,
+      entityType: "ProductionPlan",
+      entityId: id,
+      action: "DELETE",
+      beforeData: existing,
+      menuName: "생산계획",
+    })
+  })
 
   revalidatePath("/app/mes/production-plan")
 }

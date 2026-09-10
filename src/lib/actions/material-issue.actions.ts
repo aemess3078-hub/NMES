@@ -9,6 +9,7 @@ import {
   lockWorkOrderForUpdate,
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
+import { recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -249,7 +250,8 @@ export async function issueMaterialsForWorkOrder(
   tenantId: string
 ): Promise<{ ok: boolean; error?: string }> {
   await requireResourcePermission("PURCHASE_ORDER", "CREATE")
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
+  if (actor.tenantId !== tenantId) return { ok: false, error: "FORBIDDEN" }
   const activeItems = data.items.filter((i) => i.issueQty > 0)
   if (activeItems.length === 0)
     return { ok: false, error: "출고 수량을 입력하세요." }
@@ -660,6 +662,21 @@ export async function issueMaterialsForWorkOrder(
           }
         }
       }
+      await recordAuditLog(tx, {
+        tenantId,
+        actor,
+        entityType: "MaterialIssue",
+        entityId: firstTxId ?? data.workOrderId,
+        action: "CREATE",
+        afterData: {
+          workOrderId: data.workOrderId,
+          siteId: data.siteId,
+          transactionId: firstTxId,
+          itemCount: expandedItems.length,
+          items: summarizeAuditItems(expandedItems, ["itemId", "warehouseId", "lotId", "issueQty", "reservationId"]),
+        },
+        menuName: "자재출고",
+      })
     }))
 
     revalidatePath("/app/mes/material-issue")

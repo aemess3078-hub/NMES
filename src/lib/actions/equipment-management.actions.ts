@@ -1,11 +1,12 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { getTenantId, getCurrentUserId } from "@/lib/auth"
+import { getTenantId, getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import { RepairRequestStatus, RepairPriority, CheckResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { recordAuditLog } from "@/lib/audit-log"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,9 +86,22 @@ export async function createProblemType(data: {
   description?: string
 }) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
-  const tenantId = await getTenantId()
-  await prisma.equipmentProblemType.create({
-    data: { tenantId, ...data },
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.equipmentProblemType.create({
+      data: { tenantId, ...data },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentProblemType",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: data,
+      menuName: "설비보전",
+    })
   })
   revalidatePath("/app/mes/equipment-problems")
 }
@@ -97,22 +111,51 @@ export async function updateProblemType(
   data: { name?: string; category?: string; description?: string; isActive?: boolean }
 ) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
-  const tenantId = await getTenantId()
-  await prisma.equipmentProblemType.update({
-    where: { id, tenantId },
-    data,
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.equipmentProblemType.findUniqueOrThrow({ where: { id, tenantId } })
+    await tx.equipmentProblemType.update({
+      where: { id, tenantId },
+      data,
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentProblemType",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: before,
+      afterData: data,
+      menuName: "설비보전",
+    })
   })
   revalidatePath("/app/mes/equipment-problems")
 }
 
 export async function deleteProblemType(id: string) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
-  const tenantId = await getTenantId()
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
   const repairCount = await prisma.equipmentRepairRequest.count({ where: { tenantId, problemTypeId: id } })
   if (repairCount > 0) {
     throw new Error(`수리요청 이력이 ${repairCount}건 있어 문제유형을 삭제할 수 없습니다. 비활성화로 관리해 주세요.`)
   }
-  await prisma.equipmentProblemType.delete({ where: { id, tenantId } })
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.equipmentProblemType.findUniqueOrThrow({ where: { id, tenantId } })
+    await tx.equipmentProblemType.delete({ where: { id, tenantId } })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentProblemType",
+      entityId: id,
+      action: "DELETE",
+      beforeData: before,
+      menuName: "설비보전",
+    })
+  })
   revalidatePath("/app/mes/equipment-problems")
 }
 
@@ -150,7 +193,9 @@ export async function createRepairRequest(data: {
   priority?: RepairPriority
 }) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "CREATE")
-  const tenantId = await getTenantId()
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
   const userId = await getCurrentUserId()
 
   const tenantUser = await prisma.tenantUser.findFirst({
@@ -163,18 +208,29 @@ export async function createRepairRequest(data: {
   const count = await prisma.equipmentRepairRequest.count({ where: { tenantId } })
   const requestNo = `REP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`
 
-  await prisma.equipmentRepairRequest.create({
-    data: {
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.equipmentRepairRequest.create({
+      data: {
+        tenantId,
+        siteId,
+        equipmentId: data.equipmentId,
+        problemTypeId: data.problemTypeId ?? null,
+        requestNo,
+        title: data.title,
+        description: data.description ?? null,
+        priority: data.priority ?? "MEDIUM",
+        requestedBy: userId,
+      },
+    })
+    await recordAuditLog(tx, {
       tenantId,
-      siteId,
-      equipmentId: data.equipmentId,
-      problemTypeId: data.problemTypeId ?? null,
-      requestNo,
-      title: data.title,
-      description: data.description ?? null,
-      priority: data.priority ?? "MEDIUM",
-      requestedBy: userId,
-    },
+      actor,
+      entityType: "EquipmentRepairRequest",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: { requestNo, ...data },
+      menuName: "설비보전",
+    })
   })
   revalidatePath("/app/mes/equipment-repair")
 }
@@ -185,16 +241,31 @@ export async function updateRepairStatus(
   extra?: { assignedTo?: string; note?: string }
 ) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
-  const tenantId = await getTenantId()
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
   const now = new Date()
-  await prisma.equipmentRepairRequest.update({
-    where: { id, tenantId },
-    data: {
-      status,
-      ...(status === "IN_PROGRESS" && { startedAt: now }),
-      ...(status === "COMPLETED" && { completedAt: now }),
-      ...extra,
-    },
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.equipmentRepairRequest.findUniqueOrThrow({ where: { id, tenantId } })
+    await tx.equipmentRepairRequest.update({
+      where: { id, tenantId },
+      data: {
+        status,
+        ...(status === "IN_PROGRESS" && { startedAt: now }),
+        ...(status === "COMPLETED" && { completedAt: now }),
+        ...extra,
+      },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentRepairRequest",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { status: before.status, assignedTo: before.assignedTo },
+      afterData: { status, ...extra },
+      menuName: "설비보전",
+    })
   })
   revalidatePath("/app/mes/equipment-repair")
 }
@@ -211,31 +282,57 @@ export async function updateRepairRequest(
   }
 ) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "UPDATE")
-  const tenantId = await getTenantId()
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
   const current = await prisma.equipmentRepairRequest.findFirst({ where: { id, tenantId } })
   if (!current) throw new Error("수리요청을 찾을 수 없습니다.")
   if (current.status === "COMPLETED" || current.status === "CANCELLED") {
     throw new Error("완료 또는 취소된 수리요청은 수정할 수 없습니다.")
   }
-  await prisma.equipmentRepairRequest.update({
-    where: { id, tenantId },
-    data,
+  await prisma.$transaction(async (tx) => {
+    await tx.equipmentRepairRequest.update({
+      where: { id, tenantId },
+      data,
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentRepairRequest",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: current,
+      afterData: data,
+      menuName: "설비보전",
+    })
   })
   revalidatePath("/app/mes/equipment-repair")
 }
 
 export async function deleteRepairRequest(id: string) {
   await requireResourcePermission("EQUIPMENT_REPAIR", "DELETE")
-  const tenantId = await getTenantId()
+  const actor = await getCurrentUser()
+  if (!actor) throw new Error("UNAUTHORIZED")
+  const tenantId = actor.tenantId
   const current = await prisma.equipmentRepairRequest.findFirst({
     where: { id, tenantId },
-    select: { status: true, startedAt: true, completedAt: true },
   })
   if (!current) throw new Error("수리요청을 찾을 수 없습니다.")
   if (current.status !== "OPEN" || current.startedAt || current.completedAt) {
     throw new Error("처리 이력이 없는 OPEN 상태의 수리요청만 삭제할 수 있습니다. 진행/완료/취소 이력은 보존됩니다.")
   }
-  await prisma.equipmentRepairRequest.delete({ where: { id, tenantId } })
+  await prisma.$transaction(async (tx) => {
+    await tx.equipmentRepairRequest.delete({ where: { id, tenantId } })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "EquipmentRepairRequest",
+      entityId: id,
+      action: "DELETE",
+      beforeData: current,
+      menuName: "설비보전",
+    })
+  })
   revalidatePath("/app/mes/equipment-repair")
 }
 

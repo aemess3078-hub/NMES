@@ -48,6 +48,7 @@ export const MES_NAV: NavItem[] = [
           // 분류/숨김 처리하는 관리 UI다. 백업 자체의 생성/삭제/restore는 하지 않는다
           // (실제 백업은 계속 Supabase가 전담).
           { id: 'nav-backups', parentId: 'nav-master', label: '백업관리', icon: 'Archive', href: '/app/mes/backups', displayOrder: 17, children: [] },
+          { id: 'nav-audit-log', parentId: 'nav-master', label: '감사로그', icon: 'History', href: '/app/mes/audit-log', displayOrder: 18, children: [] },
         ],
       },
       // 2. 생산관리

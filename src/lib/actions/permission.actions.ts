@@ -5,6 +5,7 @@ import { UserRole, PermissionAction } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getTenantId, getCurrentUser, requireRole } from "@/lib/auth"
 import { canAccessFullUserManagement } from "@/lib/developer"
+import { recordAuditLog } from "@/lib/audit-log"
 
 async function requireFullUserManagementAccess() {
   const user = await getCurrentUser()
@@ -243,7 +244,29 @@ export async function updatePermission(id: string, isAllowed: boolean) {
   if (!perm) throw new Error("권한 레코드를 찾을 수 없습니다.")
   if (perm.role === "OWNER") throw new Error("OWNER 권한은 수정할 수 없습니다.")
 
-  await prisma.rolePermission.update({ where: { id }, data: { isAllowed } })
+  await prisma.$transaction(async (tx) => {
+    await tx.rolePermission.update({ where: { id }, data: { isAllowed } })
+    await recordAuditLog(tx, {
+      tenantId: actor.tenantId,
+      actor,
+      entityType: "RolePermission",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: {
+        role: perm.role,
+        resource: perm.resource,
+        action: perm.action,
+        isAllowed: perm.isAllowed,
+      },
+      afterData: {
+        role: perm.role,
+        resource: perm.resource,
+        action: perm.action,
+        isAllowed,
+      },
+      menuName: "권한관리",
+    })
+  })
   revalidatePath("/app/mes/users")
 }
 
@@ -257,7 +280,7 @@ export async function bulkUpdatePermissions(
   const ids = updates.map((update) => update.id)
   const permissions = await prisma.rolePermission.findMany({
     where: { id: { in: ids }, tenantId: actor.tenantId },
-    select: { id: true, role: true },
+    select: { id: true, role: true, resource: true, action: true, isAllowed: true },
   })
 
   if (permissions.length !== new Set(ids).size) {
@@ -267,14 +290,43 @@ export async function bulkUpdatePermissions(
     throw new Error("OWNER 권한은 수정할 수 없습니다.")
   }
 
-  await prisma.$transaction(
-    updates.map(({ id, isAllowed }) =>
-      prisma.rolePermission.updateMany({
+  const updateMap = new Map(updates.map((update) => [update.id, update.isAllowed]))
+  await prisma.$transaction(async (tx) => {
+    for (const { id, isAllowed } of updates) {
+      await tx.rolePermission.updateMany({
         where: { id, tenantId: actor.tenantId },
         data: { isAllowed },
       })
-    )
-  )
+    }
+    await recordAuditLog(tx, {
+      tenantId: actor.tenantId,
+      actor,
+      entityType: "RolePermission",
+      entityId: "bulk-update",
+      action: "UPDATE",
+      beforeData: {
+        count: permissions.length,
+        permissions: permissions.map((perm) => ({
+          id: perm.id,
+          role: perm.role,
+          resource: perm.resource,
+          action: perm.action,
+          isAllowed: perm.isAllowed,
+        })),
+      },
+      afterData: {
+        count: permissions.length,
+        permissions: permissions.map((perm) => ({
+          id: perm.id,
+          role: perm.role,
+          resource: perm.resource,
+          action: perm.action,
+          isAllowed: updateMap.get(perm.id),
+        })),
+      },
+      menuName: "권한관리",
+    })
+  })
   revalidatePath("/app/mes/users")
 }
 

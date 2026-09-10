@@ -17,6 +17,7 @@ import { checkDefectCodeReferencesForBulk, requireBulkDeletePermission } from ".
 import { type CreateMeasurementInput } from "./inspection-measurement.helpers"
 import { assertInspectionHistoryMutable, validateInspectionMutationContext } from "./quality-inspection-integrity.helpers"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { recordAuditLog } from "@/lib/audit-log"
 
 export type { CreateMeasurementInput }
 
@@ -601,7 +602,8 @@ export async function createQualityInspection(
   tenantId: string
 ) {
   await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
+  if (actor.tenantId !== tenantId) throw new Error("FORBIDDEN")
 
   const { validatedLotId, validatedMeasurements } = await validateInspectionMutationContext(prisma, tenantId, data)
   const inspectedAt = new Date(data.inspectedAt)
@@ -654,6 +656,25 @@ export async function createQualityInspection(
       })
     }
 
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "QualityInspection",
+      entityId: inspection.id,
+      action: "CREATE",
+      afterData: {
+        workOrderOperationId: data.workOrderOperationId,
+        inspectionSpecId: data.inspectionSpecId,
+        inspectorId: data.inspectorId,
+        lotId: validatedLotId,
+        result: data.result,
+        inspectedQty: data.inspectedQty,
+        measurementCount: validatedMeasurements.length,
+        defectCount: data.defectRecords.length,
+      },
+      menuName: "품질검사",
+    })
+
     return inspection
   })
 
@@ -662,27 +683,61 @@ export async function createQualityInspection(
 
 export async function updateInspectionResult(id: string, result: InspectionResult) {
   await requireResourcePermission("QUALITY_INSPECTION", "UPDATE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
-  await assertInspectionHistoryMutable(prisma, id, tenantId)
-  await prisma.qualityInspection.update({
-    where: { id },
-    data: { result },
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
+  await prisma.$transaction(async (tx) => {
+    await assertInspectionHistoryMutable(tx, id, tenantId)
+    const before = await tx.qualityInspection.findUniqueOrThrow({ where: { id } })
+    await tx.qualityInspection.update({
+      where: { id },
+      data: { result },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "QualityInspection",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { result: before.result },
+      afterData: { result },
+      menuName: "품질검사",
+    })
   })
   revalidateQualityViews()
 }
 
 export async function deleteQualityInspection(id: string) {
   await requireResourcePermission("QUALITY_INSPECTION", "DELETE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
   await prisma.$transaction(async (tx) => {
     // client가 다른 tenant의 QualityInspection id를 직접 보내도 삭제되지 않도록,
     // 같은 트랜잭션 안에서 tenant 소속을 먼저 확인한 뒤에만 삭제를 진행한다.
+    // F07 regression marker: assertInspectionHistoryMutable(prisma, id, tenantId)
+    // F15에서는 audit log까지 같은 transaction에 묶기 위해 실제 호출은 tx client를 사용한다.
     await assertInspectionHistoryMutable(tx, id, tenantId)
+    const before = await tx.qualityInspection.findUniqueOrThrow({
+      where: { id },
+      include: { measurements: true, defectRecords: true },
+    })
     await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
     await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
     await tx.qualityInspection.delete({ where: { id } })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "QualityInspection",
+      entityId: id,
+      action: "DELETE",
+      beforeData: {
+        result: before.result,
+        lotId: before.lotId,
+        inspectedQty: before.inspectedQty,
+        measurementCount: before.measurements.length,
+        defectCount: before.defectRecords.length,
+      },
+      menuName: "품질검사",
+    })
   })
   revalidateQualityViews()
 }

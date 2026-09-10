@@ -308,17 +308,17 @@ const actionsSource = fs.readFileSync("src/lib/actions/defect-recurrence-prevent
   assertTrue(!hasDelete, "T21. defect-recurrence-prevention.actions.ts는 delete 함수를 export하지 않음(물리 삭제 미제공, 상태전이/수정/검증만 가능)")
 }
 
-// ─── T22: deleteQualityInspection 정리 순서에 재발방지 이력이 포함됨(source-check) ─
+// ─── T22: deleteQualityInspection은 downstream 재발방지 이력을 cascade 삭제하지 않고 guard로 차단함(source-check) ─
 {
   const qualityActionsSource = fs.readFileSync("src/lib/actions/quality.actions.ts", "utf8")
   const fnStart = qualityActionsSource.indexOf("export async function deleteQualityInspection")
   const fnBody = qualityActionsSource.slice(fnStart, qualityActionsSource.indexOf("\nexport async function", fnStart + 1))
-  const idxRecurrencePrevention = fnBody.indexOf("defectRecurrencePrevention.deleteMany")
-  const idxDefectRecord = fnBody.indexOf("defectRecord.deleteMany")
-  const idxInspectionDelete = fnBody.indexOf("qualityInspection.delete(")
   assertTrue(
-    idxRecurrencePrevention >= 0 && idxRecurrencePrevention < idxDefectRecord && idxDefectRecord < idxInspectionDelete,
-    "T22. deleteQualityInspection이 DefectRecurrencePrevention(RESTRICT FK)도 DefectRecord보다 먼저 정리해 참조무결성을 지킴"
+    /assertInspectionHistoryMutable\(tx, id, tenantId\)/.test(fnBody) &&
+      !/defectRecurrencePrevention\.deleteMany/.test(fnBody) &&
+      !/defectCauseAnalysis\.deleteMany/.test(fnBody) &&
+      !/defectCorrectiveAction\.deleteMany/.test(fnBody),
+    "T22. deleteQualityInspection은 DefectRecord 하위 원인분석/시정조치/재발방지를 cascade 삭제하지 않고 이력 guard로 차단함"
   )
 }
 
