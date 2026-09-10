@@ -173,6 +173,10 @@ export type ToolUsageHistoryRow = {
   usageCount: number
   itemName: string | null
   workOrderNo: string | null
+  productionResultId: string | null
+  operationName: string | null
+  actualEquipmentName: string | null
+  productionQty: number | null
   operatorName: string | null
   note: string | null
   createdByName: string
@@ -206,7 +210,8 @@ export async function getToolDetail(id: string): Promise<ToolDetail | null> {
         note: true,
         createdAt: true,
         item: { select: { name: true } },
-        workOrderOperation: { select: { workOrder: { select: { orderNo: true } } } },
+        workOrderOperation: { select: { workOrder: { select: { orderNo: true } }, routingOperation: { select: { name: true } } } },
+        productionResult: { select: { id: true, goodQty: true, defectQty: true, reworkQty: true, workOrderOperationAssignment: { select: { equipment: { select: { name: true } } } } } },
         operator: { select: { name: true } },
         createdBy: { select: { name: true } },
       },
@@ -224,6 +229,10 @@ export async function getToolDetail(id: string): Promise<ToolDetail | null> {
     usageCount: u.usageCount,
     itemName: u.item?.name ?? null,
     workOrderNo: u.workOrderOperation?.workOrder.orderNo ?? null,
+    productionResultId: u.productionResult?.id ?? null,
+    operationName: u.workOrderOperation?.routingOperation.name ?? null,
+    actualEquipmentName: u.productionResult?.workOrderOperationAssignment?.equipment.name ?? null,
+    productionQty: u.productionResult ? Number(u.productionResult.goodQty) + Number(u.productionResult.defectQty) + Number(u.productionResult.reworkQty) : null,
     operatorName: u.operator?.name ?? null,
     note: u.note,
     createdByName: u.createdBy.name,
