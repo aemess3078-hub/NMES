@@ -43,9 +43,10 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 
 // ─── Form state type ──────────────────────────────────────────────────────────
 
-type FormState = { goodQty: string; defectQty: string; reworkQty: string }
+type QuantityField = "goodQty" | "defectQty" | "reworkQty"
+type FormState = { goodQty: string; defectQty: string; reworkQty: string; toolIds: string[] }
 
-const EMPTY_FORM: FormState = { goodQty: "", defectQty: "", reworkQty: "" }
+const EMPTY_FORM: FormState = { goodQty: "", defectQty: "", reworkQty: "", toolIds: [] }
 
 // ─── Helper components ───────────────────────────────────────────────────────
 
@@ -124,6 +125,8 @@ function ResultForm({
   error,
   isPending,
   onChange,
+  onToggleTool,
+  onClearTools,
   onSubmit,
   onCancel,
 }: {
@@ -131,11 +134,13 @@ function ResultForm({
   form: FormState
   error: string
   isPending: boolean
-  onChange: (field: keyof FormState, value: string) => void
+  onChange: (field: QuantityField, value: string) => void
+  onToggleTool: (toolId: string) => void
+  onClearTools: () => void
   onSubmit: () => void
   onCancel: () => void
 }) {
-  const FIELDS: { field: keyof FormState; label: string; colorClass: string }[] = [
+  const FIELDS: { field: QuantityField; label: string; colorClass: string }[] = [
     { field: "goodQty", label: "양품", colorClass: "text-emerald-700" },
     { field: "defectQty", label: "불량", colorClass: "text-red-600" },
     { field: "reworkQty", label: "재작업", colorClass: "text-amber-700" },
@@ -167,6 +172,54 @@ function ResultForm({
             />
           </div>
         ))}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[14px] font-semibold text-slate-800">실제 사용 공구</p>
+            <p className="text-[13px] text-slate-500">미선택 시 공구 이력/수명은 변경되지 않습니다.</p>
+          </div>
+          <Button
+            type="button"
+            variant={form.toolIds.length === 0 ? "default" : "outline"}
+            onClick={onClearTools}
+            disabled={isPending}
+            className="h-9 px-3 text-[13px]"
+          >
+            사용 안 함
+          </Button>
+        </div>
+        {row.availableTools.length === 0 ? (
+          <p className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[13px] text-slate-500">
+            이 공정에 계획 공구가 없습니다. 공구 없이 등록할 수 있습니다.
+          </p>
+        ) : (
+          <div className="grid gap-2">
+            {row.availableTools.map((tool) => {
+              const checked = form.toolIds.includes(tool.id)
+              return (
+                <label
+                  key={tool.id}
+                  className={`flex cursor-pointer items-center justify-between gap-2 rounded-md border px-3 py-2 text-[14px] ${
+                    checked ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isPending}
+                      onChange={() => onToggleTool(tool.id)}
+                    />
+                    <span className="font-medium">[{tool.code}] {tool.name}</span>
+                  </span>
+                  <span className="text-[13px] text-slate-500">{tool.equipmentType}</span>
+                </label>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -219,8 +272,21 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
     return formValues[id] ?? EMPTY_FORM
   }
 
-  function setFormField(id: string, field: keyof FormState, value: string) {
+  function setFormField(id: string, field: QuantityField, value: string) {
     setFormValues((prev) => ({ ...prev, [id]: { ...getForm(id), [field]: value } }))
+  }
+
+  function toggleFormTool(id: string, toolId: string) {
+    const form = getForm(id)
+    const toolIds = form.toolIds.includes(toolId)
+      ? form.toolIds.filter((candidate) => candidate !== toolId)
+      : [...form.toolIds, toolId]
+    setFormValues((prev) => ({ ...prev, [id]: { ...form, toolIds } }))
+  }
+
+  function clearFormTools(id: string) {
+    const form = getForm(id)
+    setFormValues((prev) => ({ ...prev, [id]: { ...form, toolIds: [] } }))
   }
 
   function clearError(id: string) {
@@ -275,6 +341,7 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
         goodQty,
         defectQty,
         reworkQty,
+        toolIds: form.toolIds,
       })
 
       if (result.success) {
@@ -570,6 +637,8 @@ export function WorkQueueClient({ rows }: { rows: PopWorkQueueRow[] }) {
                         error={actionErrors[row.rowId] ?? ""}
                         isPending={isThisPending}
                         onChange={(field, value) => setFormField(row.rowId, field, value)}
+                        onToggleTool={(toolId) => toggleFormTool(row.rowId, toolId)}
+                        onClearTools={() => clearFormTools(row.rowId)}
                         onSubmit={() => handleSubmitResult(row)}
                         onCancel={() => {
                           setOpenFormId(null)

@@ -55,6 +55,17 @@ type DefectLine = {
   qty: number
 }
 
+type AvailableTool = {
+  id: string
+  code: string
+  name: string
+  equipmentType: string
+  currentUsage: number
+  lifeLimit: number | null
+  remainingLife: number | null
+  usageRate: number | null
+}
+
 type MaterialSufficiency = {
   plannedQty: number
   producedQty: number
@@ -85,6 +96,7 @@ type Operation = {
   workOrder: WorkOrder | null
   routingOperation: RoutingOperation | null
   equipment: Equipment | null
+  availableTools?: AvailableTool[]
   assignments: Assignment[]
   selectedAssignment: Assignment | null
   productionResults: ProductionResult[]
@@ -100,10 +112,12 @@ export function ProductionClient({ operation }: Props) {
   const [defectQty, setDefectQty] = useState(0)
   const [reworkQty, setReworkQty] = useState(0)
   const [defectLines, setDefectLines] = useState<DefectLine[]>([])
+  const [selectedToolIds, setSelectedToolIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
 
   const defectCodes = operation.defectCodes ?? []
+  const availableTools = operation.availableTools ?? []
   const defectLinesTotal = defectLines.reduce((sum, line) => sum + (line.qty || 0), 0)
   // 불량수량 > 0이면 불량코드별 수량 합계가 정확히 일치해야 제출 가능
   const defectDetailsValid =
@@ -131,6 +145,14 @@ export function ProductionClient({ operation }: Props) {
 
   const removeDefectLine = (index: number) => {
     setDefectLines((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const toggleTool = (toolId: string) => {
+    setSelectedToolIds((prev) =>
+      prev.includes(toolId)
+        ? prev.filter((id) => id !== toolId)
+        : [...prev, toolId]
+    )
   }
 
   const wo = operation.workOrder
@@ -210,12 +232,14 @@ export function ProductionClient({ operation }: Props) {
                 qty: line.qty,
               }))
             : [],
+        toolIds: selectedToolIds,
       })
       if (result.success) {
         setGoodQty(0)
         setDefectQty(0)
         setReworkQty(0)
         setDefectLines([])
+        setSelectedToolIds([])
         router.refresh()
       } else {
         setStartError(result.error ?? "실적 등록에 실패했습니다.")
@@ -454,6 +478,66 @@ export function ProductionClient({ operation }: Props) {
           )}
 
           <PopQuantityInput label="재작업" value={reworkQty} onChange={setReworkQty} steps={[1, 10]} />
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-[15px] text-slate-800">실제 사용 공구</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  선택하지 않으면 공구 사용이력과 수명 사용량을 남기지 않습니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedToolIds([])}
+                className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-medium ${
+                  selectedToolIds.length === 0
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                사용 안 함
+              </button>
+            </div>
+
+            {availableTools.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-500">
+                이 공정에 계획 공구가 등록되어 있지 않습니다. 공구 없이 실적을 등록할 수 있습니다.
+              </p>
+            ) : (
+              <div className="grid gap-2">
+                {availableTools.map((tool) => {
+                  const checked = selectedToolIds.includes(tool.id)
+                  return (
+                    <label
+                      key={tool.id}
+                      className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-[15px] ${
+                        checked
+                          ? "border-blue-300 bg-blue-50 text-blue-900"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTool(tool.id)}
+                          className="h-4 w-4"
+                        />
+                        <span>
+                          <span className="font-semibold">[{tool.code}] {tool.name}</span>
+                          <span className="ml-2 text-sm text-slate-500">{tool.equipmentType}</span>
+                        </span>
+                      </span>
+                      <span className="text-sm text-slate-500">
+                        사용 {formatQuantity(tool.currentUsage)}회
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
