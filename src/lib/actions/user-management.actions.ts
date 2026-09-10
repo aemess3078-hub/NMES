@@ -495,6 +495,8 @@ export type AuditLogRow = {
   ipAddress: string | null
   userAgent: string | null
   actedAt: string
+  beforeData: Prisma.JsonValue | null
+  afterData: Prisma.JsonValue | null
 }
 
 export type AuditLogFilter = {
@@ -707,6 +709,8 @@ async function enrichAuditLogRows(
       ipAddress: r.ipAddress,
       userAgent: r.userAgent,
       actedAt: r.actedAt.toISOString(),
+      beforeData: r.beforeData,
+      afterData: r.afterData,
     }
   })
 }
@@ -714,8 +718,8 @@ async function enrichAuditLogRows(
 export async function getAuditLogs(
   filter: AuditLogFilter = {}
 ): Promise<PaginatedResult<AuditLogRow>> {
-  const tenantId = await getTenantId()
-  await requireFullUserManagementAccess()
+  const user = await requireResourcePermission("AUDIT_LOG", "READ")
+  const tenantId = user.tenantId
 
   const page = Math.max(1, filter.page ?? 1)
   const pageSize = filter.pageSize && [20, 50, 100].includes(filter.pageSize) ? filter.pageSize : 20
@@ -739,8 +743,8 @@ export async function getAuditLogs(
 export async function getAuditLogsExport(
   filter: Omit<AuditLogFilter, "page" | "pageSize">
 ): Promise<AuditLogRow[]> {
-  const tenantId = await getTenantId()
-  await requireFullUserManagementAccess()
+  const user = await requireResourcePermission("AUDIT_LOG", "READ")
+  const tenantId = user.tenantId
 
   const where = buildAuditLogWhere(tenantId, filter)
 

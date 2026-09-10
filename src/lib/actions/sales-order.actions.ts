@@ -6,6 +6,7 @@ import { SalesOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -134,30 +135,50 @@ export async function createSalesOrder(
   data: CreateSalesOrderInput
 ) {
   await requireResourcePermission("SALES_ORDER", "CREATE")
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
+  if (actor.tenantId !== tenantId) throw new Error("FORBIDDEN")
   const orderNo = await generateSalesOrderNo(tenantId)
-  const order = await prisma.salesOrder.create({
-    data: {
-      tenantId,
-      siteId,
-      customerId: data.customerId,
-      orderNo,
-      orderDate: data.orderDate,
-      deliveryDate: data.deliveryDate,
-      status: data.status,
-      totalAmount: data.totalAmount,
-      currency: data.currency ?? "KRW",
-      note: data.note,
-      items: {
-        create: data.items.map((item) => ({
-          itemId: item.itemId,
-          qty: item.qty,
-          unitPrice: item.unitPrice,
-          deliveryDate: item.deliveryDate,
-          note: item.note,
-        })),
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.salesOrder.create({
+      data: {
+        tenantId,
+        siteId,
+        customerId: data.customerId,
+        orderNo,
+        orderDate: data.orderDate,
+        deliveryDate: data.deliveryDate,
+        status: data.status,
+        totalAmount: data.totalAmount,
+        currency: data.currency ?? "KRW",
+        note: data.note,
+        items: {
+          create: data.items.map((item) => ({
+            itemId: item.itemId,
+            qty: item.qty,
+            unitPrice: item.unitPrice,
+            deliveryDate: item.deliveryDate,
+            note: item.note,
+          })),
+        },
       },
-    },
+    })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "SalesOrder",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: {
+        orderNo,
+        siteId,
+        customerId: data.customerId,
+        status: data.status,
+        itemCount: data.items.length,
+        items: summarizeAuditItems(data.items, ["itemId", "qty", "unitPrice"]),
+      },
+      menuName: "수주관리",
+    })
+    return created
   })
   revalidatePath("/app/mes/sales-orders")
   return order
@@ -176,15 +197,19 @@ export type UpdateSalesOrderInput = {
 
 export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) {
   await requireResourcePermission("SALES_ORDER", "UPDATE")
-  await requireRole("OPERATOR")
-  const current = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
+  const actor = await requireRole("OPERATOR")
+  const current = await prisma.salesOrder.findUniqueOrThrow({
+    where: { id },
+    include: { items: true },
+  })
+  if (current.tenantId !== actor.tenantId) throw new Error("FORBIDDEN")
   const canEditItems = current.status === "DRAFT"
 
   await prisma.$transaction(async (tx) => {
     if (canEditItems && data.items) {
       await tx.salesOrderItem.deleteMany({ where: { salesOrderId: id } })
     }
-    await tx.salesOrder.update({
+    const updated = await tx.salesOrder.update({
       where: { id },
       data: {
         ...(data.customerId !== undefined && { customerId: data.customerId }),
@@ -206,6 +231,34 @@ export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) 
           },
         }),
       },
+      include: { items: true },
+    })
+    await recordAuditLog(tx, {
+      tenantId: actor.tenantId,
+      actor,
+      entityType: "SalesOrder",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: {
+        orderNo: current.orderNo,
+        customerId: current.customerId,
+        status: current.status,
+        totalAmount: current.totalAmount,
+        itemCount: current.items.length,
+      },
+      afterData: {
+        changes: buildAuditChanges(current as any, updated as any, [
+          "customerId",
+          "orderDate",
+          "deliveryDate",
+          "status",
+          "totalAmount",
+          "currency",
+          "note",
+        ]),
+        itemCount: updated.items.length,
+      },
+      menuName: "수주관리",
     })
   })
   revalidatePath("/app/mes/sales-orders")
@@ -213,8 +266,12 @@ export async function updateSalesOrder(id: string, data: UpdateSalesOrderInput) 
 
 export async function deleteSalesOrder(id: string) {
   await requireResourcePermission("SALES_ORDER", "DELETE")
-  await requireRole("OPERATOR")
-  const order = await prisma.salesOrder.findUniqueOrThrow({ where: { id } })
+  const actor = await requireRole("OPERATOR")
+  const order = await prisma.salesOrder.findUniqueOrThrow({
+    where: { id },
+    include: { items: true },
+  })
+  if (order.tenantId !== actor.tenantId) throw new Error("FORBIDDEN")
   if (order.status !== "DRAFT") {
     throw new Error("DRAFT 상태인 수주만 삭제할 수 있습니다.")
   }
@@ -227,10 +284,24 @@ export async function deleteSalesOrder(id: string) {
   if (priceRefCount > 0) {
     throw new Error("프로젝트 단가정보에서 사용 중인 수주는 삭제할 수 없습니다.")
   }
-  await prisma.$transaction([
-    prisma.salesOrderItem.deleteMany({ where: { salesOrderId: id } }),
-    prisma.salesOrder.delete({ where: { id } }),
-  ])
+  await prisma.$transaction(async (tx) => {
+    await tx.salesOrderItem.deleteMany({ where: { salesOrderId: id } })
+    await tx.salesOrder.delete({ where: { id } })
+    await recordAuditLog(tx, {
+      tenantId: actor.tenantId,
+      actor,
+      entityType: "SalesOrder",
+      entityId: id,
+      action: "DELETE",
+      beforeData: {
+        orderNo: order.orderNo,
+        customerId: order.customerId,
+        status: order.status,
+        itemCount: order.items.length,
+      },
+      menuName: "수주관리",
+    })
+  })
   revalidatePath("/app/mes/sales-orders")
 }
 
@@ -525,7 +596,8 @@ export async function requestProductionFromSalesOrder(
 ): Promise<{ ok: boolean; planNo?: string; error?: string }> {
   await requireResourcePermission("SALES_ORDER", "UPDATE")
   await requireResourcePermission("PRODUCTION_PLAN", "CREATE")
-  await requireRole("OPERATOR")
+  const actor = await requireRole("OPERATOR")
+  if (actor.tenantId !== tenantId) return { ok: false, error: "FORBIDDEN" }
   if (items.length === 0) return { ok: false, error: "생산의뢰 품목이 없습니다." }
 
   try {
@@ -547,7 +619,7 @@ export async function requestProductionFromSalesOrder(
       : "수주 기반 생산의뢰"
 
     await prisma.$transaction(async (tx) => {
-      await tx.productionPlan.create({
+      const plan = await tx.productionPlan.create({
         data: {
           tenantId,
           siteId,
@@ -571,6 +643,30 @@ export async function requestProductionFromSalesOrder(
       await tx.salesOrder.update({
         where: { id: salesOrderId },
         data: { status: "IN_PRODUCTION" },
+      })
+      await recordAuditLog(tx, {
+        tenantId,
+        actor,
+        entityType: "ProductionPlan",
+        entityId: plan.id,
+        action: "CREATE",
+        afterData: {
+          planNo,
+          sourceSalesOrderId: salesOrderId,
+          sourceSalesOrderNo: noteOrderRef,
+          itemCount: items.length,
+          items: summarizeAuditItems(items, ["salesOrderItemId", "itemId", "qty"]),
+        },
+        menuName: "수주관리",
+      })
+      await recordAuditLog(tx, {
+        tenantId,
+        actor,
+        entityType: "SalesOrder",
+        entityId: salesOrderId,
+        action: "UPDATE",
+        afterData: { status: "IN_PRODUCTION", productionPlanId: plan.id, planNo },
+        menuName: "수주관리",
       })
     })
 

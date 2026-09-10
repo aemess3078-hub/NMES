@@ -22,6 +22,7 @@ import {
   lockWorkOrderForUpdate,
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
+import { recordAuditLog } from "@/lib/audit-log"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -480,7 +481,7 @@ export async function createFinishedGoodsReceiptAction(
       }
 
       // 8. FinishedGoodsReceipt 생성 (lotId 연결)
-      await tx.finishedGoodsReceipt.create({
+      const receipt = await tx.finishedGoodsReceipt.create({
         data: {
           tenantId,
           siteId: data.siteId,
@@ -546,6 +547,24 @@ export async function createFinishedGoodsReceiptAction(
           },
         })
       }
+      await recordAuditLog(tx, {
+        tenantId,
+        actor: currentUser,
+        entityType: "FinishedGoodsReceipt",
+        entityId: receipt.id,
+        action: "CREATE",
+        afterData: {
+          workOrderId: data.workOrderId,
+          itemId: data.itemId,
+          lotId: lot.id,
+          lotNo: lot.lotNo,
+          warehouseId: warehouse.id,
+          locationId: location.id,
+          receiptQty: data.receiptQty,
+          txNo,
+        },
+        menuName: "완제품입고",
+      })
     }, {
       maxWait: 10000,
       timeout: 15000,

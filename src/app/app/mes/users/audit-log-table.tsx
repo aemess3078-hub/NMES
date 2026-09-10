@@ -35,8 +35,22 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   UserCredential: "비밀번호/PIN",
   EngineeringChange: "변경관리(ECN)",
   SignupRequest: "가입신청",
+  SalesOrder: "수주",
+  ProductionPlan: "생산계획",
+  WorkOrder: "작업지시",
+  MaterialIssue: "자재출고",
+  FinishedGoodsReceipt: "완제품입고",
+  ShipmentOrder: "출하",
+  PurchaseOrder: "발주",
+  ReceivingInspection: "자재입고",
+  OutsourcingOrder: "외주발주",
+  WipMovement: "재공 이동",
   QualityInspection: "검사",
+  DefectRecord: "불량",
   InventoryBalance: "재고",
+  RolePermission: "역할권한",
+  EquipmentProblemType: "설비 문제유형",
+  EquipmentRepairRequest: "설비 수리요청",
   BOM: "BOM",
   Item: "품목",
   BusinessPartner: "거래처",
@@ -57,6 +71,32 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "medium", timeZone: "Asia/Seoul" })
 }
 
+const ENTITY_FILTERS = [
+  "SalesOrder",
+  "ProductionPlan",
+  "WorkOrder",
+  "MaterialIssue",
+  "FinishedGoodsReceipt",
+  "ShipmentOrder",
+  "PurchaseOrder",
+  "ReceivingInspection",
+  "OutsourcingOrder",
+  "WipMovement",
+  "QualityInspection",
+  "EquipmentRepairRequest",
+  "RolePermission",
+  "TenantUser",
+]
+
+function formatJsonPreview(value: unknown): string {
+  if (value === null || value === undefined) return "—"
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 export function AuditLogTable({ initialData }: { initialData: PaginatedResult<AuditLogRow> }) {
   const [rows, setRows] = useState<AuditLogRow[]>(initialData.rows)
   const [total, setTotal] = useState(initialData.total)
@@ -65,6 +105,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
 
   const [search, setSearch] = useState("")
   const [action, setAction] = useState<AuditAction | "ALL">("ALL")
+  const [entityType, setEntityType] = useState("ALL")
   const [days, setDays] = useState<string>("90")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
@@ -78,6 +119,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
     return {
       search,
       action,
+      entityType: entityType === "ALL" ? undefined : entityType,
       days: Number(days),
       dateFrom: days === "0" ? dateFrom : undefined,
       dateTo: days === "0" ? dateTo : undefined,
@@ -108,13 +150,14 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
       const allRows = await getAuditLogsExport({
         search,
         action,
+        entityType: entityType === "ALL" ? undefined : entityType,
         days: Number(days),
         dateFrom: days === "0" ? dateFrom : undefined,
         dateTo: days === "0" ? dateTo : undefined,
       })
       const XLSX = await import("xlsx")
       const wsData = [
-        ["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP"],
+        ["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP", "변경 전", "변경 후"],
         ...allRows.map((r) => [
           formatDateTime(r.actedAt),
           r.actorName ?? r.actorLabel ?? "시스템",
@@ -123,6 +166,8 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
           r.targetLabel || r.entityId,
           r.menuName ?? "",
           r.ipAddress ?? "",
+          formatJsonPreview(r.beforeData),
+          formatJsonPreview(r.afterData),
         ]),
       ]
       const wb = XLSX.utils.book_new()
@@ -176,6 +221,26 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
             <SelectItem value="DELETE">삭제</SelectItem>
             <SelectItem value="APPROVE">승인</SelectItem>
             <SelectItem value="REJECT">반려</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={entityType}
+          onValueChange={(v) => {
+            setEntityType(v)
+            changeFilter({ entityType: v === "ALL" ? undefined : v })
+          }}
+        >
+          <SelectTrigger className="h-9 w-[160px] text-[14px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">전체 업무영역</SelectItem>
+            {ENTITY_FILTERS.map((type) => (
+              <SelectItem key={type} value={type}>
+                {ENTITY_TYPE_LABELS[type] ?? type}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 
@@ -260,7 +325,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
         <table className="w-full min-w-[900px] border-collapse">
           <thead>
             <tr className="border-b bg-muted/30">
-              {["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP"].map((h) => (
+              {["일시", "사용자", "동작", "대상 유형", "작업 대상", "메뉴", "IP", "상세"].map((h) => (
                 <th key={h} className="text-left px-4 py-3 text-[12px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
                   {h}
                 </th>
@@ -270,7 +335,7 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-[14px] text-muted-foreground">
+                <td colSpan={8} className="px-4 py-12 text-center text-[14px] text-muted-foreground">
                   기록된 감사로그가 없습니다.
                 </td>
               </tr>
@@ -307,6 +372,27 @@ export function AuditLogTable({ initialData }: { initialData: PaginatedResult<Au
                     </td>
                     <td className="px-4 py-2.5 text-[13px] font-mono text-muted-foreground whitespace-nowrap">
                       {r.ipAddress ?? "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-[13px]">
+                      <details className="max-w-[340px]">
+                        <summary className="cursor-pointer text-[13px] text-slate-600 hover:text-slate-950">
+                          변경 전후
+                        </summary>
+                        <div className="mt-2 grid gap-2">
+                          <div>
+                            <div className="mb-1 text-[12px] font-medium text-muted-foreground">변경 전</div>
+                            <pre className="max-h-48 overflow-auto rounded-lg bg-slate-50 p-2 text-[12px] leading-relaxed text-slate-700">
+                              {formatJsonPreview(r.beforeData)}
+                            </pre>
+                          </div>
+                          <div>
+                            <div className="mb-1 text-[12px] font-medium text-muted-foreground">변경 후</div>
+                            <pre className="max-h-48 overflow-auto rounded-lg bg-slate-50 p-2 text-[12px] leading-relaxed text-slate-700">
+                              {formatJsonPreview(r.afterData)}
+                            </pre>
+                          </div>
+                        </div>
+                      </details>
                     </td>
                   </tr>
                 )

@@ -9,6 +9,7 @@ import { Prisma, ReceivingInspectionResult } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { lockPurchaseOrderItemsForUpdate } from "@/lib/quantity-concurrency"
+import { recordAuditLog } from "@/lib/audit-log"
 
 export type CreateReceivingInspectionInput = {
   purchaseOrderItemId: string
@@ -90,7 +91,7 @@ async function createReceivingInspectionInternal(
   data: CreateReceivingInspectionInput,
 ): Promise<{ success: boolean; message?: string }> {
   const user = await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const tenantId = user.tenantId
 
   // ── 1. 창고 존재 및 테넌트 소속 확인 ──────────────────────────────────────
   const warehouse = await prisma.warehouse.findFirst({
@@ -347,7 +348,7 @@ async function createReceivingInspectionInternal(
     }
 
     // 4-2. ReceivingInspection 생성
-    await tx.receivingInspection.create({
+    const inspection = await tx.receivingInspection.create({
       data: {
         purchaseOrderItemId: data.purchaseOrderItemId,
         inspectorId: data.inspectorId ?? null,
@@ -431,6 +432,26 @@ async function createReceivingInspectionInternal(
         data: { status: "PARTIAL_RECEIVED" },
       })
     }
+    await recordAuditLog(tx, {
+      tenantId,
+      actor: user,
+      entityType: "ReceivingInspection",
+      entityId: inspection.id,
+      action: "CREATE",
+      afterData: {
+        purchaseOrderId: data.purchaseOrderId,
+        purchaseOrderItemId: data.purchaseOrderItemId,
+        itemId: purchaseOrderItem.itemId,
+        warehouseId: warehouse.id,
+        receivedQty: data.receivedQty,
+        acceptedQty: data.acceptedQty,
+        rejectedQty: data.rejectedQty,
+        result: data.result,
+        lotNo: resolvedLotNo,
+        txNo,
+      },
+      menuName: "자재입고",
+    })
       })
       break
     } catch (error) {

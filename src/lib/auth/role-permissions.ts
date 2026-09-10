@@ -49,6 +49,7 @@ const MENU_CODE_RESOURCE_MAP: Record<string, string> = {
   "manufacturing-traceability": "LOT",
   "common-codes": "COMMON_CODE",
   users: "USER_MANAGEMENT",
+  "audit-log": "AUDIT_LOG",
   inspection: "QUALITY_INSPECTION",
   "inspection-stages": "QUALITY_INSPECTION",
   spc: "QUALITY_INSPECTION",

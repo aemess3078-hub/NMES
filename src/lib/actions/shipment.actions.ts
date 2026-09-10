@@ -11,6 +11,7 @@ import {
   lockSalesOrderItemsForUpdate,
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
+import { recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 
 export async function getShipments(tenantId: string) {
   const rows = await prisma.shipmentOrder.findMany({
@@ -710,6 +711,22 @@ export async function createShipment(
 
       }
     }
+    await recordAuditLog(tx, {
+      tenantId,
+      actor: user,
+      entityType: "ShipmentOrder",
+      entityId: shipment.id,
+      action: "CREATE",
+      afterData: {
+        shipmentNo,
+        status: "PLANNED",
+        salesOrderId: data.salesOrderId,
+        warehouseId,
+        itemCount: data.items.length,
+        items: summarizeAuditItems(data.items, ["salesOrderItemId", "itemId", "lotId", "qty"]),
+      },
+      menuName: "출하관리",
+    })
   }))
 
   revalidatePath("/app/mes/shipments")
@@ -777,6 +794,23 @@ export async function confirmShipment(id: string) {
     }
     const status = await resolveSalesOrderStatusAfterShipmentRollback(tx, shipment.salesOrderId)
     await tx.salesOrder.update({ where: { id: shipment.salesOrderId }, data: { status } })
+    await recordAuditLog(tx, {
+      tenantId: user.tenantId,
+      actor: user,
+      entityType: "ShipmentOrder",
+      entityId: shipment.id,
+      action: "UPDATE",
+      beforeData: { status: "PLANNED" },
+      afterData: {
+        status: "SHIPPED",
+        shipmentNo: shipment.shipmentNo,
+        salesOrderId: shipment.salesOrderId,
+        salesOrderStatus: status,
+        itemCount: shipment.items.length,
+        items: summarizeAuditItems(shipment.items, ["salesOrderItemId", "itemId", "lotId", "qty"]),
+      },
+      menuName: "출하관리",
+    })
   }))
   revalidatePath("/app/mes/shipments")
   revalidatePath("/app/mes/sales-orders")
@@ -805,6 +839,22 @@ export async function deleteShipment(id: string) {
     // PLANNED is only a reservation: there is no balance, ledger, or SO rollback.
     await tx.shipmentItem.deleteMany({ where: { shipmentOrderId: id } })
     await tx.shipmentOrder.delete({ where: { id } })
+    await recordAuditLog(tx, {
+      tenantId: user.tenantId,
+      actor: user,
+      entityType: "ShipmentOrder",
+      entityId: id,
+      action: "DELETE",
+      beforeData: {
+        shipmentNo: shipment.shipmentNo,
+        status: shipment.status,
+        salesOrderId: shipment.salesOrderId,
+        warehouseId: shipment.warehouseId,
+        itemCount: shipment.items.length,
+        items: summarizeAuditItems(shipment.items, ["salesOrderItemId", "itemId", "lotId", "qty"]),
+      },
+      menuName: "출하관리",
+    })
   })
 
   revalidatePath("/app/mes/shipments")

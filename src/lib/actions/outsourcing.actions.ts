@@ -11,6 +11,7 @@ import {
   lockWorkOrderOperationForUpdate,
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
+import { recordAuditLog } from "@/lib/audit-log"
 
 // ─── Filter & Types ───────────────────────────────────────────────────────────
 
@@ -204,8 +205,8 @@ async function getLatestOutsourcingOrderItemForWipUnit(
 
 export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) {
   await requireResourcePermission("PURCHASE_ORDER", "CREATE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
 
   const supplier = await prisma.businessPartner.findUniqueOrThrow({
     where: { id: data.supplierId },
@@ -218,19 +219,35 @@ export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) 
   const now = new Date()
   const note = `[OUTSOURCING] ${data.outsourcingProcessName}${data.note ? `\n${data.note}` : ""}`
 
-  const order = await prisma.purchaseOrder.create({
-    data: {
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.purchaseOrder.create({
+      data: {
+        tenantId,
+        orderNo,
+        supplierId: data.supplierId,
+        siteId: (await tx.site.findFirst({ where: { tenantId } }))?.id || "",
+        status: "ORDERED",
+        orderDate: now,
+        expectedDate: data.expectedDate
+          ? new Date(`${data.expectedDate}T00:00:00.000`)
+          : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+        note,
+      },
+    })
+    await recordAuditLog(tx, {
       tenantId,
-      orderNo,
-      supplierId: data.supplierId,
-      siteId: (await prisma.site.findFirst({ where: { tenantId } }))?.id || "",
-      status: "ORDERED",
-      orderDate: now,
-      expectedDate: data.expectedDate
-        ? new Date(`${data.expectedDate}T00:00:00.000`)
-        : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-      note,
-    },
+      actor,
+      entityType: "OutsourcingOrder",
+      entityId: created.id,
+      action: "CREATE",
+      afterData: {
+        orderNo,
+        supplierId: data.supplierId,
+        outsourcingProcessName: data.outsourcingProcessName,
+      },
+      menuName: "외주관리",
+    })
+    return created
   })
 
   revalidatePath("/app/mes/production/outsourcing")
@@ -241,8 +258,8 @@ export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) 
 
 export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingInput) {
   await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
 
   const wipUnit = await prisma.wipUnit.findUniqueOrThrow({
     where: { id: data.wipUnitId },
@@ -343,6 +360,22 @@ export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingI
         note: `외주출고: ${purchaseOrder.orderNo} / ${purchaseOrder.supplier.name} - ${wipUnit.workOrderOperation.routingOperation.seq}. ${wipUnit.workOrderOperation.routingOperation.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}`,
       },
     })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "WipMovement",
+      entityId: data.wipUnitId,
+      action: "UPDATE",
+      afterData: {
+        movementType: "OUTSOURCED",
+        wipUnitId: data.wipUnitId,
+        purchaseOrderId: purchaseOrder.id,
+        purchaseOrderItemId: orderItem.id,
+        supplierId: purchaseOrder.supplierId,
+        qty: wipUnit.qty,
+      },
+      menuName: "외주관리",
+    })
   }))
 
   revalidatePath("/app/mes/production/outsourcing")
@@ -354,8 +387,8 @@ export async function issueWipUnitToOutsourcing(data: IssueWipUnitToOutsourcingI
 
 export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOutsourcingInput) {
   await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
 
   const wipUnit = await prisma.wipUnit.findUniqueOrThrow({
     where: { id: data.wipUnitId },
@@ -427,6 +460,22 @@ export async function receiveWipUnitFromOutsourcing(data: ReceiveWipUnitFromOuts
         note: `외주입고/검사대기: ${lockedItem.purchaseOrder.orderNo} / ${lockedItem.purchaseOrder.supplier.name} - 제조번호: ${wipUnit.manufacturingNo || "-"}${data.note ? ` - ${data.note}` : ""}`,
       },
     })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "WipMovement",
+      entityId: data.wipUnitId,
+      action: "UPDATE",
+      afterData: {
+        movementType: "RETURNED",
+        wipUnitId: data.wipUnitId,
+        purchaseOrderId: lockedItem.purchaseOrderId,
+        purchaseOrderItemId: lockedItem.id,
+        supplierId: lockedItem.purchaseOrder.supplierId,
+        qty: wipUnit.qty,
+      },
+      menuName: "외주관리",
+    })
   }))
 
   revalidatePath("/app/mes/production/outsourcing")
@@ -439,8 +488,8 @@ export async function inspectOutsourcedWipUnit(
 ): Promise<InspectOutsourcedWipUnitResult> {
   await requireResourcePermission("PURCHASE_ORDER", "UPDATE")
   await requireResourcePermission("QUALITY_INSPECTION", "CREATE")
-  await requireRole("OPERATOR")
-  const tenantId = await getTenantId()
+  const actor = await requireRole("OPERATOR")
+  const tenantId = actor.tenantId
 
   // 1. WipUnit 조회 및 테넌트 검증
   const wipUnit = await prisma.wipUnit.findUniqueOrThrow({
@@ -655,6 +704,25 @@ export async function inspectOutsourcedWipUnit(
     }
 
     await tx.wipMovement.createMany({ data: movements })
+    await recordAuditLog(tx, {
+      tenantId,
+      actor,
+      entityType: "WipMovement",
+      entityId: input.wipUnitId,
+      action: "UPDATE",
+      afterData: {
+        movementType: "OutsourcingInspection",
+        wipUnitId: input.wipUnitId,
+        purchaseOrderId: orderItem.purchaseOrder.id,
+        purchaseOrderItemId: orderItem.id,
+        acceptedQty,
+        defectQty,
+        reworkQty,
+        createdDefectWipUnitId,
+        createdReworkWipUnitId,
+      },
+      menuName: "외주관리",
+    })
   })
 
   revalidatePath("/app/mes/production/outsourcing")
