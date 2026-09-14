@@ -7,6 +7,7 @@ import { getTenantId, requireRole } from "@/lib/auth"
 import { generateReceivingLotNo } from "@/lib/actions/receiving.actions"
 import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { BUSINESS_NUMBER_MAX_ATTEMPTS, isUniqueConstraintError, kstDateParts } from "@/lib/business-numbering"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -592,17 +593,19 @@ async function generateTxNo(tenantId: string, txType: TransactionType): Promise<
     SUPPLIER_RETURN: "SRT",
   }[txType] ?? "TXN"
 
-  const today = new Date()
-  const yyyymmdd = today.toISOString().slice(0, 10).replace(/-/g, "")
+  const { yyyymmdd } = kstDateParts()
 
-  const count = await prisma.inventoryTransaction.count({
+  const last = await prisma.inventoryTransaction.findFirst({
     where: {
       tenantId,
       txNo: { startsWith: `${prefix}-${yyyymmdd}` },
     },
+    orderBy: { txNo: "desc" },
+    select: { txNo: true },
   })
 
-  return `${prefix}-${yyyymmdd}-${String(count + 1).padStart(4, "0")}`
+  const seq = last ? (parseInt(last.txNo.split("-")[2] ?? "0", 10) || 0) + 1 : 1
+  return `${prefix}-${yyyymmdd}-${String(seq).padStart(4, "0")}`
 }
 
 // ─── LOT 번호 해석 (입고/반품 시 자동발행 포함) ─────────────────────────────────
@@ -620,9 +623,6 @@ type ItemLotConfig = {
 
 const AUTO_LOT_COLLISION = "AUTO_LOT_COLLISION"
 
-function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
-}
 
 /** LOT 번호(사용자 입력 문자열)를 실제 Lot.id로 해석한다.
  * - 입고/반품(isInbound): LOT 관리 품목이면 입력값 사용 또는 자동발행, 없으면 신규 Lot 생성
@@ -708,7 +708,7 @@ export async function createTransaction(
 
   const manualLotNo = data.lotNo?.trim() || null
   const shouldAutoGenerateLotNo = item.isLotTracked && isInbound && !manualLotNo
-  const maxAttempts = shouldAutoGenerateLotNo ? 5 : 1
+  const maxAttempts = BUSINESS_NUMBER_MAX_ATTEMPTS
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const txNo = await generateTxNo(tenantId, data.txType)
@@ -814,14 +814,19 @@ export async function createTransaction(
       })
       break
     } catch (error) {
-      const canRetry = shouldAutoGenerateLotNo &&
+      const txNoCollision = isUniqueConstraintError(error, ["tenantId", "txNo"])
+      const autoLotCollision = shouldAutoGenerateLotNo &&
         (isUniqueConstraintError(error) || (error instanceof Error && error.message === AUTO_LOT_COLLISION))
+      const canRetry = txNoCollision || autoLotCollision
 
       if (canRetry && attempt < maxAttempts - 1) {
         continue
       }
-      if (canRetry) {
+      if (autoLotCollision) {
         throw new Error("LOT 자동발행 중 번호 충돌이 반복되었습니다. 다시 시도해 주세요.")
+      }
+      if (txNoCollision) {
+        throw new Error("재고거래번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요.")
       }
       throw error
     }
@@ -907,14 +912,18 @@ export async function adjustInventoryStock(
       }
     }
 
-    const txNo = await generateTxNo(tenantId, TransactionType.ADJUST)
-
-    const result = await prisma.$transaction(async (tx) => {
-      const where = { tenantId, siteId, warehouseId, itemId, lotId }
-      const existing = await tx.inventoryBalance.findFirst({ where })
-      const currentQty = existing ? Number(existing.qtyOnHand) : 0
-      const physicalQty = input.physicalQty
-      const diffQty = Number((physicalQty - currentQty).toFixed(6))
+    let finalTxNo: string | null = null
+    const result = await (async () => {
+      let lastError: unknown
+      for (let attempt = 0; attempt < BUSINESS_NUMBER_MAX_ATTEMPTS; attempt++) {
+        const txNo = await generateTxNo(tenantId, TransactionType.ADJUST)
+        try {
+          return await prisma.$transaction(async (tx) => {
+            const where = { tenantId, siteId, warehouseId, itemId, lotId }
+            const existing = await tx.inventoryBalance.findFirst({ where })
+            const currentQty = existing ? Number(existing.qtyOnHand) : 0
+            const physicalQty = input.physicalQty
+            const diffQty = Number((physicalQty - currentQty).toFixed(6))
 
       if (diffQty === 0) {
         throw new Error("실사수량이 현재고와 동일하여 조정할 내역이 없습니다.")
@@ -996,8 +1005,19 @@ export async function adjustInventoryStock(
         },
       })
 
-      return { currentQty, physicalQty, diffQty }
-    })
+            finalTxNo = txNo
+            return { currentQty, physicalQty, diffQty }
+          })
+        } catch (e) {
+          lastError = e
+          if (!isUniqueConstraintError(e, ["tenantId", "txNo"]) || attempt >= BUSINESS_NUMBER_MAX_ATTEMPTS - 1) break
+        }
+      }
+      if (lastError && isUniqueConstraintError(lastError, ["tenantId", "txNo"])) {
+        throw new Error("재고조정번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요.")
+      }
+      throw lastError
+    })()
 
     revalidatePath("/app/mes/inventory")
     revalidatePath("/app/mes/material/stock")
@@ -1005,7 +1025,7 @@ export async function adjustInventoryStock(
 
     return {
       success: true,
-      txNo,
+      txNo: finalTxNo ?? undefined,
       currentQty: result.currentQty,
       physicalQty: result.physicalQty,
       diffQty: result.diffQty,

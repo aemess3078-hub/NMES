@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/prisma"
 import { WorkCenterKind } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { checkWorkCenterReferencesForBulk } from "./reference-check.server"
 
 export type WorkCenterWithDetails = {
   id: string
@@ -75,9 +76,9 @@ export async function deleteWorkCenter(id: string) {
   })
   if (!owned) throw new Error("NOT_FOUND")
 
-  const count = await prisma.routingOperation.count({ where: { workCenterId: id } })
-  if (count > 0) throw new Error(`이 공정을 사용하는 라우팅 공정이 ${count}건 있습니다. 먼저 라우팅에서 제거해주세요.`)
+  const reference = await checkWorkCenterReferencesForBulk(id, tenantId)
+  if (!reference.canDelete) throw new Error(`사용 이력이 있어 삭제할 수 없습니다: ${reference.reasons.join(", ")}`)
 
-  await prisma.workCenter.delete({ where: { id } })
+  await prisma.workCenter.deleteMany({ where: { id, site: { tenantId } } })
   revalidatePath("/app/mes/work-centers")
 }

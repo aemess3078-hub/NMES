@@ -6,6 +6,7 @@ import { Prisma, PurchaseOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
+import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -144,7 +145,7 @@ export async function getItemPrice(
 // ─── Business Logic ───────────────────────────────────────────────────────────
 
 async function generatePurchaseOrderNo(tenantId: string): Promise<string> {
-  const year = new Date().getFullYear()
+  const { year } = kstDateParts()
   const prefix = `PO-${year}-`
   const last = await prisma.purchaseOrder.findFirst({
     where: { tenantId, orderNo: { startsWith: prefix } },
@@ -222,8 +223,6 @@ export async function createPurchaseOrder(
   await requireResourcePermission("PURCHASE_ORDER", "CREATE")
   const actor = await requireRole("OPERATOR")
   if (actor.tenantId !== tenantId) throw new Error("FORBIDDEN")
-  const orderNo = await generatePurchaseOrderNo(tenantId)
-
   const itemsWithStock = await Promise.all(
     data.items.map(async (item) => {
       const stock = await getItemCurrentStock(item.itemId, tenantId)
@@ -231,7 +230,9 @@ export async function createPurchaseOrder(
     })
   )
 
-  await prisma.$transaction(async (tx) => {
+  await withUniqueBusinessNumberRetry(async () => {
+    const orderNo = await generatePurchaseOrderNo(tenantId)
+    await prisma.$transaction(async (tx) => {
     const created = await tx.purchaseOrder.create({
       data: {
         tenantId,
@@ -272,6 +273,7 @@ export async function createPurchaseOrder(
       menuName: "발주관리",
     })
   })
+  }, { fields: ["tenantId", "orderNo"], message: "발주번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
 
   revalidatePath("/app/mes/purchase-orders")
 }

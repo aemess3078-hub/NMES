@@ -12,6 +12,7 @@ import {
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
 import { recordAuditLog } from "@/lib/audit-log"
+import { delay, kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 // ─── Filter & Types ───────────────────────────────────────────────────────────
 
@@ -158,8 +159,9 @@ export type InspectOutsourcedWipUnitResult = {
 
 function generateOutsourcingOrderNo(): string {
   const now = new Date()
-  const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, "")
-  const hhmmss = now.toISOString().slice(11, 19).replace(/:/g, "")
+  const { yyyymmdd } = kstDateParts(now)
+  const kstInstant = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+  const hhmmss = kstInstant.toISOString().slice(11, 19).replace(/:/g, "")
   const random = randomBytes(2).toString("hex").toUpperCase().slice(0, 4)
   return `OS-${yyyymmdd}-${hhmmss}-${random}`
 }
@@ -215,40 +217,43 @@ export async function createOutsourcingOrder(data: CreateOutsourcingOrderInput) 
     throw new Error("선택한 외주처를 찾을 수 없습니다.")
   }
 
-  const orderNo = generateOutsourcingOrderNo()
   const now = new Date()
   const note = `[OUTSOURCING] ${data.outsourcingProcessName}${data.note ? `\n${data.note}` : ""}`
 
-  const order = await prisma.$transaction(async (tx) => {
-    const created = await tx.purchaseOrder.create({
-      data: {
+  const order = await withUniqueBusinessNumberRetry(async (attempt) => {
+    if (attempt > 0) await delay(1100)
+    const orderNo = generateOutsourcingOrderNo()
+    return prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseOrder.create({
+        data: {
+          tenantId,
+          orderNo,
+          supplierId: data.supplierId,
+          siteId: (await tx.site.findFirst({ where: { tenantId } }))?.id || "",
+          status: "ORDERED",
+          orderDate: now,
+          expectedDate: data.expectedDate
+            ? new Date(`${data.expectedDate}T00:00:00.000`)
+            : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          note,
+        },
+      })
+      await recordAuditLog(tx, {
         tenantId,
-        orderNo,
-        supplierId: data.supplierId,
-        siteId: (await tx.site.findFirst({ where: { tenantId } }))?.id || "",
-        status: "ORDERED",
-        orderDate: now,
-        expectedDate: data.expectedDate
-          ? new Date(`${data.expectedDate}T00:00:00.000`)
-          : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-        note,
-      },
+        actor,
+        entityType: "OutsourcingOrder",
+        entityId: created.id,
+        action: "CREATE",
+        afterData: {
+          orderNo,
+          supplierId: data.supplierId,
+          outsourcingProcessName: data.outsourcingProcessName,
+        },
+        menuName: "외주관리",
+      })
+      return created
     })
-    await recordAuditLog(tx, {
-      tenantId,
-      actor,
-      entityType: "OutsourcingOrder",
-      entityId: created.id,
-      action: "CREATE",
-      afterData: {
-        orderNo,
-        supplierId: data.supplierId,
-        outsourcingProcessName: data.outsourcingProcessName,
-      },
-      menuName: "외주관리",
-    })
-    return created
-  })
+  }, { fields: ["tenantId", "orderNo"], message: "외주발주번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
 
   revalidatePath("/app/mes/production/outsourcing")
   return order

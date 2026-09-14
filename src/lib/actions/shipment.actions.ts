@@ -12,6 +12,7 @@ import {
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
 import { recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
+import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 export async function getShipments(tenantId: string) {
   const rows = await prisma.shipmentOrder.findMany({
@@ -370,7 +371,7 @@ export async function getAvailableFinishedGoodsLots(
 }
 
 export async function generateShipmentNo(tenantId: string): Promise<string> {
-  const year = new Date().getFullYear()
+  const { year } = kstDateParts()
   const prefix = `SH-${year}-`
   const last = await prisma.shipmentOrder.findFirst({
     where: { tenantId, shipmentNo: { startsWith: prefix } },
@@ -469,9 +470,9 @@ export async function createShipment(
     duplicateKeys.add(key)
   }
 
-  const shipmentNo = await generateShipmentNo(tenantId)
-
-  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+  await withUniqueBusinessNumberRetry(async () => {
+    const shipmentNo = await generateShipmentNo(tenantId)
+    await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
     const warehouse = await tx.warehouse.findFirst({
       where: { id: warehouseId, tenantId },
       select: { id: true, siteId: true },
@@ -727,7 +728,8 @@ export async function createShipment(
       },
       menuName: "출하관리",
     })
-  }))
+    }))
+  }, { fields: ["tenantId", "shipmentNo"], message: "출하번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
 
   revalidatePath("/app/mes/shipments")
   revalidatePath("/app/mes/sales-orders")

@@ -5,6 +5,8 @@ import { QuotationStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import type { QuotationFormValues } from "@/app/app/mes/quotations/quotation-form-schema"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { generateSalesOrderNo } from "@/lib/actions/sales-order.actions"
+import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 export type QuotationWithDetails = {
   id: string
@@ -106,7 +108,7 @@ export async function getItemPriceForCustomer(
 }
 
 async function generateQuotationNo(tenantId: string): Promise<string> {
-  const year = new Date().getFullYear()
+  const { year } = kstDateParts()
   const prefix = `QT-${year}-`
   const last = await prisma.quotation.findFirst({
     where: { tenantId, quotationNo: { startsWith: prefix } },
@@ -225,47 +227,39 @@ export async function convertToSalesOrder(
     throw new Error("이미 수주로 전환된 견적입니다")
   }
 
-  // 수주 번호 생성
-  const year = new Date().getFullYear()
-  const prefix = `SO-${year}-`
-  const last = await prisma.salesOrder.findFirst({
-    where: { tenantId, orderNo: { startsWith: prefix } },
-    orderBy: { orderNo: "desc" },
-    select: { orderNo: true },
-  })
-  const seq = last ? (parseInt(last.orderNo.split("-")[2] ?? "0", 10) || 0) + 1 : 1
-  const orderNo = `${prefix}${String(seq).padStart(3, "0")}`
-
-  const result = await prisma.$transaction(async (tx) => {
-    const salesOrder = await tx.salesOrder.create({
-      data: {
-        tenantId,
-        siteId: quotation.siteId,
-        customerId: quotation.customerId,
-        orderNo,
-        orderDate: new Date(),
-        deliveryDate: quotation.validUntil,
-        status: "DRAFT",
-        totalAmount: quotation.totalAmount,
-        currency: quotation.currency,
-        note: `견적 ${quotation.quotationNo}에서 전환`,
-        items: {
-          create: quotation.items.map((item) => ({
-            itemId: item.itemId,
-            qty: item.qty,
-            unitPrice: item.unitPrice,
-          })),
+  const result = await withUniqueBusinessNumberRetry(async () => {
+    const orderNo = await generateSalesOrderNo(tenantId)
+    return prisma.$transaction(async (tx) => {
+      const salesOrder = await tx.salesOrder.create({
+        data: {
+          tenantId,
+          siteId: quotation.siteId,
+          customerId: quotation.customerId,
+          orderNo,
+          orderDate: new Date(),
+          deliveryDate: quotation.validUntil,
+          status: "DRAFT",
+          totalAmount: quotation.totalAmount,
+          currency: quotation.currency,
+          note: `견적 ${quotation.quotationNo}에서 전환`,
+          items: {
+            create: quotation.items.map((item) => ({
+              itemId: item.itemId,
+              qty: item.qty,
+              unitPrice: item.unitPrice,
+            })),
+          },
         },
-      },
-    })
+      })
 
-    await tx.quotation.update({
-      where: { id: quotationId },
-      data: { convertedSalesOrderId: salesOrder.id },
-    })
+      await tx.quotation.update({
+        where: { id: quotationId },
+        data: { convertedSalesOrderId: salesOrder.id },
+      })
 
-    return salesOrder
-  })
+      return salesOrder
+    })
+  }, { fields: ["tenantId", "orderNo"], message: "수주번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
 
   revalidatePath("/app/mes/quotations")
   revalidatePath("/app/mes/sales-orders")

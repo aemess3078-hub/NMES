@@ -8,6 +8,7 @@ import { getErrorMessage } from "@/lib/utils"
 import { toKstDateKey } from "@/lib/date/kst"
 import { MATERIAL_RETURN_STATUS_TRANSITIONS } from "@/lib/material-return-status"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { BUSINESS_NUMBER_MAX_ATTEMPTS, isUniqueConstraintError } from "@/lib/business-numbering"
 
 // ─── 청운커팅 사업계획서 "자재관리 > 반품관리" (PR #50) ────────────────────────
 //
@@ -30,8 +31,8 @@ import { requireResourcePermission } from "@/lib/auth/role-permissions"
 //     품목의 warehouse, 연결된 PO/PO품목 모두 이 siteId 기준으로 검증한다.
 
 const MENU_NAME = "반품관리"
-const CODE_GENERATION_MAX_ATTEMPTS = 3
-const TXN_GENERATION_MAX_ATTEMPTS = 3
+const CODE_GENERATION_MAX_ATTEMPTS = BUSINESS_NUMBER_MAX_ATTEMPTS
+const TXN_GENERATION_MAX_ATTEMPTS = BUSINESS_NUMBER_MAX_ATTEMPTS
 
 function revalidateMaterialReturnPaths() {
   revalidatePath("/app/mes/material-return")
@@ -533,7 +534,7 @@ export async function createMaterialReturn(
         revalidateMaterialReturnPaths()
         return { ok: true, returnId: created.id }
       } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        if (isUniqueConstraintError(e, ["tenantId", "returnNo"])) {
           lastError = e
           continue
         }
@@ -916,7 +917,7 @@ export async function completeMaterialReturn(id: string): Promise<{ ok: boolean;
         revalidateMaterialReturnPaths()
         return { ok: true }
       } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        if (isUniqueConstraintError(e, ["tenantId", "txNo"])) {
           lastError = e
           continue
         }

@@ -144,6 +144,27 @@ export async function checkWarehouseReferencesForBulk(warehouseId: string, tenan
   return { canDelete: reasons.length === 0, reasons }
 }
 
+
+/**
+ * 작업장(WorkCenter) 삭제 참조 확인.
+ * 실제 FK lineage를 가진 라우팅 공정/설비/WIP 현재위치/WIP 이동이력을 확인한다.
+ */
+export async function checkWorkCenterReferencesForBulk(workCenterId: string, tenantId: string): Promise<ReferenceCheckResult> {
+  const [routingOperation, equipment, wipCurrent, wipMovement] = await Promise.all([
+    prisma.routingOperation.count({ where: { workCenterId } }),
+    prisma.equipment.count({ where: { workCenterId, tenantId } }),
+    prisma.wipUnit.count({ where: { currentWorkCenterId: workCenterId, tenantId } }),
+    prisma.wipMovement.count({ where: { tenantId, OR: [{ fromWorkCenterId: workCenterId }, { toWorkCenterId: workCenterId }] } }),
+  ])
+
+  const reasons: string[] = []
+  if (routingOperation > 0) reasons.push(`라우팅 공정 ${routingOperation}건`)
+  if (equipment > 0) reasons.push(`설비 ${equipment}건`)
+  if (wipCurrent > 0) reasons.push(`WIP 현재공정 ${wipCurrent}건`)
+  if (wipMovement > 0) reasons.push(`WIP 이동이력 ${wipMovement}건`)
+
+  return { canDelete: reasons.length === 0, reasons }
+}
 /** 불량관리(DefectCode) 선택 일괄삭제 참조 확인. */
 export async function checkDefectCodeReferencesForBulk(defectCodeId: string): Promise<ReferenceCheckResult> {
   const defectRecord = await prisma.defectRecord.count({ where: { defectCodeId } })

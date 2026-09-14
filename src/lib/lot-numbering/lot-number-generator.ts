@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client"
 import { resolveCnsLotRule, type CnsItemRuleContext } from "./lot-rule-resolver"
+import { kstDateParts } from "@/lib/business-numbering"
 
 type LotLookupClient = {
   lot: {
@@ -16,15 +17,15 @@ type WorkOrderLookupClient = {
 const MONTH_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const
 
 export function getCnsMonthLetter(date: Date): string {
-  return MONTH_LETTERS[date.getMonth()] ?? "A"
+  return MONTH_LETTERS[kstDateParts(date).month - 1] ?? "A"
 }
 
 function getYear2(date: Date): string {
-  return String(date.getFullYear()).slice(-2)
+  return kstDateParts(date).year2
 }
 
 function getDay2(date: Date): string {
-  return String(date.getDate()).padStart(2, "0")
+  return kstDateParts(date).dayText
 }
 
 function escapeRegExp(value: string): string {
@@ -71,7 +72,6 @@ export async function generateCnsMaterialReceiptLotNo(
     const existingLots = await db.lot.findMany({
       where: { tenantId, lotNo: { startsWith: stem } },
       select: { lotNo: true },
-      take: 1000,
     })
     const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d{3})$`)
     const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
@@ -82,7 +82,6 @@ export async function generateCnsMaterialReceiptLotNo(
   const existingLots = await db.lot.findMany({
     where: { tenantId, lotNo: { startsWith: stem } },
     select: { lotNo: true },
-    take: 1000,
   })
   const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d+)$`)
   const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
@@ -105,7 +104,6 @@ export async function generateCnsManufacturingNo(
     const existingWorkOrders = await db.workOrder.findMany({
       where: { tenantId, manufacturingNo: { startsWith: stem } },
       select: { manufacturingNo: true },
-      take: 1000,
     })
     const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d+)$`)
     const nextSeq =
@@ -127,7 +125,6 @@ export async function generateCnsManufacturingNo(
   const existingWorkOrders = await db.workOrder.findMany({
     where: { tenantId, manufacturingNo: { startsWith: stem } },
     select: { manufacturingNo: true },
-    take: 1000,
   })
   const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d{3})$`)
   const nextSeq =
@@ -159,7 +156,6 @@ export async function generateCnsFinishedGoodsLotNo(
     const existingLots = await db.lot.findMany({
       where: { tenantId, lotNo: { startsWith: stem } },
       select: { lotNo: true },
-      take: 1000,
     })
     const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d+)$`)
     const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
@@ -173,7 +169,6 @@ export async function generateCnsFinishedGoodsLotNo(
   const existingLots = await db.lot.findMany({
     where: { tenantId, lotNo: { startsWith: stem } },
     select: { lotNo: true },
-    take: 1000,
   })
   const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d{3})$`)
   const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
