@@ -37,6 +37,12 @@ import {
   getWorkOrderMaterialSufficiency,
 } from "@/lib/bom-material-sufficiency"
 import { lockWorkOrderOperationForUpdate } from "@/lib/quantity-concurrency"
+import {
+  computeRemainingLife,
+  computeUsageRate,
+  TOOL_TYPES,
+  type ToolEquipmentType,
+} from "@/lib/actions/tool.helpers"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,6 +64,19 @@ export type SubmitResultInput = {
   // 불량수량 > 0이면 불량코드별 수량(자주검사 불량내역)을 필수로 받는다.
   // 합계는 defectQty와 일치해야 한다.
   defectDetails?: SelfInspectionDefectDetail[]
+  // F18: 실제 공구 사용은 선택사항이다. 생략/빈 배열이면 "사용 안 함"으로 처리한다.
+  toolIds?: string[]
+}
+
+export type PopAvailableTool = {
+  id: string
+  code: string
+  name: string
+  equipmentType: ToolEquipmentType
+  currentUsage: number
+  lifeLimit: number | null
+  remainingLife: number | null
+  usageRate: number | null
 }
 
 export type PopWorkQueueRow = {
@@ -85,6 +104,7 @@ export type PopWorkQueueRow = {
   canWork: boolean
   availabilityLabel: string
   materialIssuanceReady: boolean
+  availableTools: PopAvailableTool[]
 }
 
 // ─── Auth context helpers ─────────────────────────────────────────────────────
@@ -141,6 +161,91 @@ function assertPopSessionSiteMatch(
   if (session.siteId != null && workOrderSiteId != null && session.siteId !== workOrderSiteId) {
     throw new Error("해당 작업장의 작업만 처리할 수 있습니다.")
   }
+}
+
+function normalizePopToolIds(toolIds: string[] | undefined): string[] {
+  if (!toolIds) return []
+  return Array.from(new Set(toolIds.map((id) => id.trim()).filter(Boolean)))
+}
+
+function serializePopAvailableTool(tool: {
+  id: string
+  code: string
+  name: string
+  equipmentType: string
+  currentUsage: number
+  lifeLimit: number | null
+}): PopAvailableTool {
+  return {
+    id: tool.id,
+    code: tool.code,
+    name: tool.name,
+    equipmentType: tool.equipmentType as ToolEquipmentType,
+    currentUsage: tool.currentUsage,
+    lifeLimit: tool.lifeLimit,
+    remainingLife: computeRemainingLife(tool.lifeLimit, tool.currentUsage),
+    usageRate: computeUsageRate(tool.lifeLimit, tool.currentUsage),
+  }
+}
+
+async function recordPopToolUsage(
+  tx: Prisma.TransactionClient,
+  args: {
+    tenantId: string
+    siteId: string | null
+    routingOperationId: string
+    workOrderOperationId: string
+    productionResultId: string
+    itemId: string
+    operatorProfileId: string
+    usedAt: Date
+    toolIds: string[]
+  }
+): Promise<void> {
+  if (args.toolIds.length === 0) return
+  if (!args.siteId) throw new Error("공구 사용이력을 남기려면 작업지시의 사업장 정보가 필요합니다.")
+
+  // 기존 공구수명 단위는 사용횟수(회): 선택한 공구별 실적 segment 1건 = 사용 1회.
+  const usageCount = 1
+  const tools = await tx.equipment.findMany({
+    where: {
+      id: { in: args.toolIds },
+      tenantId: args.tenantId,
+      siteId: args.siteId,
+      status: "ACTIVE",
+      equipmentType: { in: [...TOOL_TYPES] },
+      operationMaps: { some: { routingOperationId: args.routingOperationId } },
+    },
+    select: { id: true },
+  })
+
+  if (tools.length !== args.toolIds.length) {
+    throw new Error("선택한 공구 중 현재 공정에서 사용할 수 없는 공구가 있습니다.")
+  }
+
+  await tx.equipmentUsageHistory.createMany({
+    data: args.toolIds.map((equipmentId) => ({
+      tenantId: args.tenantId,
+      equipmentId,
+      usedAt: args.usedAt,
+      usageCount,
+      itemId: args.itemId,
+      workOrderOperationId: args.workOrderOperationId,
+      productionResultId: args.productionResultId,
+      operatorId: args.operatorProfileId,
+      createdById: args.operatorProfileId,
+      note: "POP 생산실적 실제 공구 사용",
+    })),
+  })
+
+  await Promise.all(
+    args.toolIds.map((equipmentId) =>
+      tx.equipment.update({
+        where: { id: equipmentId },
+        data: { currentUsage: { increment: usageCount } },
+      })
+    )
+  )
 }
 
 // ─── 1. PIN 로그인 ───────────────────────────────────────────────────────────
@@ -385,13 +490,37 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
         orderBy: { seq: "asc" },
       },
       routingOperation: {
-        select: { name: true },
+        select: {
+          name: true,
+          equipmentMaps: {
+            where: {
+              equipment: {
+                equipmentType: { in: [...TOOL_TYPES] },
+                status: "ACTIVE",
+              },
+            },
+            select: {
+              equipment: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  equipmentType: true,
+                  siteId: true,
+                  currentUsage: true,
+                  lifeLimit: true,
+                },
+              },
+            },
+          },
+        },
       },
       workOrder: {
         select: {
           id: true,
           orderNo: true,
           manufacturingNo: true,
+          siteId: true,
           dueDate: true,
           item: { select: { code: true, name: true } },
           operations: {
@@ -455,6 +584,10 @@ export async function getPopWorkQueueRows(tenantId: string): Promise<PopWorkQueu
       dueDate: operation.workOrder.dueDate?.toISOString() ?? null,
       materialLotCount: operation.workOrder.materialLots.length,
       materialLotQty,
+      availableTools: operation.routingOperation.equipmentMaps
+        .map((map) => map.equipment)
+        .filter((tool) => tool.siteId === operation.workOrder.siteId)
+        .map(serializePopAvailableTool),
     }
 
     if (operation.assignments.length > 0) {
@@ -523,7 +656,31 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     where: { id: operationId },
     include: {
       workOrder: { include: { item: true } },
-      routingOperation: true,
+      routingOperation: {
+        include: {
+          equipmentMaps: {
+            where: {
+              equipment: {
+                equipmentType: { in: [...TOOL_TYPES] },
+                status: "ACTIVE",
+              },
+            },
+            include: {
+              equipment: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  equipmentType: true,
+                  siteId: true,
+                  currentUsage: true,
+                  lifeLimit: true,
+                },
+              },
+            },
+          },
+        },
+      },
       equipment: true,
       assignments: {
         include: { equipment: true },
@@ -647,6 +804,12 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     routingOperation: operation.routingOperation
       ? { name: operation.routingOperation.name }
       : null,
+    availableTools: operation.routingOperation
+      ? operation.routingOperation.equipmentMaps
+          .map((map) => map.equipment)
+          .filter((tool) => tool.siteId === operation.workOrder.siteId)
+          .map(serializePopAvailableTool)
+      : [],
     equipment: operation.equipment ? { name: operation.equipment.name } : null,
     assignments: operation.assignments.map((assignment) => ({
       id: assignment.id,
@@ -678,6 +841,7 @@ export async function submitProductionResult(
   data: SubmitResultInput
 ): Promise<{ success: boolean; error?: string; isCompleted?: boolean }> {
   const { workOrderOperationId, assignmentId, goodQty, defectQty, reworkQty } = data
+  const selectedToolIds = normalizePopToolIds(data.toolIds)
 
   if (goodQty < 0 || defectQty < 0 || reworkQty < 0) {
     return { success: false, error: "수량은 0 이상이어야 합니다." }
@@ -933,6 +1097,18 @@ export async function submitProductionResult(
           },
         })
 
+        await recordPopToolUsage(tx, {
+          tenantId: op.workOrder.tenantId,
+          siteId: op.workOrder.siteId,
+          routingOperationId: op.routingOperationId,
+          workOrderOperationId,
+          productionResultId: createdResult.id,
+          itemId: op.workOrder.itemId,
+          operatorProfileId: authCtx.profileId,
+          usedAt: resultTime.endedAt,
+          toolIds: selectedToolIds,
+        })
+
         await recordProductionResultQualityMovements(tx, {
           tenantId: op.workOrder.tenantId,
           siteId: op.workOrder.siteId,
@@ -1077,6 +1253,18 @@ export async function submitProductionResult(
         },
       })
 
+      await recordPopToolUsage(tx, {
+        tenantId: op.workOrder.tenantId,
+        siteId: op.workOrder.siteId,
+        routingOperationId: op.routingOperationId,
+        workOrderOperationId,
+        productionResultId: createdResult.id,
+        itemId: op.workOrder.itemId,
+        operatorProfileId: authCtx.profileId,
+        usedAt: resultTime.endedAt,
+        toolIds: selectedToolIds,
+      })
+
       await recordProductionResultQualityMovements(tx, {
         tenantId: op.workOrder.tenantId,
         siteId: op.workOrder.siteId,
@@ -1154,6 +1342,7 @@ export async function submitProductionResult(
 
     revalidatePath("/app/pop/work-queue")
     revalidatePath("/pop/work-select")
+    if (selectedToolIds.length > 0) revalidatePath("/app/mes/equipment-tools")
     revalidatePath("/app/mes/production-plan")
     return { success: true, isCompleted }
   } catch (e) {

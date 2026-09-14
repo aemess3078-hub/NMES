@@ -987,9 +987,10 @@ model EquipmentAppliedItem {
 }
 
 // 공구 사용이력 — 등록 시 같은 트랜잭션에서 Equipment.currentUsage를 누적한다.
-// 생산실적 완료 시 자동 적산은 이번 PR 범위가 아니다(공구-공정 배정 구조가
-// 아직 없음) — 지금은 수동 등록만 지원하며, 등록된 이력은 수정하지 않는다
-// (InventoryTransaction/WipMovement와 동일한 append-only 이력 정책).
+// POP 생산실적과 연결되는 사용이력은 사용자가 실제 공구를 선택한 경우에만
+// 생성한다. RoutingOperation/WorkOrderOperation에 연결된 공구는 계획/사용가능
+// 공구일 뿐이며, 미선택이면 ProductionResult만 생성되고 공구 이력/수명은
+// 변경하지 않는다(append-only 이력 정책).
 model EquipmentUsageHistory {
   id          String   @id @default(cuid())
   tenantId    String
@@ -999,6 +1000,7 @@ model EquipmentUsageHistory {
 
   itemId               String?
   workOrderOperationId String?
+  productionResultId   String?
   operatorId           String?
   note                 String?
 
@@ -1009,12 +1011,15 @@ model EquipmentUsageHistory {
   equipment          Equipment           @relation(fields: [equipmentId], references: [id])
   item               Item?               @relation(fields: [itemId], references: [id])
   workOrderOperation WorkOrderOperation? @relation(fields: [workOrderOperationId], references: [id])
+  productionResult   ProductionResult?   @relation(fields: [productionResultId], references: [id], onDelete: SetNull)
   operator           Profile?            @relation("EquipmentUsageOperator", fields: [operatorId], references: [id])
   createdBy          Profile             @relation("EquipmentUsageCreator", fields: [createdById], references: [id])
 
   @@index([tenantId])
   @@index([equipmentId])
+  @@index([productionResultId])
   @@index([usedAt])
+  @@unique([productionResultId, equipmentId])
 }
 
 model EquipmentOperationMap {
@@ -1776,6 +1781,7 @@ model ProductionResult {
   workOrderOperationAssignment WorkOrderOperationAssignment? @relation(fields: [workOrderOperationAssignmentId], references: [id])
   sourceWipUnits               WipUnit[]                     @relation("WipUnitSourceProductionResult")
   operator                     Profile?                      @relation("ProductionResultOperator", fields: [operatorId], references: [id], onDelete: SetNull)
+  equipmentUsageHistories      EquipmentUsageHistory[]
 
   @@index([workOrderOperationId])
   @@index([workOrderOperationAssignmentId])

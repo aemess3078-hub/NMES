@@ -367,7 +367,8 @@ export function ToolDetailSheet({ open, onOpenChange, toolId, filterOptions, onC
                 {detail!.usageHistories.length === 0 && <p className="text-[13px] text-muted-foreground">등록된 사용이력이 없습니다.</p>}
                 {detail!.usageHistories.map((u) => (
                   <div key={u.id} className="text-[13px] flex items-center justify-between border-b last:border-0 py-1">
-                    <span>{u.usedAt.slice(0, 10)} · {formatQuantity(u.usageCount)}회{u.itemName ? ` · ${u.itemName}` : ""}{u.operatorName ? ` · ${u.operatorName}` : ""}</span>
+                    <div><span>{u.usedAt.slice(0, 10)} · {formatQuantity(u.usageCount)}회{u.itemName ? ` · ${u.itemName}` : ""}{u.operatorName ? ` · ${u.operatorName}` : ""}{u.productionResultId ? ` · POP 실적 ${formatQuantity(u.productionQty ?? 0)}` : ""}</span>
+                    {u.workOrderNo && <p className="text-muted-foreground" title={u.productionResultId ?? undefined}>{[u.workOrderNo, u.operationName, u.actualEquipmentName].filter(Boolean).join(" · ")}</p>}</div>
                     {u.note && <span className="text-muted-foreground truncate max-w-[140px]" title={u.note}>{u.note}</span>}
                   </div>
                 ))}
