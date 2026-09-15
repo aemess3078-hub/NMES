@@ -4,20 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Download, Paperclip, Trash2, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { useUserRole } from "@/lib/contexts/user-role-context"
 import {
   getAttachments,
   getAttachmentDownloadUrl,
   deleteAttachment,
+  getAttachmentPermissionFlags,
   type AttachmentRow,
   type AttachmentEntityType,
 } from "@/lib/actions/attachment.actions"
 import { ALLOWED_ATTACHMENT_EXTENSIONS, MAX_ATTACHMENT_FILE_SIZE_BYTES, formatFileSize } from "@/lib/actions/attachment.helpers"
-
-// 조치관리/재발방지관리 상세 등 여러 화면에 그대로 붙여 쓸 수 있는 공통 첨부파일
-// 섹션이다(§ STEP 12). 목록 조회/업로드/다운로드/삭제를 이 컴포넌트가 자체적으로
-// 관리하며, 호출부(DefectCorrectiveAction 등)의 데이터·상태전이 로직은 전혀
-// 건드리지 않는다 — 완전히 독립된 부가기능이다(§ STEP 19).
+import type { ResourcePermissionFlags } from "@/lib/auth/role-permissions"
 
 const ACCEPT = ALLOWED_ATTACHMENT_EXTENSIONS.map((ext) => `.${ext}`).join(",")
 
@@ -27,9 +23,7 @@ interface AttachmentSectionProps {
 }
 
 export function AttachmentSection({ entityType, entityId }: AttachmentSectionProps) {
-  const role = useUserRole()
-  const canMutate = role !== "VIEWER"
-
+  const [permissions, setPermissions] = useState<ResourcePermissionFlags | null>(null)
   const [rows, setRows] = useState<AttachmentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -41,6 +35,12 @@ export function AttachmentSection({ entityType, entityId }: AttachmentSectionPro
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
+      const flags = await getAttachmentPermissionFlags(entityType)
+      setPermissions(flags)
+      if (!flags.canRead) {
+        setRows([])
+        return
+      }
       const data = await getAttachments({ entityType, entityId })
       setRows(data)
     } finally {
@@ -59,7 +59,7 @@ export function AttachmentSection({ entityType, entityId }: AttachmentSectionPro
   }
 
   async function handleUpload() {
-    if (!pendingFile) return
+    if (!pendingFile || !permissions?.canCreate) return
     setUploading(true)
     setError(null)
     try {
@@ -95,6 +95,7 @@ export function AttachmentSection({ entityType, entityId }: AttachmentSectionPro
   }
 
   async function handleDelete(row: AttachmentRow) {
+    if (!permissions?.canDelete) return
     if (!confirm(`'${row.fileName}' 파일을 삭제하시겠습니까? 되돌릴 수 없습니다.`)) return
     const res = await deleteAttachment(row.id)
     if (!res.ok) {
@@ -103,6 +104,8 @@ export function AttachmentSection({ entityType, entityId }: AttachmentSectionPro
     }
     await refresh()
   }
+
+  if (!loading && permissions && !permissions.canRead) return null
 
   return (
     <div className="rounded-lg border p-3 space-y-3">
@@ -130,7 +133,7 @@ export function AttachmentSection({ entityType, entityId }: AttachmentSectionPro
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDownload(r)} title="다운로드">
                   <Download className="h-3.5 w-3.5" />
                 </Button>
-                {canMutate && (
+                {permissions?.canDelete && (
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => handleDelete(r)} title="삭제">
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -141,7 +144,7 @@ export function AttachmentSection({ entityType, entityId }: AttachmentSectionPro
         </ul>
       )}
 
-      {canMutate && (
+      {permissions?.canCreate && (
         <div className="space-y-2 pt-1">
           <input ref={fileInputRef} type="file" accept={ACCEPT} onChange={handleFileChange} className="hidden" id={`attachment-upload-${entityType}-${entityId}`} />
           <label

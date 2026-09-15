@@ -14,6 +14,7 @@ import {
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { recordAuditLog } from "@/lib/audit-log"
+import { assertNoAttachmentsForEntity } from "./attachment.actions"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -371,6 +372,7 @@ export async function deleteRepairRequest(id: string) {
     throw new Error("처리 이력이 없는 OPEN 상태의 수리요청만 삭제할 수 있습니다. 진행/완료/취소 이력은 보존됩니다.")
   }
   await prisma.$transaction(async (tx) => {
+    await assertNoAttachmentsForEntity(tx, tenantId, "EQUIPMENT_REPAIR_REQUEST", id)
     await tx.equipmentRepairRequest.delete({ where: { id, tenantId } })
     await recordAuditLog(tx, {
       tenantId,

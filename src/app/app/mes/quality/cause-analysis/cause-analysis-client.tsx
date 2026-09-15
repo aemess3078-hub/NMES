@@ -33,6 +33,7 @@ import {
   updateDefectCauseAnalysis,
 } from "@/lib/actions/defect-cause-analysis.actions"
 import { formatQuantity } from "@/lib/utils"
+import { AttachmentSection } from "@/components/common/attachments/attachment-section"
 
 const NONE_VALUE = "__ALL__"
 
@@ -373,6 +374,10 @@ function CauseAnalysisFormSheet({
               rows={5}
             />
           </div>
+
+          {row.analysisId && (
+            <AttachmentSection entityType="DEFECT_CAUSE_ANALYSIS" entityId={row.analysisId} />
+          )}
         </div>
       )}
     </FormSheet>

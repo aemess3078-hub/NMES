@@ -18,6 +18,7 @@ import { type CreateMeasurementInput } from "./inspection-measurement.helpers"
 import { assertInspectionHistoryMutable, validateInspectionMutationContext } from "./quality-inspection-integrity.helpers"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { recordAuditLog } from "@/lib/audit-log"
+import { assertNoAttachmentsForEntity } from "./attachment.actions"
 
 export type { CreateMeasurementInput }
 
@@ -720,6 +721,7 @@ export async function deleteQualityInspection(id: string) {
       where: { id },
       include: { measurements: true, defectRecords: true },
     })
+    await assertNoAttachmentsForEntity(tx, tenantId, "QUALITY_INSPECTION", id)
     await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
     await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
     await tx.qualityInspection.delete({ where: { id } })

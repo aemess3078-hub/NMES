@@ -19,6 +19,7 @@ import {
 import { QualityInspectionWithDetails } from "@/lib/actions/quality.actions"
 import { RESULT_CONFIG } from "./inspection-columns"
 import { formatQuantity } from "@/lib/utils"
+import { AttachmentSection } from "@/components/common/attachments/attachment-section"
 
 // ─── 불량 중요도 / 처리방법 레이블 ───────────────────────────────────────────
 
@@ -127,6 +128,10 @@ export function InspectionDetailDialog({
           </div>
         </div>
 
+        <div className="border-t pt-4">
+          <AttachmentSection entityType="QUALITY_INSPECTION" entityId={inspection.id} />
+        </div>
+
         {/* 측정값 */}
         <div className="border-t pt-4 space-y-3">
           <p className="text-[15px] font-medium">
@@ -204,44 +209,56 @@ export function InspectionDetailDialog({
           {inspection.defectRecords.length === 0 ? (
             <p className="text-[13px] text-muted-foreground py-2">불량 기록이 없습니다.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-[13px]">불량코드</TableHead>
-                  <TableHead className="text-[13px]">불량명</TableHead>
-                  <TableHead className="text-[13px] w-16 text-right">수량</TableHead>
-                  <TableHead className="text-[13px] w-20">중요도</TableHead>
-                  <TableHead className="text-[13px] w-24">처리방법</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inspection.defectRecords.map((dr) => (
-                  <TableRow key={dr.id}>
-                    <TableCell className="font-mono text-[13px]">
-                      {dr.defectCode.code}
-                    </TableCell>
-                    <TableCell className="text-[13px]">{dr.defectCode.name}</TableCell>
-                    <TableCell className="text-right font-mono text-[13px]">
-                      {formatQuantity(Number(dr.qty))}
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
-                          SEVERITY_CLASSES[dr.severity] ?? "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {SEVERITY_LABELS[dr.severity] ?? dr.severity}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-[13px] text-muted-foreground">
-                      {dr.disposition
-                        ? (DISPOSITION_LABELS[dr.disposition] ?? dr.disposition)
-                        : "—"}
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-[13px]">불량코드</TableHead>
+                    <TableHead className="text-[13px]">불량명</TableHead>
+                    <TableHead className="text-[13px] w-16 text-right">수량</TableHead>
+                    <TableHead className="text-[13px] w-20">중요도</TableHead>
+                    <TableHead className="text-[13px] w-24">처리방법</TableHead>
                   </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {inspection.defectRecords.map((dr) => (
+                    <TableRow key={dr.id}>
+                      <TableCell className="font-mono text-[13px]">
+                        {dr.defectCode.code}
+                      </TableCell>
+                      <TableCell className="text-[13px]">{dr.defectCode.name}</TableCell>
+                      <TableCell className="text-right font-mono text-[13px]">
+                        {formatQuantity(Number(dr.qty))}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                            SEVERITY_CLASSES[dr.severity] ?? "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {SEVERITY_LABELS[dr.severity] ?? dr.severity}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-[13px] text-muted-foreground">
+                        {dr.disposition
+                          ? (DISPOSITION_LABELS[dr.disposition] ?? dr.disposition)
+                          : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="space-y-3 pt-2">
+                {inspection.defectRecords.map((dr) => (
+                  <div key={`attachment-${dr.id}`} className="rounded-lg bg-muted/20 p-2">
+                    <p className="mb-2 text-[13px] font-medium text-muted-foreground">
+                      불량기록 첨부 · [{dr.defectCode.code}] {dr.defectCode.name}
+                    </p>
+                    <AttachmentSection entityType="DEFECT_RECORD" entityId={dr.id} />
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </div>
       </DialogContent>

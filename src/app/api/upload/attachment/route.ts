@@ -2,8 +2,9 @@ import { randomUUID } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { requireRole, getTenantId } from "@/lib/auth"
+import { ROLE_PERMISSION_DENIED_MESSAGE } from "@/lib/auth/role-permissions"
 import { uploadAttachmentFile, deleteAttachmentFile } from "@/lib/storage/attachment-storage"
-import { assertAttachmentEntityOwnership } from "@/lib/actions/attachment.actions"
+import { assertAttachmentEntityOwnership, requireAttachmentEntityPermission } from "@/lib/actions/attachment.actions"
 import {
   isValidAttachmentEntityType,
   validateAttachmentFile,
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
 
     // entity 소유권(현재 tenant 소속 여부) 서버 재검증 — client가 보낸 entityId를 신뢰하지 않는다.
     await assertAttachmentEntityOwnership(entityType, entityId, tenantId)
+    await requireAttachmentEntityPermission(entityType, "CREATE", actor)
 
     validateAttachmentFile(file.name, file.size)
 
@@ -105,7 +107,10 @@ export async function POST(req: NextRequest) {
       }
     }
     const message = err instanceof Error ? err.message : "파일 업로드 중 오류가 발생했습니다."
-    if (message === "UNAUTHORIZED" || message === "FORBIDDEN") {
+    if (message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 })
+    }
+    if (message === "FORBIDDEN" || message === ROLE_PERMISSION_DENIED_MESSAGE) {
       return NextResponse.json({ error: "업로드 권한이 없습니다." }, { status: 403 })
     }
     return NextResponse.json({ error: message }, { status: 400 })
