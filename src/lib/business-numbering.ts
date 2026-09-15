@@ -35,11 +35,25 @@ export function parseTrailingSequence(value: string | null | undefined, prefix: 
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-export function isUniqueConstraintError(error: unknown, fields?: string[]): boolean {
+export type UniqueConstraintTarget = string[] | string[][]
+
+function normalizeUniqueConstraintTargets(fields?: UniqueConstraintTarget): string[][] | null {
+  if (!fields || fields.length === 0) return null
+  if (Array.isArray(fields[0])) return fields as string[][]
+  return [fields as string[]]
+}
+
+function sameUniqueConstraintTarget(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((field) => right.includes(field))
+}
+
+export function isUniqueConstraintError(error: unknown, fields?: UniqueConstraintTarget): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
     return false
   }
-  if (!fields || fields.length === 0) return true
+  const targets = normalizeUniqueConstraintTargets(fields)
+  if (!targets) return true
   const target = (error.meta as { target?: unknown } | undefined)?.target
   const targetFields = Array.isArray(target)
     ? target.map(String)
@@ -47,13 +61,13 @@ export function isUniqueConstraintError(error: unknown, fields?: string[]): bool
       ? [target]
       : []
   if (targetFields.length === 0) return true
-  return fields.every((field) => targetFields.includes(field))
+  return targets.some((allowedTarget) => sameUniqueConstraintTarget(allowedTarget, targetFields))
 }
 
 export async function withUniqueBusinessNumberRetry<T>(
   operation: (attempt: number) => Promise<T>,
   options: {
-    fields: string[]
+    fields: UniqueConstraintTarget
     maxAttempts?: number
     message?: string
   }

@@ -3,7 +3,7 @@ import { join } from "path"
 import assert from "assert"
 import ts from "typescript"
 import { loadEnvConfig } from "@next/env"
-import { PrismaClient } from "@prisma/client"
+import { Prisma, PrismaClient } from "@prisma/client"
 
 const root = process.cwd()
 
@@ -18,6 +18,7 @@ Module._resolveFilename = function resolveAlias(request: string, parent: unknown
 
 const {
   BUSINESS_NUMBER_MAX_ATTEMPTS,
+  isUniqueConstraintError,
   kstDateParts,
   withUniqueBusinessNumberRetry,
 } = require("../src/lib/business-numbering") as typeof import("../src/lib/business-numbering")
@@ -53,6 +54,55 @@ function barrier(count: number) {
   let release!: () => void
   const promise = new Promise<void>((resolve) => { release = resolve })
   return async () => { seen += 1; if (seen === count) release(); await promise }
+}
+
+function prismaUniqueError(target: string[]) {
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "f19-test",
+    meta: { target },
+  })
+}
+
+async function runRetryTargetChecks() {
+  const workOrderTargets = [["tenantId", "orderNo"], ["tenantId", "manufacturingNo"]]
+
+  let orderNoAttempts = 0
+  const orderNoResult = await withUniqueBusinessNumberRetry(async (attempt) => {
+    orderNoAttempts += 1
+    if (attempt === 0) throw prismaUniqueError(["tenantId", "orderNo"])
+    return "orderNo retried"
+  }, { fields: workOrderTargets, maxAttempts: 2 })
+  ok(orderNoResult === "orderNo retried" && orderNoAttempts === 2, "WorkOrder orderNo P2002 is retried")
+
+  let manufacturingNoAttempts = 0
+  const manufacturingNoResult = await withUniqueBusinessNumberRetry(async (attempt) => {
+    manufacturingNoAttempts += 1
+    if (attempt === 0) throw prismaUniqueError(["tenantId", "manufacturingNo"])
+    return "manufacturingNo retried"
+  }, { fields: workOrderTargets, maxAttempts: 2 })
+  ok(manufacturingNoResult === "manufacturingNo retried" && manufacturingNoAttempts === 2, "automatic WorkOrder manufacturingNo P2002 is retried")
+
+  let unrelatedAttempts = 0
+  await assert.rejects(
+    () => withUniqueBusinessNumberRetry(async () => {
+      unrelatedAttempts += 1
+      throw prismaUniqueError(["workOrderId", "seq"])
+    }, { fields: workOrderTargets, maxAttempts: 3 }),
+    Prisma.PrismaClientKnownRequestError,
+  )
+  ok(unrelatedAttempts === 1, "non-numbering P2002 is not retried as a business number collision")
+
+  let manualAttempts = 0
+  const manualError = prismaUniqueError(["tenantId", "manufacturingNo"])
+  await assert.rejects(
+    () => withUniqueBusinessNumberRetry(async () => {
+      manualAttempts += 1
+      throw manualError
+    }, { fields: [["tenantId", "orderNo"]], maxAttempts: 3 }),
+    Prisma.PrismaClientKnownRequestError,
+  )
+  ok(manualAttempts === 1 && isUniqueConstraintError(manualError, ["tenantId", "manufacturingNo"]), "manual WorkOrder manufacturingNo duplicate is detected without automatic renumber retry")
 }
 
 async function cleanup(runId: string) {
@@ -312,13 +362,19 @@ async function main() {
   ok(salesOrder.includes("generateSalesRequestPlanNo") && functionBody(salesOrder, "src/lib/actions/sales-order.actions.ts", "requestProductionFromSalesOrder").includes("withUniqueBusinessNumberRetry"), "SalesOrder production request retries planNo collisions")
   ok(quotation.includes("generateSalesOrderNo") && functionBody(quotation, "src/lib/actions/quotation.actions.ts", "convertToSalesOrder").includes("withUniqueBusinessNumberRetry"), "Quotation conversion reuses canonical SalesOrder generator with retry")
   ok(functionBody(productionPlan, "src/lib/actions/production-plan.actions.ts", "createPlan").includes("withUniqueBusinessNumberRetry"), "ProductionPlan create retries unique planNo collisions")
-  ok(functionBody(workOrder, "src/lib/actions/work-order.actions.ts", "createWorkOrder").includes("withUniqueBusinessNumberRetry"), "WorkOrder create retries orderNo/manufacturingNo collisions")
+  const createWorkOrderBody = functionBody(workOrder, "src/lib/actions/work-order.actions.ts", "createWorkOrder")
+  ok(createWorkOrderBody.includes("withUniqueBusinessNumberRetry"), "WorkOrder create retries orderNo/manufacturingNo collisions")
+  ok(!createWorkOrderBody.includes("fields: []"), "WorkOrder create does not retry every transaction P2002")
+  ok(createWorkOrderBody.includes('[["tenantId", "orderNo"], ["tenantId", "manufacturingNo"]]'), "WorkOrder create limits automatic retry targets to orderNo and manufacturingNo")
+  ok(createWorkOrderBody.includes('[["tenantId", "orderNo"]]') && createWorkOrderBody.includes("이미 사용 중인 제조번호입니다."), "manual WorkOrder manufacturingNo duplicate is not auto-renumbered and returns a clear message")
   ok(functionBody(purchaseOrder, "src/lib/actions/purchase-order.actions.ts", "createPurchaseOrder").includes("withUniqueBusinessNumberRetry"), "PurchaseOrder create retries orderNo collisions")
   ok(functionBody(shipment, "src/lib/actions/shipment.actions.ts", "createShipment").includes("withUniqueBusinessNumberRetry"), "Shipment create retries shipmentNo collisions")
   ok(materialReturn.includes("BUSINESS_NUMBER_MAX_ATTEMPTS") && materialReturn.includes('isUniqueConstraintError(e, ["tenantId", "returnNo"])'), "MaterialReturn returnNo retry uses canonical unique detection")
   ok(inventory.includes("BUSINESS_NUMBER_MAX_ATTEMPTS") && inventory.includes('isUniqueConstraintError(error, ["tenantId", "txNo"])'), "InventoryTransaction txNo retry uses canonical unique detection")
   ok(receiving.includes("BUSINESS_NUMBER_MAX_ATTEMPTS") && receiving.includes('isUniqueConstraintError(error, ["tenantId", "txNo"])'), "Receiving txNo retry uses canonical unique detection")
   ok(functionBody(outsourcing, "src/lib/actions/outsourcing.actions.ts", "createOutsourcingOrder").includes("withUniqueBusinessNumberRetry"), "Outsourcing order create retries PurchaseOrder orderNo collisions")
+
+  await runRetryTargetChecks()
 
   loadEnvConfig(root)
   ok(kstDateParts(new Date("2026-01-01T14:59:59.000Z")).dateKey === "2026-01-01", "KST boundary keeps UTC 14:59:59 on the same KST date")
