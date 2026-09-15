@@ -211,7 +211,7 @@ export async function assertNoAttachmentsForEntity(
   if (count > 0) throw new Error(ATTACHMENT_PARENT_DELETE_MESSAGE)
 }
 
-async function assertAttachmentDeleteAllowed(entityType: AttachmentEntityType, entityId: string, tenantId: string): Promise<void> {
+export async function assertAttachmentDeleteAllowed(entityType: AttachmentEntityType, entityId: string, tenantId: string): Promise<void> {
   if (entityType === "QUALITY_INSPECTION") {
     const count = await prisma.defectRecord.count({
       where: { qualityInspectionId: entityId, qualityInspection: { workOrderOperation: { workOrder: { tenantId } } } },
@@ -261,6 +261,44 @@ async function assertAttachmentDeleteAllowed(entityType: AttachmentEntityType, e
     if (repair.status === "COMPLETED" || repair.status === "CANCELLED" || repair.completedAt) {
       throw new Error("완료 또는 종결된 설비수리요청 첨부파일은 삭제할 수 없습니다.")
     }
+  }
+}
+
+export async function recordAttachmentStorageCleanupFailure(params: {
+  tenantId: string
+  actor: Pick<CurrentUser, "id" | "name">
+  attachment: {
+    id: string
+    storagePath: string
+    fileName: string
+  }
+  error: string
+  auditLogCreate?: (args: Parameters<typeof prisma.auditLog.create>[0]) => Promise<unknown>
+}): Promise<void> {
+  const auditLogCreate = params.auditLogCreate ?? prisma.auditLog.create.bind(prisma.auditLog)
+  try {
+    await auditLogCreate({
+      data: {
+        tenantId: params.tenantId,
+        actorId: params.actor.id,
+        actorLabel: params.actor.name,
+        entityType: "AttachmentStorageCleanup",
+        entityId: params.attachment.id,
+        action: "UPDATE",
+        afterData: {
+          storagePath: params.attachment.storagePath,
+          fileName: params.attachment.fileName,
+          cleanupStatus: "FAILED",
+          error: params.error,
+        },
+        menuName: MENU_NAME,
+      },
+    })
+  } catch (auditError) {
+    console.error(
+      `[attachment] storage cleanup audit failed after DB delete: ${params.attachment.storagePath}`,
+      auditError
+    )
   }
 }
 
@@ -379,22 +417,11 @@ export async function deleteAttachment(id: string): Promise<{ ok: boolean; error
 
     const storageResult = await deleteAttachmentFile(attachment.storagePath)
     if (!storageResult.ok) {
-      await prisma.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actor.id,
-          actorLabel: actor.name,
-          entityType: "AttachmentStorageCleanup",
-          entityId: attachment.id,
-          action: "UPDATE",
-          afterData: {
-            storagePath: attachment.storagePath,
-            fileName: attachment.fileName,
-            cleanupStatus: "FAILED",
-            error: storageResult.error,
-          },
-          menuName: MENU_NAME,
-        },
+      await recordAttachmentStorageCleanupFailure({
+        tenantId,
+        actor,
+        attachment,
+        error: storageResult.error ?? "Storage cleanup failed",
       })
     }
 

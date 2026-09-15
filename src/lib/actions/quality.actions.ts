@@ -722,9 +722,6 @@ export async function deleteQualityInspection(id: string) {
       include: { measurements: true, defectRecords: true },
     })
     await assertNoAttachmentsForEntity(tx, tenantId, "QUALITY_INSPECTION", id)
-    for (const defectRecord of before.defectRecords) {
-      await assertNoAttachmentsForEntity(tx, tenantId, "DEFECT_RECORD", defectRecord.id)
-    }
     await tx.inspectionMeasurement.deleteMany({ where: { qualityInspectionId: id } })
     await tx.defectRecord.deleteMany({ where: { qualityInspectionId: id } })
     await tx.qualityInspection.delete({ where: { id } })
