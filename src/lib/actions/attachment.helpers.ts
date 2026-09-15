@@ -4,25 +4,48 @@
 
 // ─── 대상 업무유형(entityType) allow-list ────────────────────────────────────
 //
-// DocumentLink.targetType과 동일하게 문자열 기반 polymorphic 식별자를 쓰되,
-// 임의 문자열을 허용하지 않고 이 allow-list로만 제한한다. 이번 PR은 조치관리/
-// 재발방지관리 2곳만 POC로 연결하며(§ STEP 16), 품목/수주/작업지시/설비/공구/
-// 프로젝트 등은 사업계획서상 향후 확대 대상이지만 이번 PR에서 화면을 일괄
-// 수정하지 않는다 — 새 entityType을 추가할 때는 이 배열에 값만 추가하면 되고
-// 스키마 마이그레이션은 필요 없다.
+// Attachment는 entityType/entityId 기반 generic 증빙 모델이다. entityType은
+// 임의 문자열을 받지 않고 현재 업무에서 서버 소유권/권한/삭제정책을 모두
+// 검증할 수 있는 6개 업무유형만 허용한다. 새 유형을 추가할 때는 이 allow-list,
+// 권한 매핑, 소유권/라벨/삭제정책을 함께 확장해야 한다.
 export const ATTACHMENT_ENTITY_TYPES = [
+  "QUALITY_INSPECTION",
+  "DEFECT_RECORD",
+  "DEFECT_CAUSE_ANALYSIS",
   "DEFECT_CORRECTIVE_ACTION",
   "DEFECT_RECURRENCE_PREVENTION",
+  "EQUIPMENT_REPAIR_REQUEST",
 ] as const
 export type AttachmentEntityType = (typeof ATTACHMENT_ENTITY_TYPES)[number]
 
 export const ATTACHMENT_ENTITY_TYPE_LABEL: Record<AttachmentEntityType, string> = {
+  QUALITY_INSPECTION: "품질검사",
+  DEFECT_RECORD: "불량기록",
+  DEFECT_CAUSE_ANALYSIS: "원인분석",
   DEFECT_CORRECTIVE_ACTION: "조치관리",
   DEFECT_RECURRENCE_PREVENTION: "재발방지관리",
+  EQUIPMENT_REPAIR_REQUEST: "설비수리요청",
+}
+
+export const ATTACHMENT_PERMISSION_RESOURCE: Record<AttachmentEntityType, string> = {
+  QUALITY_INSPECTION: "QUALITY_INSPECTION",
+  DEFECT_RECORD: "DEFECT_MANAGEMENT",
+  DEFECT_CAUSE_ANALYSIS: "DEFECT_MANAGEMENT",
+  DEFECT_CORRECTIVE_ACTION: "DEFECT_MANAGEMENT",
+  DEFECT_RECURRENCE_PREVENTION: "DEFECT_MANAGEMENT",
+  EQUIPMENT_REPAIR_REQUEST: "EQUIPMENT_REPAIR",
 }
 
 export function isValidAttachmentEntityType(value: string): value is AttachmentEntityType {
   return (ATTACHMENT_ENTITY_TYPES as readonly string[]).includes(value)
+}
+
+export function getAttachmentPermissionResource(entityType: string): string | null {
+  return isValidAttachmentEntityType(entityType) ? ATTACHMENT_PERMISSION_RESOURCE[entityType] : null
+}
+
+export function getAttachmentEntityTypeLabel(entityType: string): string {
+  return isValidAttachmentEntityType(entityType) ? ATTACHMENT_ENTITY_TYPE_LABEL[entityType] : "알 수 없는 업무유형"
 }
 
 // ─── 파일 검증 ────────────────────────────────────────────────────────────────
@@ -119,7 +142,7 @@ export function formatFileSize(bytes: number): string {
 
 export type AttachmentRow = {
   id: string
-  entityType: AttachmentEntityType
+  entityType: string
   entityId: string
   entityTypeLabel: string
   entityLabel: string
@@ -130,6 +153,7 @@ export type AttachmentRow = {
   uploadedById: string
   uploadedByName: string
   createdAt: string
+  canDelete?: boolean
 }
 
 export type AttachmentRecordLike = {
@@ -155,12 +179,11 @@ export function serializeAttachmentRow(
   record: AttachmentRecordLike,
   entityLabelMap: Map<string, string>
 ): AttachmentRow {
-  const entityType = isValidAttachmentEntityType(record.entityType) ? record.entityType : ("DEFECT_CORRECTIVE_ACTION" as AttachmentEntityType)
   return {
     id: record.id,
-    entityType,
+    entityType: record.entityType,
     entityId: record.entityId,
-    entityTypeLabel: ATTACHMENT_ENTITY_TYPE_LABEL[entityType] ?? record.entityType,
+    entityTypeLabel: getAttachmentEntityTypeLabel(record.entityType),
     entityLabel: entityLabelMap.get(record.entityId) ?? "(연결대상 없음)",
     fileName: record.fileName,
     mimeType: record.mimeType,

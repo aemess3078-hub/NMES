@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db/prisma"
 
 export const ROLE_PERMISSION_DENIED_MESSAGE = "이 기능을 사용할 권한이 없습니다."
 
+const ATTACHMENT_MENU_CODES = new Set(["attachments"])
+const ATTACHMENT_READ_RESOURCES = ["QUALITY_INSPECTION", "DEFECT_MANAGEMENT", "EQUIPMENT_REPAIR"] as const
+
 const MENU_CODE_RESOURCE_MAP: Record<string, string> = {
   items: "ITEM",
   "item-categories": "ITEM",
@@ -229,6 +232,9 @@ export function getResourcePermissionFlags(
 }
 
 export function canReadMenuCode(snapshot: PermissionSnapshot | null, menuCode: string): boolean {
+  if (ATTACHMENT_MENU_CODES.has(menuCode)) {
+    return ATTACHMENT_READ_RESOURCES.some((resource) => hasResourcePermission(snapshot, resource, "READ"))
+  }
   const resource = getPermissionResourceForMenuCode(menuCode)
   if (!resource) return true
   if (snapshot && !snapshot.allAllowed && !snapshot.configured.has(permissionKey(resource, "READ"))) return true
@@ -236,6 +242,10 @@ export function canReadMenuCode(snapshot: PermissionSnapshot | null, menuCode: s
 }
 
 export function canReadPath(snapshot: PermissionSnapshot | null, pathname: string): boolean {
+  const menuCode = toMenuCode(pathname)
+  if (ATTACHMENT_MENU_CODES.has(menuCode)) {
+    return canReadMenuCode(snapshot, menuCode)
+  }
   const resource = getPermissionResourceForPath(pathname)
   if (!resource) return true
   if (snapshot && !snapshot.allAllowed && !snapshot.configured.has(permissionKey(resource, "READ"))) return true

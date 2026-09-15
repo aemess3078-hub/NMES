@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FormSheet } from "@/components/common/form-sheet"
+import { AttachmentSection } from "@/components/common/attachments/attachment-section"
 import {
   RepairRequestRow,
   ProblemTypeRow,
@@ -239,6 +240,10 @@ export function RepairRepairFormSheet({ open, onOpenChange, editingRow, equipmen
               </FormItem>
             )}
           />
+
+          {editingRow && (
+            <AttachmentSection entityType="EQUIPMENT_REPAIR_REQUEST" entityId={editingRow.id} />
+          )}
 
           <FormField
             control={form.control}

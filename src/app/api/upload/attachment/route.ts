@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/prisma"
 import { requireRole, getTenantId } from "@/lib/auth"
 import { uploadAttachmentFile, deleteAttachmentFile } from "@/lib/storage/attachment-storage"
-import { assertAttachmentEntityOwnership } from "@/lib/actions/attachment.actions"
+import { assertAttachmentEntityOwnership, requireAttachmentEntityPermission } from "@/lib/actions/attachment.actions"
 import {
   isValidAttachmentEntityType,
   validateAttachmentFile,
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
 
     // entity 소유권(현재 tenant 소속 여부) 서버 재검증 — client가 보낸 entityId를 신뢰하지 않는다.
     await assertAttachmentEntityOwnership(entityType, entityId, tenantId)
+    await requireAttachmentEntityPermission(entityType, "CREATE", actor)
 
     validateAttachmentFile(file.name, file.size)
 

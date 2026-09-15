@@ -1,48 +1,101 @@
 "use server"
 
+import { PermissionAction } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
-import { requireRole, getTenantId } from "@/lib/auth"
+import { requireRole, getTenantId, type CurrentUser } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
 import { createAttachmentSignedUrl, deleteAttachmentFile } from "@/lib/storage/attachment-storage"
 import {
+  ATTACHMENT_ENTITY_TYPES,
+  getAttachmentPermissionResource,
+  isValidAttachmentEntityType,
   serializeAttachmentRow,
   type AttachmentEntityType,
   type AttachmentRow,
 } from "./attachment.helpers"
+import {
+  getCurrentPermissionSnapshot,
+  getResourcePermissionFlags,
+  hasResourcePermission,
+  requireResourcePermission,
+  type ResourcePermissionFlags,
+} from "@/lib/auth/role-permissions"
 
 export type { AttachmentRow, AttachmentEntityType }
 
-// ─── 청운커팅 사업계획서 "첨부파일관리" ──────────────────────────────────────
-//
-// 파일 업로드 자체(바이너리 바디)는 이 파일(Server Action)이 아니라
-// src/app/api/upload/attachment/route.ts(Route Handler)가 담당한다 — 기존
-// work-standard 업로드가 Server Action이 아니라 API route로 구현된 것과 동일한
-// convention을 따른다(Server Action의 기본 body size 한도가 파일 업로드에는
-// 작음). 이 파일은 조회(목록/다운로드 URL 발급)와 삭제만 다룬다.
-//
-// entityType/entityId는 client가 보낸 값을 신뢰하지 않고, 대상 레코드가 현재
-// tenant 소속인지 서버에서 항상 재검증한다(assertAttachmentEntityOwnership —
-// API route에서도 그대로 재사용).
-
 const MENU_NAME = "첨부파일관리"
+const ATTACHMENT_PARENT_DELETE_MESSAGE = "연결된 첨부파일이 있어 삭제할 수 없습니다."
+
+type AttachmentPermissionAction = Extract<PermissionAction, "READ" | "CREATE" | "DELETE">
+type AttachmentCountClient = { attachment: { count(args: { where: { tenantId: string; entityType: AttachmentEntityType; entityId: string } }): Promise<number> } }
 
 function revalidateAttachmentPaths() {
   revalidatePath("/app/mes/attachments")
+  revalidatePath("/app/mes/inspection")
+  revalidatePath("/app/mes/quality/cause-analysis")
   revalidatePath("/app/mes/quality/corrective-action")
   revalidatePath("/app/mes/quality/recurrence-prevention")
+  revalidatePath("/app/mes/equipment-repair")
+}
+
+function getRequiredAttachmentResource(entityType: string): string {
+  const resource = getAttachmentPermissionResource(entityType)
+  if (!resource) throw new Error("지원하지 않는 업무유형입니다.")
+  return resource
+}
+
+export async function requireAttachmentEntityPermission(
+  entityType: AttachmentEntityType,
+  action: AttachmentPermissionAction,
+  user?: CurrentUser | null
+): Promise<CurrentUser> {
+  return requireResourcePermission(getRequiredAttachmentResource(entityType), action, user)
+}
+
+export async function getAttachmentPermissionFlags(entityType: AttachmentEntityType): Promise<ResourcePermissionFlags> {
+  await requireRole("VIEWER")
+  const snapshot = await getCurrentPermissionSnapshot()
+  return getResourcePermissionFlags(snapshot, getRequiredAttachmentResource(entityType))
+}
+
+async function getReadableAttachmentTypes(user?: CurrentUser | null): Promise<AttachmentEntityType[]> {
+  const snapshot = await getCurrentPermissionSnapshot(user)
+  return ATTACHMENT_ENTITY_TYPES.filter((entityType) =>
+    hasResourcePermission(snapshot, getRequiredAttachmentResource(entityType), "READ")
+  )
 }
 
 /**
  * entityType/entityId가 가리키는 실제 레코드가 현재 tenant 소속인지 서버에서
- * 재검증한다. API route(업로드)와 이 파일(조회/삭제 시 참조 무결성 확인)이
- * 공유한다 — 새 entityType을 추가하면 이 switch에도 분기를 추가해야 한다.
+ * 재검증한다. API route(업로드)와 조회/다운로드/삭제 경로가 공유한다.
  */
 export async function assertAttachmentEntityOwnership(
   entityType: AttachmentEntityType,
   entityId: string,
   tenantId: string
 ): Promise<void> {
+  if (entityType === "QUALITY_INSPECTION") {
+    const row = await prisma.qualityInspection.findFirst({
+      where: { id: entityId, workOrderOperation: { workOrder: { tenantId } } },
+      select: { id: true },
+    })
+    if (!row) throw new Error("연결 대상(품질검사)을 찾을 수 없습니다.")
+    return
+  }
+  if (entityType === "DEFECT_RECORD") {
+    const row = await prisma.defectRecord.findFirst({
+      where: { id: entityId, qualityInspection: { workOrderOperation: { workOrder: { tenantId } } } },
+      select: { id: true },
+    })
+    if (!row) throw new Error("연결 대상(불량기록)을 찾을 수 없습니다.")
+    return
+  }
+  if (entityType === "DEFECT_CAUSE_ANALYSIS") {
+    const row = await prisma.defectCauseAnalysis.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
+    if (!row) throw new Error("연결 대상(원인분석)을 찾을 수 없습니다.")
+    return
+  }
   if (entityType === "DEFECT_CORRECTIVE_ACTION") {
     const row = await prisma.defectCorrectiveAction.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
     if (!row) throw new Error("연결 대상(조치관리)을 찾을 수 없습니다.")
@@ -53,71 +106,194 @@ export async function assertAttachmentEntityOwnership(
     if (!row) throw new Error("연결 대상(재발방지관리)을 찾을 수 없습니다.")
     return
   }
+  if (entityType === "EQUIPMENT_REPAIR_REQUEST") {
+    const row = await prisma.equipmentRepairRequest.findFirst({ where: { id: entityId, tenantId }, select: { id: true } })
+    if (!row) throw new Error("연결 대상(설비수리요청)을 찾을 수 없습니다.")
+    return
+  }
   throw new Error("지원하지 않는 업무유형입니다.")
 }
 
-/**
- * entityId 직접 FK로 배치 조회해 "연결대상" 표시 문자열을 만든다(추측성 join 없음,
- * N+1 없이 entityType별로 최대 2개의 쿼리). tenant 조건을 포함해 cross-tenant
- * 레코드가 섞이지 않게 한다.
- */
+function workOrderLabel(workOrder: { orderNo: string; item: { code?: string | null; name: string } }) {
+  const itemLabel = workOrder.item.code ? `[${workOrder.item.code}] ${workOrder.item.name}` : workOrder.item.name
+  return `[${workOrder.orderNo}] ${itemLabel}`
+}
+
 async function buildEntityLabelMap(
   tenantId: string,
   rows: { entityType: string; entityId: string }[]
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>()
-  const correctiveIds = Array.from(new Set(rows.filter((r) => r.entityType === "DEFECT_CORRECTIVE_ACTION").map((r) => r.entityId)))
-  const preventionIds = Array.from(new Set(rows.filter((r) => r.entityType === "DEFECT_RECURRENCE_PREVENTION").map((r) => r.entityId)))
+  const idsOf = (entityType: AttachmentEntityType) => Array.from(new Set(rows.filter((r) => r.entityType === entityType).map((r) => r.entityId)))
 
-  const entitySelect = {
-    id: true,
-    defectRecord: {
-      select: {
-        qualityInspection: {
-          select: {
-            workOrderOperation: {
-              select: { workOrder: { select: { orderNo: true, item: { select: { name: true } } } } },
-            },
-          },
-        },
-      },
-    },
+  const inspectionIds = idsOf("QUALITY_INSPECTION")
+  const defectIds = idsOf("DEFECT_RECORD")
+  const causeIds = idsOf("DEFECT_CAUSE_ANALYSIS")
+  const correctiveIds = idsOf("DEFECT_CORRECTIVE_ACTION")
+  const preventionIds = idsOf("DEFECT_RECURRENCE_PREVENTION")
+  const repairIds = idsOf("EQUIPMENT_REPAIR_REQUEST")
+
+  const workOrderSelect = { orderNo: true, item: { select: { code: true, name: true } } } as const
+  const inspectionWorkOrderSelect = {
+    workOrderOperation: { select: { workOrder: { select: workOrderSelect } } },
+  } as const
+  const defectWorkOrderSelect = {
+    qualityInspection: { select: inspectionWorkOrderSelect },
   } as const
 
-  const [correctiveRecords, preventionRecords] = await Promise.all([
+  const [inspections, defects, causes, correctives, preventions, repairs] = await Promise.all([
+    inspectionIds.length
+      ? prisma.qualityInspection.findMany({
+          where: { id: { in: inspectionIds }, workOrderOperation: { workOrder: { tenantId } } },
+          select: { id: true, stage: true, ...inspectionWorkOrderSelect },
+        })
+      : Promise.resolve([]),
+    defectIds.length
+      ? prisma.defectRecord.findMany({
+          where: { id: { in: defectIds }, qualityInspection: { workOrderOperation: { workOrder: { tenantId } } } },
+          select: { id: true, defectCode: { select: { code: true, name: true } }, ...defectWorkOrderSelect },
+        })
+      : Promise.resolve([]),
+    causeIds.length
+      ? prisma.defectCauseAnalysis.findMany({
+          where: { id: { in: causeIds }, tenantId },
+          select: { id: true, defectRecord: { select: defectWorkOrderSelect } },
+        })
+      : Promise.resolve([]),
     correctiveIds.length
-      ? prisma.defectCorrectiveAction.findMany({ where: { id: { in: correctiveIds }, tenantId }, select: entitySelect })
+      ? prisma.defectCorrectiveAction.findMany({
+          where: { id: { in: correctiveIds }, tenantId },
+          select: { id: true, defectRecord: { select: defectWorkOrderSelect } },
+        })
       : Promise.resolve([]),
     preventionIds.length
-      ? prisma.defectRecurrencePrevention.findMany({ where: { id: { in: preventionIds }, tenantId }, select: entitySelect })
+      ? prisma.defectRecurrencePrevention.findMany({
+          where: { id: { in: preventionIds }, tenantId },
+          select: { id: true, defectRecord: { select: defectWorkOrderSelect } },
+        })
+      : Promise.resolve([]),
+    repairIds.length
+      ? prisma.equipmentRepairRequest.findMany({
+          where: { id: { in: repairIds }, tenantId },
+          select: { id: true, requestNo: true, title: true, equipment: { select: { code: true, name: true } } },
+        })
       : Promise.resolve([]),
   ])
 
-  for (const r of [...correctiveRecords, ...preventionRecords]) {
-    const wo = r.defectRecord.qualityInspection.workOrderOperation.workOrder
-    map.set(r.id, `[${wo.orderNo}] ${wo.item.name}`)
+  for (const row of inspections) {
+    map.set(row.id, `${workOrderLabel(row.workOrderOperation.workOrder)} · ${row.stage}`)
+  }
+  for (const row of defects) {
+    map.set(row.id, `${workOrderLabel(row.qualityInspection.workOrderOperation.workOrder)} · [${row.defectCode.code}] ${row.defectCode.name}`)
+  }
+  for (const row of causes) {
+    map.set(row.id, workOrderLabel(row.defectRecord.qualityInspection.workOrderOperation.workOrder))
+  }
+  for (const row of correctives) {
+    map.set(row.id, workOrderLabel(row.defectRecord.qualityInspection.workOrderOperation.workOrder))
+  }
+  for (const row of preventions) {
+    map.set(row.id, workOrderLabel(row.defectRecord.qualityInspection.workOrderOperation.workOrder))
+  }
+  for (const row of repairs) {
+    map.set(row.id, `[${row.requestNo}] ${row.equipment.code}/${row.equipment.name} · ${row.title}`)
   }
   return map
 }
 
-// ─── 목록 조회 ────────────────────────────────────────────────────────────────
+export async function assertNoAttachmentsForEntity(
+  db: AttachmentCountClient,
+  tenantId: string,
+  entityType: AttachmentEntityType,
+  entityId: string
+): Promise<void> {
+  const count = await db.attachment.count({ where: { tenantId, entityType, entityId } })
+  if (count > 0) throw new Error(ATTACHMENT_PARENT_DELETE_MESSAGE)
+}
+
+async function assertAttachmentDeleteAllowed(entityType: AttachmentEntityType, entityId: string, tenantId: string): Promise<void> {
+  if (entityType === "QUALITY_INSPECTION") {
+    const count = await prisma.defectRecord.count({
+      where: { qualityInspectionId: entityId, qualityInspection: { workOrderOperation: { workOrder: { tenantId } } } },
+    })
+    if (count > 0) throw new Error("불량 이력이 연결된 품질검사 첨부파일은 삭제할 수 없습니다.")
+    return
+  }
+
+  if (entityType === "DEFECT_RECORD") {
+    const [causes, actions, preventions] = await Promise.all([
+      prisma.defectCauseAnalysis.count({ where: { defectRecordId: entityId, tenantId } }),
+      prisma.defectCorrectiveAction.count({ where: { defectRecordId: entityId, tenantId } }),
+      prisma.defectRecurrencePrevention.count({ where: { defectRecordId: entityId, tenantId } }),
+    ])
+    if (causes + actions + preventions > 0) throw new Error("후속 품질이력이 연결된 불량기록 첨부파일은 삭제할 수 없습니다.")
+    return
+  }
+
+  if (entityType === "DEFECT_CAUSE_ANALYSIS") {
+    const analysis = await prisma.defectCauseAnalysis.findFirst({ where: { id: entityId, tenantId }, select: { defectRecordId: true } })
+    if (!analysis) throw new Error("연결 대상(원인분석)을 찾을 수 없습니다.")
+    const [actions, preventions] = await Promise.all([
+      prisma.defectCorrectiveAction.count({ where: { defectRecordId: analysis.defectRecordId, tenantId } }),
+      prisma.defectRecurrencePrevention.count({ where: { defectRecordId: analysis.defectRecordId, tenantId } }),
+    ])
+    if (actions + preventions > 0) throw new Error("조치/재발방지 이력이 연결된 원인분석 첨부파일은 삭제할 수 없습니다.")
+    return
+  }
+
+  if (entityType === "DEFECT_CORRECTIVE_ACTION") {
+    const action = await prisma.defectCorrectiveAction.findFirst({ where: { id: entityId, tenantId }, select: { status: true } })
+    if (!action) throw new Error("연결 대상(조치관리)을 찾을 수 없습니다.")
+    if (action.status === "COMPLETED") throw new Error("완료된 조치관리 첨부파일은 삭제할 수 없습니다.")
+    return
+  }
+
+  if (entityType === "DEFECT_RECURRENCE_PREVENTION") {
+    const prevention = await prisma.defectRecurrencePrevention.findFirst({ where: { id: entityId, tenantId }, select: { status: true } })
+    if (!prevention) throw new Error("연결 대상(재발방지관리)을 찾을 수 없습니다.")
+    if (prevention.status === "COMPLETED") throw new Error("완료된 재발방지관리 첨부파일은 삭제할 수 없습니다.")
+    return
+  }
+
+  if (entityType === "EQUIPMENT_REPAIR_REQUEST") {
+    const repair = await prisma.equipmentRepairRequest.findFirst({ where: { id: entityId, tenantId }, select: { status: true, completedAt: true } })
+    if (!repair) throw new Error("연결 대상(설비수리요청)을 찾을 수 없습니다.")
+    if (repair.status === "COMPLETED" || repair.status === "CANCELLED" || repair.completedAt) {
+      throw new Error("완료 또는 종결된 설비수리요청 첨부파일은 삭제할 수 없습니다.")
+    }
+  }
+}
 
 export type AttachmentFilter = {
   entityType?: AttachmentEntityType
   entityId?: string
   extension?: string
-  from?: string // YYYY-MM-DD — 첨부파일관리 전체 목록 화면에서만 사용(선택), 상세 Sheet의 entityId 조회에는 적용하지 않음
+  from?: string
   to?: string
 }
 
 export async function getAttachments(filter: AttachmentFilter = {}): Promise<AttachmentRow[]> {
-  await requireRole("VIEWER")
+  const actor = await requireRole("VIEWER")
   const tenantId = await getTenantId()
+  const snapshot = await getCurrentPermissionSnapshot(actor)
+
+  let readableTypes: AttachmentEntityType[]
+  if (filter.entityType) {
+    if (!isValidAttachmentEntityType(filter.entityType)) throw new Error("지원하지 않는 업무유형입니다.")
+    if (!hasResourcePermission(snapshot, getRequiredAttachmentResource(filter.entityType), "READ")) {
+      throw new Error("이 기능을 사용할 권한이 없습니다.")
+    }
+    if (filter.entityId) await assertAttachmentEntityOwnership(filter.entityType, filter.entityId, tenantId)
+    readableTypes = [filter.entityType]
+  } else {
+    readableTypes = await getReadableAttachmentTypes(actor)
+    if (readableTypes.length === 0) return []
+  }
 
   const records = await prisma.attachment.findMany({
     where: {
       tenantId,
-      ...(filter.entityType && { entityType: filter.entityType }),
+      entityType: { in: readableTypes },
       ...(filter.entityId && { entityId: filter.entityId }),
       ...(filter.extension && { fileName: { endsWith: `.${filter.extension}`, mode: "insensitive" } }),
       ...(filter.from && { createdAt: { gte: new Date(`${filter.from}T00:00:00.000`) } }),
@@ -139,10 +315,16 @@ export async function getAttachments(filter: AttachmentFilter = {}): Promise<Att
   })
 
   const labelMap = await buildEntityLabelMap(tenantId, records)
-  return records.map((r) => serializeAttachmentRow(r, labelMap))
+  return records.map((record) => {
+    const row = serializeAttachmentRow(record, labelMap)
+    return {
+      ...row,
+      canDelete: isValidAttachmentEntityType(record.entityType)
+        ? hasResourcePermission(snapshot, getRequiredAttachmentResource(record.entityType), "DELETE")
+        : false,
+    }
+  })
 }
-
-// ─── 다운로드 ─────────────────────────────────────────────────────────────────
 
 export async function getAttachmentDownloadUrl(id: string): Promise<{ url: string; fileName: string }> {
   await requireRole("VIEWER")
@@ -150,17 +332,14 @@ export async function getAttachmentDownloadUrl(id: string): Promise<{ url: strin
 
   const attachment = await prisma.attachment.findFirst({ where: { id, tenantId } })
   if (!attachment) throw new Error("첨부파일을 찾을 수 없습니다.")
+  if (!isValidAttachmentEntityType(attachment.entityType)) throw new Error("지원하지 않는 업무유형입니다.")
+
+  await requireAttachmentEntityPermission(attachment.entityType, "READ")
+  await assertAttachmentEntityOwnership(attachment.entityType, attachment.entityId, tenantId)
 
   const url = await createAttachmentSignedUrl(attachment.storagePath, 60)
   return { url, fileName: attachment.fileName }
 }
-
-// ─── 삭제 ───────────────────────────────────────────────────────────────────
-//
-// DB 삭제(+ AuditLog DELETE) → Storage 삭제 순서로 처리한다(§ STEP 22). DB가
-// source of truth이므로, Storage 삭제가 실패해도 사용자에게는 성공으로 보고하고
-// 서버 로그만 남긴다 — 반대로 Storage를 먼저 지우면 DB 삭제가 실패했을 때
-// "존재하지 않는 파일을 가리키는" 더 나쁜 상태가 남는다.
 
 export async function deleteAttachment(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -169,6 +348,11 @@ export async function deleteAttachment(id: string): Promise<{ ok: boolean; error
 
     const attachment = await prisma.attachment.findFirst({ where: { id, tenantId } })
     if (!attachment) throw new Error("첨부파일을 찾을 수 없습니다.")
+    if (!isValidAttachmentEntityType(attachment.entityType)) throw new Error("지원하지 않는 업무유형입니다.")
+
+    await requireAttachmentEntityPermission(attachment.entityType, "DELETE", actor)
+    await assertAttachmentEntityOwnership(attachment.entityType, attachment.entityId, tenantId)
+    await assertAttachmentDeleteAllowed(attachment.entityType, attachment.entityId, tenantId)
 
     await prisma.$transaction(async (tx) => {
       const result = await tx.attachment.deleteMany({ where: { id, tenantId } })
@@ -195,7 +379,23 @@ export async function deleteAttachment(id: string): Promise<{ ok: boolean; error
 
     const storageResult = await deleteAttachmentFile(attachment.storagePath)
     if (!storageResult.ok) {
-      console.error(`[attachment] storage cleanup failed after DB delete: ${attachment.storagePath} — ${storageResult.error}`)
+      await prisma.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actor.id,
+          actorLabel: actor.name,
+          entityType: "AttachmentStorageCleanup",
+          entityId: attachment.id,
+          action: "UPDATE",
+          afterData: {
+            storagePath: attachment.storagePath,
+            fileName: attachment.fileName,
+            cleanupStatus: "FAILED",
+            error: storageResult.error,
+          },
+          menuName: MENU_NAME,
+        },
+      })
     }
 
     revalidateAttachmentPaths()

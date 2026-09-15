@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DataTable } from "@/components/common/data-table"
-import { useUserRole } from "@/lib/contexts/user-role-context"
 import { getAttachmentDownloadUrl, deleteAttachment, type AttachmentRow } from "@/lib/actions/attachment.actions"
 import { ATTACHMENT_ENTITY_TYPES, ATTACHMENT_ENTITY_TYPE_LABEL, ALLOWED_ATTACHMENT_EXTENSIONS, formatFileSize } from "@/lib/actions/attachment.helpers"
 
@@ -36,8 +35,6 @@ interface AttachmentsClientProps {
 
 export function AttachmentsClient({ initialFilter, rows }: AttachmentsClientProps) {
   const router = useRouter()
-  const role = useUserRole()
-  const canMutate = role !== "VIEWER"
   const [filter, setFilter] = useState<FilterState>(initialFilter)
   const [, startTransition] = useTransition()
 
@@ -114,7 +111,7 @@ export function AttachmentsClient({ initialFilter, rows }: AttachmentsClientProp
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDownload(row.original)} title="다운로드">
             <Download className="h-3.5 w-3.5" />
           </Button>
-          {canMutate && (
+          {row.original.canDelete && (
             <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => handleDelete(row.original)} title="삭제">
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
