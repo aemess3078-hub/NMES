@@ -8,6 +8,7 @@ import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { reconcileProductionPlanItems } from "@/lib/production-plan-item-reconciliation"
 import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan-workorder-integrity"
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
+import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -279,13 +280,14 @@ export async function getRoutingsForPlanItem(itemId: string) {
 export async function generatePlanNo(_tenantId: string, planType: PlanType): Promise<string> {
   const user = await requireResourcePermission("PRODUCTION_PLAN", "CREATE")
   const now = new Date()
-  const year = now.getFullYear()
+  const parts = kstDateParts(now)
+  const year = parts.year
 
   let baseNo: string
 
   if (planType === "DAILY") {
-    const month = String(now.getMonth() + 1).padStart(2, "0")
-    const day = String(now.getDate()).padStart(2, "0")
+    const month = parts.monthText
+    const day = parts.dayText
     baseNo = `PP-${year}-${month}${day}`
   } else if (planType === "WEEKLY") {
     // ISO 주차 계산
@@ -295,7 +297,7 @@ export async function generatePlanNo(_tenantId: string, planType: PlanType): Pro
     baseNo = `PP-${year}-W${String(weekNo).padStart(2, "0")}`
   } else {
     // MONTHLY
-    const month = String(now.getMonth() + 1).padStart(2, "0")
+    const month = parts.monthText
     baseNo = `PP-${year}-M${month}`
   }
 
@@ -321,6 +323,33 @@ export async function generatePlanNo(_tenantId: string, planType: PlanType): Pro
   return `${baseNo}-${suffix}`
 }
 
+async function generateProductionPlanNoForCreate(tenantId: string, planType: PlanType): Promise<string> {
+  const parts = kstDateParts()
+  const year = parts.year
+  let baseNo: string
+  if (planType === "DAILY") {
+    baseNo = `PP-${year}-${parts.monthText}${parts.dayText}`
+  } else if (planType === "WEEKLY") {
+    const now = new Date()
+    const startOfYear = new Date(year, 0, 1)
+    const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000))
+    const weekNo = Math.ceil((dayOfYear + startOfYear.getDay() + 1) / 7)
+    baseNo = `PP-${year}-W${String(weekNo).padStart(2, "0")}`
+  } else {
+    baseNo = `PP-${year}-M${parts.monthText}`
+  }
+
+  const existing = await prisma.productionPlan.findMany({
+    where: { tenantId, planNo: { startsWith: baseNo } },
+    select: { planNo: true },
+  })
+  const existingNos = new Set(existing.map((p) => p.planNo))
+  if (!existingNos.has(baseNo)) return baseNo
+  let suffix = 2
+  while (existingNos.has(`${baseNo}-${suffix}`)) suffix++
+  return `${baseNo}-${suffix}`
+}
+
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export async function createPlan(data: CreatePlanInput, _tenantId: string) {
@@ -338,10 +367,13 @@ export async function createPlan(data: CreatePlanInput, _tenantId: string) {
     }
   }
 
-  await prisma.$transaction(async (tx) => {
+  await withUniqueBusinessNumberRetry(async () => {
+    const planNo = await generateProductionPlanNoForCreate(tenantId, data.planType)
+    await prisma.$transaction(async (tx) => {
     const created = await tx.productionPlan.create({
       data: {
         ...headerFields,
+        planNo,
         tenantId,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
@@ -361,10 +393,10 @@ export async function createPlan(data: CreatePlanInput, _tenantId: string) {
       tenantId,
       actor: user,
       entityType: "ProductionPlan",
-      entityId: created.id,
-      action: "CREATE",
-      afterData: {
-        planNo: data.planNo,
+        entityId: created.id,
+        action: "CREATE",
+        afterData: {
+        planNo,
         planType: data.planType,
         status: data.status,
         itemCount: items.length,
@@ -373,6 +405,7 @@ export async function createPlan(data: CreatePlanInput, _tenantId: string) {
       menuName: "생산계획",
     })
   })
+  }, { fields: ["tenantId", "planNo"], message: "생산계획번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
 
   revalidatePath("/app/mes/production-plan")
 }

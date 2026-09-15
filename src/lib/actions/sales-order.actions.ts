@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
+import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ export async function getItemsForSales(tenantId: string) {
 // ─── Business Logic ───────────────────────────────────────────────────────────
 
 export async function generateSalesOrderNo(tenantId: string): Promise<string> {
-  const year = new Date().getFullYear()
+  const { year } = kstDateParts()
   const prefix = `SO-${year}-`
   const last = await prisma.salesOrder.findFirst({
     where: { tenantId, orderNo: { startsWith: prefix } },
@@ -137,49 +138,51 @@ export async function createSalesOrder(
   await requireResourcePermission("SALES_ORDER", "CREATE")
   const actor = await requireRole("OPERATOR")
   if (actor.tenantId !== tenantId) throw new Error("FORBIDDEN")
-  const orderNo = await generateSalesOrderNo(tenantId)
-  const order = await prisma.$transaction(async (tx) => {
-    const created = await tx.salesOrder.create({
-      data: {
-        tenantId,
-        siteId,
-        customerId: data.customerId,
-        orderNo,
-        orderDate: data.orderDate,
-        deliveryDate: data.deliveryDate,
-        status: data.status,
-        totalAmount: data.totalAmount,
-        currency: data.currency ?? "KRW",
-        note: data.note,
-        items: {
-          create: data.items.map((item) => ({
-            itemId: item.itemId,
-            qty: item.qty,
-            unitPrice: item.unitPrice,
-            deliveryDate: item.deliveryDate,
-            note: item.note,
-          })),
+  const order = await withUniqueBusinessNumberRetry(async () => {
+    const orderNo = await generateSalesOrderNo(tenantId)
+    return prisma.$transaction(async (tx) => {
+      const created = await tx.salesOrder.create({
+        data: {
+          tenantId,
+          siteId,
+          customerId: data.customerId,
+          orderNo,
+          orderDate: data.orderDate,
+          deliveryDate: data.deliveryDate,
+          status: data.status,
+          totalAmount: data.totalAmount,
+          currency: data.currency ?? "KRW",
+          note: data.note,
+          items: {
+            create: data.items.map((item) => ({
+              itemId: item.itemId,
+              qty: item.qty,
+              unitPrice: item.unitPrice,
+              deliveryDate: item.deliveryDate,
+              note: item.note,
+            })),
+          },
         },
-      },
+      })
+      await recordAuditLog(tx, {
+        tenantId,
+        actor,
+        entityType: "SalesOrder",
+        entityId: created.id,
+        action: "CREATE",
+        afterData: {
+          orderNo,
+          siteId,
+          customerId: data.customerId,
+          status: data.status,
+          itemCount: data.items.length,
+          items: summarizeAuditItems(data.items, ["itemId", "qty", "unitPrice"]),
+        },
+        menuName: "수주관리",
+      })
+      return created
     })
-    await recordAuditLog(tx, {
-      tenantId,
-      actor,
-      entityType: "SalesOrder",
-      entityId: created.id,
-      action: "CREATE",
-      afterData: {
-        orderNo,
-        siteId,
-        customerId: data.customerId,
-        status: data.status,
-        itemCount: data.items.length,
-        items: summarizeAuditItems(data.items, ["itemId", "qty", "unitPrice"]),
-      },
-      menuName: "수주관리",
-    })
-    return created
-  })
+  }, { fields: ["tenantId", "orderNo"], message: "수주번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
   revalidatePath("/app/mes/sales-orders")
   return order
 }
@@ -588,6 +591,18 @@ export async function getSalesOrderFulfillmentStatus(
 
 // ─── S4: 생산의뢰 생성 ─────────────────────────────────────────────────────────
 
+async function generateSalesRequestPlanNo(tenantId: string): Promise<string> {
+  const { yyyymmdd } = kstDateParts()
+  const prefix = `PP-REQ-${yyyymmdd}`
+  const last = await prisma.productionPlan.findFirst({
+    where: { tenantId, planNo: { startsWith: prefix } },
+    orderBy: { planNo: "desc" },
+    select: { planNo: true },
+  })
+  const seq = last ? (parseInt(last.planNo.split("-")[3] ?? "0", 10) || 0) + 1 : 1
+  return `${prefix}-${String(seq).padStart(3, "0")}`
+}
+
 export async function requestProductionFromSalesOrder(
   salesOrderId: string,
   items: { salesOrderItemId: string; itemId: string; qty: number }[],
@@ -601,14 +616,6 @@ export async function requestProductionFromSalesOrder(
   if (items.length === 0) return { ok: false, error: "생산의뢰 품목이 없습니다." }
 
   try {
-    // planNo 생성
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "")
-    const prefix = `PP-REQ-${today}`
-    const count = await prisma.productionPlan.count({
-      where: { tenantId, planNo: { startsWith: prefix } },
-    })
-    const planNo = `${prefix}-${String(count + 1).padStart(3, "0")}`
-
     const salesOrderForNote = await prisma.salesOrder.findUnique({
       where: { id: salesOrderId },
       select: { orderNo: true },
@@ -618,57 +625,61 @@ export async function requestProductionFromSalesOrder(
       ? `수주 기반 생산의뢰 (수주번호: ${noteOrderRef})`
       : "수주 기반 생산의뢰"
 
-    await prisma.$transaction(async (tx) => {
-      const plan = await tx.productionPlan.create({
-        data: {
-          tenantId,
-          siteId,
-          planNo,
-          planType: "DAILY",
-          startDate: new Date(),
-          endDate: new Date(),
-          status: "DRAFT",
-          note: planNote,
-          items: {
-            create: items.map((item) => ({
-              itemId: item.itemId,
-              plannedQty: item.qty,
-              salesOrderItemId: item.salesOrderItemId,
-            })),
+    const planNo = await withUniqueBusinessNumberRetry(async () => {
+      const candidatePlanNo = await generateSalesRequestPlanNo(tenantId)
+      await prisma.$transaction(async (tx) => {
+        const plan = await tx.productionPlan.create({
+          data: {
+            tenantId,
+            siteId,
+            planNo: candidatePlanNo,
+            planType: "DAILY",
+            startDate: new Date(),
+            endDate: new Date(),
+            status: "DRAFT",
+            note: planNote,
+            items: {
+              create: items.map((item) => ({
+                itemId: item.itemId,
+                plannedQty: item.qty,
+                salesOrderItemId: item.salesOrderItemId,
+              })),
+            },
           },
-        },
-      })
+        })
 
-      // 수주 상태를 IN_PRODUCTION으로 전환
-      await tx.salesOrder.update({
-        where: { id: salesOrderId },
-        data: { status: "IN_PRODUCTION" },
+        // 수주 상태를 IN_PRODUCTION으로 전환
+        await tx.salesOrder.update({
+          where: { id: salesOrderId },
+          data: { status: "IN_PRODUCTION" },
+        })
+        await recordAuditLog(tx, {
+          tenantId,
+          actor,
+          entityType: "ProductionPlan",
+          entityId: plan.id,
+          action: "CREATE",
+          afterData: {
+            planNo: candidatePlanNo,
+            sourceSalesOrderId: salesOrderId,
+            sourceSalesOrderNo: noteOrderRef,
+            itemCount: items.length,
+            items: summarizeAuditItems(items, ["salesOrderItemId", "itemId", "qty"]),
+          },
+          menuName: "수주관리",
+        })
+        await recordAuditLog(tx, {
+          tenantId,
+          actor,
+          entityType: "SalesOrder",
+          entityId: salesOrderId,
+          action: "UPDATE",
+          afterData: { status: "IN_PRODUCTION", productionPlanId: plan.id, planNo: candidatePlanNo },
+          menuName: "수주관리",
+        })
       })
-      await recordAuditLog(tx, {
-        tenantId,
-        actor,
-        entityType: "ProductionPlan",
-        entityId: plan.id,
-        action: "CREATE",
-        afterData: {
-          planNo,
-          sourceSalesOrderId: salesOrderId,
-          sourceSalesOrderNo: noteOrderRef,
-          itemCount: items.length,
-          items: summarizeAuditItems(items, ["salesOrderItemId", "itemId", "qty"]),
-        },
-        menuName: "수주관리",
-      })
-      await recordAuditLog(tx, {
-        tenantId,
-        actor,
-        entityType: "SalesOrder",
-        entityId: salesOrderId,
-        action: "UPDATE",
-        afterData: { status: "IN_PRODUCTION", productionPlanId: plan.id, planNo },
-        menuName: "수주관리",
-      })
-    })
+      return candidatePlanNo
+    }, { fields: ["tenantId", "planNo"], message: "생산의뢰번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
 
     revalidatePath("/app/mes/sales-orders")
     revalidatePath("/app/mes/production-plan")

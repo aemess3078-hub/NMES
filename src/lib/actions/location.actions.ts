@@ -99,11 +99,11 @@ export async function deleteLocation(id: string) {
   const owned = await prisma.warehouse.findFirst({ where: { id, tenantId } })
   if (!owned) throw new Error("NOT_FOUND")
 
-  const locationCount = await prisma.location.count({ where: { warehouseId: id } })
-  if (locationCount > 0) {
-    throw new Error(`이 로케이션에 세부 구역이 ${locationCount}건 있습니다. 재고 데이터를 먼저 처리해주세요.`)
+  const reference = await checkWarehouseReferencesForBulk(id, tenantId)
+  if (!reference.canDelete) {
+    throw new Error(`사용 이력이 있어 삭제할 수 없습니다: ${reference.reasons.join(", ")}`)
   }
-  await prisma.warehouse.delete({ where: { id } })
+  await prisma.warehouse.deleteMany({ where: { id, tenantId } })
   await prisma.auditLog.create({
     data: {
       tenantId,

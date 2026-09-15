@@ -1345,6 +1345,7 @@ model WorkOrder {
   wipUnits              WipUnit[]
 
   @@unique([tenantId, orderNo])
+  @@unique([tenantId, manufacturingNo])
   @@index([tenantId])
   @@index([siteId])
   @@index([status])

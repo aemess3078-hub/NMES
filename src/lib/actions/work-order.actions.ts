@@ -24,6 +24,7 @@ import {
   withQuantityTransactionRetry,
 } from "@/lib/quantity-concurrency"
 import { recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
+import { isUniqueConstraintError, kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -764,7 +765,7 @@ async function validateWorkOrderOperationAssignments(
 // ─── Business Logic ───────────────────────────────────────────────────────────
 
 export async function generateOrderNo(tenantId: string): Promise<string> {
-  const year = new Date().getFullYear()
+  const { year } = kstDateParts()
   const prefix = `WO-${year}-`
 
   const latest = await prisma.workOrder.findFirst({
@@ -911,66 +912,83 @@ export async function createWorkOrder(data: CreateWorkOrderInput, tenantId: stri
     headerFields.itemId,
     trimmed && trimmed.length > 0 ? trimmed : null,
   )
-  const finalManufacturingNo = trimmed && trimmed.length > 0
-    ? (manualDisabled ? await generateManufacturingNo(tenantId, headerFields.itemId) : trimmed)
-    : await generateManufacturingNo(tenantId, headerFields.itemId)
+  const useManualManufacturingNo = !!trimmed && trimmed.length > 0 && !manualDisabled
 
-  await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
-    await lockProductionPlanItemsForUpdate(tx, tenantId, [headerFields.productionPlanItemId])
-    await validateProductionPlanItemForWorkOrder(
-      tx,
-      headerFields.productionPlanItemId,
-      headerFields,
-      tenantId
-    )
+  const retryTargets = useManualManufacturingNo
+    ? [["tenantId", "orderNo"]]
+    : [["tenantId", "orderNo"], ["tenantId", "manufacturingNo"]]
 
-    const workOrder = await tx.workOrder.create({
-      data: {
-        ...headerFields,
-        tenantId,
-        manufacturingNo: finalManufacturingNo,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        operations: {
-          create: validatedOperations.map((op) => ({
-            routingOperationId: op.routingOperationId,
-            equipmentId: op.equipmentId ?? null,
-            seq: op.seq,
-            plannedQty: op.plannedQty,
-            assignments:
-              op.assignments.length > 0
-                ? {
-                    create: op.assignments.map((assignment) => ({
-                      tenantId,
-                      equipmentId: assignment.equipmentId,
-                      assignedQty: assignment.assignedQty,
-                      seq: assignment.seq,
-                    })),
-                  }
-                : undefined,
-          })),
-        },
-      },
-      select: { id: true },
-    })
+  try {
+    await withUniqueBusinessNumberRetry(async (attempt) => {
+      const orderNo = await generateOrderNo(tenantId)
+      const finalManufacturingNo = useManualManufacturingNo
+        ? trimmed!
+        : await generateManufacturingNo(tenantId, headerFields.itemId, attempt)
 
-    await syncProductionPlanStatusForWorkOrder(tx, workOrder.id, tenantId)
-    await recordAuditLog(tx, {
-      tenantId,
-      actor: user,
-      entityType: "WorkOrder",
-      entityId: workOrder.id,
-      action: "CREATE",
-      afterData: {
-        orderNo: headerFields.orderNo,
-        manufacturingNo: finalManufacturingNo,
-        itemId: headerFields.itemId,
-        plannedQty: headerFields.plannedQty,
-        productionPlanItemId: headerFields.productionPlanItemId,
-        operations: summarizeAuditItems(validatedOperations, ["routingOperationId", "equipmentId", "seq", "plannedQty"]),
-      },
-      menuName: "작업지시",
-    })
-  }))
+      await withQuantityTransactionRetry(() => prisma.$transaction(async (tx) => {
+        await lockProductionPlanItemsForUpdate(tx, tenantId, [headerFields.productionPlanItemId])
+        await validateProductionPlanItemForWorkOrder(
+          tx,
+          headerFields.productionPlanItemId,
+          headerFields,
+          tenantId
+        )
+
+        const workOrder = await tx.workOrder.create({
+          data: {
+            ...headerFields,
+            orderNo,
+            tenantId,
+            manufacturingNo: finalManufacturingNo,
+            dueDate: dueDate ? new Date(dueDate) : null,
+            operations: {
+              create: validatedOperations.map((op) => ({
+                routingOperationId: op.routingOperationId,
+                equipmentId: op.equipmentId ?? null,
+                seq: op.seq,
+                plannedQty: op.plannedQty,
+                assignments:
+                  op.assignments.length > 0
+                    ? {
+                        create: op.assignments.map((assignment) => ({
+                          tenantId,
+                          equipmentId: assignment.equipmentId,
+                          assignedQty: assignment.assignedQty,
+                          seq: assignment.seq,
+                        })),
+                      }
+                    : undefined,
+              })),
+            },
+          },
+          select: { id: true },
+        })
+
+        await syncProductionPlanStatusForWorkOrder(tx, workOrder.id, tenantId)
+        await recordAuditLog(tx, {
+          tenantId,
+          actor: user,
+          entityType: "WorkOrder",
+          entityId: workOrder.id,
+          action: "CREATE",
+          afterData: {
+            orderNo,
+            manufacturingNo: finalManufacturingNo,
+            itemId: headerFields.itemId,
+            plannedQty: headerFields.plannedQty,
+            productionPlanItemId: headerFields.productionPlanItemId,
+            operations: summarizeAuditItems(validatedOperations, ["routingOperationId", "equipmentId", "seq", "plannedQty"]),
+          },
+          menuName: "작업지시",
+        })
+      }))
+    }, { fields: retryTargets, message: "작업지시번호 또는 제조번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요." })
+  } catch (error) {
+    if (useManualManufacturingNo && isUniqueConstraintError(error, ["tenantId", "manufacturingNo"])) {
+      throw new Error("이미 사용 중인 제조번호입니다.")
+    }
+    throw error
+  }
 
   revalidatePath("/app/mes/work-orders")
   revalidatePath("/app/mes/production-plan")

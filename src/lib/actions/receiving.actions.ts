@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { lockPurchaseOrderItemsForUpdate } from "@/lib/quantity-concurrency"
 import { recordAuditLog } from "@/lib/audit-log"
+import { BUSINESS_NUMBER_MAX_ATTEMPTS, isUniqueConstraintError, kstDateParts } from "@/lib/business-numbering"
 
 export type CreateReceivingInspectionInput = {
   purchaseOrderItemId: string
@@ -52,13 +53,8 @@ export async function generateReceivingLotNo(
 
 const AUTO_LOT_COLLISION = "AUTO_LOT_COLLISION"
 
-function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
-}
-
 async function generateTxNo(tenantId: string): Promise<string> {
-  const now = new Date()
-  const ymd = now.toISOString().slice(0, 10).replace(/-/g, "")
+  const { yyyymmdd: ymd } = kstDateParts()
   const prefix = `RCV-${ymd}-`
   const last = await prisma.inventoryTransaction.findFirst({
     where: { tenantId, txNo: { startsWith: prefix } },
@@ -196,8 +192,6 @@ async function createReceivingInspectionInternal(
     manualLotPolicy,
   }
   // txNo 사전 생성 (트랜잭션 외부 - 기존 패턴 유지)
-  const txNo = data.acceptedQty > 0 ? await generateTxNo(tenantId) : null
-
   // ── 4. 트랜잭션 처리 ───────────────────────────────────────────────────────
   // AUTO만 충돌 시 재시도(최대 5회). RESERVED/MANUAL/NONE은 재시도 없이 그대로 확정하거나 실패시킨다.
   //
@@ -206,8 +200,9 @@ async function createReceivingInspectionInternal(
   // 이렇게 하면 자동채번 미리보기(RESERVED)와 버튼 미사용 AUTO 확정이 서로 다른 트랜잭션에서
   // 동시에 실행되어도, 두 경로 모두 같은 테이블의 (tenantId, lotNo) unique 제약을 통해서만
   // 번호를 "소유"할 수 있으므로 Lot 테이블과 예약 테이블 사이의 경합이 사라진다.
-  const maxAttempts = lotResolutionMode === "AUTO" ? 5 : 1
+  const maxAttempts = data.acceptedQty > 0 || lotResolutionMode === "AUTO" ? BUSINESS_NUMBER_MAX_ATTEMPTS : 1
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const txNo = data.acceptedQty > 0 ? await generateTxNo(tenantId) : null
     try {
       await prisma.$transaction(async (tx) => {
         await lockPurchaseOrderItemsForUpdate(tx, tenantId, [data.purchaseOrderItemId])
@@ -455,16 +450,21 @@ async function createReceivingInspectionInternal(
       })
       break
     } catch (error) {
-      const canRetry = lotResolutionMode === "AUTO" &&
+      const txNoCollision = isUniqueConstraintError(error, ["tenantId", "txNo"])
+      const autoLotCollision = lotResolutionMode === "AUTO" &&
         (isUniqueConstraintError(error) ||
           (error instanceof Error && error.message === AUTO_LOT_COLLISION))
+      const canRetry = txNoCollision || autoLotCollision
 
       if (canRetry && attempt < maxAttempts - 1) {
         continue
       }
 
-      if (canRetry) {
+      if (autoLotCollision) {
         throw new Error("LOT 자동발행 중 번호 충돌이 반복되었습니다. 다시 시도해 주세요.")
+      }
+      if (txNoCollision) {
+        throw new Error("입고거래번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요.")
       }
 
       throw error

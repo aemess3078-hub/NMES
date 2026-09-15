@@ -4,6 +4,9 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId, requireRole } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { checkDowntimeReasonReferencesForBulk } from "./reference-check.server"
+
+const DOWNTIME_REASON_GROUP_CODE = "DOWNTIME_REASON"
 
 // 타입 정의
 export type CodeGroupWithCodes = {
@@ -30,9 +33,47 @@ export type CodeGroupWithCodes = {
   }[]
 }
 
+async function getOwnedCodeGroup(id: string, tenantId: string) {
+  return prisma.codeGroup.findFirst({
+    where: { id, tenantId },
+    include: { codes: { orderBy: { displayOrder: "asc" } } },
+  })
+}
+
+async function getOwnedCommonCode(id: string, tenantId: string) {
+  return prisma.commonCode.findFirst({
+    where: { id, group: { tenantId } },
+    include: { group: { select: { groupCode: true, tenantId: true } } },
+  })
+}
+
+async function assertDowntimeReasonDeleteAllowed(codeId: string) {
+  const reference = await checkDowntimeReasonReferencesForBulk(codeId)
+  if (!reference.canDelete) {
+    throw new Error(`사용 이력이 있어 삭제할 수 없습니다: ${reference.reasons.join(", ")}`)
+  }
+}
+
+async function assertDowntimeReasonIdentityChangeAllowed(
+  current: { id: string; code: string; name: string; group: { groupCode: string } },
+  data: { code?: string; name?: string }
+) {
+  if (current.group.groupCode !== DOWNTIME_REASON_GROUP_CODE) return
+  const codeChanged = data.code !== undefined && data.code !== current.code
+  const nameChanged = data.name !== undefined && data.name !== current.name
+  if (!codeChanged && !nameChanged) return
+
+  const reference = await checkDowntimeReasonReferencesForBulk(current.id)
+  if (!reference.canDelete) {
+    throw new Error(`비가동 이력에서 사용 중인 사유의 코드/명칭은 변경할 수 없습니다: ${reference.reasons.join(", ")}`)
+  }
+}
+
 // 1. 전체 CodeGroup + codes 조회
 export async function getCodeGroups(): Promise<CodeGroupWithCodes[]> {
+  const tenantId = await getTenantId()
   return prisma.codeGroup.findMany({
+    where: { tenantId },
     include: { codes: { orderBy: { displayOrder: "asc" } } },
     orderBy: { groupCode: "asc" },
   })
@@ -40,10 +81,8 @@ export async function getCodeGroups(): Promise<CodeGroupWithCodes[]> {
 
 // 2. 단건 조회
 export async function getCodeGroupById(id: string): Promise<CodeGroupWithCodes | null> {
-  return prisma.codeGroup.findUnique({
-    where: { id },
-    include: { codes: { orderBy: { displayOrder: "asc" } } },
-  })
+  const tenantId = await getTenantId()
+  return getOwnedCodeGroup(id, tenantId)
 }
 
 // CodeGroup 입력 타입
@@ -58,6 +97,7 @@ export type CreateCodeGroupInput = {
 export async function createCodeGroup(data: CreateCodeGroupInput, tenantId: string) {
   await requireResourcePermission("COMMON_CODE", "CREATE")
   const actor = await requireRole("OPERATOR")
+  if (actor.tenantId !== tenantId) throw new Error("FORBIDDEN")
   const created = await prisma.codeGroup.create({
     data: { ...data, tenantId },
   })
@@ -81,23 +121,22 @@ export async function updateCodeGroup(id: string, data: Partial<CreateCodeGroupI
   await requireResourcePermission("COMMON_CODE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  const owned = await prisma.codeGroup.findUnique({ where: { id } })
+  const owned = await getOwnedCodeGroup(id, tenantId)
+  if (!owned) throw new Error("NOT_FOUND")
   await prisma.codeGroup.update({ where: { id }, data })
-  if (owned) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "CodeGroup",
-        entityId: id,
-        action: "UPDATE",
-        beforeData: { groupCode: owned.groupCode, groupName: owned.groupName, isActive: owned.isActive },
-        afterData: { groupCode: data.groupCode ?? owned.groupCode, groupName: data.groupName ?? owned.groupName, isActive: data.isActive ?? owned.isActive },
-        menuName: "코드관리",
-      },
-    }).catch(() => {})
-  }
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CodeGroup",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { groupCode: owned.groupCode, groupName: owned.groupName, isActive: owned.isActive },
+      afterData: { groupCode: data.groupCode ?? owned.groupCode, groupName: data.groupName ?? owned.groupName, isActive: data.isActive ?? owned.isActive },
+      menuName: "코드관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
 }
 
@@ -106,24 +145,28 @@ export async function deleteCodeGroup(id: string) {
   await requireResourcePermission("COMMON_CODE", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  const group = await prisma.codeGroup.findUnique({ where: { id } })
-  if (group?.isSystem) throw new Error("시스템 코드 그룹은 삭제할 수 없습니다")
-  await prisma.commonCode.deleteMany({ where: { groupId: id } })
-  await prisma.codeGroup.delete({ where: { id } })
-  if (group) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "CodeGroup",
-        entityId: id,
-        action: "DELETE",
-        beforeData: { groupCode: group.groupCode, groupName: group.groupName },
-        menuName: "코드관리",
-      },
-    }).catch(() => {})
+  const group = await getOwnedCodeGroup(id, tenantId)
+  if (!group) throw new Error("NOT_FOUND")
+  if (group.isSystem) throw new Error("시스템 코드 그룹은 삭제할 수 없습니다")
+  if (group.groupCode === DOWNTIME_REASON_GROUP_CODE) {
+    for (const code of group.codes) {
+      await assertDowntimeReasonDeleteAllowed(code.id)
+    }
   }
+  await prisma.commonCode.deleteMany({ where: { groupId: id, group: { tenantId } } })
+  await prisma.codeGroup.deleteMany({ where: { id, tenantId } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CodeGroup",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { groupCode: group.groupCode, groupName: group.groupName },
+      menuName: "코드관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
 }
 
@@ -143,6 +186,8 @@ export async function createCommonCode(data: CreateCommonCodeInput) {
   await requireResourcePermission("COMMON_CODE", "CREATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
+  const group = await prisma.codeGroup.findFirst({ where: { id: data.groupId, tenantId } })
+  if (!group) throw new Error("NOT_FOUND")
   const created = await prisma.commonCode.create({ data })
   await prisma.auditLog.create({
     data: {
@@ -167,23 +212,23 @@ export async function updateCommonCode(
   await requireResourcePermission("COMMON_CODE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  const owned = await prisma.commonCode.findUnique({ where: { id } })
+  const owned = await getOwnedCommonCode(id, tenantId)
+  if (!owned) throw new Error("NOT_FOUND")
+  await assertDowntimeReasonIdentityChangeAllowed(owned, data)
   await prisma.commonCode.update({ where: { id }, data })
-  if (owned) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "CommonCode",
-        entityId: id,
-        action: "UPDATE",
-        beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
-        afterData: { code: data.code ?? owned.code, name: data.name ?? owned.name, isActive: data.isActive ?? owned.isActive },
-        menuName: "코드관리",
-      },
-    }).catch(() => {})
-  }
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CommonCode",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
+      afterData: { code: data.code ?? owned.code, name: data.name ?? owned.name, isActive: data.isActive ?? owned.isActive },
+      menuName: "코드관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
 }
 
@@ -192,22 +237,24 @@ export async function deleteCommonCode(id: string) {
   await requireResourcePermission("COMMON_CODE", "DELETE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  const owned = await prisma.commonCode.findUnique({ where: { id } })
-  await prisma.commonCode.delete({ where: { id } })
-  if (owned) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "CommonCode",
-        entityId: id,
-        action: "DELETE",
-        beforeData: { code: owned.code, name: owned.name, groupId: owned.groupId },
-        menuName: "코드관리",
-      },
-    }).catch(() => {})
+  const owned = await getOwnedCommonCode(id, tenantId)
+  if (!owned) throw new Error("NOT_FOUND")
+  if (owned.group.groupCode === DOWNTIME_REASON_GROUP_CODE) {
+    await assertDowntimeReasonDeleteAllowed(id)
   }
+  await prisma.commonCode.deleteMany({ where: { id, group: { tenantId } } })
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CommonCode",
+      entityId: id,
+      action: "DELETE",
+      beforeData: { code: owned.code, name: owned.name, groupId: owned.groupId },
+      menuName: "코드관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
 }
 
@@ -216,22 +263,21 @@ export async function toggleCodeActive(id: string, isActive: boolean) {
   await requireResourcePermission("COMMON_CODE", "UPDATE")
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
-  const owned = await prisma.commonCode.findUnique({ where: { id } })
+  const owned = await getOwnedCommonCode(id, tenantId)
+  if (!owned) throw new Error("NOT_FOUND")
   await prisma.commonCode.update({ where: { id }, data: { isActive } })
-  if (owned) {
-    await prisma.auditLog.create({
-      data: {
-        tenantId,
-        actorId: actor.id,
-        actorLabel: actor.name,
-        entityType: "CommonCode",
-        entityId: id,
-        action: "UPDATE",
-        beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
-        afterData: { code: owned.code, name: owned.name, isActive },
-        menuName: "코드관리",
-      },
-    }).catch(() => {})
-  }
+  await prisma.auditLog.create({
+    data: {
+      tenantId,
+      actorId: actor.id,
+      actorLabel: actor.name,
+      entityType: "CommonCode",
+      entityId: id,
+      action: "UPDATE",
+      beforeData: { code: owned.code, name: owned.name, isActive: owned.isActive },
+      afterData: { code: owned.code, name: owned.name, isActive },
+      menuName: "코드관리",
+    },
+  }).catch(() => {})
   revalidatePath("/app/mes/common-codes")
 }

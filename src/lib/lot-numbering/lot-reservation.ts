@@ -1,5 +1,6 @@
-import type { Prisma, PrismaClient } from "@prisma/client"
+import { Prisma, type PrismaClient } from "@prisma/client"
 import { generateCnsMaterialReceiptLotNo } from "./lot-number-generator"
+import { escapeCnsNumberingRegExp } from "./lot-number-generator"
 import type { CnsItemRuleContext } from "./lot-rule-resolver"
 
 // 자동채번 예약 TTL. 라벨 미리보기 후 실제 입고 확정까지 걸리는 현실적인 시간을 고려해 10분으로 설정.
@@ -8,10 +9,12 @@ export const LOT_RESERVATION_TTL_MS = 10 * 60 * 1000
 
 type ReservationLookupClient = {
   lotNumberReservation: Pick<PrismaClient["lotNumberReservation"], "findMany">
+  $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T>
 }
 
 type LotLookupClient = {
   lot: Pick<PrismaClient["lot"], "findMany">
+  $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T>
 }
 
 /**
@@ -33,18 +36,30 @@ export async function computeNextMaterialReceiptLotNo(
 ): Promise<string> {
   const combinedLookup = {
     lot: {
-      findMany: async (args: Prisma.LotFindManyArgs) => {
-        const [lots, reservations] = await Promise.all([
-          db.lot.findMany(args),
-          db.lotNumberReservation.findMany({
-            where: args.where as Prisma.LotNumberReservationWhereInput,
-            select: { lotNo: true },
-            take: args.take,
-          }),
-        ])
-        return [...lots, ...reservations]
+      findMaxSequence: async (args: { tenantId: string; stem: string; numericSuffixDigits?: number }) => {
+        const suffix = args.numericSuffixDigits ? `\\d{${args.numericSuffixDigits}}` : "\\d+"
+        const pattern = `^${escapeCnsNumberingRegExp(args.stem)}${suffix}$`
+        const start = args.stem.length + 1
+        const rows = await db.$queryRaw<Array<{ maxSeq: number | null }>>(Prisma.sql`
+          SELECT COALESCE(MAX(seq), 0)::int AS "maxSeq"
+          FROM (
+            SELECT CAST(SUBSTRING("lotNo" FROM CAST(${start} AS integer)) AS INTEGER) AS seq
+            FROM "Lot"
+            WHERE "tenantId" = ${args.tenantId}
+              AND "lotNo" LIKE ${`${args.stem}%`}
+              AND "lotNo" ~ ${pattern}
+            UNION ALL
+            SELECT CAST(SUBSTRING("lotNo" FROM CAST(${start} AS integer)) AS INTEGER) AS seq
+            FROM "LotNumberReservation"
+            WHERE "tenantId" = ${args.tenantId}
+              AND "lotNo" LIKE ${`${args.stem}%`}
+              AND "lotNo" ~ ${pattern}
+          ) numbered
+        `)
+        return Number(rows[0]?.maxSeq ?? 0)
       },
     },
+    $queryRaw: db.$queryRaw.bind(db),
   }
   return generateCnsMaterialReceiptLotNo(combinedLookup, tenantId, context, date, sequenceOffset)
 }

@@ -1,43 +1,43 @@
-import type { Prisma } from "@prisma/client"
+import { Prisma } from "@prisma/client"
 import { resolveCnsLotRule, type CnsItemRuleContext } from "./lot-rule-resolver"
+import { kstDateParts } from "@/lib/business-numbering"
+
+type SequenceMaxArgs = {
+  tenantId: string
+  stem: string
+  numericSuffixDigits?: number
+}
 
 type LotLookupClient = {
-  lot: {
-    findMany(args: Prisma.LotFindManyArgs): Promise<{ lotNo: string }[]>
+  lot: object & {
+    findMaxSequence?(args: SequenceMaxArgs): Promise<number>
   }
+  $queryRaw?<T = unknown>(query: Prisma.Sql): Promise<T>
 }
 
 type WorkOrderLookupClient = {
-  workOrder: {
-    findMany(args: Prisma.WorkOrderFindManyArgs): Promise<{ manufacturingNo: string | null }[]>
+  workOrder: object & {
+    findMaxSequence?(args: SequenceMaxArgs): Promise<number>
   }
+  $queryRaw?<T = unknown>(query: Prisma.Sql): Promise<T>
 }
 
 const MONTH_LETTERS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"] as const
 
 export function getCnsMonthLetter(date: Date): string {
-  return MONTH_LETTERS[date.getMonth()] ?? "A"
+  return MONTH_LETTERS[kstDateParts(date).month - 1] ?? "A"
 }
 
 function getYear2(date: Date): string {
-  return String(date.getFullYear()).slice(-2)
+  return kstDateParts(date).year2
 }
 
 function getDay2(date: Date): string {
-  return String(date.getDate()).padStart(2, "0")
+  return kstDateParts(date).dayText
 }
 
-function escapeRegExp(value: string): string {
+export function escapeCnsNumberingRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-function maxParsedSequence(values: string[], pattern: RegExp): number {
-  return values.reduce((max, value) => {
-    const match = value.match(pattern)
-    if (!match?.[1]) return max
-    const seq = Number.parseInt(match[1], 10)
-    return Number.isFinite(seq) ? Math.max(max, seq) : max
-  }, 0)
 }
 
 export function formatCnsMaterialReceiptLotNo(date: Date, seq: number): string {
@@ -49,6 +49,59 @@ export function formatCnsProductionNumber(prefix: string, date: Date, seq: numbe
     throw new Error("CNS production sequence exceeded 999 for the selected prefix/month")
   }
   return `${prefix}${getYear2(date)}${getCnsMonthLetter(date)}${String(seq).padStart(3, "0")}`
+}
+
+function suffixRegex(stem: string, numericSuffixDigits?: number): string {
+  const escapedStem = escapeCnsNumberingRegExp(stem)
+  const suffix = numericSuffixDigits ? `\\d{${numericSuffixDigits}}` : "\\d+"
+  return `^${escapedStem}${suffix}$`
+}
+
+async function queryMaxNumericSuffix(
+  db: { $queryRaw?: <T = unknown>(query: Prisma.Sql) => Promise<T> },
+  tableName: "Lot" | "WorkOrder",
+  columnName: "lotNo" | "manufacturingNo",
+  tenantId: string,
+  stem: string,
+  numericSuffixDigits?: number,
+): Promise<number> {
+  if (typeof db.$queryRaw !== "function") {
+    throw new Error("번호 채번에는 DB numeric MAX query를 지원하는 Prisma client가 필요합니다.")
+  }
+  const column = Prisma.raw(`"${columnName}"`)
+  const table = Prisma.raw(`"${tableName}"`)
+  const rows = await db.$queryRaw<Array<{ maxSeq: number | null }>>(Prisma.sql`
+    SELECT COALESCE(MAX(CAST(SUBSTRING(${column} FROM CAST(${stem.length + 1} AS integer)) AS INTEGER)), 0)::int AS "maxSeq"
+    FROM ${table}
+    WHERE "tenantId" = ${tenantId}
+      AND ${column} LIKE ${`${stem}%`}
+      AND ${column} ~ ${suffixRegex(stem, numericSuffixDigits)}
+  `)
+  return Number(rows[0]?.maxSeq ?? 0)
+}
+
+async function maxLotSequence(
+  db: LotLookupClient,
+  tenantId: string,
+  stem: string,
+  numericSuffixDigits?: number,
+): Promise<number> {
+  if (typeof db.lot.findMaxSequence === "function") {
+    return db.lot.findMaxSequence({ tenantId, stem, numericSuffixDigits })
+  }
+  return queryMaxNumericSuffix(db, "Lot", "lotNo", tenantId, stem, numericSuffixDigits)
+}
+
+async function maxManufacturingSequence(
+  db: WorkOrderLookupClient,
+  tenantId: string,
+  stem: string,
+  numericSuffixDigits?: number,
+): Promise<number> {
+  if (typeof db.workOrder.findMaxSequence === "function") {
+    return db.workOrder.findMaxSequence({ tenantId, stem, numericSuffixDigits })
+  }
+  return queryMaxNumericSuffix(db, "WorkOrder", "manufacturingNo", tenantId, stem, numericSuffixDigits)
 }
 
 export async function generateCnsMaterialReceiptLotNo(
@@ -68,24 +121,12 @@ export async function generateCnsMaterialReceiptLotNo(
       throw new Error("생산 Prefix형 LOT 발행에는 Prefix가 필요합니다.")
     }
     const stem = `${prefix}${getYear2(date)}${getCnsMonthLetter(date)}`
-    const existingLots = await db.lot.findMany({
-      where: { tenantId, lotNo: { startsWith: stem } },
-      select: { lotNo: true },
-      take: 1000,
-    })
-    const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d{3})$`)
-    const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
+    const nextSeq = await maxLotSequence(db, tenantId, stem, 3) + 1 + sequenceOffset
     return formatCnsProductionNumber(prefix, date, nextSeq)
   }
 
   const stem = `${getYear2(date)}${getCnsMonthLetter(date)}${getDay2(date)}-`
-  const existingLots = await db.lot.findMany({
-    where: { tenantId, lotNo: { startsWith: stem } },
-    select: { lotNo: true },
-    take: 1000,
-  })
-  const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d+)$`)
-  const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
+  const nextSeq = await maxLotSequence(db, tenantId, stem) + 1 + sequenceOffset
   return formatCnsMaterialReceiptLotNo(date, nextSeq)
 }
 
@@ -102,21 +143,7 @@ export async function generateCnsManufacturingNo(
   }
   if (rule.pattern === "YY_MONTH_LETTER_DD_SEQ") {
     const stem = `${getYear2(date)}${getCnsMonthLetter(date)}${getDay2(date)}-`
-    const existingWorkOrders = await db.workOrder.findMany({
-      where: { tenantId, manufacturingNo: { startsWith: stem } },
-      select: { manufacturingNo: true },
-      take: 1000,
-    })
-    const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d+)$`)
-    const nextSeq =
-      maxParsedSequence(
-        existingWorkOrders
-          .map((workOrder) => workOrder.manufacturingNo)
-          .filter((value): value is string => Boolean(value)),
-        pattern,
-      ) +
-      1 +
-      sequenceOffset
+    const nextSeq = await maxManufacturingSequence(db, tenantId, stem) + 1 + sequenceOffset
     return formatCnsMaterialReceiptLotNo(date, nextSeq)
   }
   if (rule.source === "ITEM_SETTING" && !rule.prefix?.trim()) {
@@ -124,21 +151,7 @@ export async function generateCnsManufacturingNo(
   }
   const prefix = rule.prefix?.trim().toUpperCase() || "C"
   const stem = `${prefix}${getYear2(date)}${getCnsMonthLetter(date)}`
-  const existingWorkOrders = await db.workOrder.findMany({
-    where: { tenantId, manufacturingNo: { startsWith: stem } },
-    select: { manufacturingNo: true },
-    take: 1000,
-  })
-  const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d{3})$`)
-  const nextSeq =
-    maxParsedSequence(
-      existingWorkOrders
-        .map((workOrder) => workOrder.manufacturingNo)
-        .filter((value): value is string => Boolean(value)),
-      pattern,
-    ) +
-    1 +
-    sequenceOffset
+  const nextSeq = await maxManufacturingSequence(db, tenantId, stem, 3) + 1 + sequenceOffset
 
   return formatCnsProductionNumber(prefix, date, nextSeq)
 }
@@ -156,13 +169,7 @@ export async function generateCnsFinishedGoodsLotNo(
   }
   if (rule.pattern === "YY_MONTH_LETTER_DD_SEQ") {
     const stem = `${getYear2(date)}${getCnsMonthLetter(date)}${getDay2(date)}-`
-    const existingLots = await db.lot.findMany({
-      where: { tenantId, lotNo: { startsWith: stem } },
-      select: { lotNo: true },
-      take: 1000,
-    })
-    const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d+)$`)
-    const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
+    const nextSeq = await maxLotSequence(db, tenantId, stem) + 1 + sequenceOffset
     return formatCnsMaterialReceiptLotNo(date, nextSeq)
   }
   if (rule.source === "ITEM_SETTING" && !rule.prefix?.trim()) {
@@ -170,12 +177,6 @@ export async function generateCnsFinishedGoodsLotNo(
   }
   const prefix = rule.prefix?.trim().toUpperCase() || "C"
   const stem = `${prefix}${getYear2(date)}${getCnsMonthLetter(date)}`
-  const existingLots = await db.lot.findMany({
-    where: { tenantId, lotNo: { startsWith: stem } },
-    select: { lotNo: true },
-    take: 1000,
-  })
-  const pattern = new RegExp(`^${escapeRegExp(stem)}(\\d{3})$`)
-  const nextSeq = maxParsedSequence(existingLots.map((lot) => lot.lotNo), pattern) + 1 + sequenceOffset
+  const nextSeq = await maxLotSequence(db, tenantId, stem, 3) + 1 + sequenceOffset
   return formatCnsProductionNumber(prefix, date, nextSeq)
 }
