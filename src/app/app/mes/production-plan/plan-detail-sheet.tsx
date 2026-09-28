@@ -119,7 +119,7 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
               <span>{plan.site.name}</span>
             </div>
             <div className="flex items-center px-4 py-2.5">
-              <span className="w-24 text-muted-foreground shrink-0">기간</span>
+              <span className="w-24 text-muted-foreground shrink-0">계획 기간</span>
               <span className="text-muted-foreground">
                 {formatDate(plan.startDate)} ~ {formatDate(plan.endDate)}
               </span>
@@ -175,7 +175,7 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
                       <span className="text-foreground">{formatDate(salesOrder.orderDate)}</span>
                     </span>
                     <span>
-                      납기일:{" "}
+                      고객 납기일:{" "}
                       <span className="font-medium text-foreground">
                         {formatDate(salesOrder.deliveryDate)}
                       </span>
@@ -196,7 +196,7 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
                           계획수량
                         </th>
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground">
-                          납기일
+                          고객 납기
                         </th>
                       </tr>
                     </thead>
@@ -216,9 +216,7 @@ export function PlanDetailSheet({ open, onOpenChange, plan }: PlanDetailSheetPro
                             {formatQuantity(Number(planItem.plannedQty))}
                           </td>
                           <td className="px-3 py-2.5 text-muted-foreground">
-                            {planItem.salesOrderItem!.deliveryDate
-                              ? formatDate(planItem.salesOrderItem!.deliveryDate)
-                              : <span className="text-muted-foreground/40">—</span>}
+                            {formatDate(planItem.salesOrderItem!.deliveryDate ?? salesOrder.deliveryDate)}
                           </td>
                         </tr>
                       ))}

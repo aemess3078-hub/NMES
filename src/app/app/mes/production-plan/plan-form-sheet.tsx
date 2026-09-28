@@ -88,7 +88,6 @@ const planStatusOptions = [
   { label: "확정", value: PlanStatus.CONFIRMED },
   { label: "진행중", value: PlanStatus.IN_PROGRESS },
   { label: "완료", value: PlanStatus.COMPLETED },
-  { label: "취소", value: PlanStatus.CANCELLED },
 ]
 
 const DEFAULT_ITEM = {
