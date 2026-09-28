@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client"
 
 import type { CurrentUser } from "@/lib/auth"
 import { recordAuditLog } from "@/lib/audit-log"
+import { lockProductionPlanItemsForUpdate } from "@/lib/quantity-concurrency"
 
 type CancelPlanTx = Prisma.TransactionClient
 
@@ -90,6 +91,21 @@ export async function cancelProductionPlanForTenant(params: {
 }) {
   const reason = params.reason.trim()
   if (!reason) throw new Error("취소사유를 입력하세요.")
+
+  const planForLock = await params.tx.productionPlan.findFirst({
+    where: { id: params.planId, tenantId: params.tenantId },
+    select: {
+      id: true,
+      items: { select: { id: true } },
+    },
+  })
+  if (!planForLock) throw new Error("생산계획을 찾을 수 없습니다.")
+
+  await lockProductionPlanItemsForUpdate(
+    params.tx,
+    params.tenantId,
+    planForLock.items.map((item) => item.id)
+  )
 
   const plan = await assertProductionPlanCancelable({
     tx: params.tx,

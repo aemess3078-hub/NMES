@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { format } from "date-fns"
 import { AlertTriangle, ExternalLink, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,6 +17,7 @@ import { formatAmountWithCurrency } from "./format-amount"
 import { SalesOrderStatus } from "@prisma/client"
 import { formatQuantity } from "@/lib/utils"
 import { getSalesOrderProgress } from "@/lib/actions/sales-order.actions"
+import { toKstDateKey } from "@/lib/date/kst"
 
 type SalesOrderProgress = NonNullable<Awaited<ReturnType<typeof getSalesOrderProgress>>>
 type ProgressItem = SalesOrderProgress["items"][number]
@@ -162,13 +162,13 @@ export function SalesOrderDetailSheet({
             <div className="space-y-0.5">
               <p className="text-[12px] text-muted-foreground uppercase tracking-wide">수주일</p>
               <p className="text-[14px] font-medium">
-                {format(new Date(salesOrder.orderDate), "yyyy-MM-dd")}
+                {toKstDateKey(new Date(salesOrder.orderDate))}
               </p>
             </div>
             <div className="space-y-0.5">
               <p className="text-[12px] text-muted-foreground uppercase tracking-wide">고객 납기일</p>
               <p className="text-[14px] font-medium">
-                {progress?.customerDeliveryDate ?? format(new Date(salesOrder.deliveryDate), "yyyy-MM-dd")}
+                {progress?.customerDeliveryDate ?? toKstDateKey(new Date(salesOrder.deliveryDate))}
               </p>
             </div>
             {salesOrder.totalAmount && (
@@ -215,7 +215,7 @@ export function SalesOrderDetailSheet({
                         <td className="px-3 py-2.5 text-right"><span className="text-[14px] font-medium tabular-nums">{formatQuantity(orderedQty)}</span></td>
                         <td className="px-3 py-2.5 text-right"><span className={`text-[13px] tabular-nums ${shippedQty > 0 ? "text-green-700 font-medium" : "text-muted-foreground"}`}>{shippedQty > 0 ? formatQuantity(shippedQty) : "—"}</span></td>
                         <td className="px-3 py-2.5 text-right"><span className={`text-[13px] font-medium tabular-nums ${remainingQty > 0 ? "text-amber-600" : "text-muted-foreground"}`}>{formatQuantity(remainingQty)}</span></td>
-                        <td className="px-3 py-2.5 text-center">{item.deliveryDate ? <span className="text-[13px] text-muted-foreground">{format(new Date(item.deliveryDate), "MM-dd")}</span> : <span className="text-[13px] text-muted-foreground">—</span>}</td>
+                        <td className="px-3 py-2.5 text-center">{item.deliveryDate ? <span className="text-[13px] text-muted-foreground">{toKstDateKey(new Date(item.deliveryDate)).slice(5)}</span> : <span className="text-[13px] text-muted-foreground">—</span>}</td>
                         <td className="px-3 py-2.5"><span className="text-[13px] text-muted-foreground">{item.note ?? "—"}</span></td>
                       </tr>
                     )

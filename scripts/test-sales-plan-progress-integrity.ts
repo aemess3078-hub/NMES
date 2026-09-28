@@ -48,6 +48,7 @@ let prisma: typeof import("../src/lib/db/prisma").prisma
 let getSalesOrderProgressForTenant: typeof import("../src/lib/sales-order-progress.server").getSalesOrderProgressForTenant
 let assertProductionPlanCancelable: typeof import("../src/lib/production-plan-cancel.server").assertProductionPlanCancelable
 let cancelProductionPlanForTenant: typeof import("../src/lib/production-plan-cancel.server").cancelProductionPlanForTenant
+let lockProductionPlanItemsForUpdate: typeof import("../src/lib/quantity-concurrency").lockProductionPlanItemsForUpdate
 
 function loadRuntimeModules() {
   prisma = require("../src/lib/db/prisma").prisma
@@ -56,6 +57,7 @@ function loadRuntimeModules() {
     assertProductionPlanCancelable,
     cancelProductionPlanForTenant,
   } = require("../src/lib/production-plan-cancel.server") as typeof import("../src/lib/production-plan-cancel.server"))
+  ;({ lockProductionPlanItemsForUpdate } = require("../src/lib/quantity-concurrency") as typeof import("../src/lib/quantity-concurrency"))
 }
 
 const REQUIRED_CHEONGUN_REF = "zgjoiyqtfivywajygevj"
@@ -420,6 +422,301 @@ async function createFixture() {
   return { tenant, site, item, bom, routing, op1, salesOrder, salesOrderItem, activePlan, activePlanItem }
 }
 
+
+type Fixture = Awaited<ReturnType<typeof createFixture>>
+
+async function createSalesOrderWithPlan(
+  fixture: Fixture,
+  label: string,
+  options: {
+    salesStatus?: "DRAFT" | "CONFIRMED" | "IN_PRODUCTION" | "PARTIAL_SHIPPED" | "SHIPPED" | "CLOSED" | "CANCELLED"
+    planStatus?: PlanStatus
+    qty?: number
+    shippedQty?: number
+    orderDeliveryDate?: Date
+    itemDeliveryDate?: Date | null
+    plannedQty?: number
+  } = {}
+) {
+  const qty = options.qty ?? 10
+  const salesOrder = await prisma.salesOrder.create({
+    data: {
+      tenantId: fixture.tenant.id,
+      siteId: fixture.site.id,
+      customerId: (await prisma.businessPartner.findFirstOrThrow({ where: { tenantId: fixture.tenant.id } })).id,
+      orderNo: `${prefix}-${label}-SO`,
+      orderDate: new Date("2026-09-20T00:00:00+09:00"),
+      deliveryDate: options.orderDeliveryDate ?? new Date("2026-10-10T00:00:00+09:00"),
+      status: options.salesStatus ?? "IN_PRODUCTION",
+      items: {
+        create: {
+          itemId: fixture.item.id,
+          qty,
+          shippedQty: options.shippedQty ?? 0,
+          deliveryDate: options.itemDeliveryDate === undefined ? null : options.itemDeliveryDate,
+        },
+      },
+    },
+    include: { items: true },
+  })
+  ids.salesOrder.push(salesOrder.id)
+  ids.salesOrderItem.push(salesOrder.items[0].id)
+
+  const plan = await prisma.productionPlan.create({
+    data: {
+      tenantId: fixture.tenant.id,
+      siteId: fixture.site.id,
+      planNo: `${prefix}-${label}-PLAN`,
+      planType: "DAILY",
+      startDate: new Date("2026-09-28T00:00:00+09:00"),
+      endDate: new Date("2026-09-29T00:00:00+09:00"),
+      status: options.planStatus ?? PlanStatus.CONFIRMED,
+      items: {
+        create: {
+          itemId: fixture.item.id,
+          bomId: fixture.bom.id,
+          routingId: fixture.routing.id,
+          plannedQty: options.plannedQty ?? qty,
+          salesOrderItemId: salesOrder.items[0].id,
+        },
+      },
+    },
+    include: { items: true },
+  })
+  ids.productionPlan.push(plan.id)
+  ids.productionPlanItem.push(plan.items[0].id)
+  return { salesOrder, salesOrderItem: salesOrder.items[0], plan, planItem: plan.items[0] }
+}
+
+async function cancelPlanForTest(planId: string, tenantId: string, reason = "F22 test cancel") {
+  return prisma.$transaction((tx) =>
+    cancelProductionPlanForTenant({ tx, planId, tenantId, actor, reason })
+  )
+}
+
+async function createWorkOrderForPlanItem(fixture: Fixture, label: string, productionPlanItemId: string, status: WorkOrderStatus) {
+  const workOrder = await prisma.workOrder.create({
+    data: {
+      tenantId: fixture.tenant.id,
+      siteId: fixture.site.id,
+      itemId: fixture.item.id,
+      bomId: fixture.bom.id,
+      routingId: fixture.routing.id,
+      productionPlanItemId,
+      orderNo: `${prefix}-${label}-WO`,
+      plannedQty: 1,
+      status,
+      dueDate: new Date("2026-10-01T00:00:00+09:00"),
+    },
+  })
+  ids.workOrder.push(workOrder.id)
+  return workOrder
+}
+
+async function assertPlanCancelSuccess(fixture: Fixture, label: string, status: PlanStatus) {
+  const row = await createSalesOrderWithPlan(fixture, label, { planStatus: status })
+  await cancelPlanForTest(row.plan.id, fixture.tenant.id, `${label} cancel`)
+  const plan = await prisma.productionPlan.findUniqueOrThrow({ where: { id: row.plan.id } })
+  assertEqual(plan.status, PlanStatus.CANCELLED, `${status} + WorkOrder 0 취소 성공`)
+}
+
+async function assertPlanCancelBlocked(fixture: Fixture, label: string, status: PlanStatus, message: string) {
+  const row = await createSalesOrderWithPlan(fixture, label, { planStatus: status })
+  await assertRejects(
+    () => cancelPlanForTest(row.plan.id, fixture.tenant.id, `${label} cancel`),
+    message,
+    `${status} 생산계획 취소 차단`
+  )
+}
+
+async function runCancelMatrixAssertions(fixture: Fixture) {
+  await assertPlanCancelSuccess(fixture, "CANCEL-DRAFT", PlanStatus.DRAFT)
+  await assertPlanCancelSuccess(fixture, "CANCEL-CONFIRMED", PlanStatus.CONFIRMED)
+  await assertPlanCancelBlocked(fixture, "BLOCK-INPROGRESS", PlanStatus.IN_PROGRESS, "DRAFT 또는 CONFIRMED")
+  await assertPlanCancelBlocked(fixture, "BLOCK-COMPLETED", PlanStatus.COMPLETED, "DRAFT 또는 CONFIRMED")
+  await assertPlanCancelBlocked(fixture, "BLOCK-CANCELLED", PlanStatus.CANCELLED, "이미 취소")
+
+  const reasonRow = await createSalesOrderWithPlan(fixture, "BLOCK-REASON", { planStatus: PlanStatus.DRAFT })
+  await assertRejects(
+    () => cancelPlanForTest(reasonRow.plan.id, fixture.tenant.id, "   "),
+    "취소사유",
+    "빈 취소사유 차단"
+  )
+
+  const crossTenant = await prisma.tenant.create({ data: { code: `${prefix}-CROSS`, name: "F22 Cross Tenant" } })
+  ids.tenant.push(crossTenant.id)
+  await assertRejects(
+    () => cancelPlanForTest(reasonRow.plan.id, crossTenant.id, "cross tenant"),
+    "생산계획을 찾을 수 없습니다",
+    "다른 tenant Plan 취소 차단"
+  )
+}
+
+async function runWorkOrderBlockMatrixAssertions(fixture: Fixture) {
+  for (const status of [WorkOrderStatus.DRAFT, WorkOrderStatus.RELEASED, WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.CANCELLED]) {
+    const row = await createSalesOrderWithPlan(fixture, `WO-BLOCK-${status}`, { planStatus: PlanStatus.CONFIRMED })
+    await createWorkOrderForPlanItem(fixture, `WO-BLOCK-${status}`, row.planItem.id, status)
+    await assertRejects(
+      () => cancelPlanForTest(row.plan.id, fixture.tenant.id, `block ${status}`),
+      "연결된 작업지시",
+      `${status} WorkOrder row 존재 시 생산계획 취소 차단`
+    )
+  }
+}
+
+async function runSalesOrderReconciliationAssertions(fixture: Fixture) {
+  const single = await createSalesOrderWithPlan(fixture, "RECON-SINGLE", { salesStatus: "IN_PRODUCTION" })
+  await cancelPlanForTest(single.plan.id, fixture.tenant.id, "single cancel")
+  assertEqual((await prisma.salesOrder.findUniqueOrThrow({ where: { id: single.salesOrder.id } })).status, "CONFIRMED", "Plan 1개 cancel 후 IN_PRODUCTION → CONFIRMED")
+
+  const multi = await createSalesOrderWithPlan(fixture, "RECON-MULTI", { salesStatus: "IN_PRODUCTION", plannedQty: 4 })
+  const secondPlan = await prisma.productionPlan.create({
+    data: {
+      tenantId: fixture.tenant.id,
+      siteId: fixture.site.id,
+      planNo: `${prefix}-RECON-MULTI-PLAN-B`,
+      planType: "DAILY",
+      startDate: new Date("2026-09-28T00:00:00+09:00"),
+      endDate: new Date("2026-09-29T00:00:00+09:00"),
+      status: PlanStatus.CONFIRMED,
+      items: { create: { itemId: fixture.item.id, bomId: fixture.bom.id, routingId: fixture.routing.id, plannedQty: 6, salesOrderItemId: multi.salesOrderItem.id } },
+    },
+    include: { items: true },
+  })
+  ids.productionPlan.push(secondPlan.id)
+  ids.productionPlanItem.push(secondPlan.items[0].id)
+  await cancelPlanForTest(multi.plan.id, fixture.tenant.id, "multi cancel")
+  assertEqual((await prisma.salesOrder.findUniqueOrThrow({ where: { id: multi.salesOrder.id } })).status, "IN_PRODUCTION", "Plan A cancel + Plan B active면 IN_PRODUCTION 유지")
+
+  const partial = await createSalesOrderWithPlan(fixture, "RECON-PARTIAL", { salesStatus: "PARTIAL_SHIPPED", qty: 10, shippedQty: 3 })
+  await cancelPlanForTest(partial.plan.id, fixture.tenant.id, "partial cancel")
+  assertEqual((await prisma.salesOrder.findUniqueOrThrow({ where: { id: partial.salesOrder.id } })).status, "PARTIAL_SHIPPED", "shippedQty > 0이면 PARTIAL_SHIPPED 유지")
+
+  const shipped = await createSalesOrderWithPlan(fixture, "RECON-SHIPPED", { salesStatus: "SHIPPED", qty: 10, shippedQty: 10 })
+  await cancelPlanForTest(shipped.plan.id, fixture.tenant.id, "shipped cancel")
+  assertEqual((await prisma.salesOrder.findUniqueOrThrow({ where: { id: shipped.salesOrder.id } })).status, "SHIPPED", "shippedQty >= qty이면 SHIPPED 유지")
+
+  const closed = await createSalesOrderWithPlan(fixture, "RECON-CLOSED", { salesStatus: "CLOSED" })
+  await cancelPlanForTest(closed.plan.id, fixture.tenant.id, "closed cancel")
+  assertEqual((await prisma.salesOrder.findUniqueOrThrow({ where: { id: closed.salesOrder.id } })).status, "CLOSED", "CLOSED 수주는 cancel로 rewrite 금지")
+
+  const cancelled = await createSalesOrderWithPlan(fixture, "RECON-CANCELLED", { salesStatus: "CANCELLED" })
+  await cancelPlanForTest(cancelled.plan.id, fixture.tenant.id, "cancelled sales cancel")
+  assertEqual((await prisma.salesOrder.findUniqueOrThrow({ where: { id: cancelled.salesOrder.id } })).status, "CANCELLED", "CANCELLED 수주는 cancel로 rewrite 금지")
+}
+
+async function runDueDateAssertions(fixture: Fixture) {
+  const yesterday = await createSalesOrderWithPlan(fixture, "DUE-YESTERDAY", {
+    qty: 10,
+    shippedQty: 0,
+    orderDeliveryDate: new Date("2026-10-05T00:00:00+09:00"),
+    itemDeliveryDate: new Date("2026-09-27T00:00:00+09:00"),
+  })
+  const today = await createSalesOrderWithPlan(fixture, "DUE-TODAY", {
+    qty: 10,
+    shippedQty: 0,
+    orderDeliveryDate: new Date("2026-09-28T00:00:00+09:00"),
+    itemDeliveryDate: null,
+  })
+  const fullyShipped = await createSalesOrderWithPlan(fixture, "DUE-FULL", {
+    qty: 10,
+    shippedQty: 10,
+    orderDeliveryDate: new Date("2026-09-27T00:00:00+09:00"),
+    itemDeliveryDate: null,
+  })
+  const now = new Date("2026-09-28T12:00:00+09:00")
+  const y = await getSalesOrderProgressForTenant({ salesOrderId: yesterday.salesOrder.id, tenantId: fixture.tenant.id, permissions: { canReadProductionPlan: true, canReadWorkOrder: true, canReadShipment: true }, now })
+  const t = await getSalesOrderProgressForTenant({ salesOrderId: today.salesOrder.id, tenantId: fixture.tenant.id, permissions: { canReadProductionPlan: true, canReadWorkOrder: true, canReadShipment: true }, now })
+  const f = await getSalesOrderProgressForTenant({ salesOrderId: fullyShipped.salesOrder.id, tenantId: fixture.tenant.id, permissions: { canReadProductionPlan: true, canReadWorkOrder: true, canReadShipment: true }, now })
+  assertEqual(y?.items[0].effectiveDeliveryDate, "2026-09-27", "품목 deliveryDate가 header deliveryDate보다 우선")
+  assertEqual(y?.items[0].isOverdue, true, "KST yesterday + remaining > 0 → overdue true")
+  assertEqual(t?.items[0].isOverdue, false, "KST today + remaining > 0 → overdue false")
+  assertEqual(f?.items[0].isOverdue, false, "KST yesterday + remaining = 0 → overdue false")
+}
+
+async function runMultiplePlanAssertions(fixture: Fixture) {
+  const row = await createSalesOrderWithPlan(fixture, "MULTI-PLAN", { plannedQty: 60, qty: 100 })
+  const planB = await prisma.productionPlan.create({
+    data: {
+      tenantId: fixture.tenant.id,
+      siteId: fixture.site.id,
+      planNo: `${prefix}-MULTI-PLAN-B`,
+      planType: "DAILY",
+      startDate: new Date("2026-09-28T00:00:00+09:00"),
+      endDate: new Date("2026-09-29T00:00:00+09:00"),
+      status: PlanStatus.CONFIRMED,
+      items: { create: { itemId: fixture.item.id, bomId: fixture.bom.id, routingId: fixture.routing.id, plannedQty: 40, salesOrderItemId: row.salesOrderItem.id } },
+    },
+    include: { items: true },
+  })
+  ids.productionPlan.push(planB.id)
+  ids.productionPlanItem.push(planB.items[0].id)
+  const active = await getSalesOrderProgressForTenant({ salesOrderId: row.salesOrder.id, tenantId: fixture.tenant.id, permissions: { canReadProductionPlan: true, canReadWorkOrder: true, canReadShipment: true } })
+  assertEqual(active?.items[0].plannedQty, 100, "Plan A 60 + Plan B 40 active이면 plannedQty=100")
+  await prisma.productionPlan.update({ where: { id: planB.id }, data: { status: PlanStatus.CANCELLED } })
+  const afterCancel = await getSalesOrderProgressForTenant({ salesOrderId: row.salesOrder.id, tenantId: fixture.tenant.id, permissions: { canReadProductionPlan: true, canReadWorkOrder: true, canReadShipment: true } })
+  assertEqual(afterCancel?.items[0].plannedQty, 60, "Plan B CANCELLED이면 plannedQty=60")
+}
+
+async function runPermissionPayloadAssertions(fixture: Fixture) {
+  const denied = await getSalesOrderProgressForTenant({
+    salesOrderId: fixture.salesOrder.id,
+    tenantId: fixture.tenant.id,
+    permissions: { canReadProductionPlan: false, canReadWorkOrder: false, canReadShipment: false },
+    now: new Date("2026-09-28T12:00:00+09:00"),
+  })
+  const allowed = await getSalesOrderProgressForTenant({
+    salesOrderId: fixture.salesOrder.id,
+    tenantId: fixture.tenant.id,
+    permissions: { canReadProductionPlan: true, canReadWorkOrder: true, canReadShipment: true },
+    now: new Date("2026-09-28T12:00:00+09:00"),
+  })
+  assertEqual(denied?.items[0].productionPlans.length, 0, "permission false → productionPlans=[]")
+  assertEqual(denied?.items[0].workOrders.length, 0, "permission false → workOrders=[]")
+  assertEqual(denied?.items[0].shipments.length, 0, "permission false → shipments=[]")
+  assert((allowed?.items[0].productionPlans.length ?? 0) > 0, "permission true → production plan link 반환")
+  assert((allowed?.items[0].workOrders.length ?? 0) > 0, "permission true → work order link 반환")
+  assert((allowed?.items[0].shipments.length ?? 0) > 0, "permission true → shipment link 반환")
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function runConcurrencyInvariantAssertions(fixture: Fixture) {
+  const row = await createSalesOrderWithPlan(fixture, "CONCURRENCY", { planStatus: PlanStatus.CONFIRMED })
+  const creator = prisma.$transaction(async (tx) => {
+    await lockProductionPlanItemsForUpdate(tx, fixture.tenant.id, [row.planItem.id])
+    await sleep(300)
+    const workOrder = await tx.workOrder.create({
+      data: {
+        tenantId: fixture.tenant.id,
+        siteId: fixture.site.id,
+        itemId: fixture.item.id,
+        bomId: fixture.bom.id,
+        routingId: fixture.routing.id,
+        productionPlanItemId: row.planItem.id,
+        orderNo: `${prefix}-CONCURRENCY-WO`,
+        plannedQty: 1,
+        status: WorkOrderStatus.DRAFT,
+        dueDate: new Date("2026-10-01T00:00:00+09:00"),
+      },
+      select: { id: true },
+    })
+    ids.workOrder.push(workOrder.id)
+  })
+  await sleep(50)
+  const canceller = cancelPlanForTest(row.plan.id, fixture.tenant.id, "concurrency cancel")
+  const results = await Promise.allSettled([creator, canceller])
+  assert(results[0].status === "fulfilled", "concurrency fixture WorkOrder transaction 완료")
+  assert(results[1].status === "rejected", "동일 ProductionPlanItem lock 후 cancel은 최신 WorkOrder 존재로 차단")
+  const [plan, workOrderCount] = await Promise.all([
+    prisma.productionPlan.findUniqueOrThrow({ where: { id: row.plan.id } }),
+    prisma.workOrder.count({ where: { productionPlanItemId: row.planItem.id } }),
+  ])
+  assert(!(plan.status === PlanStatus.CANCELLED && workOrderCount > 0), "concurrency invariant: CANCELLED Plan + WorkOrder exists 상태 없음")
+}
+
 async function runDbAssertions() {
   const fixture = await createFixture()
 
@@ -456,6 +753,9 @@ async function runDbAssertions() {
     now: new Date("2026-09-28T12:00:00+09:00"),
   })
   assert(hiddenLinks?.permissions.canReadProductionPlan === false, "권한 flag가 client 전달 데이터에 반영")
+  assertEqual(hiddenLinks?.items[0].productionPlans.length, 0, "권한 false면 productionPlans payload 비움")
+  assertEqual(hiddenLinks?.items[0].workOrders.length, 0, "권한 false면 workOrders payload 비움")
+  assertEqual(hiddenLinks?.items[0].shipments.length, 0, "권한 false면 shipments payload 비움")
 
   const otherTenant = await prisma.tenant.create({ data: { code: `${prefix}-OTHER`, name: "F22 Other Tenant" } })
   ids.tenant.push(otherTenant.id)
@@ -525,6 +825,14 @@ async function runDbAssertions() {
     where: { tenantId: fixture.tenant.id, entityType: "SalesOrder", entityId: cancelSalesOrder.id, action: "UPDATE" },
   })
   assert(salesAudit != null, "생산계획 취소에 따른 SalesOrder AuditLog 기록")
+
+  await runCancelMatrixAssertions(fixture)
+  await runWorkOrderBlockMatrixAssertions(fixture)
+  await runSalesOrderReconciliationAssertions(fixture)
+  await runDueDateAssertions(fixture)
+  await runMultiplePlanAssertions(fixture)
+  await runPermissionPayloadAssertions(fixture)
+  await runConcurrencyInvariantAssertions(fixture)
 }
 
 function runSourceAssertions() {
@@ -545,9 +853,12 @@ function runSourceAssertions() {
   assert(cancelHelperSource.includes("PlanStatus.DRAFT, PlanStatus.CONFIRMED"), "생산계획 취소 허용 상태 제한")
   assert(cancelHelperSource.includes("_count: { select: { workOrders: true } }") && cancelHelperSource.includes("_count.workOrders > 0"), "작업지시 존재 시 취소 차단")
   assert(cancelHelperSource.includes("cancelReason: reason"), "취소 사유는 AuditLog afterData에 저장")
+  assert(cancelHelperSource.includes("lockProductionPlanItemsForUpdate"), "cancel flow가 ProductionPlanItem FOR UPDATE lock 사용")
+  assert(planActionSource.includes("withQuantityTransactionRetry"), "cancel action이 quantity transaction retry 정책 사용")
   assert(planActionSource.includes("export async function cancelProductionPlan") && planActionSource.includes("PRODUCTION_PLAN",), "cancelProductionPlan action 추가")
   assert(planActionSource.includes("if (existing.items.some((item) => item._count.workOrders > 0))"), "deletePlan도 작업지시 연결 시 명시 차단")
   assert(detailSheetSource.includes("생산·출하 진행상황") && detailSheetSource.includes("고객 납기"), "수주 상세 sheet에 진행상황과 고객 납기 표시")
+  assert(!detailSheetSource.includes("date-fns"), "F22 수주 상세 날짜 fallback은 KST helper 사용")
   assert(planDetailSource.includes("계획 기간") && planDetailSource.includes("고객 납기"), "생산계획 상세에서 계획 기간과 고객 납기를 분리 표시")
 }
 
@@ -570,6 +881,3 @@ main()
     console.log(`\n${passed} passed, ${failed} failed`)
     if (failed > 0) process.exit(1)
   })
-
-
-

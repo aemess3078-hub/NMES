@@ -18,6 +18,7 @@ import {
 import { DataTableColumnHeader } from "@/components/common/data-table"
 import { PlanWithDetails } from "@/lib/actions/production-plan.actions"
 import { formatQuantity } from "@/lib/utils"
+import { kstDaysUntil, toKstDateKey } from "@/lib/date/kst"
 
 const planTypeLabels: Record<PlanType, string> = {
   DAILY: "일간",
@@ -43,7 +44,7 @@ type GetColumnsProps = {
 }
 
 function formatDate(date: Date): string {
-  return new Date(date).toISOString().split("T")[0]
+  return toKstDateKey(date)
 }
 
 export function getColumns({ onEdit, onDelete, onCancel, onViewDetail, canUpdate, canDelete }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
@@ -141,8 +142,8 @@ export function getColumns({ onEdit, onDelete, onCancel, onViewDetail, canUpdate
       cell: ({ row }) => {
         const date = row.getValue("earliestDueDate") as Date | null
         if (!date) return <span className="text-[13px] text-muted-foreground/40">—</span>
-        const formatted = formatDate(date)
-        const isOverdue = new Date(date) < new Date(new Date().toDateString())
+        const formatted = toKstDateKey(date)
+        const isOverdue = kstDaysUntil(date) < 0
         return (
           <span className={`text-[13px] tabular-nums ${isOverdue ? "text-red-600 font-medium" : "text-foreground"}`}>
             {formatted}

@@ -10,6 +10,7 @@ import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 import { cancelProductionPlanForTenant } from "@/lib/production-plan-cancel.server"
 import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
+import { withQuantityTransactionRetry } from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -535,14 +536,16 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
 
 export async function cancelProductionPlan(id: string, reason: string) {
   const user = await requireResourcePermission("PRODUCTION_PLAN", "UPDATE")
-  const result = await prisma.$transaction(async (tx) =>
-    cancelProductionPlanForTenant({
-      tx,
-      planId: id,
-      tenantId: user.tenantId,
-      actor: user,
-      reason,
-    })
+  const result = await withQuantityTransactionRetry(() =>
+    prisma.$transaction(async (tx) =>
+      cancelProductionPlanForTenant({
+        tx,
+        planId: id,
+        tenantId: user.tenantId,
+        actor: user,
+        reason,
+      })
+    )
   )
 
   revalidatePath("/app/mes/production-plan")

@@ -290,14 +290,16 @@ export async function getSalesOrderProgressForTenant(params: {
   }
 
   const shipmentLinksBySalesOrderItem = new Map<string, Map<string, SalesOrderProgressLink>>()
-  for (const row of shipmentRows) {
-    const map = shipmentLinksBySalesOrderItem.get(row.salesOrderItemId) ?? new Map<string, SalesOrderProgressLink>()
-    addLink(map, {
-      id: row.shipmentOrder.id,
-      label: row.shipmentOrder.shipmentNo,
-      href: `/app/mes/shipments?salesOrderId=${encodeURIComponent(salesOrder.id)}`,
-    })
-    shipmentLinksBySalesOrderItem.set(row.salesOrderItemId, map)
+  if (params.permissions.canReadShipment) {
+    for (const row of shipmentRows) {
+      const map = shipmentLinksBySalesOrderItem.get(row.salesOrderItemId) ?? new Map<string, SalesOrderProgressLink>()
+      addLink(map, {
+        id: row.shipmentOrder.id,
+        label: row.shipmentOrder.shipmentNo,
+        href: `/app/mes/shipments?salesOrderId=${encodeURIComponent(salesOrder.id)}`,
+      })
+      shipmentLinksBySalesOrderItem.set(row.salesOrderItemId, map)
+    }
   }
 
   const items: SalesOrderProgressItem[] = salesOrder.items.map((item) => {
@@ -312,19 +314,25 @@ export async function getSalesOrderProgressForTenant(params: {
 
     const planLinks = new Map<string, SalesOrderProgressLink>()
     const workOrderLinks = new Map<string, SalesOrderProgressLink>()
-    for (const planItem of linkedPlanItems) {
-      addLink(planLinks, {
-        id: planItem.plan.id,
-        label: planItem.plan.planNo,
-        href: `/app/mes/production-plan?salesOrderId=${encodeURIComponent(salesOrder.id)}`,
-      })
-      for (const workOrder of planItem.workOrders) {
-        if (workOrder.status === WorkOrderStatus.CANCELLED) continue
-        addLink(workOrderLinks, {
-          id: workOrder.id,
-          label: workOrder.orderNo,
-          href: `/app/mes/work-orders?productionPlanId=${encodeURIComponent(planItem.plan.id)}&productionPlanItemId=${encodeURIComponent(planItem.id)}`,
-        })
+    if (params.permissions.canReadProductionPlan || params.permissions.canReadWorkOrder) {
+      for (const planItem of linkedPlanItems) {
+        if (params.permissions.canReadProductionPlan) {
+          addLink(planLinks, {
+            id: planItem.plan.id,
+            label: planItem.plan.planNo,
+            href: `/app/mes/production-plan?salesOrderId=${encodeURIComponent(salesOrder.id)}`,
+          })
+        }
+        if (params.permissions.canReadWorkOrder) {
+          for (const workOrder of planItem.workOrders) {
+            if (workOrder.status === WorkOrderStatus.CANCELLED) continue
+            addLink(workOrderLinks, {
+              id: workOrder.id,
+              label: workOrder.orderNo,
+              href: `/app/mes/work-orders?productionPlanId=${encodeURIComponent(planItem.plan.id)}&productionPlanItemId=${encodeURIComponent(planItem.id)}`,
+            })
+          }
+        }
       }
     }
 
