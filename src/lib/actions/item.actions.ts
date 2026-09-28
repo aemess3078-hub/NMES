@@ -270,12 +270,13 @@ export type ItemReferenceCount = {
   salesOrder: number
   wipUnit: number
   txHistory: number
+  workStandardMapping: number
 }
 
 /** 품목 삭제 전 참조 건수 조회 (dry-run). DB를 수정하지 않는다. */
 export async function checkItemReferences(id: string): Promise<ItemReferenceCount> {
   const tenantId = await getTenantId()
-  const [bom, bomComponent, routing, workOrder, inventory, salesOrder, wipUnit, txHistory] =
+  const [bom, bomComponent, routing, workOrder, inventory, salesOrder, wipUnit, txHistory, workStandardMapping] =
     await Promise.all([
       prisma.bOM.count({ where: { itemId: id, tenantId } }),
       prisma.bOMItem.count({ where: { componentItemId: id } }),
@@ -287,8 +288,9 @@ export async function checkItemReferences(id: string): Promise<ItemReferenceCoun
       prisma.salesOrderItem.count({ where: { itemId: id } }),
       prisma.wipUnit.count({ where: { itemId: id, tenantId } }),
       prisma.inventoryTransaction.count({ where: { itemId: id, tenantId } }),
+      prisma.workStandardMapping.count({ where: { itemId: id, tenantId } }),
     ])
-  return { bom, bomComponent, routing, workOrder, inventory, salesOrder, wipUnit, txHistory }
+  return { bom, bomComponent, routing, workOrder, inventory, salesOrder, wipUnit, txHistory, workStandardMapping }
 }
 
 export async function deleteItem(id: string) {
@@ -309,6 +311,7 @@ export async function deleteItem(id: string) {
   if (refs.salesOrder > 0)   blockers.push(`수주 ${refs.salesOrder}건`)
   if (refs.wipUnit > 0)      blockers.push(`WIP 이력 ${refs.wipUnit}건`)
   if (refs.txHistory > 0)    blockers.push(`입출고 이력 ${refs.txHistory}건`)
+  if (refs.workStandardMapping > 0) blockers.push(`작업표준서 매핑 ${refs.workStandardMapping}건`)
 
   if (blockers.length > 0) {
     throw new Error(`ITEM_IN_USE:${blockers.join(", ")}`)

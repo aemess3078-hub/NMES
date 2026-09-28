@@ -46,6 +46,7 @@
     "test:equipment-downtime-maintenance-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-equipment-downtime-maintenance-integrity.ts",
     "test:next-work-navigation": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-next-work-navigation.ts",
     "test:pop-tool-usage-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-pop-tool-usage-integrity.ts",
+    "test:sop-pop-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-sop-pop-integrity.ts",
     "test:code-numbering-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-code-numbering-integrity.ts"
   },
   "dependencies": {

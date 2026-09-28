@@ -66,6 +66,15 @@ type AvailableTool = {
   usageRate: number | null
 }
 
+type WorkStandard = {
+  mappingId: string
+  documentId: string
+  code: string
+  name: string
+  fileUrl: string
+  displayOrder: number
+}
+
 type MaterialSufficiency = {
   plannedQty: number
   producedQty: number
@@ -93,6 +102,7 @@ type Operation = {
   availableWipQty?: number | null
   materialSufficiency?: MaterialSufficiency | null
   defectCodes?: DefectCode[]
+  workStandards?: WorkStandard[]
   workOrder: WorkOrder | null
   routingOperation: RoutingOperation | null
   equipment: Equipment | null
@@ -118,6 +128,7 @@ export function ProductionClient({ operation }: Props) {
 
   const defectCodes = operation.defectCodes ?? []
   const availableTools = operation.availableTools ?? []
+  const workStandards = operation.workStandards ?? []
   const defectLinesTotal = defectLines.reduce((sum, line) => sum + (line.qty || 0), 0)
   // 불량수량 > 0이면 불량코드별 수량 합계가 정확히 일치해야 제출 가능
   const defectDetailsValid =
@@ -290,6 +301,50 @@ export function ProductionClient({ operation }: Props) {
               {equipmentName}
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[16px] font-bold text-slate-800">작업표준서</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                현재 품목과 공정에 연결된 SOP입니다.
+              </p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-sm font-medium text-blue-700">
+              {workStandards.length}건
+            </span>
+          </div>
+
+          {workStandards.length === 0 ? (
+            <p className="mt-3 rounded-lg border border-dashed border-blue-200 bg-white/70 px-3 py-2 text-sm text-slate-500">
+              표시할 작업표준서가 없습니다.
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-2">
+              {workStandards.map((standard) => (
+                <div
+                  key={standard.mappingId}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="font-mono text-[13px] text-blue-700">{standard.code}</div>
+                    <div className="truncate text-[15px] font-semibold text-slate-800">
+                      {standard.name}
+                    </div>
+                  </div>
+                  <a
+                    href={standard.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    열기
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {selectedAssignment && (

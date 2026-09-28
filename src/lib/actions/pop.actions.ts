@@ -43,6 +43,10 @@ import {
   TOOL_TYPES,
   type ToolEquipmentType,
 } from "@/lib/actions/tool.helpers"
+import {
+  getWorkStandardsForOperationContext,
+  type PopWorkStandard,
+} from "@/lib/pop-work-standard.server"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -752,12 +756,19 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     workOrderOperationId: operation.id,
   })
 
-  // POP 자주검사 불량코드 선택용 목록
-  const defectCodes = await prisma.defectCode.findMany({
-    where: { tenantId: operation.workOrder.tenantId },
-    select: { id: true, code: true, name: true, defectCategory: true },
-    orderBy: { code: "asc" },
-  })
+  // POP 자주검사 불량코드 선택용 목록 + F21 작업표준서 표시 목록
+  const [defectCodes, workStandards] = await Promise.all([
+    prisma.defectCode.findMany({
+      where: { tenantId: operation.workOrder.tenantId },
+      select: { id: true, code: true, name: true, defectCategory: true },
+      orderBy: { code: "asc" },
+    }),
+    getWorkStandardsForOperationContext(prisma, {
+      tenantId: operation.workOrder.tenantId,
+      itemId: operation.workOrder.itemId,
+      routingOperationId: operation.routingOperationId,
+    }),
+  ])
 
   return {
     id: operation.id,
@@ -789,6 +800,7 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
       name: dc.name,
       category: dc.defectCategory,
     })),
+    workStandards,
     workOrder: operation.workOrder
       ? {
           id: operation.workOrder.id,

@@ -439,6 +439,7 @@ model Tenant {
   workOrders                    WorkOrder[]
   defectCodes                   DefectCode[]
   documents                     Document[]
+  workStandardMappings          WorkStandardMapping[]
   inspectionSpecs               InspectionSpec[]
   auditLogs                     AuditLog[]
   approvalRequests              ApprovalRequest[]
@@ -773,6 +774,7 @@ model Item {
   boms                    BOM[]
   bomItems                BOMItem[]
   itemRoutings            ItemRouting[]
+  workStandardMappings    WorkStandardMapping[]
   lots                    Lot[]
   lotNumberReservations   LotNumberReservation[]
   inspectionSpecs         InspectionSpec[]
@@ -911,6 +913,7 @@ model RoutingOperation {
   workOrderOperations WorkOrderOperation[]
   inspectionSpecs     InspectionSpec[]
   projectStages       ProjectStage[]
+  workStandardMappings WorkStandardMapping[]
 
   @@unique([routingId, seq])
   @@index([routingId])
@@ -1177,6 +1180,7 @@ model Document {
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   documentLinks DocumentLink[]
+  workStandardMappings WorkStandardMapping[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -1193,6 +1197,28 @@ model DocumentLink {
   @@unique([documentId, targetType, targetId])
   @@index([documentId])
   @@index([targetType, targetId])
+}
+
+model WorkStandardMapping {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  documentId         String
+  itemId             String
+  routingOperationId String
+  isActive           Boolean  @default(true)
+  displayOrder       Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  document         Document         @relation(fields: [documentId], references: [id])
+  item             Item             @relation(fields: [itemId], references: [id])
+  routingOperation RoutingOperation @relation(fields: [routingOperationId], references: [id])
+
+  @@unique([tenantId, documentId, itemId, routingOperationId])
+  @@index([tenantId, itemId, routingOperationId, isActive])
+  @@index([documentId])
+  @@index([routingOperationId])
 }
 
 // ─── 청운커팅 사업계획서 "첨부파일관리" ──────────────────────────────────────
