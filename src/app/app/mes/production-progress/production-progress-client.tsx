@@ -398,7 +398,7 @@ export function ProductionProgressClient({
           value={formatQuantity(summary.totalProductionOutputQty)}
           suffix="EA"
         />
-        <ProgressGaugeCard label="전체 진행률" value={summary.overallProgressRate} />
+        <ProgressGaugeCard label="전체 생산 달성률" value={summary.overallProgressRate} />
         <SummaryCard
           label="정상"
           value={formatQuantity(summary.normalCount)}

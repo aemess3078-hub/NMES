@@ -161,7 +161,7 @@ export function getColumns(onViewDetail: (row: ProjectProgressRow) => void): Col
     },
     {
       id: "progress",
-      header: "진행률",
+      header: "단계 완료율",
       cell: ({ row }) => {
         const { completedCount, totalCount, percent } = computeStageSummary(row.original.stages)
         return (

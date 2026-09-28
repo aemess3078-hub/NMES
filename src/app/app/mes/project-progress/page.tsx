@@ -16,7 +16,7 @@ export default async function ProjectProgressPage() {
       <div className="mb-6">
         <h1 className="text-[26px] font-bold leading-tight">프로젝트 진행현황</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
-          프로젝트 오더별 단계 진행률과 납기를 관리합니다
+          프로젝트 오더별 단계 완료율과 납기를 관리합니다
         </p>
       </div>
       <ProjectProgressDataTable data={projects} />
