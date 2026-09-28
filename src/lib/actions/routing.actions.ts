@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db/prisma"
 import { RoutingScope, RoutingStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { getRoutingOperationReferences, type RoutingOperationReferenceSummary } from "@/lib/routing-references.server"
+import { validateRoutingForItemContext } from "@/lib/routing-validation.server"
 
 export type RoutingWithDetails = {
   id: string
@@ -137,25 +139,7 @@ export async function validateRoutingForItem(params: {
   itemId: string
   routingId: string
 }): Promise<void> {
-  const routing = await prisma.routing.findFirst({
-    where: { id: params.routingId, tenantId: params.tenantId },
-    select: { status: true, scope: true },
-  })
-  if (!routing) {
-    throw new Error("선택한 라우팅을 찾을 수 없습니다.")
-  }
-  if (routing.status !== "ACTIVE") {
-    throw new Error("비활성 상태의 라우팅은 선택할 수 없습니다.")
-  }
-  if (routing.scope === "ITEM_SPECIFIC") {
-    const link = await prisma.itemRouting.findFirst({
-      where: { itemId: params.itemId, routingId: params.routingId },
-      select: { id: true },
-    })
-    if (!link) {
-      throw new Error("선택한 라우팅은 이 품목에 연결되어 있지 않습니다.")
-    }
-  }
+  await validateRoutingForItemContext(prisma, params)
 }
 
 export type RoutingOperationInput = {
@@ -305,7 +289,7 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
 
   if (operationsChanged) {
     const routingOperationIds = owned.operations.map((op) => op.id)
-    const refs = await getRoutingOperationReferences(routingOperationIds)
+    const refs = await getRoutingOperationReferences(prisma, routingOperationIds)
     if (
       refs.workOrderOperationCount > 0 ||
       refs.inspectionSpecCount > 0 ||
@@ -424,28 +408,6 @@ export async function updateRouting(id: string, data: CreateRoutingInput) {
   revalidatePath("/app/mes/routing")
 }
 
-export type RoutingOperationReferenceSummary = {
-  workOrderOperationCount: number
-  inspectionSpecCount: number
-  equipmentMapCount: number
-  workStandardMappingCount: number
-}
-
-// RoutingOperation을 FK로 참조하는 모델들의 참조 건수를 센다.
-// updateRouting(공정 변경 차단)과 deleteRouting/getRoutingUsageSummary(삭제 차단)에서 공용으로 쓴다.
-async function getRoutingOperationReferences(routingOperationIds: string[]): Promise<RoutingOperationReferenceSummary> {
-  if (routingOperationIds.length === 0) {
-    return { workOrderOperationCount: 0, inspectionSpecCount: 0, equipmentMapCount: 0, workStandardMappingCount: 0 }
-  }
-  const [workOrderOperationCount, inspectionSpecCount, equipmentMapCount, workStandardMappingCount] = await Promise.all([
-    prisma.workOrderOperation.count({ where: { routingOperationId: { in: routingOperationIds } } }),
-    prisma.inspectionSpec.count({ where: { routingOperationId: { in: routingOperationIds } } }),
-    prisma.equipmentOperationMap.count({ where: { routingOperationId: { in: routingOperationIds } } }),
-    prisma.workStandardMapping.count({ where: { routingOperationId: { in: routingOperationIds } } }),
-  ])
-  return { workOrderOperationCount, inspectionSpecCount, equipmentMapCount, workStandardMappingCount }
-}
-
 // 기존 RoutingOperation과 새로 제출된 operations가 실질적으로 동일한지 판정한다.
 // 동일하면 updateRouting은 RoutingOperation을 건드리지 않는다(FK로 참조 중이어도 안전하게 다른 필드만 수정 가능).
 function operationsEqual(
@@ -490,7 +452,7 @@ export async function getRoutingUsageSummary(id: string): Promise<RoutingUsageSu
   const [productionPlanItemCount, workOrderCount, operationRefs] = await Promise.all([
     prisma.productionPlanItem.count({ where: { routingId: id } }),
     prisma.workOrder.count({ where: { routingId: id } }),
-    getRoutingOperationReferences(routingOperationIds),
+    getRoutingOperationReferences(prisma, routingOperationIds),
   ])
 
   return { productionPlanItemCount, workOrderCount, ...operationRefs }

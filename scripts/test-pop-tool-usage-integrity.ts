@@ -105,6 +105,7 @@ async function runActionScenarios() {
     "@/lib/auth/pop-worker-session": { getPopWorkerSession: async () => ({ tenantId: "tenant", siteId: "site", profileId: "worker", tenantUserId: "tu" }) },
     "@/lib/auth/pop-pin": {},
     "@/lib/actions/tool.helpers": toolHelpers,
+    "@/lib/pop-work-standard.server": { getWorkStandardsForOperationContext: async () => [] },
     "@/lib/actions/wip-traceability.helpers": { findActiveWipUnitForWorkOrder: async () => null,
       recordProductionResultQualityMovements: async () => { if (failAfterUsage) throw new Error("downstream failure") } },
     "@/lib/actions/self-inspection.helpers": { recordSelfInspectionDefects: noop },

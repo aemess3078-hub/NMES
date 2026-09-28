@@ -43,6 +43,10 @@ import {
   TOOL_TYPES,
   type ToolEquipmentType,
 } from "@/lib/actions/tool.helpers"
+import {
+  getWorkStandardsForOperationContext,
+  type PopWorkStandard,
+} from "@/lib/pop-work-standard.server"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,15 +81,6 @@ export type PopAvailableTool = {
   lifeLimit: number | null
   remainingLife: number | null
   usageRate: number | null
-}
-
-export type PopWorkStandard = {
-  mappingId: string
-  documentId: string
-  code: string
-  name: string
-  fileUrl: string
-  displayOrder: number
 }
 
 export type PopWorkQueueRow = {
@@ -195,51 +190,6 @@ function serializePopAvailableTool(tool: {
     remainingLife: computeRemainingLife(tool.lifeLimit, tool.currentUsage),
     usageRate: computeUsageRate(tool.lifeLimit, tool.currentUsage),
   }
-}
-
-export async function getWorkStandardsForOperationContext(params: {
-  tenantId: string
-  itemId: string
-  routingOperationId: string
-}): Promise<PopWorkStandard[]> {
-  const rows = await prisma.workStandardMapping.findMany({
-    where: {
-      tenantId: params.tenantId,
-      itemId: params.itemId,
-      routingOperationId: params.routingOperationId,
-      isActive: true,
-      document: {
-        docType: "SOP",
-        fileUrl: { not: null },
-      },
-    },
-    include: {
-      document: {
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          fileUrl: true,
-        },
-      },
-    },
-    orderBy: [
-      { displayOrder: "asc" },
-      { document: { code: "asc" } },
-      { document: { name: "asc" } },
-    ],
-  })
-
-  return rows
-    .filter((row) => row.document.fileUrl?.trim())
-    .map((row) => ({
-      mappingId: row.id,
-      documentId: row.documentId,
-      code: row.document.code,
-      name: row.document.name,
-      fileUrl: row.document.fileUrl as string,
-      displayOrder: row.displayOrder,
-    }))
 }
 
 async function recordPopToolUsage(
@@ -813,7 +763,7 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
       select: { id: true, code: true, name: true, defectCategory: true },
       orderBy: { code: "asc" },
     }),
-    getWorkStandardsForOperationContext({
+    getWorkStandardsForOperationContext(prisma, {
       tenantId: operation.workOrder.tenantId,
       itemId: operation.workOrder.itemId,
       routingOperationId: operation.routingOperationId,
