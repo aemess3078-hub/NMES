@@ -79,6 +79,15 @@ export type PopAvailableTool = {
   usageRate: number | null
 }
 
+export type PopWorkStandard = {
+  mappingId: string
+  documentId: string
+  code: string
+  name: string
+  fileUrl: string
+  displayOrder: number
+}
+
 export type PopWorkQueueRow = {
   rowId: string
   operationId: string
@@ -186,6 +195,51 @@ function serializePopAvailableTool(tool: {
     remainingLife: computeRemainingLife(tool.lifeLimit, tool.currentUsage),
     usageRate: computeUsageRate(tool.lifeLimit, tool.currentUsage),
   }
+}
+
+export async function getWorkStandardsForOperationContext(params: {
+  tenantId: string
+  itemId: string
+  routingOperationId: string
+}): Promise<PopWorkStandard[]> {
+  const rows = await prisma.workStandardMapping.findMany({
+    where: {
+      tenantId: params.tenantId,
+      itemId: params.itemId,
+      routingOperationId: params.routingOperationId,
+      isActive: true,
+      document: {
+        docType: "SOP",
+        fileUrl: { not: null },
+      },
+    },
+    include: {
+      document: {
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          fileUrl: true,
+        },
+      },
+    },
+    orderBy: [
+      { displayOrder: "asc" },
+      { document: { code: "asc" } },
+      { document: { name: "asc" } },
+    ],
+  })
+
+  return rows
+    .filter((row) => row.document.fileUrl?.trim())
+    .map((row) => ({
+      mappingId: row.id,
+      documentId: row.documentId,
+      code: row.document.code,
+      name: row.document.name,
+      fileUrl: row.document.fileUrl as string,
+      displayOrder: row.displayOrder,
+    }))
 }
 
 async function recordPopToolUsage(
@@ -752,12 +806,19 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
     workOrderOperationId: operation.id,
   })
 
-  // POP 자주검사 불량코드 선택용 목록
-  const defectCodes = await prisma.defectCode.findMany({
-    where: { tenantId: operation.workOrder.tenantId },
-    select: { id: true, code: true, name: true, defectCategory: true },
-    orderBy: { code: "asc" },
-  })
+  // POP 자주검사 불량코드 선택용 목록 + F21 작업표준서 표시 목록
+  const [defectCodes, workStandards] = await Promise.all([
+    prisma.defectCode.findMany({
+      where: { tenantId: operation.workOrder.tenantId },
+      select: { id: true, code: true, name: true, defectCategory: true },
+      orderBy: { code: "asc" },
+    }),
+    getWorkStandardsForOperationContext({
+      tenantId: operation.workOrder.tenantId,
+      itemId: operation.workOrder.itemId,
+      routingOperationId: operation.routingOperationId,
+    }),
+  ])
 
   return {
     id: operation.id,
@@ -789,6 +850,7 @@ export async function getOperationDetail(operationId: string, assignmentId?: str
       name: dc.name,
       category: dc.defectCategory,
     })),
+    workStandards,
     workOrder: operation.workOrder
       ? {
           id: operation.workOrder.id,

@@ -58,6 +58,7 @@ export async function checkItemReferencesForBulk(itemId: string, tenantId: strin
     engineeringChange,
     itemSubstitute,
     materialLot,
+    workStandardMapping,
   ] = await Promise.all([
     prisma.workOrder.count({ where: { itemId, tenantId } }),
     prisma.bOM.count({ where: { itemId, tenantId } }),
@@ -79,6 +80,7 @@ export async function checkItemReferencesForBulk(itemId: string, tenantId: strin
     prisma.engineeringChange.count({ where: { targetItemId: itemId, tenantId } }),
     prisma.itemSubstitute.count({ where: { OR: [{ itemId }, { substituteItemId: itemId }] } }),
     prisma.workOrderMaterialLot.count({ where: { materialItemId: itemId, tenantId } }),
+    prisma.workStandardMapping.count({ where: { itemId, tenantId } }),
   ])
 
   const reasons: string[] = []
@@ -102,6 +104,7 @@ export async function checkItemReferencesForBulk(itemId: string, tenantId: strin
   if (engineeringChange > 0) reasons.push(`ECN ${engineeringChange}건`)
   if (itemSubstitute > 0) reasons.push(`대체품 설정 ${itemSubstitute}건`)
   if (materialLot > 0) reasons.push(`자재LOT 사용 ${materialLot}건`)
+  if (workStandardMapping > 0) reasons.push(`작업표준서 매핑 ${workStandardMapping}건`)
 
   return { canDelete: reasons.length === 0, reasons }
 }
