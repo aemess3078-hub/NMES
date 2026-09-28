@@ -10,7 +10,7 @@ import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 import { cancelProductionPlanForTenant } from "@/lib/production-plan-cancel.server"
 import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
-import { withQuantityTransactionRetry } from "@/lib/quantity-concurrency"
+import { lockProductionPlanItemsForUpdate, withQuantityTransactionRetry } from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,6 +359,10 @@ export async function createPlan(data: CreatePlanInput, _tenantId: string) {
   const tenantId = user.tenantId
   const { items, startDate, endDate, note, ...headerFields } = data
 
+  if (data.status === PlanStatus.CANCELLED) {
+    throw new Error("취소 상태로 생산계획을 직접 등록할 수 없습니다.")
+  }
+
   if (items.some((item) => item.productionPlanItemId || item.salesOrderItemId)) {
     throw new Error("신규 생산계획에 기존 품목 또는 수주 연결을 지정할 수 없습니다.")
   }
@@ -415,121 +419,149 @@ export async function createPlan(data: CreatePlanInput, _tenantId: string) {
 export async function updatePlan(id: string, data: CreatePlanInput) {
   const user = await requireResourcePermission("PRODUCTION_PLAN", "UPDATE")
   const tenantId = user.tenantId
-  const existing = await prisma.productionPlan.findFirst({
-    where: { id, tenantId },
-    select: {
-      status: true,
-      tenantId: true,
-      items: {
-        select: {
-          id: true,
-          itemId: true,
-          salesOrderItemId: true,
-          salesOrderItem: {
-            select: {
-              salesOrder: { select: { tenantId: true } },
-            },
-          },
-        },
-      },
-    },
-  })
-
-  if (!existing) {
-    throw new Error("생산계획을 찾을 수 없습니다.")
-  }
-
-  const blockedStatuses: PlanStatus[] = ["IN_PROGRESS", "COMPLETED", "CANCELLED"]
-  if (blockedStatuses.includes(existing.status)) {
-    throw new Error(
-      `'${existing.status}' 상태의 생산계획은 수정할 수 없습니다.`
-    )
-  }
-
   const { items, startDate, endDate, note, ...headerFields } = data
 
-  const reconciliation = reconcileProductionPlanItems(
-    existing.tenantId,
-    existing.items.map((item) => ({
-      id: item.id,
-      itemId: item.itemId,
-      salesOrderItemId: item.salesOrderItemId,
-      salesOrderItemTenantId: item.salesOrderItem?.salesOrder.tenantId ?? null,
-    })),
-    items
-  )
+  if (headerFields.status === PlanStatus.CANCELLED) {
+    throw new Error("생산계획 취소는 취소 기능을 이용해 주세요.")
+  }
 
   for (const item of items) {
     if (item.routingId) {
-      await validateRoutingForItem({ tenantId: existing.tenantId, itemId: item.itemId, routingId: item.routingId })
+      await validateRoutingForItem({ tenantId, itemId: item.itemId, routingId: item.routingId })
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    if (reconciliation.deleteIds.length > 0) {
-      await tx.productionPlanItem.deleteMany({
-        where: { planId: id, id: { in: reconciliation.deleteIds } },
-      })
-    }
-
-    for (const productionPlanItemId of reconciliation.updateIds) {
-      const item = items.find(
-        (candidate) => candidate.productionPlanItemId?.trim() === productionPlanItemId
-      )!
-      await tx.productionPlanItem.update({
-        where: { id: productionPlanItemId },
-        data: {
-          itemId: item.itemId,
-          bomId: item.bomId ?? null,
-          routingId: item.routingId ?? null,
-          plannedQty: item.plannedQty,
-          note: item.note ?? null,
+  await withQuantityTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const planForLock = await tx.productionPlan.findFirst({
+        where: { id, tenantId },
+        select: {
+          id: true,
+          items: { select: { id: true } },
         },
       })
-    }
 
-    for (const itemIndex of reconciliation.createIndexes) {
-      const item = items[itemIndex]
-      await tx.productionPlanItem.create({
-        data: {
-          planId: id,
-          itemId: item.itemId,
-          bomId: item.bomId ?? null,
-          routingId: item.routingId ?? null,
-          plannedQty: item.plannedQty,
-          note: item.note ?? null,
-          salesOrderItemId: null,
+      if (!planForLock) {
+        throw new Error("생산계획을 찾을 수 없습니다.")
+      }
+
+      await lockProductionPlanItemsForUpdate(
+        tx,
+        tenantId,
+        planForLock.items.map((item) => item.id)
+      )
+
+      const existing = await tx.productionPlan.findFirst({
+        where: { id, tenantId },
+        select: {
+          status: true,
+          tenantId: true,
+          items: {
+            select: {
+              id: true,
+              itemId: true,
+              salesOrderItemId: true,
+              salesOrderItem: {
+                select: {
+                  salesOrder: { select: { tenantId: true } },
+                },
+              },
+            },
+          },
         },
       })
-    }
 
-    await tx.productionPlan.update({
-      where: { id },
-      data: {
-        ...headerFields,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        note: note ?? null,
-      },
+      if (!existing) {
+        throw new Error("생산계획을 찾을 수 없습니다.")
+      }
+
+      const blockedStatuses: PlanStatus[] = ["IN_PROGRESS", "COMPLETED", "CANCELLED"]
+      if (blockedStatuses.includes(existing.status)) {
+        throw new Error(
+          `'${existing.status}' 상태의 생산계획은 수정할 수 없습니다.`
+        )
+      }
+
+      if (headerFields.status === PlanStatus.CANCELLED) {
+        throw new Error("생산계획 취소는 취소 기능을 이용해 주세요.")
+      }
+
+      const reconciliation = reconcileProductionPlanItems(
+        existing.tenantId,
+        existing.items.map((item) => ({
+          id: item.id,
+          itemId: item.itemId,
+          salesOrderItemId: item.salesOrderItemId,
+          salesOrderItemTenantId: item.salesOrderItem?.salesOrder.tenantId ?? null,
+        })),
+        items
+      )
+
+      if (reconciliation.deleteIds.length > 0) {
+        await tx.productionPlanItem.deleteMany({
+          where: { planId: id, id: { in: reconciliation.deleteIds } },
+        })
+      }
+
+      for (const productionPlanItemId of reconciliation.updateIds) {
+        const item = items.find(
+          (candidate) => candidate.productionPlanItemId?.trim() === productionPlanItemId
+        )!
+        await tx.productionPlanItem.update({
+          where: { id: productionPlanItemId },
+          data: {
+            itemId: item.itemId,
+            bomId: item.bomId ?? null,
+            routingId: item.routingId ?? null,
+            plannedQty: item.plannedQty,
+            note: item.note ?? null,
+          },
+        })
+      }
+
+      for (const itemIndex of reconciliation.createIndexes) {
+        const item = items[itemIndex]
+        await tx.productionPlanItem.create({
+          data: {
+            planId: id,
+            itemId: item.itemId,
+            bomId: item.bomId ?? null,
+            routingId: item.routingId ?? null,
+            plannedQty: item.plannedQty,
+            note: item.note ?? null,
+            salesOrderItemId: null,
+          },
+        })
+      }
+
+      await tx.productionPlan.update({
+        where: { id },
+        data: {
+          ...headerFields,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          note: note ?? null,
+        },
+      })
+      await recordAuditLog(tx, {
+        tenantId,
+        actor: user,
+        entityType: "ProductionPlan",
+        entityId: id,
+        action: "UPDATE",
+        beforeData: {
+          status: existing.status,
+          itemCount: existing.items.length,
+        },
+        afterData: {
+          changes: buildAuditChanges(existing as any, data as any, ["status"]),
+          itemCount: items.length,
+          reconciliation,
+        },
+        menuName: "생산계획",
+      })
     })
-    await recordAuditLog(tx, {
-      tenantId,
-      actor: user,
-      entityType: "ProductionPlan",
-      entityId: id,
-      action: "UPDATE",
-      beforeData: {
-        status: existing.status,
-        itemCount: existing.items.length,
-      },
-      afterData: {
-        changes: buildAuditChanges(existing as any, data as any, ["status"]),
-        itemCount: items.length,
-        reconciliation,
-      },
-      menuName: "생산계획",
-    })
-  })
+  )
 
   revalidatePath("/app/mes/production-plan")
 }

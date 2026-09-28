@@ -716,6 +716,33 @@ async function runConcurrencyInvariantAssertions(fixture: Fixture) {
   ])
   assert(!(plan.status === PlanStatus.CANCELLED && workOrderCount > 0), "concurrency invariant: CANCELLED Plan + WorkOrder exists 상태 없음")
 }
+async function runUpdateCancelConcurrencyAssertions(fixture: Fixture) {
+  const row = await createSalesOrderWithPlan(fixture, "UPDATE-CANCEL", { planStatus: PlanStatus.CONFIRMED })
+  const updateLike = (async () => {
+    await sleep(50)
+    return prisma.$transaction(async (tx) => {
+      const planForLock = await tx.productionPlan.findFirstOrThrow({
+        where: { id: row.plan.id, tenantId: fixture.tenant.id },
+        select: { items: { select: { id: true } } },
+      })
+      await lockProductionPlanItemsForUpdate(tx, fixture.tenant.id, planForLock.items.map((item) => item.id))
+      const latest = await tx.productionPlan.findFirstOrThrow({
+        where: { id: row.plan.id, tenantId: fixture.tenant.id },
+        select: { status: true },
+      })
+      if (([PlanStatus.IN_PROGRESS, PlanStatus.COMPLETED, PlanStatus.CANCELLED] as PlanStatus[]).includes(latest.status)) {
+        throw new Error(`'${latest.status}' 상태의 생산계획은 수정할 수 없습니다.`)
+      }
+      return tx.productionPlan.update({ where: { id: row.plan.id }, data: { status: PlanStatus.CONFIRMED } })
+    })
+  })()
+  const canceller = cancelPlanForTest(row.plan.id, fixture.tenant.id, "update cancel race")
+  const results = await Promise.allSettled([canceller, updateLike])
+  assert(results[0].status === "fulfilled", "cancel vs update concurrency: cancel 성공")
+  assert(results[1].status === "rejected", "cancel vs update concurrency: lock 이후 최신 CANCELLED 상태를 본 update 차단")
+  const plan = await prisma.productionPlan.findUniqueOrThrow({ where: { id: row.plan.id } })
+  assertEqual(plan.status, PlanStatus.CANCELLED, "cancel vs update concurrency invariant: 최종 Plan 상태 CANCELLED 유지")
+}
 
 async function runDbAssertions() {
   const fixture = await createFixture()
@@ -833,6 +860,7 @@ async function runDbAssertions() {
   await runMultiplePlanAssertions(fixture)
   await runPermissionPayloadAssertions(fixture)
   await runConcurrencyInvariantAssertions(fixture)
+  await runUpdateCancelConcurrencyAssertions(fixture)
 }
 
 function runSourceAssertions() {
@@ -842,6 +870,9 @@ function runSourceAssertions() {
   const salesActionSource = readFileSync(join(process.cwd(), "src/lib/actions/sales-order.actions.ts"), "utf8")
   const detailSheetSource = readFileSync(join(process.cwd(), "src/app/app/mes/sales-orders/sales-order-detail-sheet.tsx"), "utf8")
   const planDetailSource = readFileSync(join(process.cwd(), "src/app/app/mes/production-plan/plan-detail-sheet.tsx"), "utf8")
+
+  const planFormSource = readFileSync(join(process.cwd(), "src/app/app/mes/production-plan/plan-form-sheet.tsx"), "utf8")
+  const updatePlanSource = planActionSource.slice(planActionSource.indexOf("export async function updatePlan"), planActionSource.indexOf("export async function cancelProductionPlan"))
 
   assert(!progressSource.includes("ProductionPlan.endDate") && progressSource.includes("item.deliveryDate ?? salesOrder.deliveryDate"), "고객 납기일은 수주/품목 납기에서만 계산")
   assert(progressSource.includes("planItem.plan.status !== PlanStatus.CANCELLED"), "진행상황 집계에서 취소 생산계획 제외")
@@ -860,6 +891,12 @@ function runSourceAssertions() {
   assert(detailSheetSource.includes("생산·출하 진행상황") && detailSheetSource.includes("고객 납기"), "수주 상세 sheet에 진행상황과 고객 납기 표시")
   assert(!detailSheetSource.includes("date-fns"), "F22 수주 상세 날짜 fallback은 KST helper 사용")
   assert(planDetailSource.includes("계획 기간") && planDetailSource.includes("고객 납기"), "생산계획 상세에서 계획 기간과 고객 납기를 분리 표시")
+  assert(planActionSource.includes("취소 상태로 생산계획을 직접 등록할 수 없습니다."), "createPlan이 CANCELLED 직접 등록 차단")
+  assert(updatePlanSource.includes("생산계획 취소는 취소 기능을 이용해 주세요."), "updatePlan이 CANCELLED 직접 수정 차단")
+  assert(updatePlanSource.includes("withQuantityTransactionRetry") && updatePlanSource.includes("lockProductionPlanItemsForUpdate"), "updatePlan이 retry + ProductionPlanItem lock 사용")
+  assert(updatePlanSource.indexOf("lockProductionPlanItemsForUpdate") < updatePlanSource.lastIndexOf("const existing"), "updatePlan은 lock 후 최신 plan/status/items 재조회")
+  assert(updatePlanSource.lastIndexOf("const existing") < updatePlanSource.indexOf("reconcileProductionPlanItems"), "updatePlan은 최신 items 기준으로 reconciliation 계산")
+  assert(!planFormSource.includes("{ label: \"취소\", value: PlanStatus.CANCELLED }"), "생산계획 Form 상태 선택지에서 CANCELLED 제거")
 }
 
 async function main() {
