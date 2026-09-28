@@ -5,9 +5,10 @@ import { requireRole } from "@/lib/auth"
 import { SalesOrderStatus } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getErrorMessage } from "@/lib/utils"
-import { requireResourcePermission } from "@/lib/auth/role-permissions"
+import { hasResourcePermission, getCurrentPermissionSnapshot, requireResourcePermission } from "@/lib/auth/role-permissions"
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
 import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
+import { getSalesOrderProgressForTenant } from "@/lib/sales-order-progress.server"
 
 // ─── Query Functions ──────────────────────────────────────────────────────────
 
@@ -308,6 +309,19 @@ export async function deleteSalesOrder(id: string) {
   revalidatePath("/app/mes/sales-orders")
 }
 
+export async function getSalesOrderProgress(salesOrderId: string) {
+  const user = await requireResourcePermission("SALES_ORDER", "READ")
+  const snapshot = await getCurrentPermissionSnapshot(user)
+  return getSalesOrderProgressForTenant({
+    salesOrderId,
+    tenantId: user.tenantId,
+    permissions: {
+      canReadProductionPlan: hasResourcePermission(snapshot, "PRODUCTION_PLAN", "READ"),
+      canReadWorkOrder: hasResourcePermission(snapshot, "WORK_ORDER", "READ"),
+      canReadShipment: hasResourcePermission(snapshot, "SHIPMENT", "READ"),
+    },
+  })
+}
 // ─── S2: 재고 조회 ─────────────────────────────────────────────────────────────
 
 export type ItemStockStatus = {

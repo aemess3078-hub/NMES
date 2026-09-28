@@ -2,12 +2,20 @@
 
 import Link from "next/link"
 import { ColumnDef } from "@tanstack/react-table"
+import { MoreHorizontal, Pencil, Trash2, XCircle } from "lucide-react"
 import { PlanStatus, PlanType } from "@prisma/client"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DataTableColumnHeader } from "@/components/common/data-table"
-import { DataTableRowActions } from "@/components/common/data-table"
 import { PlanWithDetails } from "@/lib/actions/production-plan.actions"
 import { formatQuantity } from "@/lib/utils"
 
@@ -28,6 +36,7 @@ const planStatusLabels: Record<PlanStatus, string> = {
 type GetColumnsProps = {
   onEdit: (plan: PlanWithDetails) => void
   onDelete: (plan: PlanWithDetails) => void
+  onCancel: (plan: PlanWithDetails) => void
   onViewDetail: (plan: PlanWithDetails) => void
   canUpdate: boolean
   canDelete: boolean
@@ -37,7 +46,7 @@ function formatDate(date: Date): string {
   return new Date(date).toISOString().split("T")[0]
 }
 
-export function getColumns({ onEdit, onDelete, onViewDetail, canUpdate, canDelete }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
+export function getColumns({ onEdit, onDelete, onCancel, onViewDetail, canUpdate, canDelete }: GetColumnsProps): ColumnDef<PlanWithDetails>[] {
   return [
     {
       accessorKey: "planNo",
@@ -128,7 +137,7 @@ export function getColumns({ onEdit, onDelete, onViewDetail, canUpdate, canDelet
         if (dates.length === 0) return null
         return dates.reduce((min, d) => (d < min ? d : min))
       },
-      header: "납기일",
+      header: "고객 납기일",
       cell: ({ row }) => {
         const date = row.getValue("earliestDueDate") as Date | null
         if (!date) return <span className="text-[13px] text-muted-foreground/40">—</span>
@@ -214,7 +223,7 @@ export function getColumns({ onEdit, onDelete, onViewDetail, canUpdate, canDelet
       cell: ({ row }) => {
         const plan = row.original
         const firstItem = plan.items[0]
-        if (!firstItem) return <span className="text-[13px] text-muted-foreground">—</span>
+        if (!firstItem || plan.status === "CANCELLED") return <span className="text-[13px] text-muted-foreground">—</span>
         return (
           <Button variant="outline" size="sm" className="h-7 text-[12px]" asChild>
             <Link
@@ -230,14 +239,43 @@ export function getColumns({ onEdit, onDelete, onViewDetail, canUpdate, canDelet
     {
       id: "actions",
       cell: ({ row }) => {
-        const status = row.original.status
+        const plan = row.original
+        const status = plan.status
+        const canEditPlan = canUpdate && status !== "CANCELLED"
+        const canCancelPlan = canUpdate && (status === "DRAFT" || status === "CONFIRMED")
         const canDeletePlan = canDelete && status === "DRAFT"
-        if (!canUpdate && !canDeletePlan) return null
+        if (!canEditPlan && !canCancelPlan && !canDeletePlan) return null
         return (
-          <DataTableRowActions
-            onEdit={canUpdate ? () => onEdit(row.original) : undefined}
-            onDelete={canDeletePlan ? () => onDelete(row.original) : undefined}
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="flex h-8 w-8 p-0 data-[state=open]:bg-muted">
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">메뉴 열기</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[150px]">
+              <DropdownMenuLabel className="text-[13px]">작업</DropdownMenuLabel>
+              {canEditPlan && (
+                <DropdownMenuItem onClick={() => onEdit(plan)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  수정
+                </DropdownMenuItem>
+              )}
+              {canCancelPlan && (
+                <DropdownMenuItem onClick={() => onCancel(plan)} className="text-amber-700 focus:text-amber-700">
+                  <XCircle className="mr-2 h-4 w-4" />
+                  취소
+                </DropdownMenuItem>
+              )}
+              {(canUpdate || canCancelPlan) && canDeletePlan && <DropdownMenuSeparator />}
+              {canDeletePlan && (
+                <DropdownMenuItem onClick={() => onDelete(plan)} className="text-destructive focus:text-destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  삭제
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )
       },
       enableSorting: false,

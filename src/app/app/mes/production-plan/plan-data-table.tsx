@@ -3,15 +3,17 @@
 import Link from "next/link"
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Loader2, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
 import { PlanFormSheet } from "./plan-form-sheet"
 import { PlanDetailSheet } from "./plan-detail-sheet"
-import { deletePlan, PlanWithDetails } from "@/lib/actions/production-plan.actions"
+import { cancelProductionPlan, deletePlan, PlanWithDetails } from "@/lib/actions/production-plan.actions"
 import type { ResourcePermissionFlags } from "@/lib/auth/role-permissions"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 interface PlanDataTableProps {
   data: PlanWithDetails[]
@@ -29,6 +31,10 @@ export function PlanDataTable({ data, sites, items, tenantId, permissions, initi
   const [editingPlan, setEditingPlan] = useState<PlanWithDetails | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailPlan, setDetailPlan] = useState<PlanWithDetails | null>(null)
+  const [cancelPlanTarget, setCancelPlanTarget] = useState<PlanWithDetails | null>(null)
+  const [cancelReason, setCancelReason] = useState("")
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
   const visibleData = useMemo(() => {
     if (!initialSalesOrderId) return data
     return data.filter((plan) =>
@@ -78,9 +84,37 @@ export function PlanDataTable({ data, sites, items, tenantId, permissions, initi
     setDetailOpen(true)
   }
 
+  const handleOpenCancel = (plan: PlanWithDetails) => {
+    setCancelPlanTarget(plan)
+    setCancelReason("")
+    setCancelError(null)
+  }
+
+  const handleCancelPlan = async () => {
+    if (!cancelPlanTarget) return
+    const reason = cancelReason.trim()
+    if (!reason) {
+      setCancelError("취소사유를 입력하세요.")
+      return
+    }
+    setCancelSubmitting(true)
+    setCancelError(null)
+    try {
+      await cancelProductionPlan(cancelPlanTarget.id, reason)
+      setCancelPlanTarget(null)
+      setCancelReason("")
+      router.refresh()
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "생산계획 취소 중 오류가 발생했습니다.")
+    } finally {
+      setCancelSubmitting(false)
+    }
+  }
+
   const columns = getColumns({
     onEdit: handleEdit,
     onDelete: handleDelete,
+    onCancel: handleOpenCancel,
     onViewDetail: handleViewDetail,
     canUpdate: permissions.canUpdate,
     canDelete: permissions.canDelete,
@@ -157,6 +191,34 @@ export function PlanDataTable({ data, sites, items, tenantId, permissions, initi
         items={items}
         tenantId={tenantId}
       />
+
+
+      <Dialog open={cancelPlanTarget != null} onOpenChange={(open) => { if (!open && !cancelSubmitting) setCancelPlanTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>생산계획 취소</DialogTitle>
+            <DialogDescription>
+              {cancelPlanTarget ? `'${cancelPlanTarget.planNo}' 생산계획을 취소합니다. 취소사유는 AuditLog에 기록됩니다.` : "생산계획을 취소합니다."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Textarea
+              value={cancelReason}
+              onChange={(event) => setCancelReason(event.target.value)}
+              placeholder="취소사유를 입력하세요."
+              disabled={cancelSubmitting}
+            />
+            {cancelError ? <p className="text-[13px] text-red-600">{cancelError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelPlanTarget(null)} disabled={cancelSubmitting}>닫기</Button>
+            <Button variant="destructive" onClick={handleCancelPlan} disabled={cancelSubmitting}>
+              {cancelSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              취소 확정
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PlanDetailSheet
         open={detailOpen}

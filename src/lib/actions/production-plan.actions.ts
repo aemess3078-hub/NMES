@@ -8,6 +8,7 @@ import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { reconcileProductionPlanItems } from "@/lib/production-plan-item-reconciliation"
 import { evaluateProductionPlanWorkOrderCompletion } from "@/lib/production-plan-workorder-integrity"
 import { buildAuditChanges, recordAuditLog, summarizeAuditItems } from "@/lib/audit-log"
+import { cancelProductionPlanForTenant } from "@/lib/production-plan-cancel.server"
 import { kstDateParts, withUniqueBusinessNumberRetry } from "@/lib/business-numbering"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -532,11 +533,32 @@ export async function updatePlan(id: string, data: CreatePlanInput) {
   revalidatePath("/app/mes/production-plan")
 }
 
+export async function cancelProductionPlan(id: string, reason: string) {
+  const user = await requireResourcePermission("PRODUCTION_PLAN", "UPDATE")
+  const result = await prisma.$transaction(async (tx) =>
+    cancelProductionPlanForTenant({
+      tx,
+      planId: id,
+      tenantId: user.tenantId,
+      actor: user,
+      reason,
+    })
+  )
+
+  revalidatePath("/app/mes/production-plan")
+  revalidatePath("/app/mes/sales-orders")
+  revalidatePath("/app/mes/sales/order-status")
+  return result
+}
+
 export async function deletePlan(id: string) {
   const user = await requireResourcePermission("PRODUCTION_PLAN", "DELETE")
   const existing = await prisma.productionPlan.findFirst({
     where: { id, tenantId: user.tenantId },
-    select: { status: true },
+    select: {
+      status: true,
+      items: { select: { _count: { select: { workOrders: true } } } },
+    },
   })
 
   if (!existing) {
@@ -549,6 +571,10 @@ export async function deletePlan(id: string) {
     )
   }
 
+  if (existing.items.some((item) => item._count.workOrders > 0)) {
+    throw new Error("연결된 작업지시가 있습니다. 작업지시를 먼저 확인/정리한 후 생산계획을 삭제하세요.")
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.productionPlanItem.deleteMany({ where: { planId: id } })
     await tx.productionPlan.delete({ where: { id } })
@@ -558,7 +584,7 @@ export async function deletePlan(id: string) {
       entityType: "ProductionPlan",
       entityId: id,
       action: "DELETE",
-      beforeData: existing,
+      beforeData: { status: existing.status },
       menuName: "생산계획",
     })
   })
