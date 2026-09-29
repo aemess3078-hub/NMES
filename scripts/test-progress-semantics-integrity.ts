@@ -13,7 +13,7 @@ const {
   computeProductionOutputQty,
   computeProgressRate,
 } = require("../src/lib/actions/production-progress.service") as typeof import("../src/lib/actions/production-progress.service")
-
+const { validateDbTarget } = require("./f23-browser-smoke") as typeof import("./f23-browser-smoke")
 
 let passed = 0
 let failed = 0
@@ -34,6 +34,15 @@ function formatValue(value: unknown): string {
 
 function assertEqual<T>(actual: T, expected: T, label: string) {
   assert(formatValue(actual) === formatValue(expected), `${label} (expected=${formatValue(expected)}, actual=${formatValue(actual)})`)
+}
+
+function assertThrows(run: () => void, includes: string, label: string) {
+  try {
+    run()
+    assert(false, label)
+  } catch (error) {
+    assert(error instanceof Error && error.message.includes(includes), label)
+  }
 }
 
 function source(path: string) {
@@ -123,6 +132,23 @@ function runProductionCalculationAssertions() {
   assertEqual(computeProgressRate(100, productionOutputQty), 50, "MES 생산 달성률: productionOutputQty / WorkOrder.plannedQty")
 }
 
+function runDbTargetGuardAssertions() {
+  const cheongunUrl = "postgresql://postgres.zgjoiyqtfivywajygevj:secret@example.supabase.co/postgres"
+  const cnsUrl = "postgresql://postgres.rkglajpajtuavmptidur:secret@example.supabase.co/postgres"
+  const otherUrl = "postgresql://postgres.otherprojectref:secret@example.supabase.co/postgres"
+
+  validateDbTarget(cheongunUrl, undefined)
+  assert(true, "DB guard: DATABASE_URL=청운, DIRECT_URL 없음은 통과")
+
+  validateDbTarget(cheongunUrl, cheongunUrl)
+  assert(true, "DB guard: DATABASE_URL=청운, DIRECT_URL=청운은 통과")
+
+  assertThrows(() => validateDbTarget(cnsUrl, cheongunUrl), "CNS Supabase DATABASE_URL", "DB guard: DATABASE_URL=CNS, DIRECT_URL=청운은 차단")
+  assertThrows(() => validateDbTarget(otherUrl, cheongunUrl), "DATABASE_URL must point to Cheongun", "DB guard: DATABASE_URL=기타, DIRECT_URL=청운은 차단")
+  assertThrows(() => validateDbTarget(cheongunUrl, cnsUrl), "CNS Supabase DIRECT_URL", "DB guard: DATABASE_URL=청운, DIRECT_URL=CNS는 차단")
+  assertThrows(() => validateDbTarget(undefined, cheongunUrl), "requires DATABASE_URL", "DB guard: DATABASE_URL 없음, DIRECT_URL=청운은 차단")
+}
+
 function runSourceAssertions() {
   const projectPage = source("src/app/app/mes/project-progress/page.tsx")
   const projectColumns = source("src/app/app/mes/project-progress/columns.tsx")
@@ -159,13 +185,17 @@ function runSourceAssertions() {
   assert(f23BrowserSmoke.includes('const REQUIRED_CHEONGUN_REF = "zgjoiyqtfivywajygevj"'), "F23 browser smoke가 청운 Supabase ref를 명시함")
   assert(f23BrowserSmoke.includes('const FORBIDDEN_CNS_REF = "rkglajpajtuavmptidur"'), "F23 browser smoke가 CNS Supabase ref를 명시 차단함")
   assert(f23BrowserSmoke.includes("function assertDbTarget()"), "F23 browser smoke가 DB target validation 함수를 가짐")
-  assert(f23BrowserSmoke.includes("process.env.DATABASE_URL") && f23BrowserSmoke.includes("process.env.DIRECT_URL"), "F23 browser smoke가 DATABASE_URL과 DIRECT_URL을 검사함")
+  assert(f23BrowserSmoke.includes("validateDbTarget(process.env.DATABASE_URL, process.env.DIRECT_URL)"), "F23 browser smoke가 DATABASE_URL을 정본으로 guard를 호출함")
+  assert(f23BrowserSmoke.includes("if (!dbUrl)") && f23BrowserSmoke.includes("requires DATABASE_URL"), "F23 browser smoke가 DATABASE_URL 존재를 필수로 검사함")
+  assert(f23BrowserSmoke.includes("!dbUrl.includes(REQUIRED_CHEONGUN_REF)"), "F23 browser smoke가 DATABASE_URL 청운 ref를 필수로 검사함")
+  assert(!f23BrowserSmoke.includes("dbUrls.some"), "F23 browser smoke가 DIRECT_URL만 청운이어도 통과하는 some() 방식을 쓰지 않음")
   assert(f23BrowserSmoke.indexOf("assertDbTarget()") < f23BrowserSmoke.indexOf("const fixture = await createFixture()"), "F23 browser smoke가 fixture 생성 전 DB target guard를 호출함")
-  assert(f23BrowserSmoke.includes("F23 browser smoke refused CNS Supabase project"), "F23 browser smoke가 CNS DB를 fail-fast로 차단함")
+  assert(f23BrowserSmoke.includes("CNS Supabase DATABASE_URL") && f23BrowserSmoke.includes("CNS Supabase DIRECT_URL"), "F23 browser smoke가 DATABASE_URL/DIRECT_URL CNS DB를 fail-fast로 차단함")
 }
 
 runProjectStageCalculationAssertions()
 runProductionCalculationAssertions()
+runDbTargetGuardAssertions()
 runSourceAssertions()
 
 console.log(`\n${passed} passed, ${failed} failed`)

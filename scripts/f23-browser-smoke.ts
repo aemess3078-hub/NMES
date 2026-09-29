@@ -29,19 +29,26 @@ loadLocalEnv()
 const REQUIRED_CHEONGUN_REF = "zgjoiyqtfivywajygevj"
 const FORBIDDEN_CNS_REF = "rkglajpajtuavmptidur"
 
-function assertDbTarget() {
-  const databaseUrl = process.env.DATABASE_URL ?? ""
-  const directUrl = process.env.DIRECT_URL ?? ""
-  const dbUrls = [databaseUrl, directUrl].filter(Boolean)
-  const hasCheongunRef = dbUrls.some((url) => url.includes(REQUIRED_CHEONGUN_REF))
-  const hasCnsRef = dbUrls.some((url) => url.includes(FORBIDDEN_CNS_REF))
+export function validateDbTarget(databaseUrl: string | undefined, directUrl: string | undefined) {
+  const dbUrl = databaseUrl ?? ""
+  const directDbUrl = directUrl ?? ""
 
-  if (hasCnsRef) {
-    throw new Error(`F23 browser smoke refused CNS Supabase project (${FORBIDDEN_CNS_REF}).`)
+  if (!dbUrl) {
+    throw new Error("F23 browser smoke requires DATABASE_URL before any DB operation.")
   }
-  if (!hasCheongunRef) {
-    throw new Error(`F23 browser smoke must run only against Cheongun Supabase (${REQUIRED_CHEONGUN_REF}).`)
+  if (dbUrl.includes(FORBIDDEN_CNS_REF)) {
+    throw new Error(`F23 browser smoke refused CNS Supabase DATABASE_URL (${FORBIDDEN_CNS_REF}).`)
   }
+  if (directDbUrl.includes(FORBIDDEN_CNS_REF)) {
+    throw new Error(`F23 browser smoke refused CNS Supabase DIRECT_URL (${FORBIDDEN_CNS_REF}).`)
+  }
+  if (!dbUrl.includes(REQUIRED_CHEONGUN_REF)) {
+    throw new Error(`F23 browser smoke DATABASE_URL must point to Cheongun Supabase (${REQUIRED_CHEONGUN_REF}).`)
+  }
+}
+
+function assertDbTarget() {
+  validateDbTarget(process.env.DATABASE_URL, process.env.DIRECT_URL)
   console.log(`F23 browser smoke DB target guard passed: Cheongun Supabase ${REQUIRED_CHEONGUN_REF}`)
 }
 
@@ -151,19 +158,21 @@ async function main() {
   }
 }
 
-main()
-  .then(async () => {
-    console.log("F23 browser smoke passed")
-  })
-  .catch(async (error) => {
-    console.error(error)
-    process.exitCode = 1
-  })
-  .finally(async () => {
-    try {
-      assertDbTarget()
-      await cleanup()
-    } finally {
-      await prisma.$disconnect()
-    }
-  })
+if (require.main === module) {
+  main()
+    .then(async () => {
+      console.log("F23 browser smoke passed")
+    })
+    .catch(async (error) => {
+      console.error(error)
+      process.exitCode = 1
+    })
+    .finally(async () => {
+      try {
+        assertDbTarget()
+        await cleanup()
+      } finally {
+        await prisma.$disconnect()
+      }
+    })
+}
