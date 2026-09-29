@@ -149,7 +149,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
     },
     {
       accessorKey: "progressRate",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="진행률" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="생산 달성률" />,
       cell: ({ row }) => {
         const rate = row.original.progressRate
         const display = resolveDisplayStatus(row.original)

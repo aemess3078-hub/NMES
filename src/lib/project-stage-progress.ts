@@ -21,7 +21,8 @@ export type ProjectStatusForDelay =
 
 const DUE_SOON_DAYS = 3
 
-// §5: 완료 단계 수 / 전체 유효 단계 수 × 100. 가중치/생산수량 실적과 섞지 않는다.
+// §5: 완료 단계 수 / 전체 유효 단계 수 × 100. 단계 완료율이며 MES 생산 달성률과 무관하다.
+// 가중치/생산수량 실적과 섞지 않는다.
 export function computeStageSummary(stages: StageForProgress[]): {
   totalCount: number
   completedCount: number

@@ -206,7 +206,7 @@ export function ProjectProgressDetailSheet({
 
               <div className="pt-3 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <p className="text-[13px] font-medium text-foreground">프로젝트 진행률</p>
+                  <p className="text-[13px] font-medium text-foreground">단계 완료율</p>
                   <p className="text-[13px] text-muted-foreground tabular-nums">
                     {completedCount} / {totalCount} 단계 완료 · {percent}%
                   </p>
