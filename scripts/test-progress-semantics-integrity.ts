@@ -135,6 +135,7 @@ function runSourceAssertions() {
   const salesOrderProgress = source("src/lib/sales-order-progress.server.ts")
   const productionDailyReport = source("src/app/app/mes/reports/production-daily/production-daily-report-client.tsx")
   const schema = source("prisma/schema.prisma")
+  const f23BrowserSmoke = source("scripts/f23-browser-smoke.ts")
 
   assert(!projectPage.includes("단계 진행률"), "Project page에서 '단계 진행률' 표현 제거")
   assert(projectPage.includes("단계 완료율"), "Project page 설명이 단계 완료율 의미를 드러냄")
@@ -154,6 +155,13 @@ function runSourceAssertions() {
     assert(!projectStageHelper.includes(forbidden), `Project stage helper가 MES 생산 정본(${forbidden})을 import/참조하지 않음`)
   }
   assert(!productionService.includes("ProjectStage") && !productionService.includes("computeStageSummary"), "Production progress service가 ProjectStage 단계 완료율을 참조하지 않음")
+
+  assert(f23BrowserSmoke.includes('const REQUIRED_CHEONGUN_REF = "zgjoiyqtfivywajygevj"'), "F23 browser smoke가 청운 Supabase ref를 명시함")
+  assert(f23BrowserSmoke.includes('const FORBIDDEN_CNS_REF = "rkglajpajtuavmptidur"'), "F23 browser smoke가 CNS Supabase ref를 명시 차단함")
+  assert(f23BrowserSmoke.includes("function assertDbTarget()"), "F23 browser smoke가 DB target validation 함수를 가짐")
+  assert(f23BrowserSmoke.includes("process.env.DATABASE_URL") && f23BrowserSmoke.includes("process.env.DIRECT_URL"), "F23 browser smoke가 DATABASE_URL과 DIRECT_URL을 검사함")
+  assert(f23BrowserSmoke.indexOf("assertDbTarget()") < f23BrowserSmoke.indexOf("const fixture = await createFixture()"), "F23 browser smoke가 fixture 생성 전 DB target guard를 호출함")
+  assert(f23BrowserSmoke.includes("F23 browser smoke refused CNS Supabase project"), "F23 browser smoke가 CNS DB를 fail-fast로 차단함")
 }
 
 runProjectStageCalculationAssertions()

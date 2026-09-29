@@ -25,6 +25,26 @@ function loadLocalEnv() {
 }
 
 loadLocalEnv()
+
+const REQUIRED_CHEONGUN_REF = "zgjoiyqtfivywajygevj"
+const FORBIDDEN_CNS_REF = "rkglajpajtuavmptidur"
+
+function assertDbTarget() {
+  const databaseUrl = process.env.DATABASE_URL ?? ""
+  const directUrl = process.env.DIRECT_URL ?? ""
+  const dbUrls = [databaseUrl, directUrl].filter(Boolean)
+  const hasCheongunRef = dbUrls.some((url) => url.includes(REQUIRED_CHEONGUN_REF))
+  const hasCnsRef = dbUrls.some((url) => url.includes(FORBIDDEN_CNS_REF))
+
+  if (hasCnsRef) {
+    throw new Error(`F23 browser smoke refused CNS Supabase project (${FORBIDDEN_CNS_REF}).`)
+  }
+  if (!hasCheongunRef) {
+    throw new Error(`F23 browser smoke must run only against Cheongun Supabase (${REQUIRED_CHEONGUN_REF}).`)
+  }
+  console.log(`F23 browser smoke DB target guard passed: Cheongun Supabase ${REQUIRED_CHEONGUN_REF}`)
+}
+
 const { prisma } = require("../src/lib/db/prisma") as typeof import("../src/lib/db/prisma")
 const { hashPassword } = require("../src/lib/password") as typeof import("../src/lib/password")
 
@@ -102,6 +122,7 @@ async function createFixture() {
 }
 
 async function main() {
+  assertDbTarget()
   const fixture = await createFixture()
   const browser = await chromium.launch({ headless: true, executablePath: BROWSER_EXECUTABLE })
   const page = await browser.newPage()
@@ -139,6 +160,10 @@ main()
     process.exitCode = 1
   })
   .finally(async () => {
-    await cleanup()
-    await prisma.$disconnect()
+    try {
+      assertDbTarget()
+      await cleanup()
+    } finally {
+      await prisma.$disconnect()
+    }
   })
