@@ -64,6 +64,7 @@ function makeResult(over: Partial<{
   manufacturingNo: string | null
   itemCode: string
   itemName: string
+  itemUom: string
   operationName: string
   plannedQty: number
   completedQty: number
@@ -81,6 +82,7 @@ function makeResult(over: Partial<{
     manufacturingNo: "MFG-001" as string | null,
     itemCode: "ITEM-1",
     itemName: "품목1",
+    itemUom: "EA",
     operationName: "사출",
     plannedQty: 100,
     completedQty: 100,
@@ -110,7 +112,7 @@ function makeResult(over: Partial<{
         id: "wo1",
         orderNo: o.orderNo,
         manufacturingNo: o.manufacturingNo,
-        item: { id: "item1", code: o.itemCode, name: o.itemName },
+        item: { id: "item1", code: o.itemCode, name: o.itemName, uom: o.itemUom },
       },
       routingOperation: {
         id: "ro1",
@@ -134,19 +136,15 @@ assertEqual(toKstDateOnly("2026-09-03T16:00:00.000Z"), "2026-09-04", "T2. UTC 16
   const rows = buildDailyProductionRows(results)
   assertEqual(rows.length, 1, "T3. 정상 실적 1건 -> 행 1개 생성")
   assertEqual(rows[0].producedQty, 100, "T3. producedQty = goodQty+defectQty+reworkQty")
-  assertEqual(rows[0].progressRate, 1, "T3. progressRate = completedQty/plannedQty(100/100)")
+  assertEqual(rows[0].itemUom, "EA", "T3. row는 품목 UOM을 유지한다")
 }
 {
   const rows = buildDailyProductionRows([makeResult({ startedAt: null })])
   assertEqual(rows.length, 0, "T4. startedAt이 없는 실적은 가짜 일자를 만들지 않고 제외한다(§ STEP 7)")
 }
 {
-  const rows = buildDailyProductionRows([makeResult({ plannedQty: 0, completedQty: 0 })])
-  assertEqual(rows[0].progressRate, null, "T5. plannedQty가 0이면 진행률은 0으로 나누지 않고 null")
-}
-{
   const rows = buildDailyProductionRows([makeResult({ endedAt: null })])
-  assertEqual(rows[0].workHours, null, "T6. endedAt이 없으면 가짜 작업시간을 만들지 않고 null")
+  assertEqual(rows[0].workHours, null, "T5. endedAt이 없으면 가짜 작업시간을 만들지 않고 null")
 }
 
 // ─── T7~T8: 일자별 그룹핑/소계 ────────────────────────────────────────────────
@@ -177,7 +175,8 @@ assertEqual(toKstDateOnly("2026-09-03T16:00:00.000Z"), "2026-09-04", "T2. UTC 16
   const summary = computeDailyProductionSummary(results, rows)
   assertEqual(summary.totalPlannedQty, 100, "T9. 같은 공정(workOrderOperationId)의 계획수량은 실적 행 수와 무관하게 한 번만 합산(중복 방지)")
   assertEqual(summary.totalGoodQty, 100, "T9. 생산수량(goodQty)은 실적 행 단위로 정상 합산")
-  assertEqual(summary.overallProgressRate, 1, "T10. 전체진행률 = distinct 공정 completedQty합/plannedQty합")
+  assertEqual(summary.isMixedUom, false, "T10. 단일 UOM 기간은 aggregate UOM 표시 가능")
+  assertEqual(summary.uom, "EA", "T10. 단일 UOM 기간의 UOM을 summary에 보존")
 }
 {
   const summary = computeDailyProductionSummary([], [])
@@ -185,12 +184,49 @@ assertEqual(toKstDateOnly("2026-09-03T16:00:00.000Z"), "2026-09-04", "T2. UTC 16
     resultCount: 0,
     totalPlannedQty: 0,
     totalWorkHours: 0,
-    overallProgressRate: null,
     totalProducedQty: 0,
     totalGoodQty: 0,
     totalDefectQty: 0,
     totalReworkQty: 0,
-  }, "T11. 빈 기간(실적 0건) -> 모든 합계 0, 진행률 null(0으로 나누지 않음)")
+    uom: null,
+    isMixedUom: false,
+  }, "T11. 빈 기간(실적 0건) -> 모든 합계 0, UOM 없음")
+}
+{
+  const results = [
+    makeResult({ id: "r1", workOrderOperationId: "op1", itemUom: "EA", plannedQty: 100, goodQty: 80 }),
+    makeResult({ id: "r2", workOrderOperationId: "op2", itemUom: "EA", plannedQty: 50, goodQty: 40 }),
+  ]
+  const rows = buildDailyProductionRows(results)
+  const summary = computeDailyProductionSummary(results, rows)
+  assertEqual(summary.isMixedUom, false, "T12. EA+EA summary는 mixed UOM 아님")
+  assertEqual(summary.uom, "EA", "T12. EA+EA summary UOM은 EA")
+  assertEqual(summary.totalPlannedQty, 150, "T12. 단일 UOM이면 계획수량 집계 가능")
+}
+{
+  const results = [
+    makeResult({ id: "r1", workOrderOperationId: "op1", itemUom: "EA", plannedQty: 100, goodQty: 80 }),
+    makeResult({ id: "r2", workOrderOperationId: "op2", itemUom: "KG", plannedQty: 20, goodQty: 10 }),
+  ]
+  const rows = buildDailyProductionRows(results)
+  const summary = computeDailyProductionSummary(results, rows)
+  const groups = groupDailyProductionByDate(rows)
+  assertEqual(summary.isMixedUom, true, "T13. EA+KG summary는 mixed UOM")
+  assertEqual(summary.uom, null, "T13. mixed summary는 aggregate UOM 없음")
+  assertEqual(groups[0].isMixedUom, true, "T13. 같은 날짜 EA+KG subtotal은 mixed UOM")
+  assertEqual(groups[0].uom, null, "T13. 같은 날짜 mixed subtotal은 UOM 없음")
+}
+{
+  const results = [
+    makeResult({ id: "r1", workOrderOperationId: "op1", itemUom: "EA", startedAt: "2026-09-01T00:00:00.000Z" }),
+    makeResult({ id: "r2", workOrderOperationId: "op2", itemUom: "KG", startedAt: "2026-09-02T00:00:00.000Z" }),
+  ]
+  const rows = buildDailyProductionRows(results)
+  const summary = computeDailyProductionSummary(results, rows)
+  const groups = groupDailyProductionByDate(rows)
+  assertEqual(summary.isMixedUom, true, "T14. 날짜별 단일 UOM이어도 전체 summary는 mixed UOM")
+  assertEqual(groups.map((group) => group.isMixedUom), [false, false], "T14. 날짜가 다르면 각 일자 subtotal은 단일 UOM")
+  assertEqual(groups.map((group) => group.uom), ["KG", "EA"], "T14. 각 일자 subtotal은 자기 UOM 유지")
 }
 
 // ─── T12~T14: 설비리포트 조인 ─────────────────────────────────────────────────

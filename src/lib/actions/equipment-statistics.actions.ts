@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { monitoringEligibleEquipmentWhere } from "@/lib/actions/equipment-monitoring.utils"
+import { kstDateRangeToUtcBounds, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
 import {
   actualProductionEquipmentWhere,
   resolveActualProductionEquipment,
@@ -17,19 +18,12 @@ export type EquipStatFilter = {
 }
 
 function parseDateRange(f: EquipStatFilter) {
-  return {
-    from: new Date(`${f.from}T00:00:00.000`),
-    to: new Date(`${f.to}T23:59:59.999`),
-  }
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(f.from, f.to)
+  return { from: fromDate, toExclusive: toExclusiveDate }
 }
 
 function defaultDateRange(): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date(to)
-  from.setDate(from.getDate() - 30)
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  return { from: fmt(from), to: fmt(to) }
+  return kstDefaultDateRange(30)
 }
 
 // ─── 1. 생산량 통계 ──────────────────────────────────────────────────────────
@@ -53,11 +47,11 @@ async function fetchProductionStats(
   tenantId: string,
   f: EquipStatFilter
 ): Promise<ProductionStats> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const results = await prisma.productionResult.findMany({
     where: {
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       workOrderOperation: {
         workOrder: { tenantId },
       },
@@ -104,7 +98,7 @@ async function fetchProductionStats(
     totalGoodQty += gq
     totalDefectQty += dq
     resultCount++
-    const date = r.startedAt.toISOString().slice(0, 10)
+    const date = toKstDateKey(r.startedAt)
     const key = `${date}|${equipment.id}`
     const e = dayMap.get(key) ?? {
       date,
@@ -155,12 +149,12 @@ async function fetchErrorStats(
   tenantId: string,
   f: EquipStatFilter
 ): Promise<ErrorStats> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const events = await prisma.equipmentEvent.findMany({
     where: {
       eventType: { in: ["ALARM", "WARNING"] },
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       equipment: {
         tenantId,
         ...(f.equipmentId ? { id: f.equipmentId } : {}),
@@ -226,11 +220,11 @@ async function fetchDowntimeStats(
   tenantId: string,
   f: EquipStatFilter
 ): Promise<DowntimeStats> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const downtimeRecords = await prisma.equipmentDowntime.findMany({
     where: {
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       equipment: {
         tenantId,
         ...(f.equipmentId ? { id: f.equipmentId } : {}),
@@ -302,11 +296,11 @@ async function fetchWorkTimeStats(
   tenantId: string,
   f: EquipStatFilter
 ): Promise<WorkTimeStats> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const results = await prisma.productionResult.findMany({
     where: {
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId },
@@ -351,7 +345,7 @@ async function fetchWorkTimeStats(
     const h = (r.endedAt.getTime() - r.startedAt.getTime()) / 3_600_000
     totalHours += h
     resultCount++
-    const date = r.startedAt.toISOString().slice(0, 10)
+    const date = toKstDateKey(r.startedAt)
     const key = `${date}|${equipment.id}`
     const e = dayMap.get(key) ?? {
       date,
@@ -393,8 +387,8 @@ async function fetchAvailabilityStats(
   tenantId: string,
   f: EquipStatFilter
 ): Promise<AvailabilityStats> {
-  const { from, to } = parseDateRange(f)
-  const totalMinutes = (to.getTime() - from.getTime()) / 60_000
+  const { from, toExclusive } = parseDateRange(f)
+  const totalMinutes = (toExclusive.getTime() - from.getTime()) / 60_000
 
   const equipments = await prisma.equipment.findMany({
     where: {
@@ -407,7 +401,7 @@ async function fetchAvailabilityStats(
       events: {
         where: {
           eventType: "RUN",
-          startedAt: { gte: from, lte: to },
+          startedAt: { gte: from, lt: toExclusive },
         },
         select: { startedAt: true, endedAt: true, duration: true },
       },
@@ -488,13 +482,12 @@ export async function getEquipmentErrorEvents(
   const from = fromOverride ?? defaults.from
   const to   = toOverride   ?? defaults.to
 
-  const fromDate = new Date(`${from}T00:00:00.000`)
-  const toDate   = new Date(`${to}T23:59:59.999`)
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(from, to)
 
   const rawEvents = await prisma.equipmentEvent.findMany({
     where: {
       eventType: { in: ["ALARM", "WARNING"] },
-      startedAt: { gte: fromDate, lte: toDate },
+      startedAt: { gte: fromDate, lt: toExclusiveDate },
       equipment: {
         tenantId,
         ...(equipmentId ? { id: equipmentId } : {}),
@@ -632,11 +625,11 @@ export async function getEquipmentCapacityStats(
     to: filterOverride?.to ?? defaults.to,
     equipmentId: filterOverride?.equipmentId,
   }
-  const { from, to } = parseDateRange(filter)
+  const { from, toExclusive } = parseDateRange(filter)
 
   const results = await prisma.productionResult.findMany({
     where: {
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId },

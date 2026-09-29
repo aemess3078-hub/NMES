@@ -22,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatQuantity, formatPercent } from "@/lib/utils"
+import { formatQuantity } from "@/lib/utils"
 import { downloadExcelSheet } from "@/lib/export-excel"
 import { buildReportFilename, formatKstDateTime } from "@/lib/actions/report.helpers"
 import type {
@@ -35,6 +35,7 @@ const NONE_VALUE = "__ALL__"
 interface FilterState {
   from: string
   to: string
+  siteId: string
   itemId: string
   routingOperationId: string
 }
@@ -61,6 +62,7 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
     const params = new URLSearchParams()
     if (next.from) params.set("from", next.from)
     if (next.to) params.set("to", next.to)
+    if (next.siteId) params.set("siteId", next.siteId)
     if (next.itemId) params.set("itemId", next.itemId)
     if (next.routingOperationId) params.set("routingOperationId", next.routingOperationId)
     startTransition(() => {
@@ -69,12 +71,16 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
   }
 
   function resetFilter() {
-    const reset: FilterState = { ...initialFilter, itemId: "", routingOperationId: "" }
+    const reset: FilterState = { ...initialFilter, siteId: "", itemId: "", routingOperationId: "" }
     setFilter(reset)
     applyFilter(reset)
   }
 
   const { summary, dateGroups } = report
+  const quantitySuffix = summary.isMixedUom ? "" : (summary.uom ?? "")
+  const mixedUomMessage = "복수 단위가 포함되어 전체 수량 합계를 표시하지 않습니다."
+  const formatSummaryQuantity = (value: number) =>
+    summary.isMixedUom ? "단위 혼합" : formatQuantity(value)
 
   function handleExcelDownload() {
     const header = [
@@ -87,11 +93,12 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
       "작업자",
       "작업시작",
       "작업종료",
-      "계획수량",
-      "생산수량",
+      "공정계획수량",
+      "실적수량",
+      "단위",
       "양품수량",
       "불량수량",
-      "진행률(%)",
+      "재작업수량",
       "작업시간(h)",
       "설비",
     ]
@@ -108,9 +115,10 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
         r.endedAt ? formatKstDateTime(r.endedAt) : "",
         r.plannedQty,
         r.producedQty,
+        r.itemUom,
         r.goodQty,
         r.defectQty,
-        r.progressRate !== null ? Number((r.progressRate * 100).toFixed(1)) : "",
+        r.reworkQty,
         r.workHours ?? "",
         r.equipmentName ?? "",
       ])
@@ -127,7 +135,7 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
           <Filter className="h-4 w-4" />
           필터
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="space-y-1">
             <Label htmlFor="from" className="text-[13px]">시작일</Label>
             <Input
@@ -147,6 +155,23 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
               onChange={(e) => setFilter((f) => ({ ...f, to: e.target.value }))}
               className="h-9 text-[14px]"
             />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[13px]">사업장</Label>
+            <Select
+              value={filter.siteId || NONE_VALUE}
+              onValueChange={(v) => setFilter((f) => ({ ...f, siteId: v === NONE_VALUE ? "" : v }))}
+            >
+              <SelectTrigger className="h-9 text-[14px]">
+                <SelectValue placeholder="전체" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE_VALUE}>전체</SelectItem>
+                {options.sites.map((site) => (
+                  <SelectItem key={site.id} value={site.id}>[{site.code}] {site.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <Label className="text-[13px]">품목</Label>
@@ -218,11 +243,38 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
 
       {/* 요약 */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <SummaryCard label="총계획수량" value={formatQuantity(summary.totalPlannedQty)} />
-        <SummaryCard label="총생산수량" value={formatQuantity(summary.totalProducedQty)} />
-        <SummaryCard label="총양품수량" value={formatQuantity(summary.totalGoodQty)} accent="green" />
-        <SummaryCard label="총불량수량" value={formatQuantity(summary.totalDefectQty)} accent="red" />
-        <SummaryCard label="전체진행률" value={formatPercent(summary.overallProgressRate)} />
+        <SummaryCard
+          label="공정계획수량"
+          value={formatSummaryQuantity(summary.totalPlannedQty)}
+          suffix={quantitySuffix}
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
+        <SummaryCard
+          label="총실적수량"
+          value={formatSummaryQuantity(summary.totalProducedQty)}
+          suffix={quantitySuffix}
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
+        <SummaryCard
+          label="총양품수량"
+          value={formatSummaryQuantity(summary.totalGoodQty)}
+          suffix={quantitySuffix}
+          accent="green"
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
+        <SummaryCard
+          label="총불량수량"
+          value={formatSummaryQuantity(summary.totalDefectQty)}
+          suffix={quantitySuffix}
+          accent="red"
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
+        <SummaryCard
+          label="총재작업수량"
+          value={formatSummaryQuantity(summary.totalReworkQty)}
+          suffix={quantitySuffix}
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
         <SummaryCard label="총작업시간" value={`${formatQuantity(summary.totalWorkHours)}h`} />
       </div>
 
@@ -248,11 +300,12 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
                   <TableHead className="text-[13px]">작업자</TableHead>
                   <TableHead className="text-[13px]">작업시작</TableHead>
                   <TableHead className="text-[13px]">작업종료</TableHead>
-                  <TableHead className="text-[13px] text-right">계획수량</TableHead>
-                  <TableHead className="text-[13px] text-right">생산수량</TableHead>
+                  <TableHead className="text-[13px] text-right">공정계획수량</TableHead>
+                  <TableHead className="text-[13px] text-right">실적수량</TableHead>
+                  <TableHead className="text-[13px]">단위</TableHead>
                   <TableHead className="text-[13px] text-right">양품수량</TableHead>
                   <TableHead className="text-[13px] text-right">불량수량</TableHead>
-                  <TableHead className="text-[13px] text-right">진행률</TableHead>
+                  <TableHead className="text-[13px] text-right">재작업수량</TableHead>
                   <TableHead className="text-[13px] text-right">작업시간</TableHead>
                   <TableHead className="text-[13px]">설비</TableHead>
                 </TableRow>
@@ -271,10 +324,13 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
 }
 
 function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups"][number] }) {
+  const quantitySubtotal = (value: number) =>
+    group.isMixedUom ? "단위 혼합" : `${formatQuantity(value)}${group.uom ? ` ${group.uom}` : ""}`
+
   return (
     <>
       <TableRow className="bg-muted/50">
-        <TableCell colSpan={14} className="text-[13px] font-medium text-foreground">
+        <TableCell colSpan={15} className="text-[13px] font-medium text-foreground">
           {group.date}
         </TableCell>
       </TableRow>
@@ -289,9 +345,10 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
           <TableCell className="text-[14px] whitespace-nowrap">{r.endedAt ? formatKstDateTime(r.endedAt) : "-"}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.plannedQty)}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.producedQty)}</TableCell>
+          <TableCell className="text-[14px]">{r.itemUom}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.goodQty)}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.defectQty)}</TableCell>
-          <TableCell className="text-[14px] text-right tabular-nums">{formatPercent(r.progressRate)}</TableCell>
+          <TableCell className="text-[14px] text-right tabular-nums">{formatQuantity(r.reworkQty)}</TableCell>
           <TableCell className="text-[14px] text-right tabular-nums">
             {r.workHours !== null ? `${formatQuantity(r.workHours)}h` : "-"}
           </TableCell>
@@ -303,15 +360,18 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
           {group.date} 소계
         </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.producedQty)}
-        </TableCell>
-        <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.goodQty)}
-        </TableCell>
-        <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.defectQty)}
+          {quantitySubtotal(group.subtotal.producedQty)}
         </TableCell>
         <TableCell />
+        <TableCell className="text-[13px] text-right tabular-nums font-medium">
+          {quantitySubtotal(group.subtotal.goodQty)}
+        </TableCell>
+        <TableCell className="text-[13px] text-right tabular-nums font-medium">
+          {quantitySubtotal(group.subtotal.defectQty)}
+        </TableCell>
+        <TableCell className="text-[13px] text-right tabular-nums font-medium">
+          {quantitySubtotal(group.subtotal.reworkQty)}
+        </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
           {formatQuantity(group.subtotal.workHours)}h
         </TableCell>
@@ -324,17 +384,25 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
 function SummaryCard({
   label,
   value,
+  suffix,
   accent,
+  description,
 }: {
   label: string
   value: string
+  suffix?: string
   accent?: "green" | "red"
+  description?: string
 }) {
   const color = accent === "green" ? "text-emerald-700" : accent === "red" ? "text-red-700" : "text-foreground"
   return (
     <div className="rounded-lg border bg-card px-4 py-3">
       <p className="text-[13px] text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-[20px] font-semibold tabular-nums ${color}`}>{value}</p>
+      <p className={`mt-1 text-[20px] font-semibold tabular-nums ${color}`}>
+        {value}
+        {suffix && <span className="ml-1 text-[13px] font-normal text-muted-foreground">{suffix}</span>}
+      </p>
+      {description && <p className="mt-1 text-[11px] text-muted-foreground">{description}</p>}
     </div>
   )
 }

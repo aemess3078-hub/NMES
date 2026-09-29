@@ -1,5 +1,6 @@
 import { getQualityReport, getReportFilterOptions } from "@/lib/actions/report.actions"
 import type { DefectStatsFilter } from "@/lib/actions/defect-stats.actions"
+import { resolveKstDateRangeFilter } from "@/lib/date/kst"
 import { QualityReportClient } from "./quality-report-client"
 
 export const dynamic = "force-dynamic"
@@ -13,21 +14,13 @@ interface PageProps {
   }>
 }
 
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  const fmt = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
-  return { from: fmt(from), to: fmt(to) }
-}
-
 export default async function QualityReportPage({ searchParams }: PageProps) {
   const params = searchParams ? await searchParams : {}
-  const defaults = defaultDateRange()
+  const dateRange = resolveKstDateRangeFilter(30, params.from, params.to)
 
   const filter: DefectStatsFilter = {
-    from: params.from?.trim() || defaults.from,
-    to: params.to?.trim() || defaults.to,
+    from: dateRange.from,
+    to: dateRange.to,
     itemId: params.itemId?.trim() || undefined,
     routingOperationId: params.routingOperationId?.trim() || undefined,
   }

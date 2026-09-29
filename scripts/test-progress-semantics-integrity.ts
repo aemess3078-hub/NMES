@@ -173,7 +173,9 @@ function runSourceAssertions() {
   assert(productionClient.includes('label="전체 생산 달성률"'), "Production 상단 KPI label이 전체 생산 달성률")
   assert(productionSummary.includes('label="전체 생산 달성률"'), "Production 요약 기존 전체 생산 달성률 label 유지")
 
-  assert(productionDailyReport.includes("진행률") && productionDailyReport.includes("전체진행률"), "F24 대상 production-daily report 진행률 label은 F23에서 미변경")
+  assert(!productionDailyReport.includes("진행률(%)"), "F24 production-daily Excel 진행률 컬럼 제거")
+  assert(!productionDailyReport.includes("전체진행률"), "F24 production-daily 전체진행률 KPI 제거")
+  assert(productionDailyReport.includes("공정계획수량") && productionDailyReport.includes("실적수량"), "F24 production-daily 수량 label 의미 분리")
   assert(!schema.includes("productionProgress") && !schema.includes("progressPercent"), "Schema에 프로젝트 생산률/progressPercent 컬럼 없음")
   assert(salesOrderProgress.includes("computeProductionOutputQty") && salesOrderProgress.includes("producedQty"), "F22 sales-order progress 정본 파일은 유지")
 

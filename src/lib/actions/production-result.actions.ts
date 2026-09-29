@@ -36,6 +36,7 @@ export type ProductionResultWithDetails = {
         id: string
         code: string
         name: string
+        uom: string
       }
     }
     routingOperation: {
@@ -55,7 +56,9 @@ export type ProductionResultFilters = {
   orderNo?: string
   startDate?: Date
   endDate?: Date
+  endDateExclusive?: Date
   itemId?: string
+  siteId?: string
   routingOperationId?: string
 }
 
@@ -83,13 +86,15 @@ export async function getProductionResults(
               }
             : {}),
           ...(filters?.itemId ? { itemId: filters.itemId } : {}),
+          ...(filters?.siteId ? { siteId: filters.siteId } : {}),
         },
       },
-      ...(filters?.startDate || filters?.endDate
+      ...(filters?.startDate || filters?.endDate || filters?.endDateExclusive
         ? {
             startedAt: {
               ...(filters.startDate ? { gte: filters.startDate } : {}),
               ...(filters.endDate ? { lte: filters.endDate } : {}),
+              ...(filters.endDateExclusive ? { lt: filters.endDateExclusive } : {}),
             },
           }
         : {}),
@@ -115,6 +120,7 @@ export async function getProductionResults(
                   id: true,
                   code: true,
                   name: true,
+                  uom: true,
                 },
               },
             },

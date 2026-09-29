@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { formatQuantity } from "@/lib/utils"
+import { kstDateKeyToNextUtcStart, kstDateKeyToUtcStart, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
 
 export const dynamic = "force-dynamic"
 
@@ -23,8 +24,9 @@ async function getExtendedKPIs() {
   const _t0 = Date.now()
   // ─────────────────────────────────────────────────────────────────────────
   const tenantId = await getTenantId()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const todayKey = toKstDateKey(new Date())
+  const todayStart = kstDateKeyToUtcStart(todayKey)
+  const tomorrowStart = kstDateKeyToNextUtcStart(todayKey)
 
   // ── [PERF-TEMP] ──────────────────────────────────────────────────────────
   const _t1 = Date.now()
@@ -46,7 +48,10 @@ async function getExtendedKPIs() {
     getProductionKPIs(),
     safe(
       () => prisma.qualityInspection.count({
-        where: { workOrderOperation: { workOrder: { tenantId } }, inspectedAt: { gte: today } },
+        where: {
+          workOrderOperation: { workOrder: { tenantId } },
+          inspectedAt: { gte: todayStart, lt: tomorrowStart },
+        },
       }),
       0,
     ),
@@ -60,14 +65,22 @@ async function getExtendedKPIs() {
       [],
     ),
     (async () => {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      const range = kstDefaultDateRange(30)
+      const fromDate = kstDateKeyToUtcStart(range.from)
+      const toExclusive = kstDateKeyToNextUtcStart(range.to)
       const [good, defect] = await Promise.all([
         safe(() => prisma.productionResult.aggregate({
-          where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
+          where: {
+            workOrderOperation: { workOrder: { tenantId } },
+            endedAt: { gte: fromDate, lt: toExclusive },
+          },
           _sum: { goodQty: true },
         }), { _sum: { goodQty: null } }),
         safe(() => prisma.productionResult.aggregate({
-          where: { workOrderOperation: { workOrder: { tenantId } }, endedAt: { gte: thirtyDaysAgo } },
+          where: {
+            workOrderOperation: { workOrder: { tenantId } },
+            endedAt: { gte: fromDate, lt: toExclusive },
+          },
           _sum: { defectQty: true },
         }), { _sum: { defectQty: null } }),
       ])
