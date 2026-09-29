@@ -4,7 +4,14 @@ import { WipMovementType, WorkOrderStatus } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { buildProductionProgressRow } from "@/lib/actions/production-progress.service"
-import { buildKstDateKeyRange, kstDateKeyToNextUtcStart, kstDateKeyToUtcStart, toKstDateKey } from "@/lib/date/kst"
+import {
+  buildKstDateKeyRange,
+  isValidKstDateKey,
+  kstDateKeyToNextUtcStart,
+  kstDateKeyToUtcStart,
+  kstDateRangeToUtcBounds,
+  toKstDateKey,
+} from "@/lib/date/kst"
 import type {
   DailyProductionTrendPoint,
   ProductionProgressData,
@@ -57,6 +64,7 @@ export async function getProductionProgressData(
   const tenantId = await getTenantId()
   const referenceDate = new Date()
   const appliedFilter: ProductionProgressFilter = filter ?? {}
+  const createdAtFilter = resolveOptionalKstRange(appliedFilter.from, appliedFilter.to)
 
   // ── Query 1: WorkOrder + Item + Operation + Assignment + ProductionResult ──
   // 기간 기준은 WorkOrder.createdAt만 사용한다(§기간 조회 기준 — 아래 주석 참고).
@@ -66,18 +74,7 @@ export async function getProductionProgressData(
       ...(appliedFilter.siteId ? { siteId: appliedFilter.siteId } : {}),
       ...(appliedFilter.itemId ? { itemId: appliedFilter.itemId } : {}),
       ...(appliedFilter.workOrderStatus ? { status: appliedFilter.workOrderStatus } : {}),
-      ...(appliedFilter.from || appliedFilter.to
-        ? {
-            createdAt: {
-              ...(appliedFilter.from
-                ? { gte: kstDateKeyToUtcStart(appliedFilter.from) }
-                : {}),
-              ...(appliedFilter.to
-                ? { lt: kstDateKeyToNextUtcStart(appliedFilter.to) }
-                : {}),
-            },
-          }
-        : {}),
+      ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
     },
     select: {
       id: true,
@@ -310,13 +307,10 @@ export async function getDailyProductionTrend(
 ): Promise<DailyProductionTrendPoint[]> {
   assertNewMesBrand()
   const tenantId = await getTenantId()
-  const { from, to } = validateDailyTrendRange(filter ?? {})
+  const { from, to, fromUtc, toExclusiveUtc } = validateDailyTrendRange(filter ?? {})
 
   const dateKeys = buildKstDateKeyRange(from, to)
-  const fromUtc = kstDateKeyToUtcStart(from)
-  // to는 inclusive이므로, "to의 다음 날 KST 00:00"을 exclusive upper bound로 사용한다
-  // (23:59:59.999 방식은 KST 자정 경계에서 오차가 생길 수 있어 사용하지 않는다).
-  const toExclusiveUtc = kstDateKeyToNextUtcStart(to)
+  // to는 inclusive이므로, "to의 다음 날 KST 00:00"을 exclusive upper bound로 사용한다.
 
   // ── Query 1: 기간 내 ProductionResult 후보 ─────────────────────────────────
   const results = await prisma.productionResult.findMany({
@@ -466,18 +460,36 @@ function summarizeProductionProgressRows(
 // UI는 이미 올바른 값을 보내지만, Server Action은 직접 호출될 수도 있으므로
 // production-progress-client.tsx의 기존 from>to 검증과 동일한 기준을 서버에도 둔다.
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+function resolveOptionalKstRange(
+  from?: string,
+  to?: string
+): { gte?: Date; lt?: Date } | null {
+  if (!from && !to) return null
+  if (from && !isValidKstDateKey(from)) {
+    throw new Error("조회 시작일이 올바르지 않습니다. YYYY-MM-DD 형식의 실제 KST 날짜를 입력해 주세요.")
+  }
+  if (to && !isValidKstDateKey(to)) {
+    throw new Error("조회 종료일이 올바르지 않습니다. YYYY-MM-DD 형식의 실제 KST 날짜를 입력해 주세요.")
+  }
+  if (from && to && from > to) {
+    throw new Error("시작일이 종료일보다 늦을 수 없습니다.")
+  }
+  return {
+    ...(from ? { gte: kstDateKeyToUtcStart(from) } : {}),
+    ...(to ? { lt: kstDateKeyToNextUtcStart(to) } : {}),
+  }
+}
 
-function validateDailyTrendRange(filter: ProductionProgressFilter): { from: string; to: string } {
+function validateDailyTrendRange(filter: ProductionProgressFilter): {
+  from: string
+  to: string
+  fromUtc: Date
+  toExclusiveUtc: Date
+} {
   const { from, to } = filter
   if (!from || !to) {
     throw new Error("조회 기간(시작일, 종료일)을 입력해 주세요.")
   }
-  if (!DATE_KEY_PATTERN.test(from) || !DATE_KEY_PATTERN.test(to)) {
-    throw new Error("날짜 형식이 올바르지 않습니다. (YYYY-MM-DD)")
-  }
-  if (from > to) {
-    throw new Error("시작일이 종료일보다 늦을 수 없습니다.")
-  }
-  return { from, to }
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(from, to)
+  return { from, to, fromUtc: fromDate, toExclusiveUtc: toExclusiveDate }
 }

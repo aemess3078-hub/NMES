@@ -101,6 +101,8 @@ export function buildDailyProductionRows(
 export type DailyProductionDateGroup = {
   date: string
   rows: DailyProductionRow[]
+  uom: string | null
+  isMixedUom: boolean
   subtotal: {
     producedQty: number
     goodQty: number
@@ -122,10 +124,15 @@ export function groupDailyProductionByDate(
   }
   return Array.from(map.entries())
     .sort(([a], [b]) => b.localeCompare(a))
-    .map(([date, dateRows]) => ({
-      date,
-      rows: dateRows,
-      subtotal: dateRows.reduce(
+    .map(([date, dateRows]) => {
+      const uoms = Array.from(new Set(dateRows.map((row) => row.itemUom)))
+      const isMixedUom = uoms.length > 1
+      return {
+        date,
+        rows: dateRows,
+        uom: isMixedUom ? null : (uoms[0] ?? null),
+        isMixedUom,
+        subtotal: dateRows.reduce(
         (acc, r) => ({
           producedQty: acc.producedQty + r.producedQty,
           goodQty: acc.goodQty + r.goodQty,
@@ -133,9 +140,10 @@ export function groupDailyProductionByDate(
           reworkQty: acc.reworkQty + r.reworkQty,
           workHours: acc.workHours + (r.workHours ?? 0),
         }),
-        { producedQty: 0, goodQty: 0, defectQty: 0, reworkQty: 0, workHours: 0 }
-      ),
-    }))
+          { producedQty: 0, goodQty: 0, defectQty: 0, reworkQty: 0, workHours: 0 }
+        ),
+      }
+    })
 }
 
 export type DailyProductionSummaryTotals = {

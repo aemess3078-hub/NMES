@@ -79,6 +79,8 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
   const { summary, dateGroups } = report
   const quantitySuffix = summary.isMixedUom ? "" : (summary.uom ?? "")
   const mixedUomMessage = "복수 단위가 포함되어 전체 수량 합계를 표시하지 않습니다."
+  const formatSummaryQuantity = (value: number) =>
+    summary.isMixedUom ? "단위 혼합" : formatQuantity(value)
 
   function handleExcelDownload() {
     const header = [
@@ -240,21 +242,39 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
       </div>
 
       {/* 요약 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <SummaryCard
           label="공정계획수량"
-          value={summary.isMixedUom ? "단위 혼합" : formatQuantity(summary.totalPlannedQty)}
+          value={formatSummaryQuantity(summary.totalPlannedQty)}
           suffix={quantitySuffix}
           description={summary.isMixedUom ? mixedUomMessage : undefined}
         />
         <SummaryCard
           label="총실적수량"
-          value={summary.isMixedUom ? "단위 혼합" : formatQuantity(summary.totalProducedQty)}
+          value={formatSummaryQuantity(summary.totalProducedQty)}
           suffix={quantitySuffix}
           description={summary.isMixedUom ? mixedUomMessage : undefined}
         />
-        <SummaryCard label="총양품수량" value={formatQuantity(summary.totalGoodQty)} suffix={quantitySuffix} accent="green" />
-        <SummaryCard label="총불량수량" value={formatQuantity(summary.totalDefectQty)} suffix={quantitySuffix} accent="red" />
+        <SummaryCard
+          label="총양품수량"
+          value={formatSummaryQuantity(summary.totalGoodQty)}
+          suffix={quantitySuffix}
+          accent="green"
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
+        <SummaryCard
+          label="총불량수량"
+          value={formatSummaryQuantity(summary.totalDefectQty)}
+          suffix={quantitySuffix}
+          accent="red"
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
+        <SummaryCard
+          label="총재작업수량"
+          value={formatSummaryQuantity(summary.totalReworkQty)}
+          suffix={quantitySuffix}
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
+        />
         <SummaryCard label="총작업시간" value={`${formatQuantity(summary.totalWorkHours)}h`} />
       </div>
 
@@ -304,6 +324,9 @@ export function ProductionDailyReportClient({ initialFilter, report, options }: 
 }
 
 function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups"][number] }) {
+  const quantitySubtotal = (value: number) =>
+    group.isMixedUom ? "단위 혼합" : `${formatQuantity(value)}${group.uom ? ` ${group.uom}` : ""}`
+
   return (
     <>
       <TableRow className="bg-muted/50">
@@ -337,17 +360,17 @@ function DateGroupRows({ group }: { group: DailyProductionReportData["dateGroups
           {group.date} 소계
         </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.producedQty)}
+          {quantitySubtotal(group.subtotal.producedQty)}
         </TableCell>
         <TableCell />
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.goodQty)}
+          {quantitySubtotal(group.subtotal.goodQty)}
         </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.defectQty)}
+          {quantitySubtotal(group.subtotal.defectQty)}
         </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
-          {formatQuantity(group.subtotal.reworkQty)}
+          {quantitySubtotal(group.subtotal.reworkQty)}
         </TableCell>
         <TableCell className="text-[13px] text-right tabular-nums font-medium">
           {formatQuantity(group.subtotal.workHours)}h

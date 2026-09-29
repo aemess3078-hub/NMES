@@ -4,8 +4,7 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import {
-  kstDateKeyToNextUtcStart,
-  kstDateKeyToUtcStart,
+  kstDateRangeToUtcBounds,
   kstDefaultDateRange,
   toKstDateKey,
 } from "@/lib/date/kst"
@@ -139,10 +138,8 @@ function parseDateRange(filter: DefectStatsFilter): { from: Date; toExclusive: D
   const fallback = kstDefaultDateRange(30)
   const fromKey = filter.from ?? fallback.from
   const toKey = filter.to ?? fallback.to
-  return {
-    from: kstDateKeyToUtcStart(fromKey),
-    toExclusive: kstDateKeyToNextUtcStart(toKey),
-  }
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(fromKey, toKey)
+  return { from: fromDate, toExclusive: toExclusiveDate }
 }
 
 // ─── 메인 통계 조회 ───────────────────────────────────────────────────────────

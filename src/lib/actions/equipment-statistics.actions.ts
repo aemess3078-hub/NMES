@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { monitoringEligibleEquipmentWhere } from "@/lib/actions/equipment-monitoring.utils"
-import { kstDateKeyToNextUtcStart, kstDateKeyToUtcStart, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
+import { kstDateRangeToUtcBounds, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
 import {
   actualProductionEquipmentWhere,
   resolveActualProductionEquipment,
@@ -18,10 +18,8 @@ export type EquipStatFilter = {
 }
 
 function parseDateRange(f: EquipStatFilter) {
-  return {
-    from: kstDateKeyToUtcStart(f.from),
-    toExclusive: kstDateKeyToNextUtcStart(f.to),
-  }
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(f.from, f.to)
+  return { from: fromDate, toExclusive: toExclusiveDate }
 }
 
 function defaultDateRange(): { from: string; to: string } {
@@ -484,13 +482,12 @@ export async function getEquipmentErrorEvents(
   const from = fromOverride ?? defaults.from
   const to   = toOverride   ?? defaults.to
 
-  const fromDate = kstDateKeyToUtcStart(from)
-  const toDateExclusive = kstDateKeyToNextUtcStart(to)
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(from, to)
 
   const rawEvents = await prisma.equipmentEvent.findMany({
     where: {
       eventType: { in: ["ALARM", "WARNING"] },
-      startedAt: { gte: fromDate, lt: toDateExclusive },
+      startedAt: { gte: fromDate, lt: toExclusiveDate },
       equipment: {
         tenantId,
         ...(equipmentId ? { id: equipmentId } : {}),

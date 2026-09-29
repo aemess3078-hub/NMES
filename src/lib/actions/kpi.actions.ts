@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { actualProductionEquipmentWhere } from "@/lib/equipment-result-attribution"
-import { kstDateKeyToNextUtcStart, kstDateKeyToUtcStart, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
+import { kstDateRangeToUtcBounds, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
 
 // ─── 공통 ─────────────────────────────────────────────────────────────────────
 
@@ -37,10 +37,8 @@ export async function getKpiFilterOptions(): Promise<KpiFilterOptions> {
 }
 
 function parseDateRange(f: KpiFilter) {
-  return {
-    from: kstDateKeyToUtcStart(f.from),
-    toExclusive: kstDateKeyToNextUtcStart(f.to),
-  }
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(f.from, f.to)
+  return { from: fromDate, toExclusive: toExclusiveDate }
 }
 
 function defaultKpiDateRange(): KpiFilter {

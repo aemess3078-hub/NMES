@@ -10,7 +10,7 @@
 
 import { getTenantId, requireRole } from "@/lib/auth"
 import { prisma } from "@/lib/db/prisma"
-import { kstDateKeyToNextUtcStart, kstDateKeyToUtcStart } from "@/lib/date/kst"
+import { kstDateRangeToUtcBounds } from "@/lib/date/kst"
 import {
   getProductionResults,
   type ProductionResultFilters,
@@ -56,9 +56,10 @@ export type DailyProductionReportData = {
 }
 
 function toKstRange(from: string, to: string): { startDate: Date; endDateExclusive: Date } {
+  const { fromDate, toExclusiveDate } = kstDateRangeToUtcBounds(from, to)
   return {
-    startDate: kstDateKeyToUtcStart(from),
-    endDateExclusive: kstDateKeyToNextUtcStart(to),
+    startDate: fromDate,
+    endDateExclusive: toExclusiveDate,
   }
 }
 

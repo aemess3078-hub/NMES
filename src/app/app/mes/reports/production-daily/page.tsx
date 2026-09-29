@@ -3,7 +3,7 @@ import {
   getReportFilterOptions,
   type DailyProductionReportFilter,
 } from "@/lib/actions/report.actions"
-import { toKstDateKey } from "@/lib/date/kst"
+import { resolveKstDateRangeFilter } from "@/lib/date/kst"
 import { ProductionDailyReportClient } from "./production-daily-report-client"
 
 export const dynamic = "force-dynamic"
@@ -18,17 +18,13 @@ interface PageProps {
   }>
 }
 
-function defaultDate(): string {
-  return toKstDateKey(new Date())
-}
-
 export default async function ProductionDailyReportPage({ searchParams }: PageProps) {
   const params = searchParams ? await searchParams : {}
-  const today = defaultDate()
+  const dateRange = resolveKstDateRangeFilter(0, params.from, params.to)
 
   const filter: DailyProductionReportFilter = {
-    from: params.from?.trim() || today,
-    to: params.to?.trim() || today,
+    from: dateRange.from,
+    to: dateRange.to,
     siteId: params.siteId?.trim() || undefined,
     itemId: params.itemId?.trim() || undefined,
     routingOperationId: params.routingOperationId?.trim() || undefined,

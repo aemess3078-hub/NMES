@@ -57,6 +57,20 @@ export function isValidKstDateRange(from: string, to: string): boolean {
   return isValidKstDateKey(from) && isValidKstDateKey(to) && from <= to
 }
 
+/** 서버 action 직접 호출용 strict KST 범위 검증. 잘못된 날짜나 from>to는 즉시 실패시킨다. */
+export function kstDateRangeToUtcBounds(
+  from: string,
+  to: string
+): { fromDate: Date; toExclusiveDate: Date } {
+  if (!isValidKstDateRange(from, to)) {
+    throw new Error("조회 기간이 올바르지 않습니다. YYYY-MM-DD 형식의 KST 날짜를 from<=to로 입력해 주세요.")
+  }
+  return {
+    fromDate: kstDateKeyToUtcStart(from),
+    toExclusiveDate: kstDateKeyToNextUtcStart(to),
+  }
+}
+
 /** now(UTC instant) 기준 KST 달력일과, 그로부터 daysBack일 전 KST 달력일. 기본 조회기간 계산용. */
 export function kstDefaultDateRange(daysBack: number, now: Date = new Date()): { from: string; to: string } {
   const toKey = toKstDateKey(now)

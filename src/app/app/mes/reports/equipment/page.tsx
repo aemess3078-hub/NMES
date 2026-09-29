@@ -1,6 +1,6 @@
 import { getEquipmentReport, getReportFilterOptions } from "@/lib/actions/report.actions"
 import type { EquipStatFilter } from "@/lib/actions/equipment-statistics.actions"
-import { kstDefaultDateRange } from "@/lib/date/kst"
+import { resolveKstDateRangeFilter } from "@/lib/date/kst"
 import { EquipmentReportClient } from "./equipment-report-client"
 
 export const dynamic = "force-dynamic"
@@ -13,17 +13,13 @@ interface PageProps {
   }>
 }
 
-function defaultDateRange(): { from: string; to: string } {
-  return kstDefaultDateRange(30)
-}
-
 export default async function EquipmentReportPage({ searchParams }: PageProps) {
   const params = searchParams ? await searchParams : {}
-  const defaults = defaultDateRange()
+  const dateRange = resolveKstDateRangeFilter(30, params.from, params.to)
 
   const filter: EquipStatFilter = {
-    from: params.from?.trim() || defaults.from,
-    to: params.to?.trim() || defaults.to,
+    from: dateRange.from,
+    to: dateRange.to,
     equipmentId: params.equipmentId?.trim() || undefined,
   }
 
