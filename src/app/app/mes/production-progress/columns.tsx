@@ -134,7 +134,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
       header: ({ column }) => <DataTableColumnHeader column={column} title="계획수량" />,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums text-foreground">
-          {formatQuantity(row.original.plannedQty)}
+          {formatQuantity(row.original.plannedQty)} {row.original.itemUom}
         </span>
       ),
     },
@@ -143,7 +143,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
       header: ({ column }) => <DataTableColumnHeader column={column} title="생산실적" />,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums text-foreground">
-          {formatQuantity(row.original.productionOutputQty)}
+          {formatQuantity(row.original.productionOutputQty)} {row.original.itemUom}
         </span>
       ),
     },
@@ -186,7 +186,7 @@ export function getColumns(): ColumnDef<ProductionProgressRow>[] {
       header: ({ column }) => <DataTableColumnHeader column={column} title="재공수량" />,
       cell: ({ row }) => (
         <span className="block text-right text-[14px] tabular-nums text-foreground">
-          {formatQuantity(row.original.wipQty)}
+          {formatQuantity(row.original.wipQty)} {row.original.itemUom}
         </span>
       ),
     },

@@ -348,6 +348,7 @@ export function buildProductionProgressRow(
     itemId: workOrder.itemId,
     itemCode: workOrder.itemCode,
     itemName: workOrder.itemName,
+    itemUom: workOrder.itemUom,
     plannedQty,
     productionOutputQty,
     progressRate,

@@ -76,6 +76,7 @@ export type ProductionProgressWorkOrderInput = {
   itemId: string
   itemCode: string
   itemName: string
+  itemUom: string
   /** WorkOrder.plannedQty — 계획수량의 유일한 출처 */
   plannedQty: number
   status: WorkOrderStatus
@@ -108,6 +109,7 @@ export type ProductionProgressRow = {
   itemId: string
   itemCode: string
   itemName: string
+  itemUom: string
 
   plannedQty: number
   /** 실적이 존재하는 가장 높은 seq 공정의 goodQty 합 — 전 공정 합산 금지 */
@@ -154,6 +156,9 @@ export type ProductionProgressSummary = {
   totalPlannedQty: number
   /** Σ row.productionOutputQty (공정 goodQty 원본 재합산 아님) */
   totalProductionOutputQty: number
+  /** 단일 UOM이면 해당 값, 여러 UOM이 섞이면 null */
+  uom: string | null
+  isMixedUom: boolean
   /** totalProductionOutputQty / totalPlannedQty × 100, 0~100 clamp. 개별 진행률 평균 아님 */
   overallProgressRate: number
   normalCount: number

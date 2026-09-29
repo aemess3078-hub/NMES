@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { actualProductionEquipmentWhere } from "@/lib/equipment-result-attribution"
+import { kstDateKeyToNextUtcStart, kstDateKeyToUtcStart, kstDefaultDateRange, toKstDateKey } from "@/lib/date/kst"
 
 // ─── 공통 ─────────────────────────────────────────────────────────────────────
 
@@ -37,18 +38,13 @@ export async function getKpiFilterOptions(): Promise<KpiFilterOptions> {
 
 function parseDateRange(f: KpiFilter) {
   return {
-    from: new Date(`${f.from}T00:00:00.000`),
-    to: new Date(`${f.to}T23:59:59.999`),
+    from: kstDateKeyToUtcStart(f.from),
+    toExclusive: kstDateKeyToNextUtcStart(f.to),
   }
 }
 
 function defaultKpiDateRange(): KpiFilter {
-  const to = new Date()
-  const from = new Date(to)
-  from.setDate(from.getDate() - 30)
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  return { from: fmt(from), to: fmt(to) }
+  return kstDefaultDateRange(30)
 }
 
 // ─── 1. 제조리드타임 ──────────────────────────────────────────────────────────
@@ -74,7 +70,7 @@ async function fetchManufacturingLeadTime(
   tenantId: string,
   f: KpiFilter
 ): Promise<ManufacturingLeadTimeKpi> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const orders = await prisma.workOrder.findMany({
     where: {
@@ -117,7 +113,7 @@ async function fetchManufacturingLeadTime(
           ) / 10,
       }
     })
-    .filter((r) => r.completedAt >= from && r.completedAt <= to)
+    .filter((r) => r.completedAt >= from && r.completedAt < toExclusive)
     .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime())
     .slice(0, 20)
     .map((r) => ({
@@ -152,11 +148,11 @@ async function fetchDefectRate(
   tenantId: string,
   f: KpiFilter
 ): Promise<DefectRateKpi> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const inspections = await prisma.qualityInspection.findMany({
     where: {
-      inspectedAt: { gte: from, lte: to },
+      inspectedAt: { gte: from, lt: toExclusive },
       workOrderOperation: {
         workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
       },
@@ -212,11 +208,11 @@ async function fetchLaborEffort(
   tenantId: string,
   f: KpiFilter
 ): Promise<LaborEffortKpi> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const results = await prisma.productionResult.findMany({
     where: {
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
@@ -233,7 +229,7 @@ async function fetchLaborEffort(
     if (!r.startedAt || !r.endedAt) continue
     const h = (r.endedAt.getTime() - r.startedAt.getTime()) / 3_600_000
     totalHours += h
-    const date = r.startedAt.toISOString().slice(0, 10)
+    const date = toKstDateKey(r.startedAt)
     const e = dayMap.get(date) ?? { hours: 0, goodQty: 0 }
     e.hours += h
     e.goodQty += Number(r.goodQty)
@@ -273,13 +269,13 @@ async function fetchDeliveryLeadTime(
   tenantId: string,
   f: KpiFilter
 ): Promise<DeliveryLeadTimeKpi> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const shipments = await prisma.shipmentOrder.findMany({
     where: {
       tenantId,
       status: "DELIVERED",
-      deliveredDate: { gte: from, lte: to },
+      deliveredDate: { gte: from, lt: toExclusive },
     },
     select: {
       shipmentNo: true,
@@ -337,11 +333,11 @@ export type UphKpi = {
 }
 
 async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
-  const { from, to } = parseDateRange(f)
+  const { from, toExclusive } = parseDateRange(f)
 
   const results = await prisma.productionResult.findMany({
     where: {
-      startedAt: { gte: from, lte: to },
+      startedAt: { gte: from, lt: toExclusive },
       endedAt: { not: null },
       workOrderOperation: {
         workOrder: { tenantId, ...(f.itemId && { itemId: f.itemId }) },
@@ -374,7 +370,7 @@ async function fetchUph(tenantId: string, f: KpiFilter): Promise<UphKpi> {
     const gq = Number(r.goodQty)
     totalGoodQty += gq
     totalHours += h
-    const date = r.startedAt.toISOString().slice(0, 10)
+    const date = toKstDateKey(r.startedAt)
     const item = r.workOrderOperation.workOrder.item
     const key = `${date}|${item.id}`
     const e = rowMap.get(key) ?? {
@@ -428,8 +424,8 @@ async function fetchEquipmentAvailability(
   tenantId: string,
   f: KpiFilter
 ): Promise<EquipmentAvailabilityKpi> {
-  const { from, to } = parseDateRange(f)
-  const totalMinutes = (to.getTime() - from.getTime()) / 60_000
+  const { from, toExclusive } = parseDateRange(f)
+  const totalMinutes = (toExclusive.getTime() - from.getTime()) / 60_000
 
   const equipments = await prisma.equipment.findMany({
     where: {
@@ -443,7 +439,7 @@ async function fetchEquipmentAvailability(
       events: {
         where: {
           eventType: "RUN",
-          startedAt: { gte: from, lte: to },
+          startedAt: { gte: from, lt: toExclusive },
         },
         select: { startedAt: true, endedAt: true, duration: true },
       },

@@ -3,6 +3,7 @@ import {
   getReportFilterOptions,
   type DailyProductionReportFilter,
 } from "@/lib/actions/report.actions"
+import { toKstDateKey } from "@/lib/date/kst"
 import { ProductionDailyReportClient } from "./production-daily-report-client"
 
 export const dynamic = "force-dynamic"
@@ -11,13 +12,14 @@ interface PageProps {
   searchParams?: Promise<{
     from?: string
     to?: string
+    siteId?: string
     itemId?: string
     routingOperationId?: string
   }>
 }
 
 function defaultDate(): string {
-  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
+  return toKstDateKey(new Date())
 }
 
 export default async function ProductionDailyReportPage({ searchParams }: PageProps) {
@@ -27,6 +29,7 @@ export default async function ProductionDailyReportPage({ searchParams }: PagePr
   const filter: DailyProductionReportFilter = {
     from: params.from?.trim() || today,
     to: params.to?.trim() || today,
+    siteId: params.siteId?.trim() || undefined,
     itemId: params.itemId?.trim() || undefined,
     routingOperationId: params.routingOperationId?.trim() || undefined,
   }
@@ -48,6 +51,7 @@ export default async function ProductionDailyReportPage({ searchParams }: PagePr
         initialFilter={{
           from: filter.from,
           to: filter.to,
+          siteId: filter.siteId ?? "",
           itemId: filter.itemId ?? "",
           routingOperationId: filter.routingOperationId ?? "",
         }}

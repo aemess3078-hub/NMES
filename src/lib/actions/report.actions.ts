@@ -8,7 +8,9 @@
 // 화면에 데이터를 공급하는 역할만 한다. DB schema 변경 없음, 신규 mutation
 // 없음(§ STEP 20).
 
-import { requireRole } from "@/lib/auth"
+import { getTenantId, requireRole } from "@/lib/auth"
+import { prisma } from "@/lib/db/prisma"
+import { kstDateKeyToNextUtcStart, kstDateKeyToUtcStart } from "@/lib/date/kst"
 import {
   getProductionResults,
   type ProductionResultFilters,
@@ -42,6 +44,7 @@ export type { EquipmentStatisticsData, EquipStatFilter }
 export type DailyProductionReportFilter = {
   from: string // YYYY-MM-DD, KST
   to: string
+  siteId?: string
   itemId?: string
   routingOperationId?: string
 }
@@ -52,10 +55,10 @@ export type DailyProductionReportData = {
   dateGroups: DailyProductionDateGroup[]
 }
 
-function toKstRange(from: string, to: string): { startDate: Date; endDate: Date } {
+function toKstRange(from: string, to: string): { startDate: Date; endDateExclusive: Date } {
   return {
-    startDate: new Date(`${from}T00:00:00.000+09:00`),
-    endDate: new Date(`${to}T23:59:59.999+09:00`),
+    startDate: kstDateKeyToUtcStart(from),
+    endDateExclusive: kstDateKeyToNextUtcStart(to),
   }
 }
 
@@ -63,11 +66,12 @@ export async function getDailyProductionReport(
   filter: DailyProductionReportFilter
 ): Promise<DailyProductionReportData> {
   await requireRole("VIEWER")
-  const { startDate, endDate } = toKstRange(filter.from, filter.to)
+  const { startDate, endDateExclusive } = toKstRange(filter.from, filter.to)
 
   const productionFilter: ProductionResultFilters = {
     startDate,
-    endDate,
+    endDateExclusive,
+    siteId: filter.siteId,
     itemId: filter.itemId,
     routingOperationId: filter.routingOperationId,
   }
@@ -99,6 +103,7 @@ export async function getEquipmentReport(
 // ─── 공통 필터 옵션(품목/공정/설비) ───────────────────────────────────────────
 
 export type ReportFilterOptions = {
+  sites: { id: string; code: string; name: string }[]
   items: { id: string; code: string; name: string }[]
   routingOperations: {
     id: string
@@ -112,9 +117,15 @@ export type ReportFilterOptions = {
 
 export async function getReportFilterOptions(): Promise<ReportFilterOptions> {
   await requireRole("VIEWER")
-  const [itemOperationOptions, equipments] = await Promise.all([
+  const tenantId = await getTenantId()
+  const [sites, itemOperationOptions, equipments] = await Promise.all([
+    prisma.site.findMany({
+      where: { tenantId },
+      select: { id: true, code: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     getDefectStatsFilterOptions(),
     getEquipmentOptions(),
   ])
-  return { ...itemOperationOptions, equipments }
+  return { sites, ...itemOperationOptions, equipments }
 }

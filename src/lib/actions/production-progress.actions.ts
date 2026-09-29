@@ -4,7 +4,7 @@ import { WipMovementType, WorkOrderStatus } from "@prisma/client"
 import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { buildProductionProgressRow } from "@/lib/actions/production-progress.service"
-import { buildKstDateKeyRange, kstDateKeyToUtcStart, toKstDateKey } from "@/lib/date/kst"
+import { buildKstDateKeyRange, kstDateKeyToNextUtcStart, kstDateKeyToUtcStart, toKstDateKey } from "@/lib/date/kst"
 import type {
   DailyProductionTrendPoint,
   ProductionProgressData,
@@ -70,10 +70,10 @@ export async function getProductionProgressData(
         ? {
             createdAt: {
               ...(appliedFilter.from
-                ? { gte: new Date(`${appliedFilter.from}T00:00:00.000`) }
+                ? { gte: kstDateKeyToUtcStart(appliedFilter.from) }
                 : {}),
               ...(appliedFilter.to
-                ? { lte: new Date(`${appliedFilter.to}T23:59:59.999`) }
+                ? { lt: kstDateKeyToNextUtcStart(appliedFilter.to) }
                 : {}),
             },
           }
@@ -87,7 +87,7 @@ export async function getProductionProgressData(
       status: true,
       dueDate: true,
       createdAt: true,
-      item: { select: { code: true, name: true } },
+      item: { select: { code: true, name: true, uom: true } },
       operations: {
         select: {
           id: true,
@@ -202,6 +202,7 @@ export async function getProductionProgressData(
       itemId: workOrder.itemId,
       itemCode: workOrder.item.code,
       itemName: workOrder.item.name,
+      itemUom: workOrder.item.uom,
       plannedQty: Number(workOrder.plannedQty),
       status: workOrder.status,
       dueDate: workOrder.dueDate,
@@ -315,7 +316,7 @@ export async function getDailyProductionTrend(
   const fromUtc = kstDateKeyToUtcStart(from)
   // to는 inclusive이므로, "to의 다음 날 KST 00:00"을 exclusive upper bound로 사용한다
   // (23:59:59.999 방식은 KST 자정 경계에서 오차가 생길 수 있어 사용하지 않는다).
-  const toExclusiveUtc = new Date(kstDateKeyToUtcStart(to).getTime() + 24 * 60 * 60 * 1000)
+  const toExclusiveUtc = kstDateKeyToNextUtcStart(to)
 
   // ── Query 1: 기간 내 ProductionResult 후보 ─────────────────────────────────
   const results = await prisma.productionResult.findMany({
@@ -441,8 +442,10 @@ function summarizeProductionProgressRows(
     else delayedCount += 1
   }
 
+  const uoms = Array.from(new Set(rows.map((row) => row.itemUom)))
+  const isMixedUom = uoms.length > 1
   const overallProgressRate =
-    totalPlannedQty > 0
+    !isMixedUom && totalPlannedQty > 0
       ? Math.min(100, Math.max(0, (totalProductionOutputQty / totalPlannedQty) * 100))
       : 0
 
@@ -450,6 +453,8 @@ function summarizeProductionProgressRows(
     totalWorkOrders: rows.length,
     totalPlannedQty,
     totalProductionOutputQty,
+    uom: isMixedUom ? null : (uoms[0] ?? null),
+    isMixedUom,
     overallProgressRate,
     normalCount,
     warningCount,

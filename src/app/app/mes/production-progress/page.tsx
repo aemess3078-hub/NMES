@@ -6,6 +6,7 @@ import {
   getProductionProgressFilterOptions,
 } from "@/lib/actions/production-progress.actions"
 import type { ProductionProgressFilter } from "@/lib/actions/production-progress.types"
+import { kstDefaultDateRange } from "@/lib/date/kst"
 import { ProductionProgressClient } from "./production-progress-client"
 
 // ─── 생산진행 현황(NewMES 전용) ─────────────────────────────────────────────────
@@ -18,20 +19,10 @@ import { ProductionProgressClient } from "./production-progress-client"
 // (src/app/app/mes/features/page.tsx의 notFound() 가드)을 그대로 재사용했다.
 export const dynamic = "force-dynamic"
 
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 const DEFAULT_PERIOD_DAYS = 30
 
-function toKstDateString(date: Date): string {
-  return new Date(date.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10)
-}
-
 function getDefaultFilter(): ProductionProgressFilter {
-  const now = new Date()
-  const from = new Date(now.getTime() - DEFAULT_PERIOD_DAYS * 24 * 60 * 60 * 1000)
-  return {
-    from: toKstDateString(from),
-    to: toKstDateString(now),
-  }
+  return kstDefaultDateRange(DEFAULT_PERIOD_DAYS)
 }
 
 export default async function ProductionProgressPage() {

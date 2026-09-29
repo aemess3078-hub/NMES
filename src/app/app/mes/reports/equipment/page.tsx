@@ -1,5 +1,6 @@
 import { getEquipmentReport, getReportFilterOptions } from "@/lib/actions/report.actions"
 import type { EquipStatFilter } from "@/lib/actions/equipment-statistics.actions"
+import { kstDefaultDateRange } from "@/lib/date/kst"
 import { EquipmentReportClient } from "./equipment-report-client"
 
 export const dynamic = "force-dynamic"
@@ -13,11 +14,7 @@ interface PageProps {
 }
 
 function defaultDateRange(): { from: string; to: string } {
-  const to = new Date()
-  const from = new Date()
-  from.setDate(from.getDate() - 30)
-  const fmt = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
-  return { from: fmt(from), to: fmt(to) }
+  return kstDefaultDateRange(30)
 }
 
 export default async function EquipmentReportPage({ searchParams }: PageProps) {

@@ -28,9 +28,14 @@ export function kstDateKeyToUtcStart(dateKey: string): Date {
   return new Date(`${dateKey}T00:00:00+09:00`)
 }
 
+/** KST 달력일 문자열(YYYY-MM-DD) → 다음 KST 달력일 00:00:00.000에 해당하는 UTC Date instant */
+export function kstDateKeyToNextUtcStart(dateKey: string): Date {
+  return new Date(kstDateKeyToUtcStart(dateKey).getTime() + ONE_DAY_MS)
+}
+
 /** KST 달력일 문자열(YYYY-MM-DD) → 그 날짜 KST 23:59:59.999에 해당하는 UTC Date instant */
 export function kstDateKeyToUtcEnd(dateKey: string): Date {
-  return new Date(kstDateKeyToUtcStart(dateKey).getTime() + ONE_DAY_MS - 1)
+  return new Date(kstDateKeyToNextUtcStart(dateKey).getTime() - 1)
 }
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -70,7 +75,7 @@ export function resolveKstDateRangeFilter(
   from?: string,
   to?: string,
   now: Date = new Date()
-): { from: string; to: string; fromDate: Date; toDate: Date } {
+): { from: string; to: string; fromDate: Date; toDate: Date; toExclusiveDate: Date } {
   const fallback = kstDefaultDateRange(daysBack, now)
   const fromKey = from?.trim()
   const toKey = to?.trim()
@@ -81,6 +86,7 @@ export function resolveKstDateRangeFilter(
     to: resolved.to,
     fromDate: kstDateKeyToUtcStart(resolved.from),
     toDate: kstDateKeyToUtcEnd(resolved.to),
+    toExclusiveDate: kstDateKeyToNextUtcStart(resolved.to),
   }
 }
 

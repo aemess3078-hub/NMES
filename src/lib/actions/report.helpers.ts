@@ -1,3 +1,4 @@
+import { toKstDateKey } from "../date/kst"
 import type { ProductionResultWithDetails } from "./production-result.actions"
 import type { EquipmentStatisticsData } from "./equipment-statistics.actions"
 
@@ -12,7 +13,7 @@ import type { EquipmentStatisticsData } from "./equipment-statistics.actions"
 
 /** ISO(UTC) 문자열을 KST 기준 YYYY-MM-DD로 변환한다. */
 export function toKstDateOnly(iso: string): string {
-  return new Date(iso).toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })
+  return toKstDateKey(new Date(iso))
 }
 
 /**
@@ -47,6 +48,7 @@ export type DailyProductionRow = {
   manufacturingNo: string | null
   itemCode: string
   itemName: string
+  itemUom: string
   operationName: string
   operatorName: string | null
   startedAt: string
@@ -57,7 +59,6 @@ export type DailyProductionRow = {
   goodQty: number
   defectQty: number
   reworkQty: number
-  progressRate: number | null // completedQty / plannedQty (공정 canonical 필드, plannedQty<=0이면 null)
   workHours: number | null // (endedAt - startedAt) 시간, 둘 중 하나라도 없으면 null(가짜 시간 생성 금지)
 }
 
@@ -80,6 +81,7 @@ export function buildDailyProductionRows(
       manufacturingNo: op.workOrder.manufacturingNo,
       itemCode: op.workOrder.item.code,
       itemName: op.workOrder.item.name,
+      itemUom: op.workOrder.item.uom,
       operationName: op.routingOperation.name,
       operatorName: r.operator?.name ?? null,
       startedAt: r.startedAt,
@@ -90,7 +92,6 @@ export function buildDailyProductionRows(
       goodQty: r.goodQty,
       defectQty: r.defectQty,
       reworkQty: r.reworkQty,
-      progressRate: op.plannedQty > 0 ? op.completedQty / op.plannedQty : null,
       workHours: workHours !== null ? Math.round(workHours * 10) / 10 : null,
     })
   }
@@ -145,7 +146,8 @@ export type DailyProductionSummaryTotals = {
   totalDefectQty: number
   totalReworkQty: number
   totalWorkHours: number
-  overallProgressRate: number | null // distinct 공정의 completedQty합 / plannedQty합
+  uom: string | null
+  isMixedUom: boolean
 }
 
 /**
@@ -158,21 +160,20 @@ export function computeDailyProductionSummary(
   results: ProductionResultWithDetails[],
   rows: DailyProductionRow[]
 ): DailyProductionSummaryTotals {
-  const opMap = new Map<string, { plannedQty: number; completedQty: number }>()
+  const opMap = new Map<string, { plannedQty: number }>()
   for (const r of results) {
     if (opMap.has(r.workOrderOperationId)) continue
     opMap.set(r.workOrderOperationId, {
       plannedQty: r.workOrderOperation.plannedQty,
-      completedQty: r.workOrderOperation.completedQty,
     })
   }
 
   let totalPlannedQty = 0
-  let totalCompletedQty = 0
   Array.from(opMap.values()).forEach((v) => {
     totalPlannedQty += v.plannedQty
-    totalCompletedQty += v.completedQty
   })
+  const uoms = Array.from(new Set(rows.map((row) => row.itemUom)))
+  const isMixedUom = uoms.length > 1
 
   const rowTotals = rows.reduce(
     (acc, r) => ({
@@ -189,11 +190,12 @@ export function computeDailyProductionSummary(
     resultCount: rows.length,
     totalPlannedQty: Math.round(totalPlannedQty * 1000) / 1000,
     totalWorkHours: Math.round(rowTotals.totalWorkHours * 10) / 10,
-    overallProgressRate: totalPlannedQty > 0 ? totalCompletedQty / totalPlannedQty : null,
     totalProducedQty: rowTotals.totalProducedQty,
     totalGoodQty: rowTotals.totalGoodQty,
     totalDefectQty: rowTotals.totalDefectQty,
     totalReworkQty: rowTotals.totalReworkQty,
+    uom: isMixedUom ? null : (uoms[0] ?? null),
+    isMixedUom,
   }
 }
 

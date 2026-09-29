@@ -4,6 +4,12 @@ import { prisma } from "@/lib/db/prisma"
 import { getTenantId } from "@/lib/auth"
 import { isMissingDbObjectError } from "@/lib/db/prisma-error"
 import {
+  kstDateKeyToNextUtcStart,
+  kstDateKeyToUtcStart,
+  kstDefaultDateRange,
+  toKstDateKey,
+} from "@/lib/date/kst"
+import {
   InspectionStage,
   InspectionResult,
   DefectCategory,
@@ -126,23 +132,17 @@ function emptyDefectStats(): DefectStatsResult {
 }
 
 function toDateOnly(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
+  return toKstDateKey(d)
 }
 
-function parseDateRange(filter: DefectStatsFilter): { from: Date; to: Date } {
-  const to = filter.to ? new Date(`${filter.to}T23:59:59.999`) : new Date()
-  const from = filter.from
-    ? new Date(`${filter.from}T00:00:00.000`)
-    : (() => {
-        const d = new Date(to)
-        d.setDate(d.getDate() - 30)
-        d.setHours(0, 0, 0, 0)
-        return d
-      })()
-  return { from, to }
+function parseDateRange(filter: DefectStatsFilter): { from: Date; toExclusive: Date } {
+  const fallback = kstDefaultDateRange(30)
+  const fromKey = filter.from ?? fallback.from
+  const toKey = filter.to ?? fallback.to
+  return {
+    from: kstDateKeyToUtcStart(fromKey),
+    toExclusive: kstDateKeyToNextUtcStart(toKey),
+  }
 }
 
 // ─── 메인 통계 조회 ───────────────────────────────────────────────────────────
@@ -151,11 +151,11 @@ export async function getDefectStats(
   filter: DefectStatsFilter = {}
 ): Promise<DefectStatsResult> {
   const tenantId = await getTenantId()
-  const { from, to } = parseDateRange(filter)
+  const { from, toExclusive } = parseDateRange(filter)
 
   const inspections = await prisma.qualityInspection.findMany({
     where: {
-      inspectedAt: { gte: from, lte: to },
+      inspectedAt: { gte: from, lt: toExclusive },
       ...(filter.stage && { stage: filter.stage }),
       workOrderOperation: {
         ...(filter.routingOperationId && {
@@ -411,7 +411,7 @@ export async function getDefectStatsFilterOptions(): Promise<DefectStatsFilterOp
 
   const [items, ops] = await Promise.all([
     prisma.item.findMany({
-      where: { status: "ACTIVE" },
+      where: { tenantId, status: "ACTIVE" },
       select: { id: true, code: true, name: true },
       orderBy: { code: "asc" },
     }),

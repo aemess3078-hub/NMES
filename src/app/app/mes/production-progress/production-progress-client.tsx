@@ -94,11 +94,13 @@ function SummaryCard({
   value,
   suffix,
   accent,
+  description,
 }: {
   label: string
   value: string
   suffix?: string
   accent?: "green" | "amber" | "red"
+  description?: string
 }) {
   const textColor =
     accent === "green"
@@ -118,6 +120,7 @@ function SummaryCard({
           <span className="ml-1 text-[14px] font-normal text-muted-foreground">{suffix}</span>
         )}
       </p>
+      {description && <p className="mt-1 text-[11px] text-muted-foreground">{description}</p>}
     </div>
   )
 }
@@ -252,6 +255,8 @@ export function ProductionProgressClient({
   }
 
   const summary = data.summary
+  const quantitySuffix = summary.isMixedUom ? "" : (summary.uom ?? "")
+  const mixedUomMessage = "복수 단위가 포함되어 전체 수량 합계를 표시하지 않습니다."
 
   return (
     <div className="space-y-6">
@@ -390,15 +395,25 @@ export function ProductionProgressClient({
         />
         <SummaryCard
           label="계획수량"
-          value={formatQuantity(summary.totalPlannedQty)}
-          suffix="EA"
+          value={summary.isMixedUom ? "단위 혼합" : formatQuantity(summary.totalPlannedQty)}
+          suffix={quantitySuffix}
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
         />
         <SummaryCard
           label="생산실적"
-          value={formatQuantity(summary.totalProductionOutputQty)}
-          suffix="EA"
+          value={summary.isMixedUom ? "단위 혼합" : formatQuantity(summary.totalProductionOutputQty)}
+          suffix={quantitySuffix}
+          description={summary.isMixedUom ? mixedUomMessage : undefined}
         />
-        <ProgressGaugeCard label="전체 생산 달성률" value={summary.overallProgressRate} />
+        {summary.isMixedUom ? (
+          <SummaryCard
+            label="전체 생산 달성률"
+            value="단위 혼합"
+            description="복수 단위가 포함되어 전체 달성률을 표시하지 않습니다."
+          />
+        ) : (
+          <ProgressGaugeCard label="전체 생산 달성률" value={summary.overallProgressRate} />
+        )}
         <SummaryCard
           label="정상"
           value={formatQuantity(summary.normalCount)}
