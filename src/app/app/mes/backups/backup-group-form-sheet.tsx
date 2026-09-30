@@ -12,19 +12,7 @@ import {
   getBackupGroupDetail,
   type SupabaseBackupItem,
 } from "@/lib/actions/backup.actions"
-
-const STATUS_LABEL: Record<string, string> = {
-  COMPLETED: "완료",
-  PENDING: "진행중",
-  FAILED: "실패",
-}
-
-function fmtDateTime(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
+import { backupStatusLabel, backupTypeLabel, formatBackupDateTimeKst, sortBackupsByInsertedAtDesc } from "@/lib/actions/backup.helpers"
 type PickerRow = {
   externalBackupId: string
   insertedAt: string | null
@@ -94,7 +82,7 @@ export function BackupGroupFormSheet({ open, onOpenChange, mode, groupId, visibl
       isPhysicalBackup: b.isPhysicalBackup,
       hidden: false,
     }))
-    return [...extraRows, ...visibleRows].sort((a, b) => (b.insertedAt ?? "").localeCompare(a.insertedAt ?? ""))
+    return sortBackupsByInsertedAtDesc([...extraRows, ...visibleRows])
   }, [visibleBackups, extraRows])
 
   const filteredRows = useMemo(() => {
@@ -155,7 +143,7 @@ export function BackupGroupFormSheet({ open, onOpenChange, mode, groupId, visibl
       }}
       mode={mode}
       title={mode === "create" ? "그룹 등록" : "그룹 수정"}
-      description="여러 백업을 그룹(폴더)으로 묶어 관리합니다. 같은 백업을 여러 그룹에 포함할 수 있습니다."
+      description="이 그룹은 NMES 내부 분류용입니다. Supabase 원본 백업은 변경되지 않습니다. 같은 백업을 여러 그룹에 포함할 수 있습니다."
       isLoading={isSaving}
       onSubmit={handleSubmit}
     >
@@ -197,11 +185,11 @@ export function BackupGroupFormSheet({ open, onOpenChange, mode, groupId, visibl
                         <input type="checkbox" checked={selectedIds.has(r.externalBackupId)} onChange={() => toggle(r.externalBackupId)} onClick={(e) => e.stopPropagation()} />
                       </td>
                       <td className="py-1.5 px-3 whitespace-nowrap">
-                        {r.insertedAt ? fmtDateTime(r.insertedAt) : <span className="text-muted-foreground">확인 불가</span>}
+                        {formatBackupDateTimeKst(r.insertedAt)}
                         {r.hidden && <Badge className="ml-1.5 border-0 text-[10px] bg-slate-100 text-slate-600">숨김</Badge>}
                       </td>
-                      <td className="py-1.5 px-3">{r.status ? (STATUS_LABEL[r.status] ?? r.status) : "-"}</td>
-                      <td className="py-1.5 px-3">{r.isPhysicalBackup === null ? "-" : r.isPhysicalBackup ? "물리" : "논리"}</td>
+                      <td className="py-1.5 px-3">{backupStatusLabel(r.status)}</td>
+                      <td className="py-1.5 px-3">{backupTypeLabel(r.isPhysicalBackup)}</td>
                     </tr>
                   ))}
                 </tbody>

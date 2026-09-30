@@ -2,30 +2,20 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { FolderClosed, Plus, Trash2, AlertTriangle } from "lucide-react"
+import { Eye, EyeOff, FolderClosed, Plus, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useUserRole } from "@/lib/contexts/user-role-context"
-import { hideBackup, type BackupManagementData, type SupabaseBackupItem } from "@/lib/actions/backup.actions"
+import { hideBackup, unhideBackup, type BackupManagementData, type SupabaseBackupItem, type HiddenBackupRow } from "@/lib/actions/backup.actions"
+import { backupStatusLabel, backupTypeLabel, featureFlagLabel, formatBackupDateTimeKst } from "@/lib/actions/backup.helpers"
 import { BackupGroupFormSheet } from "./backup-group-form-sheet"
 import { BackupGroupDetailSheet } from "./backup-group-detail-sheet"
 
-const STATUS_LABEL: Record<string, string> = {
-  COMPLETED: "완료",
-  PENDING: "진행중",
-  FAILED: "실패",
-}
-
-function statusBadgeClass(status: string): string {
+function statusBadgeClass(status: string | null): string {
   if (status === "COMPLETED") return "bg-green-100 text-green-800"
   if (status === "FAILED") return "bg-red-100 text-red-700"
+  if (status === "PENDING") return "bg-blue-100 text-blue-700"
   return "bg-slate-100 text-slate-700"
-}
-
-function fmtDateTime(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 interface BackupManagementClientProps {
@@ -47,7 +37,7 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
   }
 
   async function handleHide(backup: SupabaseBackupItem) {
-    if (!confirm("이 백업을 목록에서 삭제하시겠습니까?")) return
+    if (!confirm("이 백업을 NMES 목록에서 숨기시겠습니까? Supabase 원본 데이터베이스 백업은 삭제되지 않습니다.")) return
     const res = await hideBackup(backup.externalBackupId)
     if (!res.ok) {
       alert(res.error ?? "처리 중 오류가 발생했습니다.")
@@ -56,36 +46,55 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
     router.refresh()
   }
 
+  async function handleUnhide(backup: HiddenBackupRow) {
+    const res = await unhideBackup(backup.externalBackupId)
+    if (!res.ok) {
+      alert(res.error ?? "처리 중 오류가 발생했습니다.")
+      return
+    }
+    router.refresh()
+  }
+
+  const latestAttempt = data.summary.mostRecentBackupAt
+    ? `${formatBackupDateTimeKst(data.summary.mostRecentBackupAt)} · ${backupStatusLabel(data.summary.mostRecentBackupStatus)}`
+    : data.available
+      ? "-"
+      : "조회 불가"
+
   return (
     <div className="space-y-6">
       {!data.available && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-center gap-2 text-[14px] text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          백업 정보를 불러올 수 없습니다.
+          Supabase 데이터베이스 백업 정보를 현재 조회할 수 없습니다. 아래 확인시각은 마지막 조회 시도 시각이며, 숨김/그룹 metadata는 NMES 내부 정보입니다.
         </div>
       )}
 
-      {/* 상단 현황 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard label="전체 백업 수" value={data.available ? `${data.summary.totalVisibleBackups}건` : "-"} />
-        <SummaryCard label="그룹 수" value={`${data.summary.groupCount}개`} />
-        <SummaryCard
-          label="최근 백업일시"
-          value={data.summary.mostRecentBackupAt ? fmtDateTime(data.summary.mostRecentBackupAt) : "-"}
-        />
-        <SummaryCard
-          label="자동백업 상태"
-          value={
-            data.available && (data.summary.pitrEnabled !== null || data.summary.walgEnabled !== null)
-              ? [data.summary.pitrEnabled ? "PITR 활성" : null, data.summary.walgEnabled ? "WAL-G 활성" : null]
-                  .filter(Boolean)
-                  .join(" · ") || "비활성"
-              : "-"
-          }
-        />
+      <div className="rounded-lg border bg-card px-4 py-3 text-[13px] text-muted-foreground">
+        Supabase 데이터베이스 백업 상태를 조회하고 NMES 내부에서 분류·숨김 관리합니다. Storage 첨부파일 백업 상태를 의미하지 않습니다.
       </div>
 
-      {/* 그룹 목록 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SummaryCard label="실제 DB 백업 수" value={data.available && data.summary.totalBackups !== null ? `${data.summary.totalBackups}건` : "조회 불가"} />
+        <SummaryCard label="표시 백업 수" value={data.available && data.summary.visibleBackups !== null ? `${data.summary.visibleBackups}건` : "조회 불가"} />
+        <SummaryCard label="숨김 백업 수" value={data.available && data.summary.hiddenBackups !== null ? `${data.summary.hiddenBackups}건` : "조회 불가"} />
+        <SummaryCard label="실패 건수" value={data.available && data.summary.failedBackups !== null ? `${data.summary.failedBackups}건` : "조회 불가"} />
+        <SummaryCard label="최근 백업 시도" value={latestAttempt} />
+        <SummaryCard
+          label="최근 성공 백업"
+          value={data.summary.mostRecentSuccessfulBackupAt ? formatBackupDateTimeKst(data.summary.mostRecentSuccessfulBackupAt) : data.available ? "-" : "조회 불가"}
+        />
+        <SummaryCard label="DB Region" value={data.available ? data.summary.region ?? "-" : "조회 불가"} />
+        <SummaryCard label="확인시각" value={formatBackupDateTimeKst(data.checkedAt)} />
+      </div>
+
+      <div className="rounded-lg border bg-card px-4 py-3">
+        <p className="text-[13px] text-muted-foreground">복구/로그 보존 기능</p>
+        <p className="mt-1 text-[14px] text-foreground">
+          PITR: {data.available ? featureFlagLabel(data.summary.pitrEnabled) : "조회 불가"} · WAL-G: {data.available ? featureFlagLabel(data.summary.walgEnabled) : "조회 불가"}
+        </p>
+      </div>
+
       <div className="flex items-center justify-between">
         <p className="text-[15px] font-medium text-foreground">
           백업 그룹 <span className="text-muted-foreground font-normal">({data.groups.length}개)</span>
@@ -123,13 +132,12 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
         </div>
       )}
 
-      {/* 미분류 백업 */}
       <div className="space-y-3">
         <p className="text-[15px] font-medium text-foreground">
           미분류 <span className="text-muted-foreground font-normal">({data.unclassified.length}건)</span>
         </p>
         {!data.available ? (
-          <EmptyBox message="백업 정보를 불러올 수 없습니다." />
+          <EmptyBox message="백업 원본 정보를 확인할 수 없습니다." />
         ) : data.unclassified.length === 0 ? (
           <EmptyBox message="미분류 백업이 없습니다." />
         ) : (
@@ -146,17 +154,62 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
               <tbody>
                 {data.unclassified.map((b) => (
                   <tr key={b.externalBackupId} className="border-b last:border-0">
-                    <td className="py-2 px-4 whitespace-nowrap">{fmtDateTime(b.insertedAt)}</td>
+                    <td className="py-2 px-4 whitespace-nowrap">{formatBackupDateTimeKst(b.insertedAt)}</td>
                     <td className="py-2 px-4">
                       <Badge className={`border-0 text-[11px] ${statusBadgeClass(b.status)}`}>
-                        {STATUS_LABEL[b.status] ?? b.status}
+                        {backupStatusLabel(b.status)}
                       </Badge>
                     </td>
-                    <td className="py-2 px-4">{b.isPhysicalBackup === null ? "-" : b.isPhysicalBackup ? "물리" : "논리"}</td>
+                    <td className="py-2 px-4">{backupTypeLabel(b.isPhysicalBackup)}</td>
                     <td className="py-2 px-4">
                       {canMutate && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => handleHide(b)} title="삭제">
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-600 hover:bg-slate-50" onClick={() => handleHide(b)} title="목록에서 숨기기">
+                          <EyeOff className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-[15px] font-medium text-foreground">
+          숨김 백업 <span className="text-muted-foreground font-normal">({data.hiddenBackups.length}건)</span>
+        </p>
+        {data.hiddenBackups.length === 0 ? (
+          <EmptyBox message="숨김 처리된 백업이 없습니다." />
+        ) : (
+          <div className="rounded-lg border bg-card overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-2 px-4 font-medium">백업일시</th>
+                  <th className="py-2 px-4 font-medium">상태</th>
+                  <th className="py-2 px-4 font-medium">유형</th>
+                  <th className="py-2 px-4 font-medium">숨김일시</th>
+                  <th className="py-2 px-4 font-medium">작업</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.hiddenBackups.map((b) => (
+                  <tr key={b.id} className="border-b last:border-0">
+                    <td className="py-2 px-4 whitespace-nowrap">{b.sourceAvailable ? formatBackupDateTimeKst(b.insertedAt) : "확인 불가"}</td>
+                    <td className="py-2 px-4">
+                      <Badge className={`border-0 text-[11px] ${statusBadgeClass(b.status)}`}>
+                        {b.sourceAvailable ? backupStatusLabel(b.status) : "원본 목록에 없음"}
+                      </Badge>
+                    </td>
+                    <td className="py-2 px-4">{b.sourceAvailable ? backupTypeLabel(b.isPhysicalBackup) : "-"}</td>
+                    <td className="py-2 px-4 whitespace-nowrap">{formatBackupDateTimeKst(b.hiddenAt)}</td>
+                    <td className="py-2 px-4">
+                      {canMutate && (
+                        <Button variant="outline" size="sm" className="h-7 gap-1.5" onClick={() => handleUnhide(b)} title="다시 표시">
+                          <Eye className="h-3.5 w-3.5" />
+                          다시 표시
                         </Button>
                       )}
                     </td>

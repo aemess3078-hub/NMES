@@ -9,30 +9,27 @@ import {
   parseSupabaseBackupsResponse,
   filterVisibleBackups,
   computeUnclassifiedBackups,
-  computeMostRecentBackupAt,
+  computeBackupSummary,
+  unavailableBackupSummary,
   buildBackupLookup,
+  sortBackupsByInsertedAtDesc,
   serializeBackupGroupMember,
   dedupeBackupIds,
   type SupabaseBackupItem,
   type BackupSummary,
   type BackupGroupRow,
   type BackupGroupDetail,
+  type HiddenBackupRow,
 } from "./backup.helpers"
 
-export type { SupabaseBackupItem, BackupSummary, BackupGroupRow, BackupGroupDetail }
+export type { SupabaseBackupItem, BackupSummary, BackupGroupRow, BackupGroupDetail, HiddenBackupRow }
 
 // ─── 청운커팅 사업계획서 "기준정보관리 > 백업관리" ──────────────────────────
 //
 // 이 파일은 Supabase 자동 DB 백업 목록을 "조회"하고, NMES 자체 metadata
 // (BackupGroup/BackupGroupItem/HiddenBackup)로 그룹핑·숨김 처리하는 기능만
-// 제공한다. Supabase backup 원본에 대한 생성/삭제/restore/PITR 호출은 이
-// 파일은 물론 src/lib/supabase-management/backups.ts에도 전혀 없다(그 파일은
-// GET 1개만 노출한다) — 그룹 삭제/백업 목록 삭제는 전부 NMES DB 안에서만
-// 일어나는 mutation이다(§ STEP 27).
-//
-// Supabase 프로젝트는 tenant마다 별도가 아니라 하나이므로 백업 "목록" 자체는
-// 모든 tenant에 동일하게 보이지만, 그룹/숨김 metadata는 tenantId로 분리한다
-// (§ STEP 25).
+// 제공한다. Supabase backup 원본에 대한 생성/삭제/restore/PITR 호출은 없다.
+// 그룹 삭제/백업 숨김/다시 표시는 전부 NMES DB metadata 변경이다.
 
 const MENU_NAME = "백업관리"
 
@@ -67,21 +64,63 @@ function serializeGroupRow(group: {
   }
 }
 
+function serializeHiddenBackupRows(params: {
+  hiddenRows: Array<{
+    id: string
+    externalBackupId: string
+    hiddenAt: Date
+    hiddenBy: { name: string } | null
+  }>
+  lookup: Map<string, SupabaseBackupItem>
+}): HiddenBackupRow[] {
+  const rows = params.hiddenRows.map((row) => {
+    const found = params.lookup.get(row.externalBackupId)
+    return {
+      id: row.id,
+      externalBackupId: row.externalBackupId,
+      insertedAt: found?.insertedAt ?? null,
+      status: found?.status ?? null,
+      isPhysicalBackup: found?.isPhysicalBackup ?? null,
+      hiddenAt: row.hiddenAt.toISOString(),
+      hiddenByName: row.hiddenBy?.name ?? null,
+      sourceAvailable: Boolean(found),
+    }
+  })
+  return sortBackupsByInsertedAtDesc(rows)
+}
+
+async function loadCurrentBackupLookup(): Promise<Map<string, SupabaseBackupItem> | null> {
+  const rawResponse = await fetchSupabaseBackupsRaw()
+  if (!rawResponse) return null
+  const parsed = parseSupabaseBackupsResponse(rawResponse)
+  return buildBackupLookup(parsed.backups)
+}
+
+async function validateCurrentBackupIds(ids: string[], message: string) {
+  const lookup = await loadCurrentBackupLookup()
+  if (!lookup) throw new Error("현재 Supabase 백업 목록을 확인할 수 없어 백업 분류를 변경할 수 없습니다.")
+  const missing = ids.filter((id) => !lookup.has(id))
+  if (missing.length > 0) throw new Error(message)
+}
+
 // ─── 조회 ─────────────────────────────────────────────────────────────────────
 
 export type BackupManagementData = {
-  available: boolean // Supabase Management API 연결 가능 여부(토큰 미설정/장애 시 false)
+  available: boolean
+  checkedAt: string
   summary: BackupSummary
   groups: BackupGroupRow[]
   unclassified: SupabaseBackupItem[]
-  visibleBackups: SupabaseBackupItem[] // 그룹 등록/수정 다이얼로그의 선택 대상(전체 visible)
+  visibleBackups: SupabaseBackupItem[]
+  hiddenBackups: HiddenBackupRow[]
 }
 
 export async function getBackupManagementData(): Promise<BackupManagementData> {
   await requireRole("VIEWER")
   const tenantId = await getTenantId()
+  const checkedAt = new Date().toISOString()
 
-  const [rawResponse, groupRecords, hiddenIds, groupItemRows] = await Promise.all([
+  const [rawResponse, groupRecords, hiddenRows, groupItemRows] = await Promise.all([
     fetchSupabaseBackupsRaw(),
     prisma.backupGroup.findMany({
       where: { tenantId },
@@ -92,47 +131,50 @@ export async function getBackupManagementData(): Promise<BackupManagementData> {
       },
       orderBy: { createdAt: "desc" },
     }),
-    loadHiddenIds(tenantId),
+    prisma.hiddenBackup.findMany({
+      where: { tenantId },
+      include: { hiddenBy: { select: { name: true } } },
+      orderBy: { hiddenAt: "desc" },
+    }),
     prisma.backupGroupItem.findMany({ where: { tenantId }, select: { externalBackupId: true } }),
   ])
 
   const groups = groupRecords.map(serializeGroupRow)
+  const hiddenIds = new Set(hiddenRows.map((r) => r.externalBackupId))
 
   if (!rawResponse) {
     return {
       available: false,
-      summary: {
-        totalVisibleBackups: 0,
-        groupCount: groups.length,
-        mostRecentBackupAt: null,
-        region: null,
-        walgEnabled: null,
-        pitrEnabled: null,
-      },
+      checkedAt,
+      summary: unavailableBackupSummary(),
       groups,
       unclassified: [],
       visibleBackups: [],
+      hiddenBackups: serializeHiddenBackupRows({ hiddenRows, lookup: new Map() }),
     }
   }
 
   const parsed = parseSupabaseBackupsResponse(rawResponse)
-  const visible = filterVisibleBackups(parsed.backups, hiddenIds)
+  const sortedBackups = sortBackupsByInsertedAtDesc(parsed.backups)
+  const visible = sortBackupsByInsertedAtDesc(filterVisibleBackups(sortedBackups, hiddenIds))
   const groupedIds = new Set(groupItemRows.map((r) => r.externalBackupId))
-  const unclassified = computeUnclassifiedBackups(visible, groupedIds)
+  const unclassified = sortBackupsByInsertedAtDesc(computeUnclassifiedBackups(visible, groupedIds))
+  const lookup = buildBackupLookup(sortedBackups)
 
   return {
     available: true,
-    summary: {
-      totalVisibleBackups: visible.length,
-      groupCount: groups.length,
-      mostRecentBackupAt: computeMostRecentBackupAt(visible),
+    checkedAt,
+    summary: computeBackupSummary({
+      backups: sortedBackups,
+      hiddenIds,
       region: parsed.region,
       walgEnabled: parsed.walgEnabled,
       pitrEnabled: parsed.pitrEnabled,
-    },
+    }),
     groups,
     unclassified,
     visibleBackups: visible,
+    hiddenBackups: serializeHiddenBackupRows({ hiddenRows, lookup }),
   }
 }
 
@@ -162,7 +204,7 @@ export async function getBackupGroupDetail(id: string): Promise<BackupGroupDetai
     updatedByName: group.updatedBy.name,
     createdAt: group.createdAt.toISOString(),
     updatedAt: group.updatedAt.toISOString(),
-    members: group.items.map((i) => serializeBackupGroupMember(i.externalBackupId, lookup, hiddenIds)),
+    members: sortBackupsByInsertedAtDesc(group.items.map((i) => serializeBackupGroupMember(i.externalBackupId, lookup, hiddenIds))),
   }
 }
 
@@ -182,6 +224,7 @@ export async function createBackupGroup(data: CreateBackupGroupInput): Promise<{
   if (!name) throw new Error("그룹명을 입력해 주세요.")
   const ids = dedupeBackupIds(data.externalBackupIds)
   if (ids.length === 0) throw new Error("백업을 1개 이상 선택해 주세요.")
+  await validateCurrentBackupIds(ids, "현재 Supabase 백업 목록에 없는 백업은 새 그룹에 추가할 수 없습니다.")
   const description = data.description?.trim() || null
 
   const created = await prisma.$transaction(async (tx) => {
@@ -211,10 +254,6 @@ export async function createBackupGroup(data: CreateBackupGroupInput): Promise<{
 }
 
 // ─── 그룹 수정 ────────────────────────────────────────────────────────────────
-//
-// 이름/설명/포함 백업(전체 교체 방식)만 수정 가능 — Supabase backup 자체의
-// 생성시간/상태/ID/물리·논리 유형은 이 함수에서 건드리지 않는다(애초에 그런
-// 필드가 이 모델에 없음, § STEP 10).
 
 export type UpdateBackupGroupInput = {
   name: string
@@ -226,7 +265,10 @@ export async function updateBackupGroup(id: string, data: UpdateBackupGroupInput
   const actor = await requireRole("OPERATOR")
   const tenantId = await getTenantId()
 
-  const existing = await prisma.backupGroup.findFirst({ where: { id, tenantId } })
+  const existing = await prisma.backupGroup.findFirst({
+    where: { id, tenantId },
+    include: { items: { select: { externalBackupId: true } } },
+  })
   if (!existing) throw new Error("그룹을 찾을 수 없습니다.")
 
   const name = data.name.trim()
@@ -235,9 +277,15 @@ export async function updateBackupGroup(id: string, data: UpdateBackupGroupInput
   if (ids.length === 0) throw new Error("백업을 1개 이상 선택해 주세요.")
   const description = data.description?.trim() || null
 
+  const existingIds = new Set(existing.items.map((item) => item.externalBackupId))
+  const newlyAddedIds = ids.filter((externalBackupId) => !existingIds.has(externalBackupId))
+  if (newlyAddedIds.length > 0) {
+    await validateCurrentBackupIds(newlyAddedIds, "현재 Supabase 백업 목록에 없는 백업은 그룹에 새로 추가할 수 없습니다.")
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.backupGroup.update({ where: { id }, data: { name, description, updatedById: actor.id } })
-    await tx.backupGroupItem.deleteMany({ where: { groupId: id } })
+    await tx.backupGroupItem.deleteMany({ where: { groupId: id, tenantId } })
     await tx.backupGroupItem.createMany({
       data: ids.map((externalBackupId) => ({ tenantId, groupId: id, externalBackupId })),
     })
@@ -249,7 +297,7 @@ export async function updateBackupGroup(id: string, data: UpdateBackupGroupInput
         entityType: "BackupGroup",
         entityId: id,
         action: "UPDATE",
-        beforeData: { name: existing.name, description: existing.description },
+        beforeData: { name: existing.name, description: existing.description, backupCount: existing.items.length },
         afterData: { name, description, backupCount: ids.length },
         menuName: MENU_NAME,
       },
@@ -293,7 +341,7 @@ export async function deleteBackupGroup(id: string): Promise<{ ok: boolean; erro
   }
 }
 
-// ─── 백업 목록 삭제(NMES 화면에서만 숨김) — Supabase backup 원본 mutation 없음 ─
+// ─── 백업 목록 숨김/다시 표시 — Supabase backup 원본 mutation 없음 ───────────
 
 export async function hideBackup(externalBackupId: string): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -304,25 +352,67 @@ export async function hideBackup(externalBackupId: string): Promise<{ ok: boolea
     if (!id) throw new Error("백업을 확인할 수 없습니다.")
 
     const existing = await prisma.hiddenBackup.findFirst({ where: { tenantId, externalBackupId: id } })
-    if (!existing) {
-      await prisma.$transaction(async (tx) => {
-        const hidden = await tx.hiddenBackup.create({
-          data: { tenantId, externalBackupId: id, hiddenById: actor.id },
-        })
-        await tx.auditLog.create({
-          data: {
-            tenantId,
-            actorId: actor.id,
-            actorLabel: actor.name,
-            entityType: "HiddenBackup",
-            entityId: hidden.id,
-            action: "CREATE",
-            afterData: { externalBackupId: id },
-            menuName: MENU_NAME,
-          },
-        })
-      })
+    if (existing) {
+      revalidateBackupPaths()
+      return { ok: true }
     }
+
+    await validateCurrentBackupIds([id], "현재 Supabase 백업 목록에 없는 백업은 숨김 처리할 수 없습니다.")
+
+    await prisma.$transaction(async (tx) => {
+      const hidden = await tx.hiddenBackup.create({
+        data: { tenantId, externalBackupId: id, hiddenById: actor.id },
+      })
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actor.id,
+          actorLabel: actor.name,
+          entityType: "HiddenBackup",
+          entityId: hidden.id,
+          action: "CREATE",
+          afterData: { externalBackupId: id },
+          menuName: MENU_NAME,
+        },
+      })
+    })
+
+    revalidateBackupPaths()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: getErrorMessage(e) }
+  }
+}
+
+export async function unhideBackup(externalBackupId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const actor = await requireRole("OPERATOR")
+    const tenantId = await getTenantId()
+
+    const id = externalBackupId.trim()
+    if (!id) throw new Error("백업을 확인할 수 없습니다.")
+
+    const existing = await prisma.hiddenBackup.findFirst({ where: { tenantId, externalBackupId: id } })
+    if (!existing) {
+      revalidateBackupPaths()
+      return { ok: true }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.hiddenBackup.deleteMany({ where: { id: existing.id, tenantId } })
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorId: actor.id,
+          actorLabel: actor.name,
+          entityType: "HiddenBackup",
+          entityId: existing.id,
+          action: "DELETE",
+          beforeData: { externalBackupId: id },
+          menuName: MENU_NAME,
+        },
+      })
+    })
 
     revalidateBackupPaths()
     return { ok: true }
