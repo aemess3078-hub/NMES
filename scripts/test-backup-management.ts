@@ -1,29 +1,26 @@
 /**
- * 사업계획서 "기준정보관리 > 백업관리" code-path test.
+ * 사업계획서 "기준정보관리 > 백업관리" code-path/integrity test.
  *
- * backup.helpers.ts는 DB/Supabase Management API에 의존하지 않는 순수 함수라
- * fabricated response로 직접 검증한다(defect-corrective-action.helpers.ts와
- * 동일 방식). 실제 Supabase Management API는 이 환경에 access token이 없어
- * 라이브 호출로 검증하지 못했다(§ STEP 4/32 — 최종 보고에 명시) — 대신 이
- * 테스트는 (1) 공개 API 레퍼런스 기준으로 작성한 파싱 로직이 있음직한 응답
- * 형태들(id 있음/없음, 빈 목록 등)에 대해 안전하게 동작하는지, (2) 실제 DB
- * mutation(tenant 재검증/AuditLog/삭제 순서)이 필요한 로직은 실제 배포된 소스
- * 구조를 읽어 검증한다("code-path"/"source-check" 라벨 규칙은
- * scripts/test-corrective-action.ts와 동일).
- *
- * 실행:
- *   npx ts-node --compiler-options '{"module":"commonjs"}' --project tsconfig.json scripts/test-backup-management.ts
+ * Supabase Management API live token 없이 실행되는 pure/source test다. 실제 DB나
+ * Supabase backup 원본에는 접근하지 않는다.
  */
 import * as fs from "fs"
 import {
   normalizeExternalBackupId,
+  parseBackupTimestamp,
+  formatBackupDateTimeKst,
   parseSupabaseBackupsResponse,
   filterVisibleBackups,
   computeUnclassifiedBackups,
   computeMostRecentBackupAt,
+  computeMostRecentBackup,
+  computeMostRecentSuccessfulBackupAt,
+  computeBackupSummary,
+  sortBackupsByInsertedAtDesc,
   buildBackupLookup,
   serializeBackupGroupMember,
   dedupeBackupIds,
+  backupStatusLabel,
   type SupabaseBackupItem,
 } from "../src/lib/actions/backup.helpers"
 import type { SupabaseBackupsApiResponse } from "../src/lib/supabase-management/backups"
@@ -52,13 +49,29 @@ function assertTrue(cond: boolean, label: string) {
   }
 }
 
-// ─── T1~T3: backup id 정규화 — id 유무와 무관하게 안전한 식별자 ─────────────
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .map((line) => line.replace(/\/\/[^\r\n]*/, ""))
+    .join("\n")
+}
+
+function makeBackup(id: string, insertedAt: string | null = "2026-09-01T02:00:00Z", status = "COMPLETED"): SupabaseBackupItem {
+  return { externalBackupId: id, status, insertedAt: parseBackupTimestamp(insertedAt), isPhysicalBackup: true }
+}
+
+// ─── T1~T4: backup id/timestamp 정규화 ──────────────────────────────────────
 assertEqual(normalizeExternalBackupId({ id: 12345, inserted_at: "2026-09-01T02:00:00Z" }), "12345", "T1. id(숫자)가 있으면 문자열로 변환해 사용")
 assertEqual(normalizeExternalBackupId({ id: "abc-1", inserted_at: "2026-09-01T02:00:00Z" }), "abc-1", "T1. id(문자열)가 있으면 그대로 사용")
-assertEqual(normalizeExternalBackupId({ inserted_at: "2026-09-01T02:00:00Z" }), "2026-09-01T02:00:00Z", "T2. id가 없으면 inserted_at을 식별자로 사용(§ STEP 13 — API 응답 구조에 강하게 의존하지 않음)")
+assertEqual(normalizeExternalBackupId({ inserted_at: "2026-09-01T02:00:00Z" }), "2026-09-01T02:00:00Z", "T2. id가 없으면 inserted_at을 식별자로 사용")
 assertEqual(normalizeExternalBackupId({}), null, "T3. id와 inserted_at이 모두 없으면 식별 불가(null)")
+assertEqual(parseBackupTimestamp("invalid-date"), null, "T4. invalid inserted_at은 null로 처리하고 가짜 timestamp를 만들지 않음")
+assertEqual(parseBackupTimestamp("2026-09-30T06:30:00Z"), "2026-09-30T06:30:00.000Z", "T4. valid timestamp는 normalized ISO로 정규화")
+assertEqual(formatBackupDateTimeKst("2026-09-30T06:30:00Z"), "2026-09-30 15:30", "T4. Asia/Seoul 고정 KST formatter")
+assertEqual(formatBackupDateTimeKst(null), "확인 불가", "T4. null timestamp는 확인 불가")
 
-// ─── T4~T6: Supabase 응답 파싱 — DTO/빈 목록/식별 불가 항목 스킵 ────────────
+// ─── T5~T8: Supabase 응답 파싱 ──────────────────────────────────────────────
 {
   const response: SupabaseBackupsApiResponse = {
     region: "ap-northeast-2",
@@ -66,195 +79,223 @@ assertEqual(normalizeExternalBackupId({}), null, "T3. id와 inserted_at이 모�
     pitr_enabled: false,
     backups: [
       { id: 1, status: "COMPLETED", inserted_at: "2026-09-04T02:00:00Z", is_physical_backup: true },
-      { id: 2, status: "COMPLETED", inserted_at: "2026-09-03T02:00:00Z", is_physical_backup: false },
+      { id: 2, status: "FAILED", inserted_at: "not-a-date", is_physical_backup: false },
     ],
   }
   const parsed = parseSupabaseBackupsResponse(response)
-  assertEqual(parsed.backups.length, 2, "T4. backups 배열이 정상 파싱됨")
-  assertEqual(parsed.region, "ap-northeast-2", "T4. region 필드 파싱")
-  assertTrue(parsed.walgEnabled === true && parsed.pitrEnabled === false, "T4. walg_enabled/pitr_enabled이 실제 API 응답값 그대로 반영(가짜 상태 생성 없음)")
+  assertEqual(parsed.backups.length, 2, "T5. invalid timestamp라도 id가 있으면 backup item 자체는 유지")
+  assertEqual(parsed.backups[1].insertedAt, null, "T5. invalid timestamp는 insertedAt null")
+  assertEqual(parsed.region, "ap-northeast-2", "T5. region 필드 파싱")
+  assertTrue(parsed.walgEnabled === true && parsed.pitrEnabled === false, "T5. walg/pitr 상태를 원본 응답값 그대로 반영")
 }
 {
-  // T5: 빈 목록 — 크래시 없이 빈 배열
   const parsed = parseSupabaseBackupsResponse({ backups: [] })
-  assertEqual(parsed.backups, [], "T5. 빈 backups 배열도 예외 없이 빈 배열로 처리")
-  assertEqual(parsed.region, null, "T5. region 등 누락 필드는 null로 안전하게 처리")
+  assertEqual(parsed.backups, [], "T6. 빈 backups 배열도 예외 없이 빈 배열로 처리")
+  assertEqual(parsed.region, null, "T6. region 누락은 null")
 }
 {
-  // T6: id/inserted_at이 모두 없는 항목은 조용히 스킵(임의 데이터 생성 안 함, § STEP 7)
-  const parsed = parseSupabaseBackupsResponse({
-    backups: [
-      { status: "COMPLETED" }, // 식별 불가 — 스킵되어야 함
-      { id: "ok-1", status: "COMPLETED", inserted_at: "2026-09-01T00:00:00Z" },
-    ],
-  })
-  assertEqual(parsed.backups.length, 1, "T6. 식별 불가능한 backup 항목은 화면에 표시할 방법이 없으므로 조용히 제외")
-  assertEqual(parsed.backups[0].externalBackupId, "ok-1", "T6. 식별 가능한 항목만 정상 포함")
+  const parsed = parseSupabaseBackupsResponse({ backups: [{ status: "COMPLETED" }, { id: "ok-1", status: "COMPLETED" }] })
+  assertEqual(parsed.backups.length, 1, "T7. id/inserted_at이 모두 없어 식별 불가능한 item만 제외")
+  assertEqual(parsed.backups[0].externalBackupId, "ok-1", "T7. id가 있으면 inserted_at 없어도 포함")
 }
+assertEqual(backupStatusLabel("UNKNOWN_NEW_STATUS"), "UNKNOWN_NEW_STATUS", "T8. unknown status는 성공/실패로 강제 변환하지 않고 원본 문자열 표시")
 
-// ─── T7~T9: visible/미분류 계산 — 숨김/그룹 소속 여부와 M:N 반영 ────────────
-function makeBackup(id: string, insertedAt = "2026-09-01T02:00:00Z"): SupabaseBackupItem {
-  return { externalBackupId: id, status: "COMPLETED", insertedAt, isPhysicalBackup: true }
-}
+// ─── T9~T12: visible/미분류/정렬 ─────────────────────────────────────────────
 {
   const all = [makeBackup("b1"), makeBackup("b2"), makeBackup("b3")]
   const visible = filterVisibleBackups(all, new Set(["b2"]))
-  assertEqual(
-    visible.map((b) => b.externalBackupId),
-    ["b1", "b3"],
-    "T7. HiddenBackup에 포함된 항목만 visible 목록에서 제외(원본 목록 자체는 변경하지 않음)"
-  )
+  assertEqual(visible.map((b) => b.externalBackupId), ["b1", "b3"], "T9. HiddenBackup은 visible 목록에서만 제외")
 }
 {
   const visible = [makeBackup("b1"), makeBackup("b2"), makeBackup("b3")]
   const unclassified = computeUnclassifiedBackups(visible, new Set(["b2"]))
-  assertEqual(
-    unclassified.map((b) => b.externalBackupId),
-    ["b1", "b3"],
-    "T8. 어느 그룹에도 속하지 않은 visible backup만 미분류로 계산"
-  )
+  assertEqual(unclassified.map((b) => b.externalBackupId), ["b1", "b3"], "T10. 어느 그룹에도 속하지 않은 visible backup만 미분류")
 }
 {
-  // T9: 같은 backup이 여러 그룹에 속해도(= groupedIds에 한 번만 존재) 미분류 계산은 정상
-  const visible = [makeBackup("b1")]
-  const unclassified = computeUnclassifiedBackups(visible, new Set(["b1"])) // b1이 여러 그룹에 속해도 Set은 한 번만 기록됨
-  assertEqual(unclassified, [], "T9. 여러 그룹에 속한 backup도 정상적으로 미분류에서 제외(M:N 관계가 Set 기반 계산에 자연히 반영됨)")
+  const sorted = sortBackupsByInsertedAtDesc([
+    makeBackup("old", "2026-09-29T00:00:00Z"),
+    makeBackup("invalid", null),
+    makeBackup("new", "2026-09-30T00:00:00Z"),
+  ])
+  assertEqual(sorted.map((b) => b.externalBackupId), ["new", "old", "invalid"], "T11. UI용 목록은 valid insertedAt 최신순, invalid/null은 뒤쪽")
+}
+{
+  const input = [makeBackup("old", "2026-09-29T00:00:00Z"), makeBackup("new", "2026-09-30T00:00:00Z")]
+  const copy = input.map((b) => b.externalBackupId)
+  sortBackupsByInsertedAtDesc(input)
+  assertEqual(input.map((b) => b.externalBackupId), copy, "T12. sortBackupsByInsertedAtDesc는 원본 array를 mutation하지 않음")
 }
 
-// ─── T10: 최근 백업일시 계산 ─────────────────────────────────────────────────
-assertEqual(computeMostRecentBackupAt([]), null, "T10. 빈 목록이면 null")
+// ─── T13~T17: 운영 summary 정책 ─────────────────────────────────────────────
+assertEqual(computeMostRecentBackupAt([]), null, "T13. 빈 목록이면 latest null")
 assertEqual(
-  computeMostRecentBackupAt([makeBackup("b1", "2026-09-01T02:00:00Z"), makeBackup("b2", "2026-09-04T02:00:00Z"), makeBackup("b3", "2026-09-02T02:00:00Z")]),
-  "2026-09-04T02:00:00Z",
-  "T10. 가장 최근 insertedAt을 반환"
+  computeMostRecentBackupAt([makeBackup("b1", "2026-09-01T02:00:00Z"), makeBackup("b2", "2026-09-04T02:00:00Z")]),
+  "2026-09-04T02:00:00.000Z",
+  "T13. 가장 최근 valid insertedAt 반환"
 )
+{
+  const backups = [makeBackup("b-930", "2026-09-30T00:00:00Z"), makeBackup("b-929", "2026-09-29T00:00:00Z")]
+  const summary = computeBackupSummary({ backups, hiddenIds: new Set(["b-930"]), region: "ap-northeast-2", walgEnabled: true, pitrEnabled: false })
+  assertEqual(summary.totalBackups, 2, "T14. hidden과 무관하게 실제 DB 백업 수는 전체 Supabase 목록 기준")
+  assertEqual(summary.visibleBackups, 1, "T14. 표시 백업 수만 hidden 적용")
+  assertEqual(summary.hiddenBackups, 1, "T14. 숨김 백업 수는 현재 목록과 HiddenBackup 교집합")
+  assertEqual(summary.mostRecentBackupAt, "2026-09-30T00:00:00.000Z", "T14. 최근 백업 시도는 hidden 영향 없음")
+  assertEqual(summary.mostRecentSuccessfulBackupAt, "2026-09-30T00:00:00.000Z", "T14. 최근 성공 백업도 hidden 영향 없음")
+}
+{
+  const backups = [makeBackup("failed", "2026-09-30T00:00:00Z", "FAILED"), makeBackup("ok", "2026-09-29T00:00:00Z", "COMPLETED")]
+  const latest = computeMostRecentBackup(backups)
+  const summary = computeBackupSummary({ backups, hiddenIds: new Set(), region: null, walgEnabled: null, pitrEnabled: null })
+  assertEqual(latest?.status, "FAILED", "T15. latest attempt는 실패 상태도 그대로 표현")
+  assertEqual(summary.mostRecentSuccessfulBackupAt, "2026-09-29T00:00:00.000Z", "T15. latest success는 COMPLETED만 기준")
+  assertEqual(summary.failedBackups, 1, "T15. 실패 건수는 FAILED count")
+}
+{
+  const backups = [makeBackup("unknown", "2026-09-30T00:00:00Z", "UNKNOWN"), makeBackup("ok", "2026-09-29T00:00:00Z", "COMPLETED")]
+  assertEqual(computeMostRecentSuccessfulBackupAt(backups), "2026-09-29T00:00:00.000Z", "T16. UNKNOWN status는 성공 백업에 포함하지 않음")
+}
+{
+  const summary = computeBackupSummary({ backups: [makeBackup("b1")], hiddenIds: new Set(["stale-hidden"]), region: null, walgEnabled: null, pitrEnabled: null })
+  assertEqual(summary.hiddenBackups, 0, "T17. 현재 Supabase 목록에 없는 stale HiddenBackup metadata는 상단 숨김 백업 수에서 제외")
+}
 
-// ─── T11: 그룹 멤버 직렬화 — 원본 목록에서 사라진(알 수 없는) backup도 graceful 처리 ─
+// ─── T18~T20: 그룹 멤버/입력 정리 ───────────────────────────────────────────
 {
   const lookup = buildBackupLookup([makeBackup("b1")])
   const known = serializeBackupGroupMember("b1", lookup, new Set())
-  assertTrue(known.status === "COMPLETED" && known.insertedAt !== null, "T11. 원본 목록에 있는 backup은 상태/일시가 정상 채워짐")
-
+  assertTrue(known.status === "COMPLETED" && known.insertedAt !== null, "T18. 원본 목록에 있는 backup은 상태/일시가 채워짐")
   const unknown = serializeBackupGroupMember("b-deleted", lookup, new Set())
-  assertTrue(
-    unknown.status === null && unknown.insertedAt === null && unknown.isPhysicalBackup === null,
-    "T11. 원본 목록에서 사라졌거나 알 수 없는 externalBackupId도 예외 없이 null 필드로 graceful 처리(§ STEP 19/30-T19)"
-  )
-
+  assertTrue(unknown.status === null && unknown.insertedAt === null && unknown.isPhysicalBackup === null, "T18. 원본 목록에서 사라진 externalBackupId도 graceful 처리")
   const hidden = serializeBackupGroupMember("b1", lookup, new Set(["b1"]))
-  assertTrue(hidden.hidden === true, "T11. 숨김 처리된 backup은 hidden=true로 표시(그룹 멤버십 자체는 유지)")
+  assertTrue(hidden.hidden === true, "T18. 숨김 처리된 group member는 hidden=true")
 }
+assertEqual(dedupeBackupIds(["b1", "b2", "b1", " ", "", "b3"]), ["b1", "b2", "b3"], "T19. 중복/빈 externalBackupIds 제거")
+assertEqual(dedupeBackupIds([]), [], "T20. 빈 배열 입력도 예외 없이 처리")
 
-// ─── T12~T13: externalBackupIds 정리 — 중복/빈 값 제거 ──────────────────────
-assertEqual(dedupeBackupIds(["b1", "b2", "b1", " ", "", "b3"]), ["b1", "b2", "b3"], "T12. 동일 그룹 내 중복 backup ID와 빈 값을 제거")
-assertEqual(dedupeBackupIds([]), [], "T13. 빈 배열 입력도 예외 없이 빈 배열 반환")
-
-// ─── T14~T22: source-check — 실제 배포 소스 구조 검증 ────────────────────────
+// ─── T21~T44: source-check ──────────────────────────────────────────────────
 const actionsSource = fs.readFileSync("src/lib/actions/backup.actions.ts", "utf8")
+const helpersSource = fs.readFileSync("src/lib/actions/backup.helpers.ts", "utf8")
 const managementSource = fs.readFileSync("src/lib/supabase-management/backups.ts", "utf8")
+const clientSource = fs.readFileSync("src/app/app/mes/backups/backup-management-client.tsx", "utf8")
+const detailSource = fs.readFileSync("src/app/app/mes/backups/backup-group-detail-sheet.tsx", "utf8")
+const formSource = fs.readFileSync("src/app/app/mes/backups/backup-group-form-sheet.tsx", "utf8")
+const pageSource = fs.readFileSync("src/app/app/mes/backups/page.tsx", "utf8")
+const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"))
 
-// T14: 조회는 VIEWER, mutation은 OPERATOR 권한 게이트
 {
   const viewerGates = (actionsSource.match(/await requireRole\("VIEWER"\)/g) || []).length
   const operatorGates = (actionsSource.match(/await requireRole\("OPERATOR"\)/g) || []).length
-  assertTrue(
-    viewerGates === 2 && operatorGates === 4,
-    "T14. 조회 함수 2개(getBackupManagementData/getBackupGroupDetail)는 VIEWER, mutation 함수 4개(create/update/delete/hide)는 OPERATOR 권한 게이트 — VIEWER는 mutation 불가"
-  )
-}
-
-// T15~T16: cross-tenant 차단 — 그룹/숨김 조회·수정·삭제 모두 tenantId 조건 포함
-{
-  const groupFindHasTenant = /prisma\.backupGroup\.findFirst\(\{\s*where:\s*\{\s*id,\s*tenantId\s*\}\s*\}\)/.test(actionsSource)
-  const groupDeleteHasTenant = /tx\.backupGroup\.deleteMany\(\{\s*where:\s*\{\s*id,\s*tenantId\s*\}\s*\}\)/.test(actionsSource)
-  assertTrue(groupFindHasTenant && groupDeleteHasTenant, "T15. 그룹 조회/수정 전 소유권 확인과 삭제 시 모두 {id, tenantId} 조건으로 cross-tenant 그룹 접근을 차단")
+  assertTrue(viewerGates === 2 && operatorGates === 5, "T21. 조회 2개는 VIEWER, mutation 5개(create/update/delete/hide/unhide)는 OPERATOR 권한 게이트")
 }
 {
-  const hiddenHasTenant = /prisma\.hiddenBackup\.findFirst\(\{\s*where:\s*\{\s*tenantId,\s*externalBackupId:\s*id\s*\}\s*\}\)/.test(actionsSource)
-  assertTrue(hiddenHasTenant, "T16. HiddenBackup 생성 전 확인도 tenantId 조건을 포함해 다른 tenant의 숨김 metadata에 영향을 주지 않음")
+  assertTrue(/prisma\.backupGroup\.findFirst\(\{\s*where:\s*\{\s*id,\s*tenantId\s*\}/.test(actionsSource), "T22. BackupGroup ownership check에 tenantId 포함")
+  assertTrue(/tx\.backupGroupItem\.deleteMany\(\{\s*where:\s*\{\s*groupId:\s*id,\s*tenantId\s*\}\s*\}\)/.test(actionsSource), "T22. BackupGroupItem deleteMany에 tenantId 방어 조건 포함")
+  assertTrue(/tx\.hiddenBackup\.deleteMany\(\{\s*where:\s*\{\s*id:\s*existing\.id,\s*tenantId\s*\}\s*\}\)/.test(actionsSource), "T22. unhide는 현재 tenant HiddenBackup metadata만 삭제")
 }
-
-// T17: 그룹 생성 — 트랜잭션 내 create + createMany + AuditLog CREATE
 {
-  const fnStart = actionsSource.indexOf("export async function createBackupGroup")
-  const fnBody = actionsSource.slice(fnStart, actionsSource.indexOf("\n// ─── 그룹 수정", fnStart))
-  const hasCreate = /tx\.backupGroup\.create\(/.test(fnBody)
-  const hasCreateMany = /tx\.backupGroupItem\.createMany\(/.test(fnBody)
-  const hasAudit = /action:\s*"CREATE"/.test(fnBody)
-  const usesDedupe = /dedupeBackupIds\(data\.externalBackupIds\)/.test(fnBody)
-  assertTrue(hasCreate && hasCreateMany && hasAudit && usesDedupe, "T17. createBackupGroup이 그룹 생성 + 멤버 일괄 생성을 한 트랜잭션에서 처리하고 AuditLog CREATE를 기록, 중복 backup ID는 dedupeBackupIds로 제거")
+  const createStart = actionsSource.indexOf("export async function createBackupGroup")
+  const createBody = actionsSource.slice(createStart, actionsSource.indexOf("\n// ─── 그룹 수정", createStart))
+  assertTrue(/await validateCurrentBackupIds\(ids,/.test(createBody), "T23. createBackupGroup은 서버에서 현재 Supabase backup ID 존재를 검증")
+  assertTrue(/tx\.backupGroup\.create\(/.test(createBody) && /tx\.backupGroupItem\.createMany\(/.test(createBody) && /action:\s*"CREATE"/.test(createBody), "T23. createBackupGroup은 그룹/멤버 생성과 AuditLog CREATE 기록")
 }
-
-// T18: 그룹 수정 — 멤버십 전체 교체(delete + createMany) 방식, AuditLog UPDATE
 {
-  const fnStart = actionsSource.indexOf("export async function updateBackupGroup")
-  const fnBody = actionsSource.slice(fnStart, actionsSource.indexOf("\n// ─── 그룹 삭제", fnStart))
-  const deletesOld = /tx\.backupGroupItem\.deleteMany\(\{\s*where:\s*\{\s*groupId:\s*id\s*\}\s*\}\)/.test(fnBody)
-  const createsNew = /tx\.backupGroupItem\.createMany\(/.test(fnBody)
-  const hasAudit = /action:\s*"UPDATE"/.test(fnBody)
-  assertTrue(deletesOld && createsNew && hasAudit, "T18. updateBackupGroup이 기존 멤버십을 전체 삭제 후 재생성하는 방식으로 backup 추가/제거를 처리하고 AuditLog UPDATE를 기록")
+  const updateStart = actionsSource.indexOf("export async function updateBackupGroup")
+  const updateBody = actionsSource.slice(updateStart, actionsSource.indexOf("\n// ─── 그룹 삭제", updateStart))
+  assertTrue(/newlyAddedIds/.test(updateBody) && /await validateCurrentBackupIds\(newlyAddedIds,/.test(updateBody), "T24. updateBackupGroup은 newlyAddedIds만 현재 backup 목록 존재 여부를 검증")
+  assertTrue(/existingIds/.test(updateBody), "T24. 기존 stale member는 새로 추가된 ID로 취급하지 않아 보존 가능")
+  assertTrue(/action:\s*"UPDATE"/.test(updateBody), "T24. updateBackupGroup은 AuditLog UPDATE 기록")
 }
-
-// T19: 그룹 삭제 — deleteMany(cascade로 BackupGroupItem 함께 삭제) + AuditLog DELETE, Supabase backup 원본 API 호출 없음
 {
-  const fnStart = actionsSource.indexOf("export async function deleteBackupGroup")
-  const fnBody = actionsSource.slice(fnStart, actionsSource.indexOf("\n// ─── 백업 목록 삭제", fnStart))
-  const hasDelete = /tx\.backupGroup\.deleteMany\(/.test(fnBody)
-  const hasAudit = /action:\s*"DELETE"/.test(fnBody)
-  const noBackupItemDeleteCall = !/tx\.backupGroupItem\.deleteMany/.test(fnBody) // cascade에 위임, 명시적 삭제 호출 없음
-  assertTrue(hasDelete && hasAudit && noBackupItemDeleteCall, "T19. deleteBackupGroup이 그룹만 삭제하고 BackupGroupItem은 FK cascade에 위임(명시적 삭제 호출 없음), AuditLog DELETE 기록")
+  const hideStart = actionsSource.indexOf("export async function hideBackup")
+  const hideBody = actionsSource.slice(hideStart, actionsSource.indexOf("export async function unhideBackup", hideStart))
+  assertTrue(/prisma\.hiddenBackup\.findFirst\(\{\s*where:\s*\{\s*tenantId,\s*externalBackupId:\s*id\s*\}\s*\}\)/.test(hideBody), "T25. hideBackup은 tenantId 기준 existing HiddenBackup 확인")
+  assertTrue(/await validateCurrentBackupIds\(\[id\],/.test(hideBody), "T25. hideBackup direct-call arbitrary ID는 현재 Supabase 목록 검증 후에만 생성")
+  assertTrue(/tx\.hiddenBackup\.create\(/.test(hideBody) && /entityType:\s*"HiddenBackup"/.test(hideBody) && /action:\s*"CREATE"/.test(hideBody), "T25. hideBackup은 HiddenBackup CREATE + AuditLog CREATE")
 }
-
-// T20: 백업 목록 삭제(hide) — idempotent, AuditLog CREATE(HiddenBackup)
 {
-  const fnStart = actionsSource.indexOf("export async function hideBackup")
-  const fnBody = actionsSource.slice(fnStart)
-  const checksExisting = /prisma\.hiddenBackup\.findFirst\(/.test(fnBody)
-  const createsOnlyIfMissing = /if\s*\(!existing\)\s*\{/.test(fnBody)
-  const hasAudit = /entityType:\s*"HiddenBackup"/.test(fnBody) && /action:\s*"CREATE"/.test(fnBody)
-  assertTrue(checksExisting && createsOnlyIfMissing && hasAudit, "T20. hideBackup이 이미 숨겨진 backup에 대해 idempotent(중복 AuditLog 없음)하게 동작하고, 신규 숨김만 AuditLog CREATE 기록")
-}
-
-// T21: 실제 Supabase backup 원본 보호 — mutation(delete/restore/PITR) 엔드포인트를 전혀 호출하지 않음
-// (금지 사실을 설명하는 주석 자체에는 "restore"/"PITR" 같은 단어가 당연히 등장하므로,
-// 주석을 제거한 코드 본문만 검사해야 오탐이 없다.)
-function stripComments(src: string): string {
-  // Windows(core.autocrlf)에서 체크아웃하면 줄 끝에 \r이 남는데, `.*$`는 `.`가
-  // 줄바꿈 문자(\r 포함)를 매칭하지 않아 그 \r 때문에 `$`(문자열 끝)에 도달하지
-  // 못해 매치 자체가 실패한다(주석이 전혀 안 지워짐) — `$` 앵커 대신 [^\r\n]*로
-  // "다음 줄바꿈 문자 전까지"를 매칭해 CRLF/LF 어느 쪽이든 안전하게 동작시킨다.
-  return src
-    .split("\n")
-    .map((line) => line.replace(/\/\/[^\r\n]*/, ""))
-    .join("\n")
+  const unhideStart = actionsSource.indexOf("export async function unhideBackup")
+  const unhideBody = actionsSource.slice(unhideStart)
+  assertTrue(!/fetchSupabaseBackupsRaw/.test(unhideBody), "T26. unhideBackup은 Supabase API 조회 없이 stale hidden metadata도 해제 가능")
+  assertTrue(/tx\.hiddenBackup\.deleteMany/.test(unhideBody) && /action:\s*"DELETE"/.test(unhideBody), "T26. unhideBackup은 HiddenBackup DELETE + AuditLog DELETE")
 }
 {
   const managementCode = stripComments(managementSource)
   const actionsCode = stripComments(actionsSource)
   const fetchCallCount = (managementCode.match(/await fetch\(/g) || []).length
   const onlyGetMethod = !/method:\s*"(POST|PATCH|DELETE|PUT)"/.test(managementCode)
-  // "pitr_enabled"는 Supabase API가 실제로 제공하는 읽기 전용 상태 필드명이라 정상 허용 대상이다
-  // (§ STEP 4) — "restore"라는 동작 자체만 코드 본문에 없는지 확인한다.
   const noRestoreMention = !/restore/i.test(managementCode) && !/restore/i.test(actionsCode)
-  const noDeleteBackupEndpoint = !/database\/backups\/[^"'`\s)]+["'`]/.test(managementCode) // 개별 backup 삭제용 하위 경로 미사용
-  assertTrue(
-    fetchCallCount === 1 && onlyGetMethod && noRestoreMention && noDeleteBackupEndpoint,
-    "T21. Supabase Management API 호출은 GET 백업 목록 조회 1개뿐이며, restore/PITR/backup mutation 관련 코드가 전혀 없음(§ STEP 27) — 주석을 제외한 실제 코드 본문 기준"
-  )
+  const noDeleteBackupEndpoint = !/database\/backups\/[^"'`\s)]+["'`]/.test(managementCode)
+  assertTrue(fetchCallCount === 1 && onlyGetMethod && noRestoreMention && noDeleteBackupEndpoint, "T27. Supabase Management API executable code는 GET 백업 목록 조회 1개뿐이며 restore/PITR/backup mutation 없음")
 }
-
-// T22: 신규 Prisma migration 존재 확인
+{
+  assertTrue(/KNOWN_CNS_SUPABASE_REF\s*=\s*"rkglajpajtuavmptidur"/.test(managementSource), "T28. known CNS project ref fail-safe 상수 존재")
+  assertTrue(/if \(ref === KNOWN_CNS_SUPABASE_REF\)[\s\S]*return null[\s\S]*await fetch/.test(managementSource), "T28. CNS ref면 fetch 실행 전 null 반환")
+}
+{
+  assertTrue(/checkedAt:\s*string/.test(actionsSource) && /const checkedAt = new Date\(\)\.toISOString\(\)/.test(actionsSource), "T29. checkedAt은 runtime ISO field이며 DB field가 아님")
+  assertTrue(!/checkedAt/.test(fs.readFileSync("prisma/schema.prisma", "utf8")), "T29. checkedAt schema field 없음")
+}
+{
+  assertTrue(/totalBackups/.test(helpersSource) && /visibleBackups/.test(helpersSource) && /hiddenBackups/.test(helpersSource), "T30. BackupSummary가 실제/표시/숨김 count를 분리")
+  assertTrue(/mostRecentBackupStatus/.test(helpersSource) && /mostRecentSuccessfulBackupAt/.test(helpersSource) && /failedBackups/.test(helpersSource), "T30. latest attempt/status/latest success/failed count를 분리")
+  assertTrue(/params\.backups/.test(helpersSource) && /filterVisibleBackups\(params\.backups/.test(helpersSource), "T30. 운영 summary는 전체 backups 기준이며 visible만 hidden 적용")
+}
+{
+  assertTrue(!clientSource.includes("전체 백업 수"), "T31. visible count를 전체 백업 수라고 부르지 않음")
+  assertTrue(!clientSource.includes("자동백업 상태"), "T31. 자동백업 상태 label 제거")
+  assertTrue(clientSource.includes("실제 DB 백업 수") && clientSource.includes("표시 백업 수") && clientSource.includes("숨김 백업 수"), "T31. 실제/표시/숨김 count label 존재")
+  assertTrue(clientSource.includes("최근 백업 시도") && clientSource.includes("최근 성공 백업") && clientSource.includes("실패 건수"), "T31. 최신 시도/성공/실패 건수 label 존재")
+}
+{
+  assertTrue(clientSource.includes("복구/로그 보존 기능") && clientSource.includes("PITR:") && clientSource.includes("WAL-G:"), "T32. PITR/WAL-G는 자동백업 성공 상태가 아닌 복구/로그 보존 기능으로 표시")
+  assertTrue(clientSource.includes("DB Region") && clientSource.includes("확인시각"), "T32. Region/확인시각 표시")
+}
+{
+  assertTrue(pageSource.includes("Supabase 데이터베이스 백업 상태") && pageSource.includes("NMES 내부에서 분류·숨김"), "T33. 페이지 설명이 DB backup 조회 + NMES 내부 metadata임을 명시")
+  assertTrue(clientSource.includes("Storage 첨부파일 백업 상태를 의미하지 않습니다."), "T33. Storage backup 범위 밖 명시")
+}
+{
+  const backupActionSources = clientSource + detailSource
+  assertTrue(!backupActionSources.includes("목록에서 삭제"), "T34. backup action confirm에서 목록 삭제 표현 제거")
+  assertTrue(!/title="삭제"/.test(backupActionSources), "T34. backup row action title=삭제 제거")
+  assertTrue(backupActionSources.includes("목록에서 숨기기") && backupActionSources.includes("Supabase 원본 데이터베이스 백업은 삭제되지 않습니다."), "T34. 숨김 UX와 Supabase 원본 불변 문구 존재")
+  assertTrue(detailSource.includes("그룹만 삭제되며 Supabase 원본 백업은 삭제되지 않습니다."), "T34. 그룹 삭제 confirm도 원본 backup 불변 명시")
+}
+{
+  assertTrue(clientSource.includes("숨김 백업") && clientSource.includes("다시 표시") && clientSource.includes("원본 목록에 없음"), "T35. 숨김 백업 section과 unhide UI, stale metadata 표시 존재")
+  assertTrue(clientSource.includes("백업 원본 정보를 확인할 수 없습니다."), "T35. API unavailable에서도 원본 정보 불가와 metadata 표시를 분리")
+}
+{
+  assertTrue(formSource.includes("NMES 내부 분류용") && formSource.includes("Supabase 원본 백업은 변경되지 않습니다."), "T36. 그룹 FormSheet 설명이 내부 분류 metadata임을 명시")
+}
+{
+  assertTrue(helpersSource.includes("timeZone: \"Asia/Seoul\"") && !clientSource.includes("getHours()") && !detailSource.includes("getHours()") && !formSource.includes("getHours()"), "T37. backup 화면은 browser local timezone 대신 Asia/Seoul formatter 사용")
+}
+{
+  assertTrue(/sortBackupsByInsertedAtDesc/.test(helpersSource), "T38. explicit backup sorting helper 존재")
+  assertTrue((actionsSource.match(/sortBackupsByInsertedAtDesc/g) || []).length >= 4, "T38. visible/unclassified/hidden/detail 목록에 명시적 정렬 적용")
+  assertTrue(formSource.includes("sortBackupsByInsertedAtDesc"), "T38. group picker current backup 목록도 helper로 정렬")
+}
+{
+  assertTrue(!clientSource.includes("SUPABASE_MANAGEMENT_ACCESS_TOKEN") && !detailSource.includes("SUPABASE_MANAGEMENT_ACCESS_TOKEN") && !formSource.includes("SUPABASE_MANAGEMENT_ACCESS_TOKEN"), "T39. Management token 이름/값을 client component에 노출하지 않음")
+}
 {
   const hasMigration = fs.existsSync("prisma/migrations/20260904040000_add_backup_management_groups/migration.sql")
   const migrationSql = hasMigration ? fs.readFileSync("prisma/migrations/20260904040000_add_backup_management_groups/migration.sql", "utf8") : ""
-  const hasGroupTable = /CREATE TABLE "BackupGroup"/.test(migrationSql)
-  const hasItemUnique = /CREATE UNIQUE INDEX "BackupGroupItem_groupId_externalBackupId_key"/.test(migrationSql)
-  const hasHiddenUnique = /CREATE UNIQUE INDEX "HiddenBackup_tenantId_externalBackupId_key"/.test(migrationSql)
-  const hasCascade = /ADD CONSTRAINT "BackupGroupItem_groupId_fkey" FOREIGN KEY \("groupId"\) REFERENCES "BackupGroup"\("id"\) ON DELETE CASCADE/.test(migrationSql)
-  assertTrue(
-    hasMigration && hasGroupTable && hasItemUnique && hasHiddenUnique && hasCascade,
-    "T22. migration에 BackupGroup/BackupGroupItem/HiddenBackup 테이블, (groupId,externalBackupId) unique(동일 그룹 내 중복 방지), (tenantId,externalBackupId) unique, 그룹 삭제 시 GroupItem cascade가 모두 존재"
-  )
+  assertTrue(hasMigration && /CREATE TABLE "BackupGroup"/.test(migrationSql) && /CREATE TABLE "HiddenBackup"/.test(migrationSql), "T40. 기존 BackupGroup/HiddenBackup migration은 존재")
+  assertTrue(!fs.existsSync("prisma/migrations/20260930000000_f26_backup_operational_visibility"), "T40. F26 신규 migration 디렉터리 없음")
+}
+{
+  assertTrue(packageJson.scripts["test:f26-backup-operational-visibility"] === packageJson.scripts["test:backup-management"], "T41. test:f26-backup-operational-visibility alias가 기존 backup test를 실행")
+}
+{
+  assertTrue(clientSource.includes("조회 불가") && !clientSource.includes("0건") && !clientSource.includes("백업이 0건"), "T42. available=false 화면이 backup 0건처럼 보이지 않음")
+}
+{
+  assertTrue(actionsSource.includes("hiddenBackups: serializeHiddenBackupRows({ hiddenRows, lookup: new Map() })"), "T43. API unavailable이어도 HiddenBackup metadata 목록을 반환")
+}
+{
+  assertTrue(/fetchSupabaseBackupsRaw\(\)/.test(actionsSource) && /loadCurrentBackupLookup/.test(actionsSource) && /validateCurrentBackupIds/.test(actionsSource), "T44. 서버 action은 client 전달 ID를 신뢰하지 않고 current backup lookup helper를 사용")
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

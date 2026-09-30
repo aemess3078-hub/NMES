@@ -11,21 +11,17 @@ import {
 } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Trash2 } from "lucide-react"
+import { EyeOff } from "lucide-react"
 import { useUserRole } from "@/lib/contexts/user-role-context"
 import { getBackupGroupDetail, deleteBackupGroup, hideBackup, type BackupGroupDetail, type SupabaseBackupItem } from "@/lib/actions/backup.actions"
+import { backupStatusLabel, backupTypeLabel, formatBackupDateTimeKst } from "@/lib/actions/backup.helpers"
 import { BackupGroupFormSheet } from "./backup-group-form-sheet"
 
-const STATUS_LABEL: Record<string, string> = {
-  COMPLETED: "완료",
-  PENDING: "진행중",
-  FAILED: "실패",
-}
-
-function fmtDateTime(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+function statusBadgeClass(status: string | null): string {
+  if (status === "COMPLETED") return "bg-green-100 text-green-800"
+  if (status === "FAILED") return "bg-red-100 text-red-700"
+  if (status === "PENDING") return "bg-blue-100 text-blue-700"
+  return "bg-slate-100 text-slate-700"
 }
 
 interface BackupGroupDetailSheetProps {
@@ -55,7 +51,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
   if (!open || !groupId) return null
 
   async function handleDeleteGroup() {
-    if (!confirm("이 그룹을 삭제하시겠습니까?")) return
+    if (!confirm("이 분류 그룹을 삭제하시겠습니까? 그룹만 삭제되며 Supabase 원본 백업은 삭제되지 않습니다.")) return
     const res = await deleteBackupGroup(groupId!)
     if (!res.ok) {
       alert(res.error ?? "삭제 중 오류가 발생했습니다.")
@@ -66,7 +62,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
   }
 
   async function handleHideMember(externalBackupId: string) {
-    if (!confirm("이 백업을 목록에서 삭제하시겠습니까?")) return
+    if (!confirm("이 백업을 NMES 목록에서 숨기시겠습니까? Supabase 원본 데이터베이스 백업은 삭제되지 않습니다.")) return
     const res = await hideBackup(externalBackupId)
     if (!res.ok) {
       alert(res.error ?? "처리 중 오류가 발생했습니다.")
@@ -88,7 +84,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader>
             <SheetTitle>그룹 상세</SheetTitle>
-            <SheetDescription>그룹에 포함된 백업 목록을 확인합니다.</SheetDescription>
+            <SheetDescription>NMES 내부 분류 그룹에 포함된 백업 목록을 확인합니다. Supabase 원본 백업은 변경되지 않습니다.</SheetDescription>
           </SheetHeader>
 
           {loading && <p className="text-[14px] text-muted-foreground pt-4">불러오는 중...</p>}
@@ -118,16 +114,17 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
                       <li key={m.externalBackupId} className="flex items-center justify-between gap-2 text-[13px] border-b last:border-0 pb-1.5 last:pb-0">
                         <div className="min-w-0">
                           <p className="whitespace-nowrap">
-                            {m.insertedAt ? fmtDateTime(m.insertedAt) : <span className="text-muted-foreground">확인 불가(원본 목록에 없음)</span>}
+                            {m.insertedAt ? formatBackupDateTimeKst(m.insertedAt) : <span className="text-muted-foreground">확인 불가(원본 목록에 없음)</span>}
                             {m.hidden && <Badge className="ml-1.5 border-0 text-[10px] bg-slate-100 text-slate-600">숨김</Badge>}
                           </p>
                           <p className="text-[11px] text-muted-foreground">
-                            {m.status ? (STATUS_LABEL[m.status] ?? m.status) : "-"} · {m.isPhysicalBackup === null ? "-" : m.isPhysicalBackup ? "물리" : "논리"}
+                            <Badge className={`mr-1.5 border-0 text-[10px] ${statusBadgeClass(m.status)}`}>{backupStatusLabel(m.status)}</Badge>
+                            {backupTypeLabel(m.isPhysicalBackup)}
                           </p>
                         </div>
                         {canMutate && !m.hidden && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50 shrink-0" onClick={() => handleHideMember(m.externalBackupId)} title="삭제">
-                            <Trash2 className="h-3.5 w-3.5" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-600 hover:bg-slate-50 shrink-0" onClick={() => handleHideMember(m.externalBackupId)} title="목록에서 숨기기">
+                            <EyeOff className="h-3.5 w-3.5" />
                           </Button>
                         )}
                       </li>
@@ -137,7 +134,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
               </div>
 
               <div className="text-[12px] text-muted-foreground">
-                등록: {detail.createdByName} · 최종수정: {detail.updatedByName} ({fmtDateTime(detail.updatedAt)})
+                등록: {detail.createdByName} · 최종수정: {detail.updatedByName} ({formatBackupDateTimeKst(detail.updatedAt)})
               </div>
             </div>
           )}
@@ -145,7 +142,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
           <SheetFooter className="pt-4 flex-row justify-between sm:justify-between">
             {canMutate ? (
               <div className="flex gap-2">
-                <Button variant="ghost" className="text-red-600 hover:bg-red-50" onClick={handleDeleteGroup}>삭제</Button>
+                <Button variant="ghost" className="text-red-600 hover:bg-red-50" onClick={handleDeleteGroup}>그룹 삭제</Button>
                 <Button variant="outline" onClick={() => setEditOpen(true)}>수정</Button>
               </div>
             ) : (

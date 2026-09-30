@@ -21,6 +21,7 @@
 // 기존 env를 우선 재사용한다").
 
 const MANAGEMENT_API_BASE = "https://api.supabase.com/v1"
+const KNOWN_CNS_SUPABASE_REF = "rkglajpajtuavmptidur"
 
 export function getSupabaseProjectRef(): string | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -63,6 +64,10 @@ export async function fetchSupabaseBackupsRaw(): Promise<SupabaseBackupsApiRespo
   const ref = getSupabaseProjectRef()
   if (!token || !ref) {
     console.error("[backup-management] SUPABASE_MANAGEMENT_ACCESS_TOKEN 또는 project ref가 설정되지 않았습니다.")
+    return null
+  }
+  if (ref === KNOWN_CNS_SUPABASE_REF) {
+    console.error("[backup-management] 허용되지 않은 Supabase project ref입니다. 백업 조회를 중단합니다.")
     return null
   }
 
