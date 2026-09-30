@@ -143,7 +143,7 @@ export function BackupGroupFormSheet({ open, onOpenChange, mode, groupId, visibl
       }}
       mode={mode}
       title={mode === "create" ? "그룹 등록" : "그룹 수정"}
-      description="이 그룹은 NMES 내부 분류용입니다. Supabase 원본 백업은 변경되지 않습니다. 같은 백업을 여러 그룹에 포함할 수 있습니다."
+      description="이 그룹은 화면에서 백업을 보기 좋게 묶기 위한 분류입니다. 실제 백업은 변경되지 않으며, 같은 백업을 여러 그룹에 포함할 수 있습니다."
       isLoading={isSaving}
       onSubmit={handleSubmit}
     >

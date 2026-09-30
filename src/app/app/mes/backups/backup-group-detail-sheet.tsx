@@ -51,7 +51,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
   if (!open || !groupId) return null
 
   async function handleDeleteGroup() {
-    if (!confirm("이 분류 그룹을 삭제하시겠습니까? 그룹만 삭제되며 Supabase 원본 백업은 삭제되지 않습니다.")) return
+    if (!confirm("이 분류 그룹을 삭제하시겠습니까? 그룹만 삭제되며 실제 백업은 삭제되지 않습니다.")) return
     const res = await deleteBackupGroup(groupId!)
     if (!res.ok) {
       alert(res.error ?? "삭제 중 오류가 발생했습니다.")
@@ -62,7 +62,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
   }
 
   async function handleHideMember(externalBackupId: string) {
-    if (!confirm("이 백업을 NMES 목록에서 숨기시겠습니까? Supabase 원본 데이터베이스 백업은 삭제되지 않습니다.")) return
+    if (!confirm("이 백업을 화면 목록에서 숨기시겠습니까? 실제 백업은 삭제되지 않습니다.")) return
     const res = await hideBackup(externalBackupId)
     if (!res.ok) {
       alert(res.error ?? "처리 중 오류가 발생했습니다.")
@@ -84,7 +84,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader>
             <SheetTitle>그룹 상세</SheetTitle>
-            <SheetDescription>NMES 내부 분류 그룹에 포함된 백업 목록을 확인합니다. Supabase 원본 백업은 변경되지 않습니다.</SheetDescription>
+            <SheetDescription>화면 분류 그룹에 포함된 백업 목록을 확인합니다. 실제 백업은 변경되지 않습니다.</SheetDescription>
           </SheetHeader>
 
           {loading && <p className="text-[14px] text-muted-foreground pt-4">불러오는 중...</p>}
@@ -114,7 +114,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
                       <li key={m.externalBackupId} className="flex items-center justify-between gap-2 text-[13px] border-b last:border-0 pb-1.5 last:pb-0">
                         <div className="min-w-0">
                           <p className="whitespace-nowrap">
-                            {m.insertedAt ? formatBackupDateTimeKst(m.insertedAt) : <span className="text-muted-foreground">확인 불가(원본 목록에 없음)</span>}
+                            {m.insertedAt ? formatBackupDateTimeKst(m.insertedAt) : <span className="text-muted-foreground">확인 불가(현재 목록에 없음)</span>}
                             {m.hidden && <Badge className="ml-1.5 border-0 text-[10px] bg-slate-100 text-slate-600">숨김</Badge>}
                           </p>
                           <p className="text-[11px] text-muted-foreground">

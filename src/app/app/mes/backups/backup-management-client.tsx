@@ -37,7 +37,7 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
   }
 
   async function handleHide(backup: SupabaseBackupItem) {
-    if (!confirm("이 백업을 NMES 목록에서 숨기시겠습니까? Supabase 원본 데이터베이스 백업은 삭제되지 않습니다.")) return
+    if (!confirm("이 백업을 화면 목록에서 숨기시겠습니까? 실제 백업은 삭제되지 않습니다.")) return
     const res = await hideBackup(backup.externalBackupId)
     if (!res.ok) {
       alert(res.error ?? "처리 중 오류가 발생했습니다.")
@@ -66,16 +66,16 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
       {!data.available && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-center gap-2 text-[14px] text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Supabase 데이터베이스 백업 정보를 현재 조회할 수 없습니다. 아래 확인시각은 마지막 조회 시도 시각이며, 숨김/그룹 metadata는 NMES 내부 정보입니다.
+          전산 백업 현황을 지금 불러오지 못했습니다. 아래 확인시각은 마지막으로 상태를 확인한 시간이며, 백업 분류와 숨김 설정은 계속 유지됩니다.
         </div>
       )}
 
       <div className="rounded-lg border bg-card px-4 py-3 text-[13px] text-muted-foreground">
-        Supabase 데이터베이스 백업 상태를 조회하고 NMES 내부에서 분류·숨김 관리합니다. Storage 첨부파일 백업 상태를 의미하지 않습니다.
+        이 화면은 MES 전산 백업 현황을 확인하는 곳입니다. 필요한 백업을 그룹으로 묶거나 목록에서 숨길 수 있으며, 생산·품질 첨부파일 보관 상태와는 별도입니다.
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard label="실제 DB 백업 수" value={data.available && data.summary.totalBackups !== null ? `${data.summary.totalBackups}건` : "조회 불가"} />
+        <SummaryCard label="전체 전산 백업 수" value={data.available && data.summary.totalBackups !== null ? `${data.summary.totalBackups}건` : "조회 불가"} />
         <SummaryCard label="표시 백업 수" value={data.available && data.summary.visibleBackups !== null ? `${data.summary.visibleBackups}건` : "조회 불가"} />
         <SummaryCard label="숨김 백업 수" value={data.available && data.summary.hiddenBackups !== null ? `${data.summary.hiddenBackups}건` : "조회 불가"} />
         <SummaryCard label="실패 건수" value={data.available && data.summary.failedBackups !== null ? `${data.summary.failedBackups}건` : "조회 불가"} />
@@ -84,14 +84,14 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
           label="최근 성공 백업"
           value={data.summary.mostRecentSuccessfulBackupAt ? formatBackupDateTimeKst(data.summary.mostRecentSuccessfulBackupAt) : data.available ? "-" : "조회 불가"}
         />
-        <SummaryCard label="DB Region" value={data.available ? data.summary.region ?? "-" : "조회 불가"} />
+        <SummaryCard label="백업 서버 위치" value={data.available ? data.summary.region ?? "-" : "조회 불가"} />
         <SummaryCard label="확인시각" value={formatBackupDateTimeKst(data.checkedAt)} />
       </div>
 
       <div className="rounded-lg border bg-card px-4 py-3">
-        <p className="text-[13px] text-muted-foreground">복구/로그 보존 기능</p>
+        <p className="text-[13px] text-muted-foreground">복구 준비 상태</p>
         <p className="mt-1 text-[14px] text-foreground">
-          PITR: {data.available ? featureFlagLabel(data.summary.pitrEnabled) : "조회 불가"} · WAL-G: {data.available ? featureFlagLabel(data.summary.walgEnabled) : "조회 불가"}
+          시점 복구: {data.available ? featureFlagLabel(data.summary.pitrEnabled) : "조회 불가"} · 백업 로그 보관: {data.available ? featureFlagLabel(data.summary.walgEnabled) : "조회 불가"}
         </p>
       </div>
 
@@ -137,7 +137,7 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
           미분류 <span className="text-muted-foreground font-normal">({data.unclassified.length}건)</span>
         </p>
         {!data.available ? (
-          <EmptyBox message="백업 원본 정보를 확인할 수 없습니다." />
+          <EmptyBox message="현재 백업 정보를 확인할 수 없습니다." />
         ) : data.unclassified.length === 0 ? (
           <EmptyBox message="미분류 백업이 없습니다." />
         ) : (
@@ -200,7 +200,7 @@ export function BackupManagementClient({ data }: BackupManagementClientProps) {
                     <td className="py-2 px-4 whitespace-nowrap">{b.sourceAvailable ? formatBackupDateTimeKst(b.insertedAt) : "확인 불가"}</td>
                     <td className="py-2 px-4">
                       <Badge className={`border-0 text-[11px] ${statusBadgeClass(b.status)}`}>
-                        {b.sourceAvailable ? backupStatusLabel(b.status) : "원본 목록에 없음"}
+                        {b.sourceAvailable ? backupStatusLabel(b.status) : "현재 목록에 없음"}
                       </Badge>
                     </td>
                     <td className="py-2 px-4">{b.sourceAvailable ? backupTypeLabel(b.isPhysicalBackup) : "-"}</td>
