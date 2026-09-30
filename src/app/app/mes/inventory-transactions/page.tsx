@@ -1,33 +1,10 @@
-import { getTenantId } from "@/lib/auth"
-import { isFeatureEnabled } from "@/lib/services/feature.service"
-import {
-  getInventoryTransactions,
-  getWarehousesForTransaction,
-  getSitesForInventory,
-} from "@/lib/actions/inventory.actions"
+import { getInventoryTransactions } from "@/lib/actions/inventory.actions"
 import { InventoryTransactionDataTable } from "./inventory-transaction-data-table"
 
 export const dynamic = "force-dynamic"
 
 export default async function InventoryTransactionsPage() {
-  const tenantId = await getTenantId()
-  const enabled = await isFeatureEnabled(tenantId, "INVENTORY")
-
-  if (!enabled) {
-    return (
-      <div className="p-6">
-        <p className="text-[15px] text-muted-foreground">
-          재고 기능이 활성화되어 있지 않습니다.
-        </p>
-      </div>
-    )
-  }
-
-  const [transactions, locations, sites] = await Promise.all([
-    getInventoryTransactions(),
-    getWarehousesForTransaction(),
-    getSitesForInventory(),
-  ])
+  const transactions = await getInventoryTransactions()
 
   return (
     <div className="space-y-6">
@@ -37,17 +14,12 @@ export default async function InventoryTransactionsPage() {
             전체입출고내역
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
-            입출고 이력 기준으로 LOT 입고, 출고, 조정 이력과 제조번호 연결 상태를 확인합니다.
+            입출고 이력 기준으로 LOT 입고, 출고, 조정 이력과 제조번호 연결 상태를 조회합니다.
           </p>
         </div>
       </div>
 
-      <InventoryTransactionDataTable
-        data={transactions}
-        sites={sites}
-        locations={locations}
-        tenantId={tenantId}
-      />
+      <InventoryTransactionDataTable data={transactions} />
     </div>
   )
 }

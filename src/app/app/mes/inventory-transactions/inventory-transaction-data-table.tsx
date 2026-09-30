@@ -1,29 +1,20 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Plus, Search } from "lucide-react"
+import { Search } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DataTable } from "@/components/common/data-table"
 import { getColumns } from "./columns"
-import { TransactionFormSheet } from "./transaction-form-sheet"
 import { type InventoryTransactionWithDetails } from "@/lib/actions/inventory.actions"
 
 interface InventoryTransactionDataTableProps {
   data: InventoryTransactionWithDetails[]
-  sites: { id: string; code: string; name: string }[]
-  locations: { id: string; code: string; name: string; siteId: string }[]
-  tenantId: string
 }
 
 export function InventoryTransactionDataTable({
   data,
-  sites,
-  locations,
-  tenantId,
 }: InventoryTransactionDataTableProps) {
-  const [formOpen, setFormOpen] = useState(false)
   const [keyword, setKeyword] = useState("")
 
   const columns = getColumns()
@@ -84,24 +75,12 @@ export function InventoryTransactionDataTable({
             className="h-9 w-[360px] pl-9 text-[14px]"
           />
         </div>
-        <Button onClick={() => setFormOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          입출고 등록
-        </Button>
       </div>
 
       <DataTable
         columns={columns}
         data={filteredData}
         filterableColumns={filterableColumns}
-      />
-
-      <TransactionFormSheet
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        sites={sites}
-        locations={locations}
-        tenantId={tenantId}
       />
     </div>
   )

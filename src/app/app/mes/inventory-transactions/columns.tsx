@@ -66,9 +66,12 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
       ),
       cell: ({ row }) => {
         const txType = row.getValue("txType") as TransactionType
+        const label = txType === "ADJUST" && row.original.refType !== "STOCK_ADJUSTMENT"
+          ? "조정(기존)"
+          : txTypeLabels[txType]
         return (
           <Badge className={`text-[13px] ${txTypeBadgeClass[txType]}`}>
-            {txTypeLabels[txType]}
+            {label}
           </Badge>
         )
       },
@@ -119,16 +122,19 @@ export function getColumns(): ColumnDef<InventoryTransactionWithDetails>[] {
       cell: ({ row }) => {
         const txType = row.original.txType
         const qty = row.getValue("qty") as number
-        const isPositive = txType === "RECEIPT" || txType === "RETURN"
-        const isNegative = txType === "ISSUE" || txType === "SCRAP" || txType === "SUPPLIER_RETURN"
+        const isCanonicalAdjustment = txType === "ADJUST" && row.original.refType === "STOCK_ADJUSTMENT"
+        const isPositive = txType === "RECEIPT" || txType === "RETURN" || (isCanonicalAdjustment && qty > 0)
+        const isNegative = txType === "ISSUE" || txType === "SCRAP" || txType === "SUPPLIER_RETURN" || (isCanonicalAdjustment && qty < 0)
+        const sign = isPositive ? "+" : isNegative ? "-" : ""
+        const displayQty = isCanonicalAdjustment ? Math.abs(qty) : qty
         return (
           <span
             className={`block text-right text-[14px] font-semibold tabular-nums ${
               isPositive ? "text-green-700" : isNegative ? "text-red-600" : ""
             }`}
           >
-            {isPositive ? "+" : isNegative ? "-" : ""}
-            {formatQuantity(qty)} {row.original.item.uom}
+            {sign}
+            {formatQuantity(displayQty)} {row.original.item.uom}
           </span>
         )
       },
