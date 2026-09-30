@@ -1,13 +1,12 @@
 "use server"
 
 import { prisma } from "@/lib/db/prisma"
-import { Prisma, TransactionType } from "@prisma/client"
+import { TransactionType } from "@prisma/client"
 import { revalidatePath } from "next/cache"
 import { getTenantId, requireRole } from "@/lib/auth"
-import { generateReceivingLotNo } from "@/lib/actions/receiving.actions"
-import type { CnsItemRuleContext } from "@/lib/lot-numbering/lot-rule-resolver"
 import { requireResourcePermission } from "@/lib/auth/role-permissions"
 import { BUSINESS_NUMBER_MAX_ATTEMPTS, isUniqueConstraintError, kstDateParts } from "@/lib/business-numbering"
+import { lockInventoryBalancesForUpdate, withQuantityTransactionRetry } from "@/lib/quantity-concurrency"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,11 +56,19 @@ export type InventoryTransactionWithDetails = {
 // ─── 재고현황 조회 ─────────────────────────────────────────────────────────────
 
 export async function getInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
+  const tenantId = await getTenantId()
   const rows = await prisma.inventoryBalance.findMany({
+    where: {
+      tenantId,
+      item: { tenantId },
+      site: { tenantId },
+      warehouse: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+    },
     include: {
       warehouse: { include: { site: true } },
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
-      lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [
       { warehouse: { name: "asc" } },
@@ -79,15 +86,20 @@ export async function getInventoryBalances(): Promise<InventoryBalanceWithDetail
 }
 
 export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
+  const tenantId = await getTenantId()
   const rows = await prisma.inventoryBalance.findMany({
     where: {
-      item: { itemType: { in: ["RAW_MATERIAL", "CONSUMABLE"] } },
+      tenantId,
+      item: { tenantId, itemType: { in: ["RAW_MATERIAL", "CONSUMABLE"] } },
+      site: { tenantId },
+      warehouse: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
     },
     include: {
       warehouse: { include: { site: true } },
       // item: true → 필요 필드만 select (code/name/itemType/uom만 사용됨)
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
-      lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [
       { warehouse: { name: "asc" } },
@@ -96,8 +108,15 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
   })
   const txRows = await prisma.inventoryTransaction.findMany({
     where: {
+      tenantId,
       itemId: { in: Array.from(new Set(rows.map((row) => row.itemId))) },
       txType: { in: ["RECEIPT", "ISSUE"] },
+      item: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+      AND: [
+        { OR: [{ fromLocationId: null }, { fromLocation: { tenantId } }] },
+        { OR: [{ toLocationId: null }, { toLocation: { tenantId } }] },
+      ],
     },
     select: {
       itemId: true,
@@ -294,11 +313,19 @@ export type GroupedInventoryStock = {
 }
 
 export async function getGroupedInventoryBalances(): Promise<GroupedInventoryStock[]> {
+  const tenantId = await getTenantId()
   const rows = await prisma.inventoryBalance.findMany({
+    where: {
+      tenantId,
+      item: { tenantId },
+      site: { tenantId },
+      warehouse: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+    },
     include: {
       warehouse: { include: { site: true } },
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true } },
-      lot: { select: { id: true, lotNo: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true } },
     },
     orderBy: { item: { code: "asc" } },
   })
@@ -373,23 +400,26 @@ export async function getGroupedInventoryBalances(): Promise<GroupedInventorySto
     .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
 }
 
-export async function getWarehousesBySite(siteId: string) {
-  return prisma.warehouse.findMany({
-    where: { siteId },
-    select: { id: true, code: true, name: true },
-    orderBy: { name: "asc" },
-  })
-}
 
 // ─── 트랜잭션 이력 조회 (최신 200건) ──────────────────────────────────────────
 
 export async function getInventoryTransactions(): Promise<InventoryTransactionWithDetails[]> {
+  const tenantId = await getTenantId()
   const rows = await prisma.inventoryTransaction.findMany({
+    where: {
+      tenantId,
+      item: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+      AND: [
+        { OR: [{ fromLocationId: null }, { fromLocation: { tenantId } }] },
+        { OR: [{ toLocationId: null }, { toLocation: { tenantId } }] },
+      ],
+    },
     include: {
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true } },
-      lot: { select: { id: true, lotNo: true } },
-      fromLocation: { select: { id: true, code: true, name: true } },
-      toLocation: { select: { id: true, code: true, name: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true } },
+      fromLocation: { select: { id: true, tenantId: true, code: true, name: true } },
+      toLocation: { select: { id: true, tenantId: true, code: true, name: true } },
       workOrderMaterialLots: {
         select: {
           id: true,
@@ -408,174 +438,15 @@ export async function getInventoryTransactions(): Promise<InventoryTransactionWi
   }))
 }
 
-// ─── 창고 목록 (트랜잭션 로케이션 선택용) ────────────────────────────────────
-
-export async function getWarehousesForTransaction() {
-  return prisma.warehouse.findMany({
-    select: { id: true, code: true, name: true, siteId: true },
-    orderBy: { name: "asc" },
-  })
-}
-
-// ─── 품목 목록 (재고 전체) ────────────────────────────────────────────────────
-
-export async function getItemsForInventory() {
-  return prisma.item.findMany({
-    select: { id: true, code: true, name: true, itemType: true, uom: true },
-    orderBy: { code: "asc" },
-  })
-}
-
 // ─── 사이트 목록 ──────────────────────────────────────────────────────────────
 
 export async function getSitesForInventory() {
+  const tenantId = await getTenantId()
   return prisma.site.findMany({
+    where: { tenantId },
     select: { id: true, code: true, name: true },
     orderBy: { name: "asc" },
   })
-}
-
-// ─── 사이트별 수주 목록 (출고 목적지 - 고객사 출하) ─────────────────────────────
-
-export async function getSalesOrdersForSite(siteId: string) {
-  return prisma.salesOrder.findMany({
-    where: { siteId, status: { notIn: ["CANCELLED", "CLOSED"] } },
-    select: {
-      id: true,
-      orderNo: true,
-      customer: { select: { name: true } },
-    },
-    orderBy: { orderNo: "desc" },
-  })
-}
-
-// ─── 사이트별 작업지시 목록 (출고 목적지 - 생산투입) ────────────────────────────
-
-export async function getWorkOrdersForSite(siteId: string) {
-  return prisma.workOrder.findMany({
-    where: { siteId, status: { notIn: ["COMPLETED", "CANCELLED"] } },
-    select: {
-      id: true,
-      orderNo: true,
-      item: { select: { name: true } },
-      status: true,
-    },
-    orderBy: { orderNo: "desc" },
-  })
-}
-
-// ─── 사이트별 품목 목록 (재고 보유 품목만) ──────────────────────────────────────
-
-export async function getItemsForSite(siteId: string) {
-  const balances = await prisma.inventoryBalance.findMany({
-    where: { siteId },
-    select: {
-      qtyOnHand: true,
-      item: {
-        select: { id: true, code: true, name: true, itemType: true, uom: true },
-      },
-    },
-    orderBy: { item: { code: "asc" } },
-  })
-
-  // 같은 품목이 여러 창고에 있을 수 있으므로 집계
-  const map = new Map<string, { id: string; code: string; name: string; itemType: string; uom: string; qtyOnHand: number }>()
-  for (const b of balances) {
-    const existing = map.get(b.item.id)
-    if (existing) {
-      existing.qtyOnHand += Number(b.qtyOnHand)
-    } else {
-      map.set(b.item.id, { ...b.item, qtyOnHand: Number(b.qtyOnHand) })
-    }
-  }
-
-  return Array.from(map.values())
-}
-
-// ─── 전체 품목 목록 (입고/반품용 — 사이트 재고 보유 여부와 무관) ────────────────
-
-export async function getAllItemsForInventory() {
-  const tenantId = await getTenantId()
-  return prisma.item.findMany({
-    where: { tenantId, status: "ACTIVE" },
-    select: { id: true, code: true, name: true, itemType: true, uom: true },
-    orderBy: { code: "asc" },
-  })
-}
-
-// ─── CreateTransaction 타입 ───────────────────────────────────────────────────
-
-export type CreateTransactionInput = {
-  siteId: string
-  fromLocationId?: string | null
-  toLocationId?: string | null
-  itemId: string
-  lotNo?: string | null
-  txType: TransactionType
-  qty: number
-  refType?: string | null
-  refId?: string | null
-  note?: string | null
-}
-
-// ─── Balance 갱신 헬퍼 ────────────────────────────────────────────────────────
-
-async function adjustBalance(
-  tx: any,
-  params: {
-    tenantId: string
-    siteId: string
-    warehouseId: string
-    itemId: string
-    lotId: string | null
-    qtyDelta?: number      // RECEIPT/ISSUE/TRANSFER 증감
-    qtyAbsolute?: number   // ADJUST 직접 세팅
-  }
-) {
-  const where = {
-    tenantId: params.tenantId,
-    siteId: params.siteId,
-    warehouseId: params.warehouseId,
-    itemId: params.itemId,
-    lotId: params.lotId ?? null,
-  }
-
-  const existing = await tx.inventoryBalance.findFirst({ where })
-
-  if (params.qtyAbsolute !== undefined) {
-    // ADJUST: qtyOnHand를 직접 세팅, qtyAvailable도 동일하게
-    const absQty = Math.max(0, params.qtyAbsolute)
-    if (existing) {
-      return tx.inventoryBalance.update({
-        where: { id: existing.id },
-        data: { qtyOnHand: absQty, qtyAvailable: absQty },
-      })
-    } else {
-      return tx.inventoryBalance.create({
-        data: { ...where, qtyOnHand: absQty, qtyAvailable: absQty, qtyHold: 0 },
-      })
-    }
-  }
-
-  const delta = params.qtyDelta ?? 0
-
-  if (existing) {
-    const newQty = Number(existing.qtyOnHand) + delta
-    if (newQty < 0) {
-      throw new Error(
-        `재고 부족: 현재 재고 ${Number(existing.qtyOnHand).toLocaleString()}, 요청 ${Math.abs(delta).toLocaleString()}`
-      )
-    }
-    return tx.inventoryBalance.update({
-      where: { id: existing.id },
-      data: { qtyOnHand: newQty, qtyAvailable: Math.max(0, newQty - Number(existing.qtyHold)) },
-    })
-  } else {
-    if (delta < 0) throw new Error("재고 부족: 해당 창고에 재고가 없습니다.")
-    return tx.inventoryBalance.create({
-      data: { ...where, qtyOnHand: delta, qtyAvailable: delta, qtyHold: 0 },
-    })
-  }
 }
 
 // ─── txNo 생성 ────────────────────────────────────────────────────────────────
@@ -588,8 +459,6 @@ async function generateTxNo(tenantId: string, txType: TransactionType): Promise<
     ADJUST: "ADJ",
     RETURN: "RTN",
     SCRAP: "SCR",
-    // material-return.actions.ts의 completeMaterialReturn()이 SRT- prefix로 직접
-    // 채번하므로 이 경로로는 호출되지 않는다 — TransactionType 전수 매핑 유지 목적.
     SUPPLIER_RETURN: "SRT",
   }[txType] ?? "TXN"
 
@@ -608,234 +477,6 @@ async function generateTxNo(tenantId: string, txType: TransactionType): Promise<
   return `${prefix}-${yyyymmdd}-${String(seq).padStart(4, "0")}`
 }
 
-// ─── LOT 번호 해석 (입고/반품 시 자동발행 포함) ─────────────────────────────────
-
-type ItemLotConfig = {
-  code: string
-  itemType: string
-  isLotTracked: boolean
-  lotNumberingType: string
-  lotPrefix: string | null
-  manualLotPolicy: string
-  itemGroup: { code: string } | null
-  category: { code: string } | null
-}
-
-const AUTO_LOT_COLLISION = "AUTO_LOT_COLLISION"
-
-
-/** LOT 번호(사용자 입력 문자열)를 실제 Lot.id로 해석한다.
- * - 입고/반품(isInbound): LOT 관리 품목이면 입력값 사용 또는 자동발행, 없으면 신규 Lot 생성
- * - 출고/이동/조정/폐기: 기존 LOT만 참조 가능 (신규 생성 없음)
- */
-async function resolveLotId(
-  tx: any,
-  tenantId: string,
-  itemId: string,
-  item: ItemLotConfig,
-  manualLotNo: string | null,
-  isInbound: boolean,
-  attempt: number,
-): Promise<string | null> {
-  if (!item.isLotTracked) return null
-
-  if (!isInbound) {
-    if (!manualLotNo) return null
-    const lot = await tx.lot.findFirst({ where: { tenantId, itemId, lotNo: manualLotNo } })
-    if (!lot) {
-      throw new Error(`LOT 번호 '${manualLotNo}'를 찾을 수 없습니다. 등록된 LOT 번호인지 확인해주세요.`)
-    }
-    return lot.id
-  }
-
-  const manualLotPolicy = item.manualLotPolicy ?? "ALLOWED"
-  const lotNumberingType = item.lotNumberingType ?? "DEFAULT"
-  if ((lotNumberingType === "MANUAL" || manualLotPolicy === "REQUIRED") && !manualLotNo) {
-    throw new Error("LOT 번호를 직접 입력해야 하는 품목입니다.")
-  }
-
-  const itemRuleContext: CnsItemRuleContext = {
-    itemCode: item.code,
-    itemGroupCode: item.itemGroup?.code,
-    itemCategoryCode: item.category?.code,
-    itemType: item.itemType,
-    lotNumberingType,
-    lotPrefix: item.lotPrefix,
-    manualLotPolicy,
-  }
-
-  const resolvedLotNo = manualLotNo ?? (await generateReceivingLotNo(tenantId, itemRuleContext, attempt))
-
-  const existingLot = await tx.lot.findFirst({ where: { tenantId, lotNo: resolvedLotNo } })
-  if (existingLot) {
-    if (existingLot.itemId !== itemId) {
-      throw new Error(`LOT 번호 '${resolvedLotNo}'는 다른 품목에 이미 사용 중입니다. 다른 번호를 입력해주세요.`)
-    }
-    if (!manualLotNo) {
-      throw new Error(AUTO_LOT_COLLISION)
-    }
-    return existingLot.id
-  }
-
-  const newLot = await tx.lot.create({
-    data: { tenantId, itemId, lotNo: resolvedLotNo, status: "ACTIVE", manufactureDate: new Date() },
-  })
-  return newLot.id
-}
-
-// ─── 트랜잭션 등록 + Balance 자동 갱신 ───────────────────────────────────────
-
-export async function createTransaction(
-  data: CreateTransactionInput,
-  tenantId: string
-) {
-  await requireResourcePermission("INVENTORY_TXN", "CREATE")
-  const isInbound = data.txType === TransactionType.RECEIPT || data.txType === TransactionType.RETURN
-
-  const item = await prisma.item.findUniqueOrThrow({
-    where: { id: data.itemId },
-    select: {
-      code: true,
-      itemType: true,
-      isLotTracked: true,
-      lotNumberingType: true,
-      lotPrefix: true,
-      manualLotPolicy: true,
-      itemGroup: { select: { code: true } },
-      category: { select: { code: true } },
-    },
-  })
-
-  const manualLotNo = data.lotNo?.trim() || null
-  const shouldAutoGenerateLotNo = item.isLotTracked && isInbound && !manualLotNo
-  const maxAttempts = BUSINESS_NUMBER_MAX_ATTEMPTS
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const txNo = await generateTxNo(tenantId, data.txType)
-
-    try {
-      await prisma.$transaction(async (tx) => {
-        const lotId = await resolveLotId(tx, tenantId, data.itemId, item, manualLotNo, isInbound, attempt)
-
-        // 1. InventoryTransaction 생성
-        await tx.inventoryTransaction.create({
-          data: {
-            tenantId,
-            itemId: data.itemId,
-            lotId,
-            fromLocationId: data.fromLocationId ?? null,
-            toLocationId: data.toLocationId ?? null,
-            txNo,
-            txType: data.txType,
-            qty: data.qty,
-            refType: data.refType ?? null,
-            refId: data.refId ?? null,
-            note: data.note ?? null,
-            txAt: new Date(),
-          },
-        })
-
-        // 2. Balance 갱신 (txType별 분기)
-        switch (data.txType) {
-          case TransactionType.RECEIPT:
-          case TransactionType.RETURN: {
-            // 입고 / 반품 → toLocation (Warehouse) + qtyOnHand 증가
-            if (!data.toLocationId) throw new Error("입고/반품 시 입고 로케이션이 필요합니다.")
-            const wh = await tx.warehouse.findUnique({ where: { id: data.toLocationId } })
-            if (!wh) throw new Error("유효하지 않은 로케이션입니다.")
-            await adjustBalance(tx, {
-              tenantId,
-              siteId: data.siteId,
-              warehouseId: data.toLocationId,
-              itemId: data.itemId,
-              lotId,
-              qtyDelta: +data.qty,
-            })
-            break
-          }
-
-          case TransactionType.ISSUE:
-          case TransactionType.SCRAP: {
-            // 출고 / 폐기 → fromLocation (Warehouse) + qtyOnHand 감소
-            if (!data.fromLocationId) throw new Error("출고/폐기 시 출고 로케이션이 필요합니다.")
-            await adjustBalance(tx, {
-              tenantId,
-              siteId: data.siteId,
-              warehouseId: data.fromLocationId,
-              itemId: data.itemId,
-              lotId,
-              qtyDelta: -data.qty,
-            })
-            break
-          }
-
-          case TransactionType.ADJUST: {
-            // 재고조정 → fromLocation (또는 toLocation, Warehouse) + qtyOnHand 절대값 세팅
-            const warehouseId = data.fromLocationId ?? data.toLocationId
-            if (!warehouseId) throw new Error("재고조정 시 로케이션이 필요합니다.")
-            await adjustBalance(tx, {
-              tenantId,
-              siteId: data.siteId,
-              warehouseId,
-              itemId: data.itemId,
-              lotId,
-              qtyAbsolute: data.qty,
-            })
-            break
-          }
-
-          case TransactionType.TRANSFER: {
-            // 이동 → fromLocation 감소 + toLocation 증가 (모두 Warehouse)
-            if (!data.fromLocationId || !data.toLocationId) {
-              throw new Error("이동 시 출발 로케이션과 도착 로케이션이 모두 필요합니다.")
-            }
-            await adjustBalance(tx, {
-              tenantId,
-              siteId: data.siteId,
-              warehouseId: data.fromLocationId,
-              itemId: data.itemId,
-              lotId,
-              qtyDelta: -data.qty,
-            })
-            await adjustBalance(tx, {
-              tenantId,
-              siteId: data.siteId,
-              warehouseId: data.toLocationId,
-              itemId: data.itemId,
-              lotId,
-              qtyDelta: +data.qty,
-            })
-            break
-          }
-
-          default:
-            throw new Error(`지원하지 않는 트랜잭션 유형입니다: ${data.txType}`)
-        }
-      })
-      break
-    } catch (error) {
-      const txNoCollision = isUniqueConstraintError(error, ["tenantId", "txNo"])
-      const autoLotCollision = shouldAutoGenerateLotNo &&
-        (isUniqueConstraintError(error) || (error instanceof Error && error.message === AUTO_LOT_COLLISION))
-      const canRetry = txNoCollision || autoLotCollision
-
-      if (canRetry && attempt < maxAttempts - 1) {
-        continue
-      }
-      if (autoLotCollision) {
-        throw new Error("LOT 자동발행 중 번호 충돌이 반복되었습니다. 다시 시도해 주세요.")
-      }
-      if (txNoCollision) {
-        throw new Error("재고거래번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요.")
-      }
-      throw error
-    }
-  }
-
-  revalidatePath("/app/mes/inventory")
-  revalidatePath("/app/mes/inventory-transactions")
-}
-
 // ─── 재고실사/재고조정 (의료기기 추적성 보존) ──────────────────────────────────
 //
 // 고객사 실사 결과와 MES 재고가 다를 때 보정하는 기능.
@@ -851,10 +492,7 @@ export async function createTransaction(
 const STOCK_ADJUSTMENT_REF_TYPE = "STOCK_ADJUSTMENT"
 
 export type StockAdjustmentInput = {
-  siteId: string
-  warehouseId: string
-  itemId: string
-  lotId?: string | null
+  balanceId: string
   physicalQty: number // 실사수량
   reason: string      // 조정 사유 (필수)
   note?: string | null
@@ -882,13 +520,12 @@ export async function adjustInventoryStock(
     return { success: false, error: "재고조정 권한이 없습니다. (MANAGER 이상 필요)" }
   }
   const tenantId = actor.tenantId
-
-  const { siteId, warehouseId, itemId } = input
-  const lotId = input.lotId ?? null
+  const balanceId = input.balanceId?.trim()
   const reason = input.reason?.trim()
+  const note = input.note?.trim() || null
 
-  if (!siteId || !warehouseId || !itemId) {
-    return { success: false, error: "사업장/창고/품목은 필수 입력값입니다." }
+  if (!balanceId) {
+    return { success: false, error: "재고를 찾을 수 없습니다." }
   }
   if (!reason) {
     return { success: false, error: "재고조정 사유를 입력해 주세요." }
@@ -898,112 +535,134 @@ export async function adjustInventoryStock(
   }
 
   try {
-    const item = await prisma.item.findFirst({
-      where: { id: itemId, tenantId },
-      select: { isLotTracked: true, itemType: true, code: true, name: true },
-    })
-    if (!item) return { success: false, error: "품목을 찾을 수 없습니다." }
-
-    // LOT 관리 품목(원자재 LOT/완제품 제조번호 추적)은 LOT 선택 필수.
-    if (item.isLotTracked && !lotId) {
-      return {
-        success: false,
-        error: "LOT/제조번호 관리 품목은 LOT를 반드시 선택해 조정해야 합니다.",
-      }
-    }
-
     let finalTxNo: string | null = null
-    const result = await (async () => {
+    const result = await withQuantityTransactionRetry(async () => {
       let lastError: unknown
       for (let attempt = 0; attempt < BUSINESS_NUMBER_MAX_ATTEMPTS; attempt++) {
         const txNo = await generateTxNo(tenantId, TransactionType.ADJUST)
         try {
           return await prisma.$transaction(async (tx) => {
-            const where = { tenantId, siteId, warehouseId, itemId, lotId }
-            const existing = await tx.inventoryBalance.findFirst({ where })
-            const currentQty = existing ? Number(existing.qtyOnHand) : 0
+            const ownedBalance = await tx.inventoryBalance.findFirst({
+              where: { id: balanceId, tenantId },
+              select: { id: true },
+            })
+            if (!ownedBalance) {
+              throw new Error("재고를 찾을 수 없습니다.")
+            }
+
+            await lockInventoryBalancesForUpdate(tx, [balanceId])
+
+            const balance = await tx.inventoryBalance.findFirst({
+              where: { id: balanceId, tenantId },
+              include: {
+                item: { select: { id: true, tenantId: true, code: true, name: true, isLotTracked: true } },
+                site: { select: { id: true, tenantId: true } },
+                warehouse: { select: { id: true, tenantId: true, siteId: true } },
+                lot: { select: { id: true, tenantId: true, itemId: true, status: true } },
+              },
+            })
+            if (!balance) {
+              throw new Error("재고를 찾을 수 없습니다.")
+            }
+            if (
+              balance.item.tenantId !== tenantId ||
+              balance.site.tenantId !== tenantId ||
+              balance.warehouse.tenantId !== tenantId ||
+              balance.warehouse.siteId !== balance.siteId
+            ) {
+              throw new Error("재고의 테넌트/사업장 기준정보가 올바르지 않습니다.")
+            }
+            if (balance.item.isLotTracked && !balance.lotId) {
+              throw new Error("LOT 관리 품목의 LOT 미지정 재고는 재고조정할 수 없습니다.")
+            }
+            if (balance.lotId) {
+              if (!balance.lot || balance.lot.tenantId !== tenantId || balance.lot.itemId !== balance.itemId) {
+                throw new Error("재고의 LOT 정보가 품목 또는 테넌트와 일치하지 않습니다.")
+              }
+            }
+
+            const currentQty = Number(balance.qtyOnHand)
+            const qtyAvailableBefore = Number(balance.qtyAvailable)
+            const qtyHold = Number(balance.qtyHold)
             const physicalQty = input.physicalQty
             const diffQty = Number((physicalQty - currentQty).toFixed(6))
 
-      if (diffQty === 0) {
-        throw new Error("실사수량이 현재고와 동일하여 조정할 내역이 없습니다.")
-      }
-      if (!existing && diffQty < 0) {
-        throw new Error("해당 LOT/창고에 재고 잔고가 없습니다.")
-      }
+            if (diffQty === 0) {
+              throw new Error("실사수량이 현재고와 동일하여 조정할 내역이 없습니다.")
+            }
+            if (physicalQty < qtyHold) {
+              throw new Error("실사수량이 현재 보류수량보다 작습니다. 보류 상태를 먼저 정리한 후 재고조정해 주세요.")
+            }
 
-      // 1) 차이수량만 ADJUST 트랜잭션으로 신규 기록 (기존 입출고 이력 미수정)
-      //    양수=조정입고(toLocation), 음수=조정출고(fromLocation)
-      await tx.inventoryTransaction.create({
-        data: {
-          tenantId,
-          itemId,
-          lotId,
-          fromLocationId: diffQty < 0 ? warehouseId : null,
-          toLocationId: diffQty > 0 ? warehouseId : null,
-          txNo,
-          txType: TransactionType.ADJUST,
-          qty: diffQty, // 부호 있는 차이수량
-          refType: STOCK_ADJUSTMENT_REF_TYPE,
-          refId: existing?.id ?? null,
-          note:
-            `재고실사 조정 | 현재고:${currentQty} 실사:${physicalQty} 차이:${diffQty >= 0 ? "+" : ""}${diffQty} | 사유:${reason}` +
-            (input.note ? ` | 비고:${input.note}` : ""),
-          txAt: new Date(),
-        },
-      })
+            const qtyAvailableAfter = Number((physicalQty - qtyHold).toFixed(6))
 
-      // 2) Balance를 차이수량만큼 증감 (덮어쓰기 금지, qtyHold 보존)
-      let newQtyOnHand: number
-      let balanceId: string
-      if (existing) {
-        newQtyOnHand = Number((currentQty + diffQty).toFixed(6))
-        if (newQtyOnHand < 0) {
-          throw new Error("조정 후 재고가 음수가 될 수 없습니다.")
-        }
-        const qtyHold = Number(existing.qtyHold)
-        await tx.inventoryBalance.update({
-          where: { id: existing.id },
-          data: {
-            qtyOnHand: newQtyOnHand,
-            qtyAvailable: Math.max(0, Number((newQtyOnHand - qtyHold).toFixed(6))),
-          },
-        })
-        balanceId = existing.id
-      } else {
-        newQtyOnHand = physicalQty
-        const created = await tx.inventoryBalance.create({
-          data: { ...where, qtyOnHand: newQtyOnHand, qtyAvailable: newQtyOnHand, qtyHold: 0 },
-        })
-        balanceId = created.id
-      }
+            await tx.inventoryTransaction.create({
+              data: {
+                tenantId,
+                itemId: balance.itemId,
+                lotId: balance.lotId,
+                fromLocationId: diffQty < 0 ? balance.warehouseId : null,
+                toLocationId: diffQty > 0 ? balance.warehouseId : null,
+                txNo,
+                txType: TransactionType.ADJUST,
+                qty: diffQty,
+                refType: STOCK_ADJUSTMENT_REF_TYPE,
+                refId: balance.id,
+                note:
+                  `재고실사 조정 | 현재고:${currentQty} 실사:${physicalQty} 차이:${diffQty >= 0 ? "+" : ""}${diffQty} | 사유:${reason}` +
+                  (note ? ` | 비고:${note}` : ""),
+                txAt: new Date(),
+              },
+            })
 
-      // 3) AuditLog (누가/언제/무엇을/사유)
-      await tx.auditLog.create({
-        data: {
-          tenantId,
-          actorId: actor.profileId,
-          actorType: "USER",
-          actorLabel: actor.name,
-          entityType: "InventoryBalance",
-          entityId: balanceId,
-          action: "UPDATE",
-          menuName: "재고조정",
-          beforeData: { qtyOnHand: currentQty },
-          afterData: {
-            qtyOnHand: newQtyOnHand,
-            physicalQty,
-            diffQty,
-            reason,
-            note: input.note ?? null,
-            txNo,
-            itemId,
-            itemCode: item.code,
-            warehouseId,
-            lotId,
-          },
-        },
-      })
+            await tx.inventoryBalance.update({
+              where: { id: balance.id },
+              data: {
+                qtyOnHand: physicalQty,
+                qtyAvailable: qtyAvailableAfter,
+              },
+            })
+
+            await tx.auditLog.create({
+              data: {
+                tenantId,
+                actorId: actor.profileId,
+                actorType: "USER",
+                actorLabel: actor.name,
+                entityType: "InventoryBalance",
+                entityId: balance.id,
+                action: "UPDATE",
+                menuName: "재고조정",
+                beforeData: {
+                  balanceId: balance.id,
+                  siteId: balance.siteId,
+                  warehouseId: balance.warehouseId,
+                  itemId: balance.itemId,
+                  itemCode: balance.item.code,
+                  lotId: balance.lotId,
+                  qtyOnHand: currentQty,
+                  qtyHold,
+                  qtyAvailable: qtyAvailableBefore,
+                },
+                afterData: {
+                  balanceId: balance.id,
+                  siteId: balance.siteId,
+                  warehouseId: balance.warehouseId,
+                  itemId: balance.itemId,
+                  itemCode: balance.item.code,
+                  lotId: balance.lotId,
+                  currentQty,
+                  physicalQty,
+                  diffQty,
+                  qtyHold,
+                  qtyAvailableBefore,
+                  qtyAvailableAfter,
+                  reason,
+                  note,
+                  txNo,
+                },
+              },
+            })
 
             finalTxNo = txNo
             return { currentQty, physicalQty, diffQty }
@@ -1017,7 +676,7 @@ export async function adjustInventoryStock(
         throw new Error("재고조정번호 생성 중 중복이 반복되었습니다. 다시 시도해 주세요.")
       }
       throw lastError
-    })()
+    })
 
     revalidatePath("/app/mes/inventory")
     revalidatePath("/app/mes/material/stock")
@@ -1054,8 +713,18 @@ export type StockAdjustmentHistoryRow = {
 }
 
 export async function getStockAdjustmentHistory(): Promise<StockAdjustmentHistoryRow[]> {
+  const tenantId = await getTenantId()
   const rows = await prisma.inventoryTransaction.findMany({
-    where: { refType: STOCK_ADJUSTMENT_REF_TYPE },
+    where: {
+      tenantId,
+      refType: STOCK_ADJUSTMENT_REF_TYPE,
+      item: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+      AND: [
+        { OR: [{ fromLocationId: null }, { fromLocation: { tenantId } }] },
+        { OR: [{ toLocationId: null }, { toLocation: { tenantId } }] },
+      ],
+    },
     include: {
       item: { select: { code: true, name: true } },
       lot: { select: { lotNo: true } },

@@ -54,7 +54,8 @@
     "test:kpi-report-scope-timezone-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-kpi-report-scope-timezone-integrity.ts",
     "test:f25-master-menu-cleanup-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-f25-master-menu-cleanup-integrity.ts",
     "test:f23-browser-smoke": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/f23-browser-smoke.ts",
-    "test:f26-backup-operational-visibility": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-backup-management.ts"
+    "test:f26-backup-operational-visibility": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-backup-management.ts",
+    "test:f27-inventory-adjustment-integrity": "ts-node --compiler-options \"{\\\"module\\\":\\\"commonjs\\\"}\" --project tsconfig.json scripts/test-f27-inventory-adjustment-integrity.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

@@ -86,10 +86,7 @@ export function StockAdjustmentDialog({ target }: { target: StockAdjustmentTarge
 
     startTransition(async () => {
       const result = await adjustInventoryStock({
-        siteId: target.siteId,
-        warehouseId: target.warehouseId,
-        itemId: target.itemId,
-        lotId: target.lotId,
+        balanceId: target.balanceId,
         physicalQty: confirmedPhysicalQty,
         reason,
       })
