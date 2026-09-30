@@ -11,7 +11,7 @@ export default async function VendorsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            거래처 관리
+            거래처관리
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             원자재·부품을 공급하는 거래처 정보를 관리합니다.

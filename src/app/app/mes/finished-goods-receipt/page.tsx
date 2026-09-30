@@ -30,7 +30,7 @@ export default async function FinishedGoodsReceiptPage({ searchParams }: Finishe
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            완제품 입고 관리
+            완제품입고
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             생산 완료된 작업지시의 완제품을 창고에 입고 처리합니다.

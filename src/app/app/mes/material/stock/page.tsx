@@ -24,10 +24,10 @@ export default async function MaterialStockPage() {
     <div className="space-y-6 p-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          원자재 LOT 재고
+          자재재고현황
         </h1>
         <p className="mt-1 text-[15px] text-muted-foreground">
-          의료기기 제조에 투입되는 원자재와 소모품의 LOT별 현재고를 확인합니다.
+          원자재와 소모품의 LOT별 현재고를 조회합니다.
           품목 행을 클릭하면 LOT별 상세 재고를 확인할 수 있습니다.
         </p>
       </div>
