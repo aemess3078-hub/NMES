@@ -10,7 +10,7 @@ import {
   createBackupGroup,
   updateBackupGroup,
   getBackupGroupDetail,
-  type SupabaseBackupItem,
+  type BackupManagementData,
 } from "@/lib/actions/backup.actions"
 import { backupStatusLabel, backupTypeLabel, formatBackupDateTimeKst, sortBackupsByInsertedAtDesc } from "@/lib/actions/backup.helpers"
 type PickerRow = {
@@ -26,7 +26,7 @@ interface BackupGroupFormSheetProps {
   onOpenChange: (open: boolean) => void
   mode: "create" | "edit"
   groupId?: string | null // edit 모드일 때만 사용
-  visibleBackups: SupabaseBackupItem[]
+  visibleBackups: BackupManagementData["visibleBackups"]
   onSaved: () => void
 }
 
@@ -110,7 +110,7 @@ export function BackupGroupFormSheet({ open, onOpenChange, mode, groupId, visibl
 
   async function handleSubmit() {
     if (!name.trim()) {
-      alert("그룹명을 입력해 주세요.")
+      alert("분류명을 입력해 주세요.")
       return
     }
     if (selectedIds.size === 0) {
@@ -142,14 +142,14 @@ export function BackupGroupFormSheet({ open, onOpenChange, mode, groupId, visibl
         else onOpenChange(v)
       }}
       mode={mode}
-      title={mode === "create" ? "그룹 등록" : "그룹 수정"}
-      description="이 그룹은 화면에서 백업을 보기 좋게 묶기 위한 분류입니다. 실제 백업은 변경되지 않으며, 같은 백업을 여러 그룹에 포함할 수 있습니다."
+      title={mode === "create" ? "분류 만들기" : "분류 수정"}
+      description="이 백업 분류는 화면에서 백업을 보기 좋게 묶기 위한 항목입니다. 실제 백업은 변경되지 않으며, 같은 백업을 여러 분류에 포함할 수 있습니다."
       isLoading={isSaving}
       onSubmit={handleSubmit}
     >
       <div className="space-y-4">
         <div className="space-y-1.5">
-          <Label>그룹명 *</Label>
+          <Label>분류명 *</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 2026년 9월 정기 백업" />
         </div>
         <div className="space-y-1.5">

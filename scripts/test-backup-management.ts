@@ -241,32 +241,34 @@ const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"))
   assertTrue(/params\.backups/.test(helpersSource) && /filterVisibleBackups\(params\.backups/.test(helpersSource), "T30. 운영 summary는 전체 backups 기준이며 visible만 hidden 적용")
 }
 {
-  assertTrue(!clientSource.includes("전체 백업 수"), "T31. visible count를 전체 백업 수라고 부르지 않음")
-  assertTrue(!clientSource.includes("자동백업 상태"), "T31. 자동백업 상태 label 제거")
-  assertTrue(clientSource.includes("전체 전산 백업 수") && clientSource.includes("표시 백업 수") && clientSource.includes("숨김 백업 수"), "T31. 전체/표시/숨김 count label 존재")
-  assertTrue(clientSource.includes("최근 백업 시도") && clientSource.includes("최근 성공 백업") && clientSource.includes("실패 건수"), "T31. 최신 시도/성공/실패 건수 label 존재")
+  const uiSources = clientSource + pageSource + formSource + detailSource
+  for (const forbidden of ["Supabase", "metadata", "PITR", "WAL-G", "DB Region", "백업 서버 위치", "복구 준비 상태", "시점 복구", "백업 로그 보관", "자동백업 상태"]) {
+    assertTrue(!uiSources.includes(forbidden), `T31. backup UI에 기술 용어 노출 금지: ${forbidden}`)
+  }
+  for (const required of ["시스템 백업", "전체 백업", "최근 백업", "최근 정상 백업", "백업 오류", "마지막 확인", "백업 분류", "분류되지 않은 백업", "목록에서 숨기기", "실제 백업은 삭제되지 않습니다."]) {
+    assertTrue(uiSources.includes(required), `T31. backup UI 사용자 친화 문구 존재: ${required}`)
+  }
 }
 {
-  assertTrue(clientSource.includes("복구 준비 상태") && clientSource.includes("시점 복구:") && clientSource.includes("백업 로그 보관:"), "T32. 복구 준비 상태를 제조 현장 용어로 표시")
-  assertTrue(clientSource.includes("백업 서버 위치") && clientSource.includes("확인시각"), "T32. 백업 서버 위치/확인시각 표시")
+  assertTrue(pageSource.includes("MES 시스템 백업 상태") && pageSource.includes("필요한 백업은 분류하거나 목록에서 숨길 수 있습니다."), "T32. 페이지 설명이 시스템 백업 조회 + 화면 분류 기능임을 명시")
+  assertTrue(clientSource.includes("생산·품질 문서의 첨부파일 관리와는 별도 기능입니다."), "T32. 첨부파일 관리는 별도 기능임을 짧게 명시")
 }
 {
-  assertTrue(pageSource.includes("전산 백업 현황") && pageSource.includes("작업 기준에 맞게 분류"), "T33. 페이지 설명이 전산 백업 조회 + 화면 분류 기능임을 명시")
-  assertTrue(clientSource.includes("생산·품질 첨부파일 보관 상태와는 별도입니다."), "T33. 첨부파일 보관 상태와 별도임을 제조 현장 용어로 명시")
+  assertTrue(clientSource.includes("백업 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요. 백업 분류와 숨김 설정은 그대로 유지됩니다."), "T33. 조회 실패 안내는 백업 없음으로 오해되지 않게 표시")
 }
 {
   const backupActionSources = clientSource + detailSource
   assertTrue(!backupActionSources.includes("목록에서 삭제"), "T34. backup action confirm에서 목록 삭제 표현 제거")
   assertTrue(!/title="삭제"/.test(backupActionSources), "T34. backup row action title=삭제 제거")
   assertTrue(backupActionSources.includes("목록에서 숨기기") && backupActionSources.includes("실제 백업은 삭제되지 않습니다."), "T34. 숨김 UX와 실제 백업 불변 문구 존재")
-  assertTrue(detailSource.includes("그룹만 삭제되며 실제 백업은 삭제되지 않습니다."), "T34. 그룹 삭제 confirm도 실제 backup 불변 명시")
+  assertTrue(detailSource.includes("분류만 삭제되며 실제 백업은 삭제되지 않습니다."), "T34. 백업 분류 삭제 confirm도 실제 backup 불변 명시")
 }
 {
   assertTrue(clientSource.includes("숨김 백업") && clientSource.includes("다시 표시") && clientSource.includes("현재 목록에 없음"), "T35. 숨김 백업 section과 unhide UI, stale metadata 표시 존재")
   assertTrue(clientSource.includes("현재 백업 정보를 확인할 수 없습니다."), "T35. API unavailable에서도 현재 백업 정보 불가와 화면 설정 표시를 분리")
 }
 {
-  assertTrue(formSource.includes("화면에서 백업을 보기 좋게 묶기 위한 분류") && formSource.includes("실제 백업은 변경되지"), "T36. 그룹 FormSheet 설명이 화면 분류용임을 제조 현장 용어로 명시")
+  assertTrue(formSource.includes("백업 분류는 화면에서 백업을 보기 좋게 묶기 위한 항목") && formSource.includes("실제 백업은 변경되지"), "T36. 백업 분류 FormSheet 설명이 화면 분류용임을 제조 현장 용어로 명시")
 }
 {
   assertTrue(helpersSource.includes("timeZone: \"Asia/Seoul\"") && !clientSource.includes("getHours()") && !detailSource.includes("getHours()") && !formSource.includes("getHours()"), "T37. backup 화면은 browser local timezone 대신 Asia/Seoul formatter 사용")

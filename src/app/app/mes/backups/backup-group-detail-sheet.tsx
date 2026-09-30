@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EyeOff } from "lucide-react"
 import { useUserRole } from "@/lib/contexts/user-role-context"
-import { getBackupGroupDetail, deleteBackupGroup, hideBackup, type BackupGroupDetail, type SupabaseBackupItem } from "@/lib/actions/backup.actions"
+import { getBackupGroupDetail, deleteBackupGroup, hideBackup, type BackupGroupDetail, type BackupManagementData } from "@/lib/actions/backup.actions"
 import { backupStatusLabel, backupTypeLabel, formatBackupDateTimeKst } from "@/lib/actions/backup.helpers"
 import { BackupGroupFormSheet } from "./backup-group-form-sheet"
 
@@ -28,7 +28,7 @@ interface BackupGroupDetailSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   groupId: string | null
-  visibleBackups: SupabaseBackupItem[]
+  visibleBackups: BackupManagementData["visibleBackups"]
   onChanged: () => void
 }
 
@@ -51,7 +51,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
   if (!open || !groupId) return null
 
   async function handleDeleteGroup() {
-    if (!confirm("이 분류 그룹을 삭제하시겠습니까? 그룹만 삭제되며 실제 백업은 삭제되지 않습니다.")) return
+    if (!confirm("이 백업 분류를 삭제하시겠습니까? 분류만 삭제되며 실제 백업은 삭제되지 않습니다.")) return
     const res = await deleteBackupGroup(groupId!)
     if (!res.ok) {
       alert(res.error ?? "삭제 중 오류가 발생했습니다.")
@@ -83,8 +83,8 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="sm:max-w-lg overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>그룹 상세</SheetTitle>
-            <SheetDescription>화면 분류 그룹에 포함된 백업 목록을 확인합니다. 실제 백업은 변경되지 않습니다.</SheetDescription>
+            <SheetTitle>백업 분류 상세</SheetTitle>
+            <SheetDescription>백업 분류에 포함된 백업 목록을 확인합니다. 실제 백업은 변경되지 않습니다.</SheetDescription>
           </SheetHeader>
 
           {loading && <p className="text-[14px] text-muted-foreground pt-4">불러오는 중...</p>}
@@ -92,7 +92,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
           {!loading && detail && (
             <div className="space-y-5 pt-4">
               <div>
-                <p className="text-[13px] text-muted-foreground">그룹명</p>
+                <p className="text-[13px] text-muted-foreground">분류명</p>
                 <p className="text-[16px] font-medium">{detail.name}</p>
               </div>
               {detail.description && (
@@ -142,7 +142,7 @@ export function BackupGroupDetailSheet({ open, onOpenChange, groupId, visibleBac
           <SheetFooter className="pt-4 flex-row justify-between sm:justify-between">
             {canMutate ? (
               <div className="flex gap-2">
-                <Button variant="ghost" className="text-red-600 hover:bg-red-50" onClick={handleDeleteGroup}>그룹 삭제</Button>
+                <Button variant="ghost" className="text-red-600 hover:bg-red-50" onClick={handleDeleteGroup}>분류 삭제</Button>
                 <Button variant="outline" onClick={() => setEditOpen(true)}>수정</Button>
               </div>
             ) : (
