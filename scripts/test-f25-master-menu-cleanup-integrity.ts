@@ -3,13 +3,32 @@ import { join } from "path"
 
 const root = process.cwd()
 const navSource = readFileSync(join(root, "src/lib/nav-config.ts"), "utf8")
-const materialStockPage = readFileSync(join(root, "src/app/app/mes/material/stock/page.tsx"), "utf8")
-const defectsPage = readFileSync(join(root, "src/app/app/mes/defects/page.tsx"), "utf8")
-const equipmentStatsPage = readFileSync(join(root, "src/app/app/mes/equipment-statistics/page.tsx"), "utf8")
-const sitesPage = readFileSync(join(root, "src/app/app/mes/sites/page.tsx"), "utf8")
-const usersPage = readFileSync(join(root, "src/app/app/mes/users/page.tsx"), "utf8")
-const moldsPage = readFileSync(join(root, "src/app/app/mes/master/molds/page.tsx"), "utf8")
-const vendorsPage = readFileSync(join(root, "src/app/app/mes/vendors/page.tsx"), "utf8")
+
+const pages = {
+  materialStock: readFileSync(join(root, "src/app/app/mes/material/stock/page.tsx"), "utf8"),
+  defects: readFileSync(join(root, "src/app/app/mes/defects/page.tsx"), "utf8"),
+  equipmentStats: readFileSync(join(root, "src/app/app/mes/equipment-statistics/page.tsx"), "utf8"),
+  sites: readFileSync(join(root, "src/app/app/mes/sites/page.tsx"), "utf8"),
+  users: readFileSync(join(root, "src/app/app/mes/users/page.tsx"), "utf8"),
+  molds: readFileSync(join(root, "src/app/app/mes/master/molds/page.tsx"), "utf8"),
+  vendors: readFileSync(join(root, "src/app/app/mes/vendors/page.tsx"), "utf8"),
+  items: readFileSync(join(root, "src/app/app/mes/items/page.tsx"), "utf8"),
+  bom: readFileSync(join(root, "src/app/app/mes/bom/page.tsx"), "utf8"),
+  equipment: readFileSync(join(root, "src/app/app/mes/master/equipment/page.tsx"), "utf8"),
+  routing: readFileSync(join(root, "src/app/app/mes/routing/page.tsx"), "utf8"),
+  customers: readFileSync(join(root, "src/app/app/mes/customers/page.tsx"), "utf8"),
+  purchaseOrders: readFileSync(join(root, "src/app/app/mes/purchase-orders/page.tsx"), "utf8"),
+  materialReceipt: readFileSync(join(root, "src/app/app/mes/material-receipt/page.tsx"), "utf8"),
+  materialIssue: readFileSync(join(root, "src/app/app/mes/material-issue/page.tsx"), "utf8"),
+  productionPlan: readFileSync(join(root, "src/app/app/mes/production-plan/page.tsx"), "utf8"),
+  productionResults: readFileSync(join(root, "src/app/app/mes/production-results/page.tsx"), "utf8"),
+  salesOrders: readFileSync(join(root, "src/app/app/mes/sales-orders/page.tsx"), "utf8"),
+  shipments: readFileSync(join(root, "src/app/app/mes/shipments/page.tsx"), "utf8"),
+  ecn: readFileSync(join(root, "src/app/app/mes/ecn/page.tsx"), "utf8"),
+  finishedGoodsReceipt: readFileSync(join(root, "src/app/app/mes/finished-goods-receipt/page.tsx"), "utf8"),
+  locations: readFileSync(join(root, "src/app/app/mes/locations/page.tsx"), "utf8"),
+  equipmentOutput: readFileSync(join(root, "src/app/app/mes/production/equipment-output/page.tsx"), "utf8"),
+}
 
 type NavEntry = {
   id: string
@@ -58,6 +77,23 @@ function assertHref(id: string, href: string) {
 function assertSourceIncludes(source: string, expected: string, label: string) {
   assert(source.includes(expected), `${label} missing expected text: ${expected}`)
 }
+
+function normalizeText(value: string) {
+  return value.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+}
+
+function extractH1(source: string) {
+  const match = source.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)
+  if (!match) throw new Error("h1 not found")
+  return normalizeText(match[1])
+}
+
+function assertH1(source: string, expected: string, oldValue: string, label: string) {
+  const actual = extractH1(source)
+  assert(actual === expected, `${label} H1 expected ${expected}, got ${actual}`)
+  assert(actual !== oldValue, `${label} old H1 still present: ${oldValue}`)
+}
+
 const canonicalLabels: Array<[string, string]> = [
   ["nav-items", "품목관리"],
   ["nav-item-categories", "품목분류관리"],
@@ -131,16 +167,33 @@ for (const forbidden of forbiddenNavLabels) {
   assert(!navSource.includes(`label: '${forbidden}'`), `forbidden nav label found: ${forbidden}`)
 }
 
-assertSourceIncludes(materialStockPage, "자재재고현황", "material stock H1")
-assertSourceIncludes(materialStockPage, "원자재와 소모품의 LOT별 현재고", "material stock description")
-assertSourceIncludes(defectsPage, "불량관리", "defects H1")
-assertSourceIncludes(equipmentStatsPage, "통합통계", "equipment statistics H1")
-assertSourceIncludes(sitesPage, "사업장관리", "sites H1")
-assertSourceIncludes(usersPage, "사용자관리", "users H1")
-assertSourceIncludes(moldsPage, "금형·치공구관리", "molds H1")
-assertSourceIncludes(moldsPage, "기준정보", "molds description")
-assertSourceIncludes(vendorsPage, "거래처관리", "vendors H1")
-assertSourceIncludes(vendorsPage, "원자재·부품", "vendors supplier description")
+assertH1(pages.items, "품목관리", "품목정보", "items")
+assertH1(pages.bom, "BOM관리", "BOM", "bom")
+assertH1(pages.equipment, "설비관리", "설비정보", "equipment")
+assertH1(pages.routing, "라우팅관리", "공정라우팅관리", "routing")
+assertH1(pages.customers, "고객사관리", "고객사 관리", "customers")
+assertH1(pages.purchaseOrders, "자재발주현황", "자재발주", "purchase orders")
+assertH1(pages.materialReceipt, "자재입고현황", "자재입고", "material receipt")
+assertH1(pages.materialIssue, "자재출고현황", "자재출고", "material issue")
+assertH1(pages.productionPlan, "생산계획별생산현황", "생산계획", "production plan")
+assertH1(pages.productionResults, "작업일지(실적)", "생산실적조회", "production results")
+assertH1(pages.salesOrders, "수주등록", "수주관리", "sales orders")
+assertH1(pages.shipments, "납품정보등록", "출하등록", "shipments")
+
+assertH1(pages.materialStock, "자재재고현황", "원자재 LOT 재고", "material stock")
+assertSourceIncludes(pages.materialStock, "원자재와 소모품의 LOT별 현재고", "material stock description")
+assertH1(pages.defects, "불량관리", "불량코드 관리", "defects")
+assertH1(pages.equipmentStats, "통합통계", "설비 통계분석", "equipment statistics")
+assertH1(pages.sites, "사업장관리", "사이트 관리", "sites")
+assertH1(pages.users, "사용자관리", "사용자 / 권한 관리", "users")
+assertH1(pages.molds, "금형·치공구관리", "금형/치공구관리", "molds")
+assertSourceIncludes(pages.molds, "기준정보", "molds description")
+assertH1(pages.vendors, "거래처관리", "거래처 관리", "vendors")
+assertSourceIncludes(pages.vendors, "원자재·부품", "vendors supplier description")
+assertH1(pages.ecn, "변경관리", "변경관리 (ECN/ECO)", "ecn")
+assertH1(pages.finishedGoodsReceipt, "완제품입고", "완제품 입고 관리", "finished goods receipt")
+assertH1(pages.locations, "로케이션관리", "로케이션 관리", "locations")
+assertH1(pages.equipmentOutput, "설비별생산현황", "설비별 생산현황", "equipment output")
 
 assert(!navSource.includes("/app/mes/master/product-groups"), "product-groups must remain hidden from nav")
 assert(!navSource.includes("/app/mes/master/mold-inventory"), "mold-inventory must remain hidden from nav")

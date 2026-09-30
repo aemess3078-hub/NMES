@@ -23,7 +23,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-item-categories', parentId: 'nav-master', label: '품목분류관리', icon: 'Tags', href: '/app/mes/master/item-categories', displayOrder: 2, children: [] },
           { id: 'nav-item-groups', parentId: 'nav-master', label: '품목군관리', icon: 'Layers', href: '/app/mes/master/item-groups', displayOrder: 3, children: [] },
           { id: 'nav-bom', parentId: 'nav-master', label: 'BOM관리', icon: 'GitBranch', href: '/app/mes/bom', displayOrder: 3.5, children: [] },
-          // 기준정보 영역의 설비 마스터만 '설비정보'로 정본화한다 — LMS 대메뉴(section-lms)의 '설비관리'는 별개이며 유지한다.
+          // 기준정보 영역의 설비 마스터는 사업계획서 canonical '설비관리'로 표시한다 — LMS 대메뉴(section-lms)의 '설비관리'와 route/id는 별개이며 유지한다.
           { id: 'nav-equipment-master', parentId: 'nav-master', label: '설비관리', icon: 'Cog', href: '/app/mes/master/equipment', displayOrder: 4, children: [] },
           { id: 'nav-defects', parentId: 'nav-master', label: '불량관리', icon: 'AlertTriangle', href: '/app/mes/defects', displayOrder: 5, children: [] },
           { id: 'nav-routing', parentId: 'nav-master', label: '라우팅관리', icon: 'Workflow', href: '/app/mes/routing', displayOrder: 6, children: [] },
@@ -112,7 +112,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-kpi-dashboard', parentId: 'nav-kpi', label: 'KPI 대시보드', icon: 'LayoutDashboard', href: '/app/mes/kpi', displayOrder: 1, children: [] },
         ],
       },
-      // 6. 품질검사
+      // 6. 품질관리
       {
         id: 'nav-quality',
         parentId: 'section-mes',
@@ -150,10 +150,10 @@ export const MES_NAV: NavItem[] = [
         icon: 'TrendingUp',
         displayOrder: 70,
         children: [
-          // Gap Analysis Rev.2: 사업계획서 정본 '수주관리'를 대표 라벨로 사용(수주등록 page h1과 이미 일치). 수주현황은 하위 상세 화면으로 유지.
+          // 사업계획서 canonical '수주등록'을 대표 라벨로 사용한다. 수주현황은 하위 상세 화면으로 유지한다.
           { id: 'nav-sales-orders', parentId: 'nav-sales', label: '수주등록', icon: 'ClipboardList', href: '/app/mes/sales-orders', displayOrder: 1, children: [] },
           { id: 'nav-sales-status', parentId: 'nav-sales', label: '수주현황', icon: 'BarChart2', href: '/app/mes/sales/order-status', displayOrder: 2, children: [] },
-          // Gap Analysis Rev.2: 사업계획서 정본 '출하등록'을 대표 라벨로 사용. 납품현황은 하위 상세 화면으로 유지.
+          // 사업계획서 canonical '납품정보등록'을 대표 라벨로 사용한다. 납품현황은 하위 상세 화면으로 유지한다.
           { id: 'nav-shipments', parentId: 'nav-sales', label: '납품정보등록', icon: 'Truck', href: '/app/mes/shipments', displayOrder: 3, children: [] },
           { id: 'nav-delivery-status', parentId: 'nav-sales', label: '납품현황', icon: 'FileBarChart', href: '/app/mes/sales/delivery-status', displayOrder: 4, children: [] },
           // 청운커팅 사업계획서 정본 '영업관리 > 프로젝트 오더' (PR #47)
@@ -163,7 +163,7 @@ export const MES_NAV: NavItem[] = [
           { id: 'nav-project-prices', parentId: 'nav-sales', label: '프로젝트 단가관리', icon: 'Banknote', href: '/app/mes/project-prices', displayOrder: 6, children: [] },
         ],
       },
-      // 8. 프로젝트관리 (청운커팅 사업계획서 정본 신규 상위 그룹, PR #48)
+      // 8. PMS(프로젝트관리) (청운커팅 사업계획서 정본 신규 상위 그룹, PR #48)
       // 프로젝트 오더는 계속 영업관리에 남긴다 — 이 그룹으로 이동하지 않는다.
       {
         id: 'nav-project-management',

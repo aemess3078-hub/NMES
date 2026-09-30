@@ -30,7 +30,7 @@ export default async function MaterialIssuePage({ searchParams }: MaterialIssueP
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            자재출고
+            자재출고현황
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
             작업지시와 제조번호 기준으로 원자재 LOT를 출고하고 투입 이력을 연결합니다.

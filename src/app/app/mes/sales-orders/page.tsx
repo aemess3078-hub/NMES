@@ -19,7 +19,7 @@ export default async function SalesOrdersPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-[26px] font-bold leading-tight">수주관리</h1>
+        <h1 className="text-[26px] font-bold leading-tight">수주등록</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
           고객 수주를 접수하고 납기일을 관리합니다
         </p>

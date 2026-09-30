@@ -11,7 +11,7 @@ export default async function CustomersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            고객사 관리
+            고객사관리
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             제품을 납품하는 고객사 정보를 관리합니다.

@@ -25,7 +25,7 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-[26px] font-bold leading-tight">출하등록</h1>
+        <h1 className="text-[26px] font-bold leading-tight">납품정보등록</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
           수주 기반 출하를 등록하고 출하 현황을 추적합니다
         </p>
