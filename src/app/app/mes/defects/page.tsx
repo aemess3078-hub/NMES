@@ -20,7 +20,7 @@ export default async function DefectsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-            불량코드 관리
+            불량관리
           </h1>
           <p className="text-[15px] text-muted-foreground mt-1">
             불량 유형별 코드를 등록하고 관리합니다.

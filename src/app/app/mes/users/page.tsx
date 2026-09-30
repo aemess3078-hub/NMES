@@ -70,7 +70,7 @@ export default async function UsersPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-[26px] font-bold leading-tight">사용자 / 권한 관리</h1>
+        <h1 className="text-[26px] font-bold leading-tight">사용자관리</h1>
         <p className="text-[14px] text-muted-foreground mt-1">
           사용자 계정, 가입 신청, 역할별 권한을 관리합니다
         </p>

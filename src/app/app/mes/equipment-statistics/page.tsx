@@ -30,7 +30,7 @@ export default async function EquipmentStatisticsPage({ searchParams }: Props) {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          설비 통계분석
+          통합통계
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           생산량·에러·비가동 시간·작업시간 통계를 한 화면에서 분석합니다.

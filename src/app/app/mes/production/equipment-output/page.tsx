@@ -98,7 +98,7 @@ export default async function EquipmentOutputPage({ searchParams }: Props) {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          설비별 생산현황
+          설비별생산현황
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
           MES › 생산관리 · 설비에 배정된 공정의 생산실적을 설비 단위로 집계합니다.

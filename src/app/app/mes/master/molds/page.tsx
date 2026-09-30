@@ -21,10 +21,10 @@ export default async function MoldsPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-          금형/치공구관리
+          금형·치공구관리
         </h1>
         <p className="text-[15px] text-muted-foreground mt-1">
-          지그·고정구·공구 등 치공구 기준정보를 등록하고 위치·상태를 관리합니다.
+          금형·치공구 기준정보를 등록하고 위치·상태를 관리합니다.
         </p>
       </div>
 
