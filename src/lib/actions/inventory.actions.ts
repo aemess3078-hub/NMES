@@ -58,11 +58,17 @@ export type InventoryTransactionWithDetails = {
 export async function getInventoryBalances(): Promise<InventoryBalanceWithDetails[]> {
   const tenantId = await getTenantId()
   const rows = await prisma.inventoryBalance.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      item: { tenantId },
+      site: { tenantId },
+      warehouse: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+    },
     include: {
       warehouse: { include: { site: true } },
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
-      lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [
       { warehouse: { name: "asc" } },
@@ -84,13 +90,16 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
   const rows = await prisma.inventoryBalance.findMany({
     where: {
       tenantId,
-      item: { itemType: { in: ["RAW_MATERIAL", "CONSUMABLE"] } },
+      item: { tenantId, itemType: { in: ["RAW_MATERIAL", "CONSUMABLE"] } },
+      site: { tenantId },
+      warehouse: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
     },
     include: {
       warehouse: { include: { site: true } },
       // item: true → 필요 필드만 select (code/name/itemType/uom만 사용됨)
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
-      lot: { select: { id: true, lotNo: true, manufactureDate: true, expiryDate: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true, status: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true, manufactureDate: true, expiryDate: true } },
     },
     orderBy: [
       { warehouse: { name: "asc" } },
@@ -102,6 +111,12 @@ export async function getMaterialInventoryBalances(): Promise<InventoryBalanceWi
       tenantId,
       itemId: { in: Array.from(new Set(rows.map((row) => row.itemId))) },
       txType: { in: ["RECEIPT", "ISSUE"] },
+      item: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+      AND: [
+        { OR: [{ fromLocationId: null }, { fromLocation: { tenantId } }] },
+        { OR: [{ toLocationId: null }, { toLocation: { tenantId } }] },
+      ],
     },
     select: {
       itemId: true,
@@ -300,11 +315,17 @@ export type GroupedInventoryStock = {
 export async function getGroupedInventoryBalances(): Promise<GroupedInventoryStock[]> {
   const tenantId = await getTenantId()
   const rows = await prisma.inventoryBalance.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      item: { tenantId },
+      site: { tenantId },
+      warehouse: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+    },
     include: {
       warehouse: { include: { site: true } },
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true } },
-      lot: { select: { id: true, lotNo: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true, isLotTracked: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true } },
     },
     orderBy: { item: { code: "asc" } },
   })
@@ -385,12 +406,20 @@ export async function getGroupedInventoryBalances(): Promise<GroupedInventorySto
 export async function getInventoryTransactions(): Promise<InventoryTransactionWithDetails[]> {
   const tenantId = await getTenantId()
   const rows = await prisma.inventoryTransaction.findMany({
-    where: { tenantId },
+    where: {
+      tenantId,
+      item: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+      AND: [
+        { OR: [{ fromLocationId: null }, { fromLocation: { tenantId } }] },
+        { OR: [{ toLocationId: null }, { toLocation: { tenantId } }] },
+      ],
+    },
     include: {
-      item: { select: { id: true, code: true, name: true, itemType: true, uom: true, spec: true } },
-      lot: { select: { id: true, lotNo: true } },
-      fromLocation: { select: { id: true, code: true, name: true } },
-      toLocation: { select: { id: true, code: true, name: true } },
+      item: { select: { id: true, tenantId: true, code: true, name: true, itemType: true, uom: true, spec: true } },
+      lot: { select: { id: true, tenantId: true, lotNo: true } },
+      fromLocation: { select: { id: true, tenantId: true, code: true, name: true } },
+      toLocation: { select: { id: true, tenantId: true, code: true, name: true } },
       workOrderMaterialLots: {
         select: {
           id: true,
@@ -526,7 +555,8 @@ export async function adjustInventoryStock(
             const balance = await tx.inventoryBalance.findFirst({
               where: { id: balanceId, tenantId },
               include: {
-                item: { select: { id: true, code: true, name: true, isLotTracked: true } },
+                item: { select: { id: true, tenantId: true, code: true, name: true, isLotTracked: true } },
+                site: { select: { id: true, tenantId: true } },
                 warehouse: { select: { id: true, tenantId: true, siteId: true } },
                 lot: { select: { id: true, tenantId: true, itemId: true, status: true } },
               },
@@ -534,8 +564,13 @@ export async function adjustInventoryStock(
             if (!balance) {
               throw new Error("재고를 찾을 수 없습니다.")
             }
-            if (balance.warehouse.tenantId !== tenantId || balance.warehouse.siteId !== balance.siteId) {
-              throw new Error("재고의 사업장/창고 정보가 올바르지 않습니다.")
+            if (
+              balance.item.tenantId !== tenantId ||
+              balance.site.tenantId !== tenantId ||
+              balance.warehouse.tenantId !== tenantId ||
+              balance.warehouse.siteId !== balance.siteId
+            ) {
+              throw new Error("재고의 테넌트/사업장 기준정보가 올바르지 않습니다.")
             }
             if (balance.item.isLotTracked && !balance.lotId) {
               throw new Error("LOT 관리 품목의 LOT 미지정 재고는 재고조정할 수 없습니다.")
@@ -680,7 +715,16 @@ export type StockAdjustmentHistoryRow = {
 export async function getStockAdjustmentHistory(): Promise<StockAdjustmentHistoryRow[]> {
   const tenantId = await getTenantId()
   const rows = await prisma.inventoryTransaction.findMany({
-    where: { tenantId, refType: STOCK_ADJUSTMENT_REF_TYPE },
+    where: {
+      tenantId,
+      refType: STOCK_ADJUSTMENT_REF_TYPE,
+      item: { tenantId },
+      OR: [{ lotId: null }, { lot: { tenantId } }],
+      AND: [
+        { OR: [{ fromLocationId: null }, { fromLocation: { tenantId } }] },
+        { OR: [{ toLocationId: null }, { toLocation: { tenantId } }] },
+      ],
+    },
     include: {
       item: { select: { code: true, name: true } },
       lot: { select: { lotNo: true } },
