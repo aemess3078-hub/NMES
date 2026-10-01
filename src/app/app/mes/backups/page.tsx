@@ -13,7 +13,7 @@ export default async function BackupManagementPage() {
           백업관리
         </h1>
         <p className="mt-1 text-[14px] text-muted-foreground">
-          Supabase 데이터베이스 백업 상태를 조회하고 NMES 내부에서 분류·숨김 관리합니다.
+          MES 시스템 백업 상태를 확인합니다. 필요한 백업은 분류하거나 목록에서 숨길 수 있습니다.
         </p>
       </div>
 
